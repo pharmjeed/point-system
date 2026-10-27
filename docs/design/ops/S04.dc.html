@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>S-04 مركز التنبيهات</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/point/tokens.css">
+<link rel="stylesheet" href="ds/point/components/bundle.css">
+<script src="ds/point/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:var(--pt-primary-text)}a:hover{color:var(--pt-primary-hover)}
+</style>
+</helmet>
+<div data-theme="light" dir="rtl" lang="ar" style="width: {{w}}; min-height: {{minH}}; box-sizing: border-box; background: var(--pt-bg); color: var(--pt-text); font-family: var(--pt-font-sans); font-size: 16px; line-height: 26px; display: flex; flex-direction: {{rootDir}}">
+
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<aside style="flex: none; width: 248px; background: var(--pt-surface); border-inline-end: 1px solid var(--pt-border); display: flex">
+<x-import component-from-global-scope="Point.SideNav" active="ops" logo-theme="light"></x-import>
+</aside>
+</sc-if>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<header style="background: var(--pt-surface); border-bottom: 1px solid var(--pt-border); padding: 8px 12px; display: flex; flex-direction: {{barDir}}; gap: 6px; align-items: {{barAlign}}">
+<div style="display: flex; align-items: center; gap: 8px; flex: 1">
+<button type="button" class="pt-iconbtn pt-iconbtn--ghost" aria-label="القائمة" title="القائمة"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; gap: 8px; align-items: center">
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="building-2" class-name="pt-btn--compact">قاعة ريماس <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="calendar-days" class-name="pt-btn--compact">حفل آل فلان <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+</div>
+</sc-if>
+<span style="flex: 1"></span>
+<x-import component-from-global-scope="Point.Button" variant="ghost" icon-start="bell-ring" class-name="pt-btn--compact">التنبيهات ({{alertCount}})</x-import>
+<x-import component-from-global-scope="Point.ConnectionIndicator" state="online"></x-import>
+</div>
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="building-2" class-name="pt-btn--compact">قاعة ريماس <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="calendar-days" class-name="pt-btn--compact">حفل آل فلان <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+</div>
+</sc-if>
+</header>
+
+<main style="flex: 1; box-sizing: border-box; padding: {{mainPad}}; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 8px">
+<x-import component-from-global-scope="Point.IconButton" icon="chevron-right" label="العودة"></x-import>
+<h1 style="margin: 0; font-size: 24px; line-height: 34px; font-weight: 700">مركز التنبيهات</h1>
+</div>
+
+<div style="display: flex; flex-direction: {{filterDir}}; gap: 12px; align-items: {{filterAlign}}; flex-wrap: wrap">
+<x-import component-from-global-scope="Point.FilterChips" label="الحالة" options="{{statusOpts}}" value="{{statusVal}}"></x-import>
+<x-import component-from-global-scope="Point.FilterChips" label="الشدة" options="{{sevOpts}}" value="{{sevVal}}"></x-import>
+<div style="min-width: 240px">
+<x-import component-from-global-scope="Point.Select" id="s04-type" label="النوع" options="{{typeOpts}}" value="all"></x-import>
+</div>
+</div>
+
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<x-import component-from-global-scope="Point.Skeleton" variant="card" with-action="{{yes}}"></x-import>
+<x-import component-from-global-scope="Point.Skeleton" variant="card" with-action="{{yes}}"></x-import>
+<x-import component-from-global-scope="Point.Skeleton" variant="card" with-action="{{yes}}"></x-import>
+</div>
+</sc-if>
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.DataTable" layout="table" columns="{{cols}}" rows="{{noRows}}" loading="{{yes}}"></x-import>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{isEmpty}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.EmptyState" icon="bell-ring" title="لا توجد تنبيهات مفتوحة."></x-import>
+</sc-if>
+
+<sc-if value="{{showList}}" hint-placeholder-val="{{true}}">
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{alerts}}" as="al" hint-placeholder-count="3">
+<x-import component-from-global-scope="Point.AlertItem" severity="{{al.sev}}" title="{{al.title}}" type="{{al.ref}}" time="{{al.time}}" acknowledged="{{al.acked}}"></x-import>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.DataTable" layout="table" columns="{{cols}}" rows="{{alerts}}" sort="{{timeSort}}"></x-import>
+</sc-if>
+</sc-if>
+</main>
+
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<x-import component-from-global-scope="Point.BottomNav" active="ops" items="{{nav}}"></x-import>
+</sc-if>
+</div>
+
+<sc-if value="{{isResolve}}" hint-placeholder-val="{{false}}">
+<div class="pt-dialog-backdrop">
+<div class="pt-dialog" role="dialog" aria-modal="true" aria-labelledby="s04-rs-t">
+<h2 class="pt-dialog__title" id="s04-rs-t">حل</h2>
+<p class="pt-dialog__body">طلب لم يُقبل في الوقت المحدد · <bdi dir="ltr">#118</bdi></p>
+<x-import component-from-global-scope="Point.TextArea" id="s04-note" label="ملاحظة (اختيارية)" rows="{{three}}"></x-import>
+<div class="pt-dialog__actions">
+<x-import component-from-global-scope="Point.Button" variant="primary" full-width="{{yes}}">حل</x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" full-width="{{yes}}">إلغاء</x-import>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"device":{"editor":"enum","options":["m","d"],"default":"m"},"state":{"editor":"enum","options":["main","resolve","empty","loading"],"default":"main"},"h":{"editor":"int","default":1400},"$preview":{"width":390,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const d = (this.props.device ?? 'm') === 'd';
+    const s = this.props.state ?? 'main';
+    const h = this.props.h ?? (d ? 1000 : 1400);
+    const P = window.Point;
+    const R = window.React;
+    const ce = R && R.createElement;
+    const empty = s === 'empty';
+
+    const alerts = [
+      { sev: 'critical', title: 'طلب لم يُقبل في الوقت المحدد', ref: '#118', time: '9:24 م', acked: false, status: 'مفتوح' },
+      { sev: 'warning', title: 'سائق متاح والطلب الأقدم محجوز تالٍ', ref: '#127', time: '9:22 م', acked: false, status: 'مفتوح' },
+      { sev: 'warning', title: 'انقطع اتصال سائق بعهدته عناصر', ref: 'سعد · #131', time: '9:12 م', acked: true, status: 'مستلم' }
+    ];
+    const SEV = { critical: ['حرج', 'triangle-alert', 'var(--pt-danger-subtle)', 'var(--pt-danger-text)'], warning: ['تحذير', 'circle-alert', 'var(--pt-warning-subtle)', 'var(--pt-warning-text)'], info: ['معلومة', 'info', 'var(--pt-info-subtle)', 'var(--pt-text)'] };
+    let cols = [];
+    if (P && ce) {
+      cols = [
+        { key: 'sev', label: 'الشدة', render: (r) => { const v = SEV[r.sev]; return ce('span', { className: 'pt-chip pt-chip--sm', style: { background: v[2], color: v[3] } }, ce(P.Icon, { name: v[1], size: 16 }), ce('span', null, v[0])); } },
+        { key: 'title', label: 'النوع' },
+        { key: 'ref', label: 'التذكرة أو السائق', render: (r) => ce('bdi', null, r.ref) },
+        { key: 'time', label: 'الوقت', sortable: true, render: (r) => ce('bdi', { dir: 'ltr', className: 'pt-num' }, r.time) },
+        { key: 'status', label: 'الحالة' },
+        { key: 'act', label: 'الإجراءات', render: (r) => ce('div', { style: { display: 'flex', gap: 8 } },
+            r.acked ? null : ce(P.Button, { variant: 'secondary', className: 'pt-btn--compact' }, 'استلام'),
+            ce(P.Button, { variant: 'ghost', className: 'pt-btn--compact' }, 'حل')) }
+      ];
+    }
+
+    return {
+      yes: true,
+      three: 3,
+      i16: 16,
+      w: d ? '1280px' : '390px',
+      minH: h + 'px',
+      rootDir: d ? 'row' : 'column',
+      barDir: d ? 'row' : 'column',
+      barAlign: d ? 'center' : 'stretch',
+      mainPad: d ? '24px' : '16px',
+      filterDir: d ? 'row' : 'column',
+      filterAlign: d ? 'flex-end' : 'stretch',
+      isD: d,
+      isM: !d,
+      alertCount: empty ? '0' : '2',
+      isLoading: s === 'loading',
+      isEmpty: empty,
+      showList: s === 'main' || s === 'resolve',
+      isResolve: s === 'resolve',
+      statusOpts: [{ value: 'open', label: 'مفتوحة', count: empty ? 0 : 2 }, { value: 'acknowledged', label: 'مستلمة', count: empty ? 0 : 1 }, { value: 'resolved', label: 'محلولة' }],
+      statusVal: empty ? ['open'] : ['open', 'acknowledged'],
+      sevOpts: [{ value: 'critical', label: 'حرج' }, { value: 'warning', label: 'تحذير' }, { value: 'info', label: 'معلومة' }],
+      sevVal: [],
+      typeOpts: [['all', 'الكل'], ['request_unaccepted', 'طلب لم يُقبل في الوقت المحدد'], ['no_drivers_on_duty', 'لا يوجد سائقون في الوردية'], ['next_task_waiting_long', 'مهمة تالية تنتظر طويلًا'], ['idle_driver_while_next_waiting', 'سائق متاح والطلب الأقدم محجوز تالٍ'], ['ready_not_collected', 'مركبة جاهزة لم تُستلم'], ['wa_send_failed', 'فشل إرسال رسالة واتساب'], ['wa_channel_down', 'قناة واتساب متوقفة'], ['driver_connection_lost_with_custody', 'انقطع اتصال سائق بعهدته عناصر'], ['handover_code_locked', 'رمز تسليم مقفل'], ['inspection_incomplete', 'فحص غير مكتمل'], ['draft_abandoned', 'مسودة استلام متروكة'], ['transfer_blocked', 'نقل سائق متعثر'], ['outbox_lag', 'تأخر معالجة الأحداث'], ['push_failed_repeatedly', 'فشل متكرر لإشعارات جهاز'], ['task_stuck', 'مهمة متوقفة'], ['wa_webhook_silent', 'لا تصل أحداث واتساب']],
+      alerts,
+      noRows: [],
+      cols,
+      timeSort: { key: 'time', dir: 'desc' },
+      nav: [['ops', 'التشغيل', 'activity'], ['drivers', 'السائقون', 'users'], ['venues', 'المواقع والحفلات', 'building-2'], ['reports', 'التقارير', 'chart-column']]
+    };
+  }
+}
+</script>
+</body>
+</html>

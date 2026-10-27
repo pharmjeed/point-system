@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>S-01 الدخول والتحقق الثنائي</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/point/tokens.css">
+<link rel="stylesheet" href="ds/point/components/bundle.css">
+<script src="ds/point/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:var(--pt-primary-text)}a:hover{color:var(--pt-primary-hover)}
+</style>
+</helmet>
+<div data-theme="light" dir="rtl" lang="ar" style="width: {{w}}; min-height: {{minH}}; box-sizing: border-box; background: {{rootBg}}; color: var(--pt-text); font-family: var(--pt-font-sans); display: flex; justify-content: center; align-items: {{align}}; padding: {{rootPad}}">
+<div style="width: {{cardW}}; box-sizing: border-box; padding: {{cardPad}}; background: var(--pt-surface); border: {{cardBorder}}; border-radius: 16px; box-shadow: {{cardShadow}}; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; justify-content: center; padding-block: 8px">
+<x-import component-from-global-scope="Point.Logo" variant="stacked" theme="light" height="{{logoH}}"></x-import>
+</div>
+<h1 style="margin: 0; font-size: 24px; line-height: 34px; font-weight: 700; text-align: center">دخول المشرفين والإدارة</h1>
+
+<sc-if value="{{isExpired}}" hint-placeholder-val="{{false}}">
+<div class="pt-banner pt-banner--warning" role="status" style="border-radius: 12px">
+<x-import component-from-global-scope="Point.Icon" name="clock"></x-import>
+<span class="pt-banner__text">انتهت الجلسة. سجّل الدخول للمتابعة.</span>
+</div>
+</sc-if>
+
+<sc-if value="{{isStep1}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<x-import component-from-global-scope="Point.PhoneInput" id="s01-phone" label="رقم الجوال" hint=" " value="{{phone}}"></x-import>
+<x-import component-from-global-scope="Point.TextField" id="s01-pw" label="كلمة المرور" type="password" dir="ltr" error="{{pwError}}"></x-import>
+<x-import component-from-global-scope="Point.Button" id="s01-login" variant="primary" size="lg" full-width="{{yes}}" disabled="{{locked}}" error="{{lockError}}">دخول</x-import>
+</div>
+</sc-if>
+
+<sc-if value="{{isMfa}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<x-import component-from-global-scope="Point.CodeInput" id="s01-mfa" label="أدخل رمز التحقق من تطبيق المصادقة" value="{{mfaValue}}" error="{{mfaError}}"></x-import>
+<x-import component-from-global-scope="Point.Button" variant="primary" size="lg" full-width="{{yes}}">تحقق</x-import>
+</div>
+</sc-if>
+
+<sc-if value="{{isSecret}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<x-import component-from-global-scope="Point.TextField" id="s01-cur" label="كلمة المرور الحالية" type="password" dir="ltr"></x-import>
+<x-import component-from-global-scope="Point.TextField" id="s01-new" label="كلمة المرور الجديدة" type="password" dir="ltr" hint="استخدم كلمة مرور طويلة يصعب تخمينها."></x-import>
+<x-import component-from-global-scope="Point.TextField" id="s01-conf" label="تأكيدها" type="password" dir="ltr"></x-import>
+<x-import component-from-global-scope="Point.Button" variant="primary" size="lg" full-width="{{yes}}">متابعة</x-import>
+</div>
+</sc-if>
+
+<sc-if value="{{isSetup}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 30px; font-weight: 600">إعداد التحقق الثنائي</h2>
+<p style="margin: 0; font-size: 16px; line-height: 26px; color: var(--pt-text-muted)">امسح الرمز بتطبيق المصادقة على جوالك ثم أدخل الرمز الظاهر.</p>
+<div role="img" aria-label="رمز QR لتطبيق المصادقة" style="align-self: center; width: 200px; height: 200px; box-sizing: border-box; border: 2px dashed var(--pt-border-strong); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--pt-text-muted); background: var(--pt-surface-2)">
+<x-import component-from-global-scope="Point.Icon" name="qr-code" size="{{qrIcon}}"></x-import>
+<span style="font-size: 14px; line-height: 22px">[رمز QR من الخادم]</span>
+</div>
+<x-import component-from-global-scope="Point.CodeInput" id="s01-setup" label="رمز التحقق"></x-import>
+<x-import component-from-global-scope="Point.Button" variant="primary" size="lg" full-width="{{yes}}">تأكيد</x-import>
+</div>
+</sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"device":{"editor":"enum","options":["m","d"],"default":"m"},"state":{"editor":"enum","options":["login","mfa","crederr","locked","mfaerr","secret","setup","expired"],"default":"login"},"h":{"editor":"int","default":900},"$preview":{"width":390,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const d = (this.props.device ?? 'm') === 'd';
+    const s = this.props.state ?? 'login';
+    const h = this.props.h ?? (d ? 800 : 900);
+    const step1 = ['login', 'crederr', 'locked', 'expired'].indexOf(s) >= 0;
+    return {
+      yes: true,
+      w: d ? '1280px' : '390px',
+      minH: h + 'px',
+      rootBg: d ? 'var(--pt-bg)' : 'var(--pt-surface)',
+      align: d ? 'center' : 'flex-start',
+      rootPad: d ? '48px' : '24px 16px',
+      cardW: d ? '440px' : '100%',
+      cardPad: d ? '32px' : '0',
+      cardBorder: d ? '1px solid var(--pt-border)' : '0',
+      cardShadow: d ? 'var(--pt-shadow-md)' : 'none',
+      logoH: d ? 120 : 104,
+      qrIcon: 56,
+      isStep1: step1,
+      isExpired: s === 'expired',
+      isMfa: s === 'mfa' || s === 'mfaerr',
+      isSecret: s === 'secret',
+      isSetup: s === 'setup',
+      phone: s === 'crederr' || s === 'locked' ? '0551234567' : '',
+      pwError: s === 'crederr' ? 'رقم الجوال أو كلمة المرور غير صحيحة.' : undefined,
+      locked: s === 'locked',
+      lockError: s === 'locked' ? 'تم إيقاف الدخول مؤقتًا لكثرة المحاولات. حاول بعد قليل أو تواصل مع مشرفك.' : undefined,
+      mfaValue: s === 'mfaerr' ? '418230' : '',
+      mfaError: s === 'mfaerr' ? 'رمز التحقق غير صحيح.' : undefined
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>S-03 تفاصيل التذكرة وسجلها</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/point/tokens.css">
+<link rel="stylesheet" href="ds/point/components/bundle.css">
+<script src="ds/point/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:var(--pt-primary-text)}a:hover{color:var(--pt-primary-hover)}
+.s03-side .pt-sheet-backdrop{justify-items:end;align-items:stretch}
+.s03-side .pt-sheet{width:480px;max-block-size:100%;border-radius:0}
+.s03-side .pt-sheet__grip{display:none}
+</style>
+</helmet>
+<div data-theme="light" dir="rtl" lang="ar" style="width: {{w}}; min-height: {{minH}}; box-sizing: border-box; background: var(--pt-bg); color: var(--pt-text); font-family: var(--pt-font-sans); font-size: 16px; line-height: 26px; display: flex; flex-direction: {{rootDir}}">
+
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<aside style="flex: none; width: 248px; background: var(--pt-surface); border-inline-end: 1px solid var(--pt-border); display: flex">
+<x-import component-from-global-scope="Point.SideNav" active="ops" logo-theme="light"></x-import>
+</aside>
+</sc-if>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<header style="background: var(--pt-surface); border-bottom: 1px solid var(--pt-border); padding: 8px 12px; display: flex; flex-direction: {{barDir}}; gap: 6px; align-items: {{barAlign}}">
+<div style="display: flex; align-items: center; gap: 8px; flex: 1">
+<button type="button" class="pt-iconbtn pt-iconbtn--ghost" aria-label="القائمة" title="القائمة"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; gap: 8px; align-items: center">
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="building-2" class-name="pt-btn--compact">قاعة ريماس <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="calendar-days" class-name="pt-btn--compact">حفل آل فلان <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+</div>
+</sc-if>
+<span style="flex: 1"></span>
+<x-import component-from-global-scope="Point.Button" variant="ghost" icon-start="bell-ring" class-name="pt-btn--compact">التنبيهات (2)</x-import>
+<x-import component-from-global-scope="Point.ConnectionIndicator" state="online"></x-import>
+</div>
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="building-2" class-name="pt-btn--compact">قاعة ريماس <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="calendar-days" class-name="pt-btn--compact">حفل آل فلان <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+</div>
+</sc-if>
+</header>
+
+<main style="flex: 1; box-sizing: border-box; padding: {{mainPad}}; display: flex; flex-direction: column; gap: 16px; position: relative">
+
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px" aria-busy="true">
+<x-import component-from-global-scope="Point.Skeleton" variant="line" width="60%"></x-import>
+<div style="display: grid; grid-template-columns: {{gridCols}}; gap: 16px; align-items: start">
+<x-import component-from-global-scope="Point.Skeleton" variant="card"></x-import>
+<x-import component-from-global-scope="Point.Skeleton" variant="card"></x-import>
+</div>
+<x-import component-from-global-scope="Point.Skeleton" variant="card"></x-import>
+</div>
+</sc-if>
+
+<sc-if value="{{isNotFound}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.EmptyState" icon="search" title="لم نجد هذا العنصر. ربما أُغلق أو تغيّر." action-label="العودة"></x-import>
+</sc-if>
+
+<sc-if value="{{showTicket}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+<x-import component-from-global-scope="Point.IconButton" icon="chevron-right" label="العودة"></x-import>
+<bdi dir="ltr" class="pt-ticketno" style="font-size: 24px; line-height: 34px">#{{t.n}}</bdi>
+<x-import component-from-global-scope="Point.PlateBadge" digits="{{t.digits}}" letters="{{t.letters}}"></x-import>
+<x-import component-from-global-scope="Point.StatusChip" status="{{t.status}}"></x-import>
+<span style="flex: 1"></span>
+<x-import component-from-global-scope="Point.Button" variant="secondary" class-name="pt-btn--compact">الإجراءات <x-import component-from-global-scope="Point.Icon" name="chevron-down" size="{{i16}}"></x-import></x-import>
+</div>
+
+<div style="display: grid; grid-template-columns: {{gridCols}}; gap: 16px; align-items: start">
+<div class="pt-card" style="display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 22px">
+<div style="font-weight: 600; font-size: 16px">{{t.event}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 16px"><span><span style="color: var(--pt-text-muted)">سجّلها:</span> {{t.reg}} <bdi dir="ltr" class="pt-num">{{t.regAt}}</bdi></span><span><span style="color: var(--pt-text-muted)">صفّها:</span> {{t.park}} <bdi dir="ltr" class="pt-num">{{t.parkAt}}</bdi></span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 16px"><span><span style="color: var(--pt-text-muted)">أحضرها:</span> {{t.fetch}}</span><span><span style="color: var(--pt-text-muted)">سلّمها:</span> {{t.deliv}}</span></div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px">
+<span style="color: var(--pt-text-muted)">الجوال:</span>
+<sc-if value="{{masked}}" hint-placeholder-val="{{true}}">
+<x-import component-from-global-scope="Point.MaskedPhone" phone="0551234123"></x-import>
+<button type="button" class="pt-link" style="font-size: 14px">إظهار الرقم</button>
+</sc-if>
+<sc-if value="{{revealed}}" hint-placeholder-val="{{false}}">
+<a href="tel:+966551234123" dir="ltr" style="font-family: var(--pt-font-mono); font-weight: 600; unicode-bidi: isolate">0551234123</a>
+<span style="display: inline-flex; align-items: center; gap: 4px; color: var(--pt-warning-text)"><x-import component-from-global-scope="Point.Icon" name="timer" size="{{i16}}"></x-import><bdi dir="ltr" class="pt-num">0:58</bdi></span>
+</sc-if>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px">
+<span style="color: var(--pt-text-muted)">قناة العميل: واتساب</span>
+<span class="pt-chip pt-chip--sm" style="background: var(--pt-success-subtle); color: var(--pt-success-text)"><x-import component-from-global-scope="Point.Icon" name="check" size="{{i16}}"></x-import><span>{{t.wa}}</span></span>
+<span style="color: var(--pt-text-muted)">الفحص:</span>
+<span class="pt-chip pt-chip--sm" style="background: var(--pt-success-subtle); color: var(--pt-success-text)"><x-import component-from-global-scope="Point.Icon" name="circle-check" size="{{i16}}"></x-import><span>{{t.insp}}</span></span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px">
+<span style="color: var(--pt-text-muted)">التحصيل:</span>
+<span class="pt-chip pt-chip--sm" style="background: var(--pt-warning-subtle); color: var(--pt-warning-text)"><x-import component-from-global-scope="Point.Icon" name="banknote" size="{{i16}}"></x-import><span>{{t.pay}}</span></span>
+<bdi dir="ltr" class="pt-num" style="font-weight: 600">{{t.amount}}</bdi>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 16px"><span><span style="color: var(--pt-text-muted)">الموقف:</span> <bdi dir="ltr" class="pt-num">{{t.spot}}</bdi></span><span><span style="color: var(--pt-text-muted)">المفتاح:</span> {{t.key}}</span></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
+<div role="tablist" aria-label="أقسام التذكرة" style="display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--pt-border)">
+<sc-for list="{{tabs}}" as="tb" hint-placeholder-count="6">
+<button type="button" role="tab" aria-selected="{{tb.sel}}" style="flex: none; min-height: 44px; padding: 0 12px; background: none; border: 0; border-bottom: {{tb.bb}}; font-family: inherit; font-size: 14px; line-height: 22px; font-weight: {{tb.fw}}; color: {{tb.color}}; cursor: pointer">{{tb.label}}</button>
+</sc-for>
+</div>
+<sc-if value="{{tabTimeline}}" hint-placeholder-val="{{true}}">
+<x-import component-from-global-scope="Point.Timeline" events="{{timeline}}"></x-import>
+</sc-if>
+<sc-if value="{{tabCustody}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.DataTable" layout="{{tableLayout}}" columns="{{custodyCols}}" rows="{{custodyRows}}"></x-import>
+</sc-if>
+<sc-if value="{{tabMessages}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.Timeline" events="{{messages}}"></x-import>
+</sc-if>
+</div>
+</div>
+</div>
+</sc-if>
+</main>
+
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<x-import component-from-global-scope="Point.BottomNav" active="ops" items="{{nav}}"></x-import>
+</sc-if>
+</div>
+
+<sc-if value="{{ovActions}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{isM}}" hint-placeholder-val="{{true}}">
+<x-import component-from-global-scope="Point.Sheet" title="الإجراءات">
+<div style="display: flex; flex-direction: column; border: 1px solid var(--pt-border); border-radius: 12px; overflow: hidden">
+<sc-for list="{{actions}}" as="ac" hint-placeholder-count="10">
+<x-import component-from-global-scope="Point.ListItem" icon="{{ac.icon}}" title="{{ac.label}}" on-click="{{noop}}"></x-import>
+</sc-for>
+</div>
+</x-import>
+</sc-if>
+<sc-if value="{{isD}}" hint-placeholder-val="{{false}}">
+<div style="position: fixed; top: 132px; inset-inline-end: 24px; width: 340px; background: var(--pt-surface); border: 1px solid var(--pt-border); border-radius: 16px; box-shadow: var(--pt-shadow-md); overflow: hidden; display: flex; flex-direction: column" role="menu" aria-label="الإجراءات">
+<sc-for list="{{actions}}" as="ac" hint-placeholder-count="10">
+<x-import component-from-global-scope="Point.ListItem" icon="{{ac.icon}}" title="{{ac.label}}" on-click="{{noop}}"></x-import>
+</sc-for>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ovReassign}}" hint-placeholder-val="{{false}}">
+<div class="{{sideClass}}">
+<x-import component-from-global-scope="Point.Sheet" title="إعادة إسناد #125">
+<x-import component-from-global-scope="Point.Radio" name="s03-dest" options="{{destOpts}}" value="driver"></x-import>
+<x-import component-from-global-scope="Point.Radio" name="s03-drv" options="{{driverOpts}}" value="fahd"></x-import>
+<div class="pt-banner pt-banner--warning" style="border-radius: 12px; flex-wrap: wrap">
+<x-import component-from-global-scope="Point.Icon" name="key-round"></x-import>
+<span class="pt-banner__text">المفتاح بعهدة خالد — أقرّ بإعادته للخانة أولًا</span>
+</div>
+<x-import component-from-global-scope="Point.Button" variant="secondary" icon-start="key-round" full-width="{{yes}}">إقرار إعادة المفتاح</x-import>
+<x-import component-from-global-scope="Point.TextArea" id="s03-ra-reason" label="السبب (إلزامي)" rows="{{two}}"></x-import>
+<x-import component-from-global-scope="Point.Button" variant="primary" size="lg" full-width="{{yes}}" disabled="{{yes}}">تأكيد إعادة الإسناد</x-import>
+</x-import>
+</div>
+</sc-if>
+
+<sc-if value="{{ovCancel}}" hint-placeholder-val="{{false}}">
+<x-import component-from-global-scope="Point.Dialog" id="s03-cancel" title="إلغاء طلب الإحضار" body="بدأ خالد إحضار #125. الإلغاء يعيد المركبة لإعادة الصف مع خالد نفسه، ويبقى مشغولًا بها حتى إتمام الصف، ويُبطل رمز التسليم. يصل العميل رسالة الإلغاء (W-07) فقط." reason-required="{{yes}}" destructive="{{yes}}" confirm-label="تأكيد الإلغاء" cancel-label="العودة"></x-import>
+</sc-if>
+
+<sc-if value="{{ovException}}" hint-placeholder-val="{{false}}">
+<div class="{{sideClass}}">
+<x-import component-from-global-scope="Point.Sheet" title="تسليم دون رمز (استثناء)">
+<x-import component-from-global-scope="Point.Checkbox" id="s03-ex-1" label="مطابقة آخر 4 أرقام من جوال العميل" checked="{{yes}}"></x-import>
+<x-import component-from-global-scope="Point.Checkbox" id="s03-ex-2" label="مطابقة استمارة المركبة أو الهوية" checked="{{yes}}"></x-import>
+<x-import component-from-global-scope="Point.Checkbox" id="s03-ex-3" label="وصف محتويات المركبة"></x-import>
+<x-import component-from-global-scope="Point.TextArea" id="s03-ex-reason" label="السبب (إلزامي)" rows="{{two}}"></x-import>
+<div style="display: flex; flex-direction: column; gap: 8px; padding-top: 4px; border-top: 1px solid var(--pt-border)">
+<div style="display: flex; align-items: center; gap: 8px; padding-top: 8px">
+<span style="font-weight: 600">التحصيل:</span>
+<span class="pt-chip pt-chip--sm" style="background: var(--pt-warning-subtle); color: var(--pt-warning-text)"><x-import component-from-global-scope="Point.Icon" name="banknote" size="{{i16}}"></x-import><span>مستحق</span></span>
+<bdi dir="ltr" class="pt-num" style="font-weight: 600">25.00 ر.س</bdi>
+</div>
+<x-import component-from-global-scope="Point.SegmentedControl" label="وسيلة التحصيل" options="{{payOpts}}" value="cash"></x-import>
+</div>
+<x-import component-from-global-scope="Point.Button" variant="primary" size="lg" full-width="{{yes}}">تأكيد التسليم الاستثنائي</x-import>
+</x-import>
+</div>
+</sc-if>
+
+<sc-if value="{{ovReveal}}" hint-placeholder-val="{{false}}">
+<div class="pt-dialog-backdrop">
+<div class="pt-dialog" role="alertdialog" aria-modal="true" aria-labelledby="s03-rv-t">
+<h2 class="pt-dialog__title" id="s03-rv-t">إظهار الجوال</h2>
+<x-import component-from-global-scope="Point.Radio" name="s03-rv" legend="السبب (إلزامي)" options="{{revealOpts}}" value="absent"></x-import>
+<p class="pt-dialog__body">يُسجّل هذا الإجراء في سجل التدقيق.</p>
+<div class="pt-dialog__actions">
+<x-import component-from-global-scope="Point.Button" variant="primary" full-width="{{yes}}">تأكيد</x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" full-width="{{yes}}">إلغاء</x-import>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ovVoid}}" hint-placeholder-val="{{false}}">
+<div class="pt-dialog-backdrop">
+<div class="pt-dialog" role="alertdialog" aria-modal="true" aria-labelledby="s03-vd-t">
+<h2 class="pt-dialog__title" id="s03-vd-t">إلغاء التذكرة</h2>
+<x-import component-from-global-scope="Point.Checkbox" id="s03-vd-ok" label="تحققت أن المركبة والمفتاح عادا للعميل أو لم يُستلما"></x-import>
+<x-import component-from-global-scope="Point.TextArea" id="s03-vd-reason" label="السبب (إلزامي)" rows="{{two}}"></x-import>
+<div class="pt-dialog__actions">
+<x-import component-from-global-scope="Point.Button" variant="danger" full-width="{{yes}}" disabled="{{yes}}">تأكيد</x-import>
+<x-import component-from-global-scope="Point.Button" variant="secondary" full-width="{{yes}}">العودة</x-import>
+</div>
+</div>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"device":{"editor":"enum","options":["m","d"],"default":"m"},"state":{"editor":"enum","options":["main","actions","reassign","cancel","exception","reveal","revealed","void","custody","messages","loading","notfound"],"default":"main"},"h":{"editor":"int","default":1750},"$preview":{"width":390,"height":1750}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const d = (this.props.device ?? 'm') === 'd';
+    const s = this.props.state ?? 'main';
+    const h = this.props.h ?? (d ? 1150 : 1750);
+    const P = window.Point;
+    const R = window.React;
+    const ce = R && R.createElement;
+
+    const t125 = { n: 125, digits: '1234', letters: ['ب', 'ح', 'د'], status: 'ready', event: 'حفل آل فلان · قاعة ريماس', reg: 'أحمد', regAt: '7:05 م', park: 'أحمد', parkAt: '7:09 م', fetch: 'خالد', deliv: '—', wa: 'مربوطة', insp: 'مكتمل', pay: 'مستحق', amount: '25.00 ر.س', spot: 'A-03', key: 'بعهدة خالد' };
+    let t = t125;
+    if (s === 'reassign') t = Object.assign({}, t125, { status: 'assigned' });
+    if (s === 'void') t = { n: 133, digits: '4410', letters: ['س', 'ر', 'ا'], status: 'parking', event: 'حفل آل فلان · قاعة ريماس', reg: 'ماجد', regAt: '9:30 م', park: '—', parkAt: '', fetch: '—', deliv: '—', wa: 'مربوطة', insp: 'مكتمل', pay: 'مستحق', amount: '25.00 ر.س', spot: '—', key: 'بعهدة ماجد' };
+
+    const tabNames = ['الخط الزمني', 'العهدة', 'الرسائل', 'الصور', 'التحصيل', 'الوقائع'];
+    const sel = s === 'custody' ? 1 : s === 'messages' ? 2 : 0;
+    const tabs = tabNames.map((label, i) => ({
+      label,
+      sel: i === sel ? 'true' : 'false',
+      bb: i === sel ? '3px solid var(--pt-primary)' : '3px solid transparent',
+      fw: i === sel ? 700 : 600,
+      color: i === sel ? 'var(--pt-text)' : 'var(--pt-text-muted)'
+    }));
+
+    const timeline = [
+      { kind: 'ticket', icon: 'circle-check', text: 'جاهزة', actor: 'خالد · W-05 «وصلت»', time: '9:21 م' },
+      { kind: 'ticket', icon: 'navigation', text: 'بدء الإحضار', actor: 'خالد · W-04 «قُرئت»', time: '9:18 م' },
+      { kind: 'custody', text: 'استلام المفتاح من الخانة 12', actor: 'خالد', time: '9:17 م' },
+      { kind: 'ticket', icon: 'user-check', text: 'قبول الطلب (عرض فردي)', actor: 'خالد', time: '9:16 م' },
+      { kind: 'ticket', icon: 'bell-ring', text: 'طلب السيارة', actor: 'العميل عبر واتساب · W-02 «وصلت»', time: '9:15 م' },
+      { kind: 'custody', text: 'صف في A-03 وإيداع المفتاح في 12', actor: 'أحمد', time: '7:09 م' },
+      { kind: 'ticket', icon: 'message-circle', text: 'إصدار التذكرة', actor: 'W-01 «قُرئت»', time: '7:06 م' },
+      { kind: 'ticket', text: 'استلام من العميل', actor: 'أحمد', time: '7:05 م' }
+    ];
+    const messages = [
+      { kind: 'whatsapp', text: 'W-05 · وصلت', actor: 'مصاف ← العميل', time: '9:21 م', message: 'سيارتك رقم 125 جاهزة عند نقطة التسليم.\nرمز التسليم: ••••••\nأعطِ الرمز للسائق عند الاستلام ولا تشاركه مع غيره.' },
+      { kind: 'whatsapp', text: 'W-04 · قُرئت', actor: 'مصاف ← العميل', time: '9:18 م', message: 'جارٍ إحضار سيارتك رقم 125 الآن.' },
+      { kind: 'whatsapp', text: 'W-02 · وصلت', actor: 'مصاف ← العميل', time: '9:15 م', message: 'تم تسجيل طلب سيارتك رقم 125؛ سنبلغك عند جاهزيتها.' },
+      { kind: 'whatsapp', icon: 'bell-ring', text: 'واردة', actor: 'العميل ← مصاف', time: '9:15 م', message: 'طلب السيارة' },
+      { kind: 'whatsapp', text: 'W-01 · قُرئت', actor: 'مصاف ← العميل', time: '7:06 م', message: 'مصاف — قاعة ريماس — تذكرة 125\nتم استلام مركبتك: تويوتا كامري بيضاء — لوحة 1234.\nعند رغبتك بالخروج اضغط «طلب السيارة».' }
+    ];
+
+    const custodyRows = [
+      { time: '9:18 م', path: 'الموقف A-03 ← السائق خالد', reason: 'بدء الإحضار', actor: 'خالد' },
+      { time: '9:17 م', path: 'الخانة 12 ← السائق خالد', reason: 'استلام المفتاح', actor: 'خالد' },
+      { time: '7:09 م', path: 'السائق أحمد ← الخانة 12', reason: 'إيداع المفتاح', actor: 'أحمد' },
+      { time: '7:09 م', path: 'السائق أحمد ← الموقف A-03', reason: 'صف', actor: 'أحمد' },
+      { time: '7:05 م', path: 'العميل ← السائق أحمد', reason: 'استلام من العميل', actor: 'أحمد' }
+    ];
+    let custodyCols = [
+      { key: 'time', label: 'الوقت' }, { key: 'path', label: 'من ← إلى' }, { key: 'reason', label: 'السبب' }, { key: 'actor', label: 'الفاعل' }
+    ];
+    if (ce) custodyCols[0].render = (r) => ce('bdi', { dir: 'ltr', className: 'pt-num' }, r.time);
+
+    const actions = [
+      { label: 'إلغاء طلب الإحضار', icon: 'circle-x' },
+      { label: 'إعادة الصف لغياب العميل', icon: 'rotate-ccw' },
+      { label: 'تسليم استثنائي دون رمز', icon: 'shield-check' },
+      { label: 'إعادة إرسال رمز التسليم', icon: 'refresh-cw' },
+      { label: 'نقل عهدة رسمي', icon: 'key-round' },
+      { label: 'إظهار الجوال', icon: 'smartphone' },
+      { label: 'تغيير الجوال', icon: 'smartphone' },
+      { label: 'مطابقة يدوية بعد انقطاع', icon: 'check-check' },
+      { label: 'إعفاء من الرسوم', icon: 'banknote' },
+      { label: 'فتح واقعة', icon: 'triangle-alert' }
+    ];
+
+    return {
+      yes: true,
+      two: 2,
+      i16: 16,
+      noop: () => {},
+      w: d ? '1280px' : '390px',
+      minH: h + 'px',
+      rootDir: d ? 'row' : 'column',
+      barDir: d ? 'row' : 'column',
+      barAlign: d ? 'center' : 'stretch',
+      mainPad: d ? '24px' : '16px',
+      gridCols: d ? '360px minmax(0, 1fr)' : 'minmax(0, 1fr)',
+      tableLayout: d ? 'table' : 'cards',
+      sideClass: d ? 's03-side' : '',
+      isD: d,
+      isM: !d,
+      isLoading: s === 'loading',
+      isNotFound: s === 'notfound',
+      showTicket: s !== 'loading' && s !== 'notfound',
+      masked: s !== 'revealed',
+      revealed: s === 'revealed',
+      t,
+      tabs,
+      tabTimeline: s !== 'custody' && s !== 'messages',
+      tabCustody: s === 'custody',
+      tabMessages: s === 'messages',
+      timeline,
+      messages,
+      custodyCols,
+      custodyRows,
+      actions,
+      ovActions: s === 'actions',
+      ovReassign: s === 'reassign',
+      ovCancel: s === 'cancel',
+      ovException: s === 'exception',
+      ovReveal: s === 'reveal',
+      ovVoid: s === 'void',
+      destOpts: [['queue', 'إعادته للطابور (يُوزع حسب الأولوية)'], ['driver', 'إسناده لسائق متاح']],
+      driverOpts: [['fahd', 'فهد'], ['majed', 'ماجد']],
+      payOpts: [['cash', 'نقدًا', 'banknote'], ['pos', 'شبكة (نقاط بيع)', 'credit-card']],
+      revealOpts: [['absent', 'التواصل مع العميل لعدم الحضور'], ['fix', 'تصحيح رقم'], ['incident', 'واقعة'], ['other', 'أخرى']],
+      nav: [['ops', 'التشغيل', 'activity'], ['drivers', 'السائقون', 'users'], ['venues', 'المواقع والحفلات', 'building-2'], ['reports', 'التقارير', 'chart-column']]
+    };
+  }
+}
+</script>
+</body>
+</html>
