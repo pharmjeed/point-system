@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>S-04 حل تنبيه بملاحظة — جوال</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/point/tokens.css">
+<link rel="stylesheet" href="ds/point/components/bundle.css">
+<script src="ds/point/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>body{margin:0}</style></helmet>
+<dc-import name="S04" device="m" state="resolve" h="{{h}}" hint-size="390px,1000px"></dc-import>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic { renderVals() { return { h: 1000 }; } }
+</script>
+</body>
+</html>
