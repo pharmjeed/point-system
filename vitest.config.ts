@@ -42,6 +42,8 @@ export default defineConfig({
           fileParallelism: false,
         },
       },
+      // apps/web keeps its own config (aliases, browser-free unit tests); Playwright covers the browser
+      'apps/web/vitest.config.ts',
     ],
   },
 });
