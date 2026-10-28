@@ -1254,10 +1254,10 @@
   "epic": "EP-10",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent (audit-monitoring)"
  },
  {
   "ticket": "PNT-091",
@@ -1268,10 +1268,10 @@
   "epic": "EP-12",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent (audit-monitoring)"
  },
  {
   "ticket": "PNT-092",
@@ -1282,10 +1282,10 @@
   "epic": "EP-12",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent (audit-monitoring)"
  },
  {
   "ticket": "PNT-093",
@@ -1310,10 +1310,10 @@
   "epic": "EP-12",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent (audit-monitoring)"
  },
  {
   "ticket": "PNT-095",

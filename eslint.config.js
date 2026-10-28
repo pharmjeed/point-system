@@ -12,12 +12,17 @@ export default tseslint.config(
       '**/coverage/**',
       'apps/web/public/**',
       '**/playwright-report/**',
+      // agent worktrees are separate checkouts with their own config (ESLint looks configs up per file)
+      '.claude/**',
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    languageOptions: { globals: { ...globals.node } },
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
+    },
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
