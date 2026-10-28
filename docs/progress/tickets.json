@@ -8,10 +8,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": ""
+  "note": "pnpm monorepo, strict TS 7, ESLint/Prettier, brand check"
  },
  {
   "ticket": "PNT-002",
@@ -22,10 +22,10 @@
   "epic": "EP-01",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "compose + .env.example + env validation written"
  },
  {
   "ticket": "PNT-003",
@@ -36,10 +36,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "06_schema.sql verbatim as 0001, Drizzle schema, drift check, 10 integration tests"
  },
  {
   "ticket": "PNT-004",
@@ -50,10 +50,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "CI workflow written"
  },
  {
   "ticket": "PNT-005",
@@ -64,10 +64,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-006",
@@ -78,10 +78,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "API skeleton written"
  },
  {
   "ticket": "PNT-007",
@@ -92,10 +92,10 @@
   "epic": "EP-01",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "outbox dispatcher written"
  },
  {
   "ticket": "PNT-008",
@@ -106,10 +106,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "idempotency protocol written"
  },
  {
   "ticket": "PNT-009",
@@ -120,10 +120,10 @@
   "epic": "EP-01",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "audit + ticket events written"
  },
  {
   "ticket": "PNT-010",
@@ -134,10 +134,10 @@
   "epic": "EP-01",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "seed matches 17 §4, idempotent, refuses production (16 tests)"
  },
  {
   "ticket": "PNT-011",
@@ -176,10 +176,10 @@
   "epic": "EP-02",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "actor context + auth/permission guard written"
  },
  {
   "ticket": "PNT-014",
@@ -288,10 +288,10 @@
   "epic": "EP-06",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-022",
@@ -302,10 +302,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-023",
@@ -512,10 +512,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-038",

@@ -1,1 +1,16 @@
-{"PNT-001":{"status":"in_progress","date":"2026-10-28"}}
+{
+  "PNT-001": { "status": "done", "date": "2026-10-28", "note": "pnpm monorepo, strict TS 7, ESLint/Prettier, brand check" },
+  "PNT-002": { "status": "in_progress", "date": "2026-10-28", "note": "compose + .env.example + env validation written" },
+  "PNT-003": { "status": "done", "date": "2026-10-28", "note": "06_schema.sql verbatim as 0001, Drizzle schema, drift check, 10 integration tests" },
+  "PNT-004": { "status": "in_progress", "date": "2026-10-28", "note": "CI workflow written" },
+  "PNT-005": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" },
+  "PNT-006": { "status": "in_progress", "date": "2026-10-28", "note": "API skeleton written" },
+  "PNT-007": { "status": "in_progress", "date": "2026-10-28", "note": "outbox dispatcher written" },
+  "PNT-008": { "status": "in_progress", "date": "2026-10-28", "note": "idempotency protocol written" },
+  "PNT-009": { "status": "in_progress", "date": "2026-10-28", "note": "audit + ticket events written" },
+  "PNT-010": { "status": "done", "date": "2026-10-28", "note": "seed matches 17 §4, idempotent, refuses production (16 tests)" },
+  "PNT-013": { "status": "in_progress", "date": "2026-10-28", "note": "actor context + auth/permission guard written" },
+  "PNT-021": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" },
+  "PNT-022": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" },
+  "PNT-037": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" }
+}

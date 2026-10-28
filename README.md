@@ -87,3 +87,31 @@ MASAF-POINT_Project_Docs/
 - النطاق ومنطقة الاستضافة (Q-01، Q-02).
 - نموذج التسعير لكل قاعة ومتطلبات الفوترة إن حُصّلت رسوم (Q-04، Q-05).
 - مدد الاحتفاظ بالبيانات (Q-06)، والهوية الميدانية على الزي واللوحات (Q-10).
+
+## التشغيل المحلي (للمطور)
+
+المتطلبات: Node.js 24 LTS، pnpm (عبر `corepack enable`)، Docker. الأوامر من جذر المستودع:
+
+```bash
+corepack enable
+pnpm install
+cp .env.example .env          # ثم املأ الأسرار المحلية: openssl rand -base64 32 لكل من SESSION_SECRET وCODE_PEPPER وAUTH_SECRET_PEPPER وDATA_ENCRYPTION_KEY
+docker compose -f infra/compose/docker-compose.yml up -d    # PostgreSQL 16 + MinIO (دلاء خاصة) + محاكي واتساب
+pnpm build
+pnpm db:migrate               # الترحيل الأول = docs/06_schema.sql حرفيًا
+pnpm db:seed                  # بيانات 17 §4 (قاعة ريماس وقاعة ليلتي، DRV1…DRV8 …)
+pnpm dev                      # api (3000) + worker + web (5173) + wa-simulator (4010)
+```
+
+الفحوص:
+
+```bash
+pnpm lint && pnpm typecheck
+pnpm test                     # وحدة
+pnpm test:int                 # تكامل على PostgreSQL 16 (Testcontainers، أو TEST_DATABASE_URL لخادم محلي)
+pnpm db:drift                 # الترحيلات مقابل docs/06_schema.sql (ADMIN_DATABASE_URL)
+pnpm db:invariants            # docs/06_schema_invariants_test.sql → ALL INVARIANT TESTS PASSED
+pnpm test:e2e                 # Playwright على 360/390/430 بكسل
+```
+
+حالة البناء والتقدم: `docs/progress/STATUS.md` و`docs/progress/tickets.json`.

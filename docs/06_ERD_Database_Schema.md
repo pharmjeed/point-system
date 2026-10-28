@@ -1426,46 +1426,10 @@ SELECT h.driver_id,
 
 ### 9.4 البيانات الأولية للتطوير
 
-- السكربت `pnpm db:seed` (TypeScript) هو المسؤول، لأنه يولّد بصمات argon2id للأسرار من متغيرات بيئة خاصة بالتطوير؛ لا أسرار ثابتة في المستودع، ولا يعمل السكربت في بيئة الاختبار المرحلي أو الإنتاج.
-- معرّفات ثابتة مقروءة (`00000000-0000-4000-8000-0000000000a1` وما شابه) لتسهيل الاختبارات.
-- المحتوى: مؤسسة واحدة؛ قاعتا ريماس `RMS` وليلتي `LYL` بمجموعة افتراضية لكل منهما؛ مالك وإدارة بنطاق `org`؛ مشرف على القاعتين ومشرف قائد (`can_drive = true`) على ريماس؛ 6 سائقين (3 في ريماس، 2 في ليلتي، 1 بلا تعيين لاختبار `ASSIGNMENT_REQUIRED`)؛ حفل مفتوح في ريماس `included` وحفل مفتوح في ليلتي `per_vehicle` برسوم 2500 هللة؛ وردية مفتوحة لكل مجموعة؛ منطقتا وقوف في ريماس ومنطقة في ليلتي بثلاثين موقفًا لكل منطقة؛ لوحة مفاتيح بثمانين خانة لكل قاعة؛ قناة واتساب بوضع `simulator`؛ قوالب W-01…W-08 بحالة `approved` في التطوير فقط.
-
-مقتطف مرجعي (جُرّب على PostgreSQL 16؛ `secret_hash` عنصر نائب يستبدله السكربت):
-
-```sql
-INSERT INTO organizations (id, name_ar, name_en) VALUES
-  ('00000000-0000-4000-8000-000000000001', 'مؤسسة الفاليت (تطوير)', 'Valet Org (dev)');
-INSERT INTO venues (id, org_id, code, name_ar, name_en) VALUES
-  ('00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-000000000001', 'RMS', 'قاعة ريماس', 'Rimas Hall'),
-  ('00000000-0000-4000-8000-0000000000a2', '00000000-0000-4000-8000-000000000001', 'LYL', 'قاعة ليلتي', 'Laylati Hall');
-INSERT INTO dispatch_pools (id, org_id, venue_id, name, is_default) VALUES
-  ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'الافتراضية', true),
-  ('00000000-0000-4000-8000-0000000000b2', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a2', 'الافتراضية', true);
-INSERT INTO users (id, org_id, employee_code, full_name, phone_e164, role, can_drive, secret_kind, secret_hash, must_change_secret) VALUES
-  ('00000000-0000-4000-8000-0000000000c0', '00000000-0000-4000-8000-000000000001', 'O-0001', 'المالك (تطوير)', '+966500000100', 'owner',      false, 'password', 'DEV_PLACEHOLDER', false),
-  ('00000000-0000-4000-8000-0000000000d9', '00000000-0000-4000-8000-000000000001', 'S-0002', 'مشرف قائد',     '+966500000103', 'supervisor', true,  'password', 'DEV_PLACEHOLDER', false),
-  ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-000000000001', 'D-0001', 'سائق 1',        '+966500000001', 'driver',     false, 'pin',      'DEV_PLACEHOLDER', false);
-INSERT INTO events (id, org_id, venue_id, dispatch_pool_id, name_ar, event_date, status, pricing_mode, fee_halalas, opened_at, created_by) VALUES
-  ('00000000-0000-4000-8000-0000000000f2', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a2',
-   '00000000-0000-4000-8000-0000000000b2', 'حفل تجريبي — ليلتي', current_date, 'open', 'per_vehicle', 2500, now(),
-   '00000000-0000-4000-8000-0000000000c0');
--- المواقف والخانات جماعيًا
-INSERT INTO parking_spots (org_id, venue_id, zone_id, label)
-SELECT '00000000-0000-4000-8000-000000000001', z.venue_id, z.id, z.prefix || lpad(g::text, 2, '0')
-  FROM (VALUES ('00000000-0000-4000-8000-000000000201'::uuid, '00000000-0000-4000-8000-0000000000a1'::uuid, 'A-')) AS z(id, venue_id, prefix)
- CROSS JOIN generate_series(1, 30) AS g;
-INSERT INTO key_slots (org_id, venue_id, key_board_id, label)
-SELECT '00000000-0000-4000-8000-000000000001', b.venue_id, b.id, g::text
-  FROM key_boards b CROSS JOIN generate_series(1, 80) AS g;
-INSERT INTO whatsapp_channel (org_id, business_account_id, phone_number_id, access_token_secret_ref,
-                              app_secret_ref, verify_token_secret_ref, api_version, mode) VALUES
-  ('00000000-0000-4000-8000-000000000001', 'SIM-WABA', 'SIM-PHONE', 'env://WA_ACCESS_TOKEN',
-   'env://WA_APP_SECRET', 'env://WA_VERIFY_TOKEN', 'v0.sim', 'simulator');
-```
-
-(المقتطف يفترض وجود صف المنطقة `...0201` واللوحات؛ السكربت الكامل ينشئها بالترتيب: المؤسسة ← المواقع ← المجموعات ← المستخدمون ← النطاقات ← التعيينات ← الحفلات ← الورديات ← المناطق والمواقف ← اللوحات والخانات ← القناة والقوالب.)
-
----
+- المرجع الوحيد لمحتوى البذر هو جدول بيانات الاختبار في `17_Test_Acceptance_Plan.md` §4 (DEC-51)؛ التنفيذ في `packages/db/src/seed/` ويُشغّل بـ`pnpm db:seed`.
+- معرّفات ثابتة مقروءة بالصيغة `00000000-0000-4000-8000-KKKKAAAABBBB` مصدّرة في `SEED_IDS` (DEC-53)، وبيانات دخول التطوير والاختبار في `SEED_CREDENTIALS` (DEC-55).
+- لا يعمل السكربت في الاختبار المرحلي ولا الإنتاج، ولا على قاعدة فيها قناة `live` (DEC-56). البصمات argon2id مع `AUTH_SECRET_PEPPER` (DEC-58)، وتشفير أسرار MFA بالصيغة في DEC-57.
+- لا يُنشئ البذر قوالب واتساب؛ تضيفها PNT-039 (DEC-52).
 
 ## 10. ملاحظات الأداء
 
