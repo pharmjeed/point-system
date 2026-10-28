@@ -1,0 +1,11 @@
+# Site-specific Caddy directives, imported inside the {$DOMAIN} block of infra/caddy/Caddyfile before its routes.
+# Add your own *.caddy files next to this one on the server (they are not committed). Example — keep /health/*
+# for the internal network and uptime checkers on private addresses:
+#
+#   @health_public {
+#   	path /health/*
+#   	not remote_ip private_ranges
+#   }
+#   handle @health_public {
+#   	respond 404
+#   }

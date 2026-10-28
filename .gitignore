@@ -31,5 +31,13 @@ Thumbs.db
 # delivery archives are not part of the repository
 *.zip
 
+# database backups and site-specific proxy snippets stay on the server (docs/DEPLOYMENT.md)
+*.dump
+*.dump.age
+*.dump.enc
+backups/
+infra/caddy/conf.d/*
+!infra/caddy/conf.d/00-site.caddy
+
 # agent worktrees
 .claude/worktrees/

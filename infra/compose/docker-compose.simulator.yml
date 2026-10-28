@@ -1,0 +1,23 @@
+# Optional, STAGING ONLY: the WhatsApp simulator (tools/wa-simulator) in place of Meta's Graph API, while the
+# production assets of Q-03 do not exist yet (docs/DEPLOYMENT.md). It never messages anyone; the simulator itself
+# refuses to start in production and the api refuses WA_MODE=simulator with APP_ENV=production.
+#   docker compose --env-file .env -f infra/compose/docker-compose.prod.yml -f infra/compose/docker-compose.simulator.yml up -d
+# with WA_MODE=simulator and WA_GRAPH_BASE_URL=http://wa-simulator:4010 in .env.
+services:
+  wa-simulator:
+    build: ../../tools/wa-simulator
+    restart: unless-stopped
+    environment:
+      PORT: '4010'
+      WEBHOOK_URL: http://api:3000/webhooks/whatsapp
+      APP_SECRET: ${WA_APP_SECRET:?WA_APP_SECRET is required}
+      VERIFY_TOKEN: ${WA_VERIFY_TOKEN:?WA_VERIFY_TOKEN is required}
+      ACCESS_TOKEN: ${WA_ACCESS_TOKEN:?WA_ACCESS_TOKEN is required}
+      PHONE_NUMBER_ID: ${WA_PHONE_NUMBER_ID:?WA_PHONE_NUMBER_ID is required}
+    networks:
+      - point
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'

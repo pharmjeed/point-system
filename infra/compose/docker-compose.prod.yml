@@ -1,0 +1,150 @@
+# Production (or staging) stack on one Linux server — docs/DEPLOYMENT.md, 05 §9, §11.2, §14, §17.
+# Run from the repository root with the server's .env (never committed; template: .env.example):
+#   docker compose --env-file .env -f infra/compose/docker-compose.prod.yml build
+#   docker compose --env-file .env -f infra/compose/docker-compose.prod.yml run --rm migrate
+#   docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d
+# PostgreSQL 16+ is an external managed service (MIGRATION_/API_/WORKER_DATABASE_URL) and object storage an
+# S3-compatible service by default. Optional parts on this server, added with another -f (after this file):
+#   docker-compose.local-db.yml   PostgreSQL 16 here instead of a managed service
+#   docker-compose.minio.yml      MinIO here, served by Caddy on the app origin (path-style buckets)
+#   docker-compose.simulator.yml  the WhatsApp simulator, for staging before the Meta assets of Q-03 only
+name: point
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '5'
+
+x-backend: &backend
+  image: ${POINT_BACKEND_IMAGE:-point-backend:latest}
+  build:
+    context: ../..
+    dockerfile: infra/docker/Dockerfile
+  env_file:
+    - ${POINT_ENV_FILE:-../../.env}
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  # the CA of a managed PostgreSQL, used by ?sslmode=verify-full&sslrootcert=/certs/db-ca.pem (DEPLOYMENT.md)
+  volumes:
+    - ${POINT_DB_CA_FILE:-/dev/null}:/certs/db-ca.pem:ro
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  networks:
+    - point
+  logging: *logging
+
+services:
+  # one-shot before every rollout (05 §11.2 rule 1): applies the append-only migrations as the schema owner
+  migrate:
+    <<: *backend
+    command: ['node', 'db/dist/cli.js', 'migrate']
+    environment:
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:?MIGRATION_DATABASE_URL (schema owner) is required}
+    restart: 'no'
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *backend
+    command: ['node', 'api/dist/main.js']
+    environment:
+      DATABASE_URL: ${API_DATABASE_URL:?API_DATABASE_URL (login role member of point_app) is required}
+      OTEL_SERVICE_NAME: point-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:'+(process.env.API_PORT||3000)+'/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    <<: *backend
+    command: ['node', 'worker/dist/main.js']
+    environment:
+      DATABASE_URL: ${WORKER_DATABASE_URL:?WORKER_DATABASE_URL (login role member of point_app and point_retention) is required}
+      OTEL_SERVICE_NAME: point-worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # the worker has no HTTP API: its metrics endpoint (METRICS_PORT + 1, internal) answers while it runs
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:'+(Number(process.env.METRICS_PORT||9464)+1)+'/metrics').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # Caddy: TLS for DOMAIN, the PWA, and the reverse proxy of the single origin (infra/caddy/Caddyfile)
+  web:
+    image: ${POINT_WEB_IMAGE:-point-web:latest}
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_WS_PATH: ${VITE_WS_PATH:-/ws}
+        VITE_VAPID_PUBLIC_KEY: ${VITE_VAPID_PUBLIC_KEY:-}
+        VITE_BRAND_STAFF_NAME_AR: ${VITE_BRAND_STAFF_NAME_AR:-}
+        VITE_BRAND_STAFF_NAME_EN: ${VITE_BRAND_STAFF_NAME_EN:-}
+        VITE_BRAND_CUSTOMER_NAME_AR: ${VITE_BRAND_CUSTOMER_NAME_AR:-}
+        VITE_APP_VERSION: ${APP_VERSION:-dev}
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN (the staff app host, Q-01) is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      API_UPSTREAM: api:${API_PORT:-3000}
+      STORAGE_UPSTREAM: ${STORAGE_UPSTREAM:-minio:9000}
+      STORAGE_ORIGIN: ${STORAGE_ORIGIN:-}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:-point-media}
+      S3_BUCKET_EXPORTS: ${S3_BUCKET_EXPORTS:-point-exports}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ../caddy/conf.d:/etc/caddy/conf.d:ro
+    networks:
+      point:
+        # api and worker reach the storage on the app origin (S3_ENDPOINT=https://DOMAIN) through Caddy
+        aliases:
+          - ${DOMAIN}
+    depends_on:
+      api:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+networks:
+  point: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
