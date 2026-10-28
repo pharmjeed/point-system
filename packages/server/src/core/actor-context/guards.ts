@@ -1,6 +1,6 @@
 import { Inject, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Permission } from '@point/shared';
+import { ROUTES, type Permission } from '@point/shared';
 import type { Request } from 'express';
 import type { Clock } from '../clock/clock.js';
 import type { Env } from '../config/env.js';
@@ -12,6 +12,11 @@ import { hasPermission, type ActorContext } from './actor-context.js';
 import { loadActor, touchSession } from './actor-loader.js';
 
 type Req = Request & { actor?: ActorContext };
+
+/** The auth.self routes a restricted session may still use (08 §4.1 `allowed_paths`). */
+export const AUTH_SELF_PATHS = ROUTES.filter((r) => r.permission === 'auth.self').map(
+  (r) => `${r.method} ${r.path}`,
+);
 
 /**
  * SessionAuthGuard + PermissionGuard (09 §8.1). Public routes skip both. For every other route: session →
@@ -43,8 +48,13 @@ export class AuthGuard implements CanActivate {
     const actor = await loadActor(this.db, req.cookies?.[this.cookieName], now);
     req.actor = actor;
     if (permission !== 'auth.self') {
-      if (actor.mustChangeSecret) throw new AppError('AUTH_SECRET_CHANGE_REQUIRED');
-      if (actor.mfaSetupRequired) throw new AppError('AUTH_MFA_SETUP_REQUIRED');
+      if (actor.mustChangeSecret)
+        throw new AppError('AUTH_SECRET_CHANGE_REQUIRED', {
+          secret_kind: actor.secretKind,
+          allowed_paths: AUTH_SELF_PATHS,
+        });
+      if (actor.mfaSetupRequired)
+        throw new AppError('AUTH_MFA_SETUP_REQUIRED', { allowed_paths: AUTH_SELF_PATHS });
     }
     if (!hasPermission(actor, permission)) throw new AppError('PERMISSION_DENIED', { permission });
     void touchSession(this.db, actor.sessionId, now).catch(() => {});

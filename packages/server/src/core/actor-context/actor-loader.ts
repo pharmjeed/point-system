@@ -13,6 +13,7 @@ interface SessionRow {
   org_id: string;
   expires_at: Date;
   revoked_at: Date | null;
+  revoked_reason: string | null;
   last_seen_at: Date;
   mfa_verified: boolean;
   role: Role;
@@ -40,7 +41,7 @@ export function mfaRequiredFor(role: Role, orgSettings: unknown): boolean {
 export async function loadActor(q: Q, token: string | undefined, now: Date): Promise<ActorContext> {
   if (!token) throw new AppError('AUTH_UNAUTHENTICATED');
   const r = await q.query<SessionRow>(
-    `SELECT s.id AS session_id, s.user_id, s.org_id, s.expires_at, s.revoked_at, s.last_seen_at, s.mfa_verified,
+    `SELECT s.id AS session_id, s.user_id, s.org_id, s.expires_at, s.revoked_at, s.revoked_reason, s.last_seen_at, s.mfa_verified,
             u.role, u.can_drive, u.status, u.must_change_secret, u.mfa_enabled, u.employee_code, u.full_name,
             o.settings AS org_settings
        FROM auth_sessions s JOIN users u ON u.id = s.user_id JOIN organizations o ON o.id = s.org_id
@@ -49,7 +50,11 @@ export async function loadActor(q: Q, token: string | undefined, now: Date): Pro
   );
   const s = r.rows[0];
   if (!s) throw new AppError('AUTH_UNAUTHENTICATED');
-  if (s.revoked_at) throw new AppError('AUTH_SESSION_REVOKED');
+  if (s.revoked_at) {
+    // a consumed MFA challenge row (revoked_reason NULL) is not a session
+    if (!s.revoked_reason) throw new AppError('AUTH_UNAUTHENTICATED');
+    throw new AppError('AUTH_SESSION_REVOKED', { reason: s.revoked_reason });
+  }
   if (s.expires_at.getTime() <= now.getTime()) throw new AppError('AUTH_SESSION_EXPIRED');
   if (s.status !== 'active') throw new AppError('AUTH_ACCOUNT_DISABLED');
   const settings = parseOrgSettings(s.org_settings ?? {});
@@ -118,6 +123,7 @@ export async function loadActor(q: Q, token: string | undefined, now: Date): Pro
         }
       : null,
     mustChangeSecret: s.must_change_secret,
+    secretKind: s.role === 'driver' ? 'pin' : 'password',
     mfaSetupRequired: mfaRequired && !s.mfa_enabled,
     venueId: a?.venue_id ?? [...venueIds][0] ?? null,
   };

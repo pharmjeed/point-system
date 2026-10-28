@@ -114,7 +114,10 @@ export async function runCommand<T>(
   }
 }
 
-/** Same pipeline without an idempotency key (optional-key commands, worker jobs use Database.transaction). */
+/**
+ * Same pipeline without an idempotency key (public commands such as login, optional-key routes). A rejection
+ * with `keepEffects` still commits its writes (failed-login counters, 08 §1.3 rule 6b).
+ */
 export async function runInTransaction<T>(
   db: Database,
   requestId: string,
@@ -123,8 +126,25 @@ export async function runInTransaction<T>(
 ): Promise<CommandResponse> {
   try {
     return await db.transaction(async (tx) => {
-      const ok = await fn(tx);
-      return { status: ok.status ?? 200, body: successEnvelope(ok.data, requestId, tx.now), replayed: false };
+      try {
+        const ok = await fn(tx);
+        return {
+          status: ok.status ?? 200,
+          body: successEnvelope(ok.data, requestId, tx.now),
+          replayed: false,
+        };
+      } catch (e) {
+        const appErr = asAppError(e);
+        if (appErr?.options.keepEffects) {
+          return {
+            status: appErr.http,
+            body: errorEnvelope(appErr.code, appErr.details, requestId),
+            replayed: false,
+            error: appErr,
+          };
+        }
+        throw e;
+      }
     });
   } catch (e) {
     const appErr = toAppError(e, opts.pgContext ?? {});

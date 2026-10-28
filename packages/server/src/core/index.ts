@@ -22,3 +22,5 @@ export * from './secrets/secret-resolver.js';
 export * from './settings/settings-service.js';
 export * from './metrics/metrics.js';
 export * from './actor-context/index.js';
+export * from './phone.js';
+export * from './hooks/driver-release.js';

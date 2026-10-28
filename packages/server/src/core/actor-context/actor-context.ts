@@ -31,6 +31,7 @@ export interface ActorContext {
   duty: DutyContext | null;
   /** restricted session: only auth.self routes (07 §1.2) */
   mustChangeSecret: boolean;
+  secretKind: 'pin' | 'password';
   mfaSetupRequired: boolean;
   /** 'venue_id' of the active assignment for drivers, else the first scoped venue (logging only) */
   venueId: string | null;
