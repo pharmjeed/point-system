@@ -5,11 +5,15 @@ import type { Database } from '../core/db/database.js';
 import { AppError } from '../core/errors/app-error.js';
 import { DATABASE, CLOCK } from '../http/tokens.js';
 import type { Clock } from '../core/clock/clock.js';
-import { driverStateOf, dutySessionView, type DutyRow } from '../modules/dispatch/index.js';
+import {
+  driverStateOf,
+  dutySessionView,
+  loadHeadOfferCard,
+  type DutyRow,
+} from '../modules/dispatch/index.js';
 import {
   latinDigits,
   loadTicketDetail,
-  plateView,
   SUMMARY_SELECT,
   ticketSummary,
   type TicketSummaryRow,
@@ -182,77 +186,10 @@ export class TicketQueries {
       : null;
     const next = state?.next_task_id ? await loadTaskCard(this.db, state.next_task_id, viewer, now) : null;
 
-    // head card (10 §2.6): the oldest live round on which the driver is a recipient
-    let offer: Record<string, unknown> | null = null;
-    if (dutyRow && state) {
-      const head = (
-        await this.db.query<{
-          offer_id: string;
-          mode: 'single' | 'broadcast';
-          expires_at: Date | null;
-          reminder_at: Date | null;
-          task_id: string;
-          eligible_as: string;
-          requested_at: Date | null;
-          display_number: number;
-          event_name_ar: string;
-          plate_country: string;
-          plate_digits: string | null;
-          plate_letters_ar: string | null;
-          plate_letters_en: string | null;
-          plate_raw: string | null;
-          vehicle_make: string | null;
-          vehicle_color: string | null;
-        }>(
-          `SELECT o.id AS offer_id, o.mode, o.expires_at, o.reminder_at, t.id AS task_id, r.eligible_as,
-                  c.requested_at, k.display_number, e.name_ar AS event_name_ar, k.plate_country, k.plate_digits,
-                  k.plate_letters_ar, k.plate_letters_en, k.plate_raw, k.vehicle_make, k.vehicle_color
-             FROM task_offers o
-             JOIN offer_recipients r ON r.offer_id = o.id AND r.user_id = $1
-             JOIN tasks t ON t.id = o.task_id
-             JOIN tickets k ON k.id = t.ticket_id
-             JOIN events e ON e.id = k.event_id
-             LEFT JOIN retrieval_cycles c ON c.id = t.cycle_id
-            WHERE o.status = 'active' AND t.dispatch_pool_id = $2
-            ORDER BY t.priority_at, t.seq
-            LIMIT 1`,
-          [actor.userId, dutyRow.dispatch_pool_id],
-        )
-      ).rows[0];
-      if (head) {
-        // eligibility is recomputed from the live state (10 §2.2): the stored eligible_as is display-only
-        const eligibleAs =
-          state.driver_state === 'available'
-            ? 'accept'
-            : state.driver_state === 'busy_with_next'
-              ? 'view_only'
-              : head.mode === 'broadcast'
-                ? 'reserve_next'
-                : 'view_only';
-        const requestedAt = head.requested_at ? new Date(head.requested_at) : now;
-        offer = {
-          offer_id: head.offer_id,
-          task_id: head.task_id,
-          mode: head.mode,
-          eligible_as: eligibleAs,
-          expires_at: iso(head.expires_at),
-          reminder_at: iso(head.reminder_at),
-          server_time: now.toISOString(),
-          ticket: {
-            display_number: head.display_number,
-            event_name_ar: head.event_name_ar,
-            plate: plateView(head),
-            vehicle: { make: head.vehicle_make, color: head.vehicle_color },
-          },
-          requested_at: requestedAt.toISOString(),
-          waiting_seconds: Math.max(0, Math.floor((now.getTime() - requestedAt.getTime()) / 1000)),
-          can_accept: eligibleAs === 'accept',
-          can_reserve_next: eligibleAs === 'reserve_next',
-          safety_note_ar:
-            eligibleAs === 'reserve_next' ? 'احجز فقط وأنت متوقف؛ لا تستخدم الجوال أثناء القيادة' : null,
-        };
-      }
-    }
+    // head card (10 §2.6): the oldest live round on which the driver is a recipient, with the eligibility of
+    // his live state (10 §2.2: the stored eligible_as is display-only)
+    const offer =
+      dutyRow && state ? await loadHeadOfferCard(this.db, actor.userId, dutyRow.dispatch_pool_id, now) : null;
     const draft = (
       await this.db.query<{ id: string }>(
         `SELECT t.id FROM tickets t JOIN tasks k ON k.ticket_id = t.id AND k.type = 'park' AND k.status = 'in_progress'

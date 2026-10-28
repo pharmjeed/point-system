@@ -67,6 +67,9 @@ services.push((deps) => {
   };
 });
 
+import { useCasesJobs } from '@point/server';
+handlers.push(...useCasesJobs());
+
 export function allHandlers(): JobHandler[] {
   return handlers;
 }

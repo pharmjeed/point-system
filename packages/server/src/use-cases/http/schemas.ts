@@ -84,6 +84,24 @@ export const HandoverBody = z.strictObject({
   expected_version: version.optional(),
 });
 
+// S4 — dispatch operations (07 §2.3, §2.6)
+export const ReassignBody = z.strictObject({
+  reason: z.string().max(500),
+  target_driver_id: uuid.nullable().optional(),
+  override_priority: z.boolean().optional(),
+  expected_version: version.optional(),
+});
+export const ReleaseCustodyBody = z.strictObject({ key_slot_id: uuid, reason: z.string().max(500) });
+export const ReparkBody = z.strictObject({
+  reason: z.string().max(500),
+  expected_version: version.optional(),
+});
+export const TransferBody = z.strictObject({
+  to_venue_id: uuid,
+  scheduled_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  reason: z.string().max(500),
+});
+
 export const ListTicketsQuery = z.strictObject({
   event_id: uuid.optional(),
   venue_id: uuid.optional(),

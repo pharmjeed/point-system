@@ -1,8 +1,14 @@
-import { Module } from '@nestjs/common';
-import { DutyService } from '../../modules/dispatch/index.js';
+import { Module, type OnModuleInit } from '@nestjs/common';
+import { DutyService, registerDispatchRealtime } from '../../modules/dispatch/index.js';
 import { IntakeService } from '../../modules/tickets-custody/index.js';
 import { AcceptOfferUseCase } from '../accept-offer.js';
 import { CompleteParkingUseCase } from '../complete-parking.js';
+import {
+  CancelCycleUseCase,
+  ReassignTaskUseCase,
+  ReleaseCustodyUseCase,
+  ReparkUseCase,
+} from '../dispatch-ops.js';
 import { DiscardDraftUseCase, VoidTicketUseCase } from '../discard-void.js';
 import { HandoverUseCase } from '../handover.js';
 import { MovementUseCase } from '../movement.js';
@@ -10,6 +16,14 @@ import { TicketQueries } from '../queries.js';
 import { RequestRetrievalUseCase } from '../request-retrieval.js';
 import { StartIntakeUseCase } from '../start-intake.js';
 import { SubmitIntakeUseCase } from '../submit-intake.js';
+import { DriverTransfersUseCase, registerTransferWatch } from '../transfers.js';
+import {
+  DriverTransfersController,
+  DutySessionsController,
+  RetrievalCyclesController,
+  TaskOpsController,
+  TicketReparkController,
+} from './dispatch-ops.controller.js';
 import { DutyController } from './duty.controller.js';
 import { TaskOffersController, TasksController } from './tasks.controller.js';
 import { TicketsController } from './tickets.controller.js';
@@ -35,9 +49,36 @@ import { TicketsController } from './tickets.controller.js';
 })
 export class TicketsCustodyHttpModule {}
 
-/** HTTP surface of dispatch: duty, the driver's home snapshot and the atomic accept (canon §9.1, §9.3). */
+/**
+ * HTTP surface of dispatch: duty, the driver's home snapshot, the atomic accept (canon §9.1, §9.3) and the S4
+ * operations — reassign, release-custody, field cancel, repark, forced duty end and driver transfers. The api
+ * process registers the dispatch realtime planner (DEC-48) and the blocked-transfer watch here; the worker does it
+ * through dispatchJobs() / useCasesJobs().
+ */
 @Module({
-  controllers: [DutyController, TaskOffersController],
-  providers: [DutyService, AcceptOfferUseCase, TicketQueries],
+  controllers: [
+    DutyController,
+    TaskOffersController,
+    TaskOpsController,
+    RetrievalCyclesController,
+    TicketReparkController,
+    DutySessionsController,
+    DriverTransfersController,
+  ],
+  providers: [
+    DutyService,
+    AcceptOfferUseCase,
+    TicketQueries,
+    ReassignTaskUseCase,
+    ReleaseCustodyUseCase,
+    CancelCycleUseCase,
+    ReparkUseCase,
+    DriverTransfersUseCase,
+  ],
 })
-export class DispatchHttpModule {}
+export class DispatchHttpModule implements OnModuleInit {
+  onModuleInit(): void {
+    registerDispatchRealtime();
+    registerTransferWatch();
+  }
+}
