@@ -6,8 +6,8 @@ import { defaultWhatsappRuntime, WhatsappRuntime } from './runtime.js';
 
 /**
  * worker process: `job.wa_send` (PNT-042), `job.wa_process_inbound` (PNT-041) and `job.link_code_expire`
- * (PNT-044). The runtime is built
- * lazily from the validated process environment unless one is given (tests, other hosts).
+ * (PNT-044). The runtime is built lazily from the validated process environment unless one is given (tests,
+ * other hosts).
  */
 export function whatsappJobs(
   opts: { runtime?: WhatsappRuntime | (() => WhatsappRuntime) } = {},
