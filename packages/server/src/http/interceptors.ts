@@ -1,0 +1,142 @@
+import {
+  Inject,
+  Injectable,
+  type CallHandler,
+  type ExecutionContext,
+  type NestInterceptor,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { Request, Response } from 'express';
+import { from, lastValueFrom, map, type Observable } from 'rxjs';
+import type { Clock } from '../core/clock/clock.js';
+import type { Database } from '../core/db/database.js';
+import { AppError } from '../core/errors/app-error.js';
+import { successEnvelope } from '../core/errors/envelope.js';
+import {
+  runCommand,
+  runInTransaction,
+  validateIdempotencyKey,
+  type CommandResponse,
+} from '../core/idempotency/command-runner.js';
+import { requestHash } from '../core/idempotency/request-hash.js';
+import type { Logger } from '../core/logging/logger.js';
+import { COMMAND_KEY, RawBody, WithStatus, type CommandMeta } from './decorators.js';
+import { CLOCK, DATABASE, LOGGER } from './tokens.js';
+
+type Req = Request & {
+  requestId: string;
+  actor?: { userId: string; role?: string; venueId?: string | null };
+  tx?: unknown;
+};
+
+/** Wraps plain handler results in `{ data, meta }` (07 §1.6). */
+@Injectable()
+export class EnvelopeInterceptor implements NestInterceptor {
+  constructor(@Inject(CLOCK) private readonly clock: Clock) {}
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const req = ctx.switchToHttp().getRequest<Req>();
+    const res = ctx.switchToHttp().getResponse<Response>();
+    return next.handle().pipe(
+      map((value) => {
+        if (value instanceof RawBody) return value.body;
+        if (value instanceof WithStatus) {
+          res.status(value.status);
+          if (value.status === 204) return undefined;
+          return successEnvelope(value.data, req.requestId, this.clock.now());
+        }
+        if (value && typeof value === 'object' && 'data' in value && 'next_cursor' in value) {
+          const { data, next_cursor } = value as { data: unknown; next_cursor: string | null };
+          return successEnvelope(data, req.requestId, this.clock.now(), { next_cursor });
+        }
+        return successEnvelope(value ?? null, req.requestId, this.clock.now());
+      }),
+    );
+  }
+}
+
+/**
+ * Runs @Command() handlers inside one transaction with the idempotency protocol (07 §1.4): the handler gets
+ * the transaction via @CurrentTx(); the response (success or deterministic 4xx) is stored with the key before
+ * COMMIT and replayed byte-for-byte on retries with `Idempotent-Replayed: true`.
+ */
+@Injectable()
+export class CommandInterceptor implements NestInterceptor {
+  constructor(
+    private readonly reflector: Reflector,
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(LOGGER) private readonly logger: Logger,
+  ) {}
+
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const meta = this.reflector.get<CommandMeta | undefined>(COMMAND_KEY, ctx.getHandler());
+    if (!meta) return next.handle();
+    const req = ctx.switchToHttp().getRequest<Req>();
+    const res = ctx.switchToHttp().getResponse<Response>();
+    const header = req.header('Idempotency-Key') ?? undefined;
+    const handlerFn = async (tx: unknown) => {
+      req.tx = tx;
+      try {
+        const value = await lastValueFrom(next.handle(), { defaultValue: null });
+        if (value instanceof WithStatus) return { data: value.data, status: value.status };
+        return { data: value };
+      } finally {
+        req.tx = undefined;
+      }
+    };
+    let run: Promise<CommandResponse>;
+    if (meta.idempotent || header) {
+      const key = validateIdempotencyKey(header);
+      if (!req.actor?.userId) throw new AppError('AUTH_UNAUTHENTICATED');
+      run = runCommand(
+        this.db,
+        {
+          userId: req.actor.userId,
+          idempotencyKey: key,
+          operation: meta.operation,
+          requestHash: requestHash(req.method, req.originalUrl.split('?')[0]!, req.body ?? null),
+          requestId: req.requestId,
+        },
+        handlerFn as any,
+      );
+    } else {
+      run = runInTransaction(this.db, req.requestId, handlerFn as any, {
+        pgContext: { operation: meta.operation },
+      });
+    }
+    return from(run).pipe(
+      map((r) => {
+        res.status(r.status);
+        res.setHeader('X-Request-Id', req.requestId);
+        if (r.replayed) res.setHeader('Idempotent-Replayed', 'true');
+        if (r.error) {
+          if (r.status === 429 || r.status === 503 || r.error.code === 'IDEMPOTENCY_IN_PROGRESS') {
+            res.setHeader('Retry-After', String(r.error.options.retryAfterS ?? 1));
+          }
+          const fields = {
+            request_id: req.requestId,
+            code: r.error.code,
+            http: r.status,
+            user_id: req.actor?.userId,
+            route: meta.operation,
+          };
+          if (r.status >= 500)
+            this.logger.error({ ...fields, cause: String(r.error.options.cause ?? '') }, 'command failed');
+          else this.logger.info(fields, 'command rejected');
+        } else {
+          this.logger.info(
+            {
+              request_id: req.requestId,
+              route: meta.operation,
+              http: r.status,
+              replayed: r.replayed,
+              user_id: req.actor?.userId,
+            },
+            'command',
+          );
+        }
+        if (r.status === 204) return new RawBody(undefined);
+        return new RawBody(r.body);
+      }),
+    );
+  }
+}

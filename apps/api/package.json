@@ -29,6 +29,7 @@
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
+    "@point/db": "workspace:*",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/supertest": "^7.2.1",
