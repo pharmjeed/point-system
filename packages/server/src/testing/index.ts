@@ -21,3 +21,19 @@ export async function createSessionCookie(
   if (!r.rows[0]) throw new Error(`no user ${userId}`);
   return { cookie: `${opts.cookieName ?? 'point_sid'}=${token}`, token, sessionId: r.rows[0].id };
 }
+
+/**
+ * The seed enables MFA only for OWN1/ADM1 (DEC-54) while security.supervisor_mfa_required defaults to true;
+ * tests that act as a supervisor without going through MFA setup turn the requirement off explicitly.
+ */
+export async function setSupervisorMfaRequired(
+  db: Pick<Database, 'query'>,
+  orgId: string,
+  required: boolean,
+): Promise<void> {
+  await db.query(
+    `UPDATE organizations SET settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{security}',
+       coalesce(settings->'security', '{}'::jsonb) || jsonb_build_object('supervisor_mfa_required', $2::boolean)) WHERE id = $1`,
+    [orgId, required],
+  );
+}
