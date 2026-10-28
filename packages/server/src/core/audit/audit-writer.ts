@@ -110,10 +110,11 @@ export interface CustodyEventEntry {
   note?: string | null;
 }
 
-export async function appendCustodyEvent(tx: Tx, e: CustodyEventEntry): Promise<void> {
-  await tx.query(
+/** Returns the custody_events id (the `custody.changed` payload carries it, 11 §8.6). */
+export async function appendCustodyEvent(tx: Tx, e: CustodyEventEntry): Promise<string> {
+  const r = await tx.query<{ id: string }>(
     `INSERT INTO custody_events (org_id, venue_id, ticket_id, subject, from_holder_type, from_holder_id, to_holder_type, to_holder_id, reason, task_id, actor_id, note, occurred_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
     [
       e.orgId,
       e.venueId,
@@ -130,4 +131,5 @@ export async function appendCustodyEvent(tx: Tx, e: CustodyEventEntry): Promise<
       tx.now,
     ],
   );
+  return r.rows[0]!.id;
 }
