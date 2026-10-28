@@ -1,4 +1,4 @@
-import { Archive, History, MessageCircle, ScrollText, Users } from 'lucide-react';
+import { Archive, History, MessageCircle, ScrollText, Settings, ShieldCheck, Users } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { paths } from '@/app/paths';
 import { Header, ListItem } from '@/components';
@@ -8,20 +8,20 @@ import { staffPaths } from '@/features/supervisor/staffPaths';
 import { ForbiddenPage, ForbiddenState, NotFoundState } from '@/features/supervisor/ui';
 import { s13 } from '@/i18n/ar';
 import { AuditLogSection } from './AuditLogSection';
+import { OrgSettingsSection } from './OrgSettingsSection';
 import { OutboxSection } from './OutboxSection';
+import { RetentionSection } from './RetentionSection';
 import { ChannelSection, TemplatesSection } from './WhatsAppSections';
 import '@/features/supervisor/staff.css';
 
-type BuiltSection = Exclude<AdminSection, 'retention' | 'org'>;
-
-/** «سياسة الاحتفاظ» and «إعدادات المؤسسة» (PNT-091) come in a later commit of this stream. */
-const ICONS: Record<BuiltSection, typeof History> = {
+const ICONS: Record<AdminSection, typeof History> = {
   channel: MessageCircle,
   templates: ScrollText,
   outbox: Archive,
   audit: History,
+  retention: ShieldCheck,
+  org: Settings,
 };
-const isBuilt = (s: AdminSection): s is BuiltSection => s in ICONS;
 
 /**
  * S-13 — الإدارة (02 §4 S-13, PNT-091/092): the sections this account may open (02 §2.2 table, 09 §3),
@@ -29,7 +29,7 @@ const isBuilt = (s: AdminSection): s is BuiltSection => s in ICONS;
  */
 export function AdminPage() {
   const me = useStaffMe();
-  const sections = adminSectionsFor(me).filter(isBuilt);
+  const sections = adminSectionsFor(me);
   const staffManage = can(me, 'staff.manage');
   if (!sections.length && !staffManage) return <ForbiddenPage title={s13.title} />;
   return (
@@ -57,9 +57,9 @@ export function AdminSectionPage() {
   const me = useStaffMe();
   const navigate = useNavigate();
   const { section = '' } = useParams();
-  const allowed: AdminSection[] = adminSectionsFor(me).filter(isBuilt);
+  const allowed = adminSectionsFor(me);
   const known = (Object.keys(ICONS) as AdminSection[]).includes(section as AdminSection);
-  const id = section as BuiltSection;
+  const id = section as AdminSection;
   const back = () => navigate(paths.admin);
   if (!known)
     return (
@@ -79,8 +79,12 @@ export function AdminSectionPage() {
         <OutboxSection me={me} />
       ) : id === 'channel' ? (
         <ChannelSection me={me} />
-      ) : (
+      ) : id === 'templates' ? (
         <TemplatesSection me={me} />
+      ) : id === 'retention' ? (
+        <RetentionSection me={me} />
+      ) : (
+        <OrgSettingsSection />
       )}
     </div>
   );

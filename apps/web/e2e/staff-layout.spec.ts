@@ -36,6 +36,8 @@ const SCREENS: Array<{
   { path: '/admin/outbox', role: 'owner', heading: /صندوق الأحداث/, ready: '.pt-table-cards li' },
   { path: '/admin/channel', role: 'owner', heading: /قناة واتساب/, ready: '.st-facts' },
   { path: '/admin/templates', role: 'owner', heading: /القوالب/, ready: '.st-bubble' },
+  { path: '/admin/retention', role: 'owner', heading: /سياسة الاحتفاظ/, ready: '#retention-photos_days' },
+  { path: '/admin/org', role: 'owner', heading: /إعدادات المؤسسة/, ready: '#org-heartbeat-interval_s' },
 ];
 
 for (const s of SCREENS) {
