@@ -100,19 +100,19 @@
     "note": "staff, scopes, owner-only MFA reset"
   },
   "PNT-018": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "venues, settings, dispatch pools (one default per venue), zones/spots/boards/slots with bulk create; 23 int tests"
   },
   "PNT-019": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "event lifecycle draft→open, reopen, cancel (EVENT_CLOSE_BLOCKED), pricing rules; 14 int tests"
   },
   "PNT-020": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "shifts: one open per pool, close auto-ends free duties via DriverReleaseHook, SHIFT_CLOSE_BLOCKED details; 9 int tests"
   },
   "PNT-024": {
     "status": "in_progress",
@@ -170,39 +170,39 @@
     "note": "parallel agent"
   },
   "PNT-038": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "single channel (secret refs only), template sync via Graph before the tx"
   },
   "PNT-039": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "W-01…W-12 catalog as code, linter, Meta creation definitions"
   },
   "PNT-040": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "webhook: verify token, X-Hub-Signature-256 on raw bytes, store before 200, 3 MB, duplicates (DEC-130)"
   },
   "PNT-041": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "inbound processing, statuses, opt-out"
   },
   "PNT-042": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "sender via outbox: ordering per ticket, pacing, retries, channel health"
   },
   "PNT-046": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "NotificationPlanner customer column W-02…W-08 (14 §3.1)"
   },
   "PNT-048": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "free text replies and opt-out"
   },
   "PNT-064": {
     "status": "done",
@@ -212,22 +212,22 @@
   "PNT-090": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agent (audit-monitoring)"
+    "note": "analytics projector (71 events) + /v1/telemetry allow-list done; AC2 needs the end-to-end run"
   },
   "PNT-091": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (audit-monitoring)"
+    "note": "retention policy + job.retention_purge (dry run, holds, audit, point_retention role) + org settings (owner only)"
   },
   "PNT-092": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (audit-monitoring)"
+    "note": "audit log viewer, outbox list/retry (stale aggregate → canceled, never replayed)"
   },
   "PNT-094": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (audit-monitoring)"
+    "note": "system monitor: outbox_lag per venue raise/auto-resolve, task_stuck, gauges; tracing proposal pending"
   },
   "PNT-023": {
     "status": "in_progress",

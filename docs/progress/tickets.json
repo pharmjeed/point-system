@@ -246,10 +246,10 @@
   "epic": "EP-03",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "venues, settings, dispatch pools (one default per venue), zones/spots/boards/slots with bulk create; 23 int tests"
  },
  {
   "ticket": "PNT-019",
@@ -260,10 +260,10 @@
   "epic": "EP-03",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "event lifecycle draft→open, reopen, cancel (EVENT_CLOSE_BLOCKED), pricing rules; 14 int tests"
  },
  {
   "ticket": "PNT-020",
@@ -274,10 +274,10 @@
   "epic": "EP-03",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "shifts: one open per pool, close auto-ends free duties via DriverReleaseHook, SHIFT_CLOSE_BLOCKED details; 9 int tests"
  },
  {
   "ticket": "PNT-021",
@@ -526,10 +526,10 @@
   "epic": "EP-07",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "single channel (secret refs only), template sync via Graph before the tx"
  },
  {
   "ticket": "PNT-039",
@@ -540,10 +540,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "W-01…W-12 catalog as code, linter, Meta creation definitions"
  },
  {
   "ticket": "PNT-040",
@@ -554,10 +554,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "webhook: verify token, X-Hub-Signature-256 on raw bytes, store before 200, 3 MB, duplicates (DEC-130)"
  },
  {
   "ticket": "PNT-041",
@@ -568,10 +568,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "inbound processing, statuses, opt-out"
  },
  {
   "ticket": "PNT-042",
@@ -582,10 +582,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "sender via outbox: ordering per ticket, pacing, retries, channel health"
  },
  {
   "ticket": "PNT-043",
@@ -638,10 +638,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "NotificationPlanner customer column W-02…W-08 (14 §3.1)"
  },
  {
   "ticket": "PNT-047",
@@ -666,10 +666,10 @@
   "epic": "EP-07",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "free text replies and opt-out"
  },
  {
   "ticket": "PNT-049",
@@ -1257,7 +1257,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agent (audit-monitoring)"
+  "note": "analytics projector (71 events) + /v1/telemetry allow-list done; AC2 needs the end-to-end run"
  },
  {
   "ticket": "PNT-091",
@@ -1268,10 +1268,10 @@
   "epic": "EP-12",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (audit-monitoring)"
+  "note": "retention policy + job.retention_purge (dry run, holds, audit, point_retention role) + org settings (owner only)"
  },
  {
   "ticket": "PNT-092",
@@ -1282,10 +1282,10 @@
   "epic": "EP-12",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (audit-monitoring)"
+  "note": "audit log viewer, outbox list/retry (stale aggregate → canceled, never replayed)"
  },
  {
   "ticket": "PNT-093",
@@ -1310,10 +1310,10 @@
   "epic": "EP-12",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (audit-monitoring)"
+  "note": "system monitor: outbox_lag per venue raise/auto-resolve, task_stuck, gauges; tracing proposal pending"
  },
  {
   "ticket": "PNT-095",
