@@ -51,6 +51,7 @@ const ACTION_ORDER: TicketAction[] = [
   'releaseCustody',
   'cancelRetrieval',
   'repark',
+  'handoverException',
   'resendCode',
   'recordPayment',
   'waiver',

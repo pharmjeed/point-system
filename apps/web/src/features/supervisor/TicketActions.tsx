@@ -24,6 +24,7 @@ import {
   staff,
 } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
+import { onlyDigits } from '@/lib/digits';
 import { formatHalalas } from '@/lib/format';
 import type { TicketAction } from './permissions';
 import { commands, fetchDrivers, fetchKeyBoards, staffKeys } from './staffApi';
@@ -58,6 +59,8 @@ export function TicketActionDialog({ action, ...props }: ActionProps & { action:
       return <CancelRetrievalDialog {...props} />;
     case 'repark':
       return <SimpleReasonDialog {...props} action="repark" />;
+    case 'handoverException':
+      return <HandoverExceptionSheet {...props} />;
     case 'resendCode':
       return <ResendCodeDialog {...props} />;
     case 'onBehalf':
@@ -400,6 +403,154 @@ function ReleaseCustodyDialog({ ticket, onClose }: ActionProps) {
         onChange={(e) => setSlotId(e.target.value)}
       />
     </ReasonDialog>
+  );
+}
+
+// ---------------------------------------------------------------- handover exception (07: identity_checks)
+
+function HandoverExceptionSheet({ me, ticket, onClose }: ActionProps) {
+  const [usePhone, setUsePhone] = useState(false);
+  const [last4, setLast4] = useState('');
+  const [useDoc, setUseDoc] = useState(false);
+  const [docNote, setDocNote] = useState('');
+  const [useContents, setUseContents] = useState(false);
+  const [reason, setReason] = useState('');
+  const due = ticket.payment_status === 'due';
+  const methods: PaymentMethod[] = ['cash', 'pos'];
+  const [method, setMethod] = useState<PaymentMethod | ''>('');
+  const [pos, setPos] = useState('');
+  const assignee = ticket.open_task?.assignee ?? null;
+  const [collector, setCollector] = useState<string>(assignee?.id ?? me.user.id);
+  const checks = [usePhone && last4.length === 4, useDoc && docNote.trim().length > 0, useContents].filter(
+    Boolean,
+  ).length;
+  const ready = checks >= 2 && reasonOk(reason) && (!due || !!method);
+  const cmd = useStaffCommand(
+    (body: Parameters<typeof commands.handoverException>[1], key: string) =>
+      commands.handoverException(ticket.id, body, key),
+    { invalidate: invalidateFor(ticket), onSuccess: onClose, onPermissionDenied: onClose },
+  );
+  const submit = () =>
+    cmd.run({
+      reason: reason.trim(),
+      identity_checks: {
+        ...(usePhone ? { phone_last4: last4 } : {}),
+        ...(useDoc ? { document_note: docNote.trim() } : {}),
+        ...(useContents ? { vehicle_description_confirmed: true } : {}),
+      },
+      payment: due
+        ? {
+            method: method as PaymentMethod,
+            amount_halalas: ticket.fee_halalas ?? 0,
+            pos_reference: method === 'pos' && pos.trim() ? pos.trim() : null,
+            collected_by: collector,
+          }
+        : null,
+      expected_version: ticket.version,
+    });
+  const collectors: Array<readonly [string, string]> = [
+    ...(assignee && assignee.id !== me.user.id ? [[assignee.id, assignee.full_name] as const] : []),
+    [me.user.id, `${me.user.full_name} (${staff.me})`] as const,
+  ];
+  return (
+    <Sheet open onOpenChange={(o) => (o ? undefined : onClose())} title={s03.exception.title}>
+      <div className="st-form">
+        <p className="st-muted">{s03.exception.minTwo}</p>
+        <Checkbox
+          id="act-exc-phone"
+          label={s03.exception.phoneLast4}
+          checked={usePhone}
+          onChange={(e) => setUsePhone(e.target.checked)}
+        />
+        {usePhone ? (
+          <TextField
+            id="act-exc-last4"
+            label={s03.exception.last4}
+            inputMode="numeric"
+            dir="ltr"
+            maxLength={4}
+            autoComplete="off"
+            value={last4}
+            error={cmd.fields['identity_checks.phone_last4']}
+            onChange={(e) => setLast4(onlyDigits(e.target.value).slice(0, 4))}
+          />
+        ) : null}
+        <Checkbox
+          id="act-exc-doc"
+          label={s03.exception.document}
+          checked={useDoc}
+          onChange={(e) => setUseDoc(e.target.checked)}
+        />
+        {useDoc ? (
+          <TextField
+            id="act-exc-docnote"
+            label={s03.exception.documentNote}
+            hint={s03.exception.documentHint}
+            maxLength={200}
+            value={docNote}
+            onChange={(e) => setDocNote(e.target.value)}
+          />
+        ) : null}
+        <Checkbox
+          id="act-exc-contents"
+          label={s03.exception.contents}
+          checked={useContents}
+          onChange={(e) => setUseContents(e.target.checked)}
+        />
+        {cmd.fields.identity_checks ? (
+          <FieldError role="alert">{cmd.fields.identity_checks}</FieldError>
+        ) : null}
+        {due ? (
+          <fieldset className="st-form st-fieldset">
+            <legend className="pt-section-title">{s03.exception.paymentSection}</legend>
+            <p className="m-0">
+              {staff.amount}: <bdi dir="ltr">{formatHalalas(ticket.fee_halalas ?? 0)}</bdi>
+            </p>
+            <Select
+              id="act-exc-method"
+              label={staff.method}
+              placeholder="—"
+              value={method}
+              options={methods.map((m) => [m, paymentMethod[m]] as const)}
+              error={cmd.fields['payment.method']}
+              onChange={(e) => setMethod(e.target.value as PaymentMethod | '')}
+            />
+            {method === 'pos' ? (
+              <TextField
+                id="act-exc-pos"
+                label={s03.exception.posReference}
+                hint={s03.exception.posHint}
+                dir="ltr"
+                maxLength={40}
+                autoComplete="off"
+                value={pos}
+                error={cmd.fields['payment.pos_reference']}
+                onChange={(e) => setPos(e.target.value)}
+              />
+            ) : null}
+            <Select
+              id="act-exc-collector"
+              label={s03.exception.collectedBy}
+              value={collector}
+              options={collectors}
+              onChange={(e) => setCollector(e.target.value)}
+            />
+          </fieldset>
+        ) : null}
+        <TextArea
+          id="act-exc-reason"
+          label={components.dialog.reason}
+          rows={2}
+          value={reason}
+          error={cmd.fields.reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+        {cmd.message && !cmd.fields.reason ? <FieldError role="alert">{cmd.message}</FieldError> : null}
+        <Button variant="success" fullWidth loading={cmd.pending} disabled={!ready} onClick={submit}>
+          {s03.exception.confirm}
+        </Button>
+      </div>
+    </Sheet>
   );
 }
 
