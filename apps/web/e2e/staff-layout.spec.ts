@@ -31,6 +31,11 @@ const SCREENS: Array<{
     closing: true,
   },
   { path: '/reports', role: 'supervisor', heading: /التقارير والتصدير/, ready: '.pt-kpistrip, .pt-empty' },
+  { path: '/admin', role: 'owner', heading: /الإدارة/, ready: '.pt-list a' },
+  { path: '/admin/audit', role: 'owner', heading: /سجل التدقيق/, ready: '.pt-table-cards li' },
+  { path: '/admin/outbox', role: 'owner', heading: /صندوق الأحداث/, ready: '.pt-table-cards li' },
+  { path: '/admin/channel', role: 'owner', heading: /قناة واتساب/, ready: '.st-facts' },
+  { path: '/admin/templates', role: 'owner', heading: /القوالب/, ready: '.st-bubble' },
 ];
 
 for (const s of SCREENS) {

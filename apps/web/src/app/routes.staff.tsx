@@ -47,9 +47,12 @@ export const staffRoutes: RouteObject[] = [
     path: paths.reports,
     lazy: async () => ({ Component: (await import('@/features/reports/ReportsPage')).ReportsPage }),
   },
-  // S-13 is built in a later commit of this stream: the PNT-021 placeholder until then
   {
     path: paths.admin,
-    lazy: async () => ({ Component: (await import('@/features/ops/StaffPages')).AdminPage }),
+    lazy: async () => ({ Component: (await import('@/features/admin/AdminPage')).AdminPage }),
+  },
+  {
+    path: routePatterns.adminSection,
+    lazy: async () => ({ Component: (await import('@/features/admin/AdminPage')).AdminSectionPage }),
   },
 ];
