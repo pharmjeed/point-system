@@ -28,8 +28,8 @@ const services: ((deps: WorkerDeps) => WorkerService | null)[] = [];
 // import { venuesEventsJobs } from '@point/server';
 // handlers.push(...venuesEventsJobs());
 
-// import { ticketsCustodyJobs } from '@point/server';
-// handlers.push(...ticketsCustodyJobs());
+import { ticketsCustodyJobs } from '@point/server';
+handlers.push(...ticketsCustodyJobs());
 
 // import { dispatchJobs } from '@point/server';
 // handlers.push(...dispatchJobs());

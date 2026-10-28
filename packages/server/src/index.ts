@@ -8,7 +8,7 @@ export * from './modules/identity-access/index.js';
 
 export * from './modules/venues-events/index.js';
 
-// export * from './modules/tickets-custody/index.js';
+export * from './modules/tickets-custody/index.js';
 
 // export * from './modules/dispatch/index.js';
 
