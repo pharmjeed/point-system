@@ -5,6 +5,7 @@ import { createLogger, type Logger } from '../../core/logging/logger.js';
 import { SecretResolver } from '../../core/secrets/secret-resolver.js';
 import { ActiveChannelCache } from './infra/channel.js';
 import { GraphClient } from './infra/graph-client.js';
+import { SendPacer, type ChannelProbe } from './infra/pacer.js';
 
 export interface WhatsappDeps {
   env: Env;
@@ -27,6 +28,11 @@ export class WhatsappRuntime {
   readonly secretEnv: Record<string, string | undefined>;
   readonly graph: GraphClient;
   readonly channels = new ActiveChannelCache();
+  /** last phone-number probe per channel (12 §5.14: at most every 60 s) */
+  readonly probes = new Map<string, ChannelProbe>();
+  /** last `wa_webhook_silent` check of this process (once a minute at most) */
+  lastSilentCheckAt = 0;
+  private readonly pacers = new Map<string, SendPacer>();
   private keys: EncryptionKey[] | null = null;
 
   constructor(deps: WhatsappDeps) {
@@ -39,6 +45,16 @@ export class WhatsappRuntime {
       timeoutMs: deps.env.WA_HTTP_TIMEOUT_MS,
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
     });
+  }
+
+  /** Global send pacing of a channel in this process (12 §5.8). */
+  pacer(channelId: string): SendPacer {
+    let p = this.pacers.get(channelId);
+    if (!p) {
+      p = new SendPacer();
+      this.pacers.set(channelId, p);
+    }
+    return p;
   }
 
   /** DATA_ENCRYPTION_KEY (+ id) — decrypts claim_codes.code_ciphertext for W-05 (DEC-38, DEC-57). */

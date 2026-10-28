@@ -17,8 +17,8 @@ const projectors: EventProjector[] = [];
 // import { dispatchJobs } from '@point/server';
 // handlers.push(...dispatchJobs());
 
-// import { whatsappJobs } from '@point/server';
-// handlers.push(...whatsappJobs());
+import { whatsappJobs } from '@point/server';
+handlers.push(...whatsappJobs());
 
 import { notificationsJobs } from '@point/server';
 handlers.push(...notificationsJobs());
