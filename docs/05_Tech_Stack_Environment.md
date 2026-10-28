@@ -572,7 +572,7 @@ volumes:
 - HTTPS إلزامي (TLS 1.2 كحد أدنى، ويُفضّل 1.3)، و`Strict-Transport-Security: max-age=31536000; includeSubDomains` بعد التحقق من كل النطاقات الفرعية.
 - ترويسات الـAPI: `X-Content-Type-Options: nosniff`، `Referrer-Policy: no-referrer`، `Cross-Origin-Resource-Policy: same-site`، `Cache-Control: no-store` لكل ردود `/v1`.
 - ترويسات الواجهة (من الاستضافة الثابتة أو CDN):
-  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data: <S3-host>; connect-src 'self' <API-origin> <WS-origin> <S3-host>; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline' (DEC-192); img-src 'self' blob: data: <S3-host>; connect-src 'self' <API-origin> <WS-origin> <S3-host>; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
   - `Permissions-Policy: geolocation=(), microphone=(), camera=(self), payment=()` — لا GPS في الإصدار الأول.
   - `X-Content-Type-Options: nosniff`، `Referrer-Policy: strict-origin-when-cross-origin`.
 

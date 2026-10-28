@@ -90,7 +90,7 @@
 
 		header {
 			Strict-Transport-Security "max-age=31536000; includeSubDomains"
-			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data: {$STORAGE_ORIGIN}; connect-src 'self' wss://{$DOMAIN} {$STORAGE_ORIGIN}; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self' blob: data: {$STORAGE_ORIGIN}; connect-src 'self' wss://{$DOMAIN} {$STORAGE_ORIGIN}; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 			Permissions-Policy "geolocation=(), microphone=(), camera=(self), payment=()"
 			Referrer-Policy "no-referrer"
 			X-Content-Type-Options "nosniff"
