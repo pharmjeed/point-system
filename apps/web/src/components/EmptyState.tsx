@@ -5,7 +5,7 @@ import { Icon } from './Icon';
 
 export interface EmptyStateProps {
   icon?: LucideIcon;
-  title: string;
+  title: ReactNode;
   body?: ReactNode;
   actionLabel?: string;
   actionIcon?: LucideIcon;

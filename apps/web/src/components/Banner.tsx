@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   MessageCircle,
   RefreshCw,
+  TriangleAlert,
   VolumeX,
   Wifi,
   WifiOff,
@@ -19,7 +20,16 @@ import { useBrand } from '@/hooks/useMe';
 import { Icon } from './Icon';
 
 export type BannerKind =
-  'offline' | 'stale' | 'audio' | 'whatsapp' | 'notifications' | 'update' | 'break' | 'error' | 'info';
+  | 'offline'
+  | 'stale'
+  | 'audio'
+  | 'whatsapp'
+  | 'notifications'
+  | 'update'
+  | 'break'
+  | 'error'
+  | 'warning'
+  | 'info';
 
 const KINDS: Record<BannerKind, { tone: 'danger' | 'warning' | 'info'; icon: LucideIcon }> = {
   offline: { tone: 'danger', icon: WifiOff },
@@ -30,6 +40,8 @@ const KINDS: Record<BannerKind, { tone: 'danger' | 'warning' | 'info'; icon: Luc
   update: { tone: 'info', icon: RefreshCw },
   break: { tone: 'warning', icon: Coffee },
   error: { tone: 'danger', icon: CircleAlert },
+  /** «Banner warn» of 02 D-06 (incomplete inspection) and D-08 (early request). */
+  warning: { tone: 'warning', icon: TriangleAlert },
   info: { tone: 'info', icon: Info },
 };
 

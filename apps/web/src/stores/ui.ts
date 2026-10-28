@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { create } from 'zustand';
 import type { ConnectionState } from '@/api/types';
 import { readThemePref, writeThemePref, type ThemeArea, type ThemePref } from '@/lib/theme';
@@ -7,14 +8,15 @@ export type ToastTone = 'success' | 'error' | 'info';
 
 export interface ToastItem {
   id: number;
-  message: string;
+  /** Text, or text with an isolated ticket number (`withTicket`, 02 §1.2). */
+  message: ReactNode;
   tone: ToastTone;
   durationMs: number;
 }
 
 interface UiState {
   toasts: ToastItem[];
-  pushToast: (toast: { message: string; tone?: ToastTone; durationMs?: number }) => number;
+  pushToast: (toast: { message: ReactNode; tone?: ToastTone; durationMs?: number }) => number;
   dismissToast: (id: number) => void;
 
   themeArea: ThemeArea;

@@ -9,8 +9,16 @@ import { defineConfig, devices } from '@playwright/test';
  * Chromium only here (17 also asks for WebKit: add `devices['iPhone 13']`-style projects in CI where the
  * browser is installed). `PW_CHROMIUM_PATH` or the pre-installed /opt/pw-browsers/chromium is used when
  * the Playwright-managed browser for this version is not present.
+ *
+ * `E2E_BACKEND=live` adds the `g1-live` project (PNT-036, `pnpm --filter @point/web test:e2e:live`): the G1
+ * path at 390 px against the real API on a fresh seeded PostgreSQL (e2e/live/), reached through the
+ * `vite preview` proxy on `API_PORT` = E2E_API_PORT. The mocked projects never reach that proxy (their `/v1`
+ * is answered in the browser), so the default run stays fast and needs no database.
  */
 const PORT = Number(process.env.E2E_PORT ?? 5317);
+const API_PORT = Number(process.env.E2E_API_PORT ?? 3917);
+const LIVE = process.env.E2E_BACKEND === 'live';
+const LIVE_SPECS = /[\\/]live[\\/].+\.live\.spec\.ts$/;
 const chromiumPath =
   process.env.PW_CHROMIUM_PATH ??
   (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
@@ -37,15 +45,28 @@ export default defineConfig({
     launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},
   },
   projects: [
-    { name: 'mobile-360', use: mobile(360, 740) },
-    { name: 'mobile-390', use: mobile(390, 844) },
-    { name: 'mobile-430', use: mobile(430, 932) },
+    { name: 'mobile-360', use: mobile(360, 740), testIgnore: LIVE_SPECS },
+    { name: 'mobile-390', use: mobile(390, 844), testIgnore: LIVE_SPECS },
+    { name: 'mobile-430', use: mobile(430, 932), testIgnore: LIVE_SPECS },
+    // one worker: the vite proxy reaches one API port
+    ...(LIVE
+      ? [
+          {
+            name: 'g1-live',
+            testMatch: LIVE_SPECS,
+            use: mobile(390, 844),
+            fullyParallel: false,
+            workers: 1,
+            retries: 0,
+          },
+        ]
+      : []),
   ],
   webServer: {
     command: `pnpm exec vite build && pnpm exec vite preview --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    env: { VITE_ENABLE_GALLERY: 'true' },
+    env: { VITE_ENABLE_GALLERY: 'true', API_PORT: String(API_PORT) },
   },
 });

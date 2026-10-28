@@ -307,6 +307,8 @@ export const ui = {
   reasonRequired: 'اكتب سبب هذا الإجراء.',
   noResponse: 'تعذر الوصول للخادم. سنعيد إرسال الطلب نفسه دون تكرار.',
   offline: 'لا يوجد اتصال بالإنترنت.',
+  /** Success toast of setup commands (02 §1.6 names the toast, not its text; docs/progress/notes/pnt-023.md). */
+  saved: 'تم الحفظ.',
   /** Placeholder screens until their ticket lands (not part of 02; see docs/progress/notes/pnt-021.md). */
   placeholderTitle: 'قيد الإنشاء',
   placeholderBody: 'تُبنى هذه الشاشة في مرحلة لاحقة من الخطة.',
@@ -366,15 +368,51 @@ export const d02 = {
   weak: 'اختر رقمًا سريًا أقوى.',
 } as const;
 
-/** D-03 — بدء الوردية واختبار الصوت (shell only in PNT-022; the screen is PNT-035/PNT-070) */
+/** D-03 — بدء الوردية واختبار الصوت */
 export const d03 = {
   title: 'بدء الوردية',
   assignment: 'تعيينك: {venue}',
+  shiftOpenSince: 'الوردية: مفتوحة منذ {time}',
+  shiftOpen: 'الوردية: مفتوحة',
+  openEvents: 'الحفلات المفتوحة: {events}',
   start: 'بدء الوردية',
   logout: 'تسجيل الخروج',
   notificationsBanner: 'إشعارات الجهاز مساعدة فقط. أبقِ {brand} مفتوحًا أثناء الوردية لتسمع الطلبات.',
   noAssignment: 'لا يوجد تعيين نشط لك على أي موقع. تواصل مع مشرفك لتعيينك.',
+  shiftNotOpen: 'لا توجد وردية مفتوحة في {venue} الآن. اطلب من المشرف فتح الوردية.',
+  checks: {
+    audio: 'الصوت',
+    notifications: 'إشعارات الجهاز',
+    wakeLock: 'إبقاء الشاشة مضاءة',
+  },
+  audio: {
+    untested: 'لم يُختبر',
+    ok: 'يعمل',
+    notHeard: 'لم يُسمع',
+    blocked: 'محجوب',
+  },
+  notifications: {
+    off: 'غير مفعّلة',
+    on: 'مفعّلة',
+    denied: 'مرفوضة',
+    unsupported: 'غير مدعومة على هذا المتصفح',
+    needsInstall: 'تتطلب الإضافة للشاشة الرئيسية',
+  },
+  wakeLock: {
+    supported: 'مدعوم',
+    unsupported: 'غير مدعوم',
+  },
   testAudio: 'تفعيل واختبار الصوت',
+  enableNotifications: 'تفعيل الإشعارات',
+  how: 'كيف؟',
+  heardQuestion: 'هل سمعت النغمة؟',
+  heardYes: 'نعم، سمعتها',
+  heardNo: 'لا',
+  notHeardHint: 'ارفع صوت الجهاز وأوقف الوضع الصامت ثم أعد الاختبار.',
+  deniedHint: 'يمكنك تفعيلها لاحقًا من إعدادات المتصفح. الوظائف الأساسية تعمل دونها.',
+  untestedConfirm: 'لم تختبر الصوت بعد، وقد لا تسمع طلبات الإحضار. هل تريد البدء الآن؟',
+  testNow: 'اختبار الصوت الآن',
+  startWithoutTest: 'البدء دون اختبار',
 } as const;
 
 /** D-04 — الرئيسية */
@@ -387,6 +425,147 @@ export const d04 = {
   emptyBody: 'ستسمع تنبيهًا عند وصول طلب.',
   onBreak: 'أنت في استراحة ولن تصلك الطلبات.',
   endBreak: 'إنهاء الاستراحة',
+  /** Why «استلام مركبة» is disabled, by driver_state. */
+  disabled: {
+    intake_parking: 'أكمل تسجيل أو صف المركبة الحالية أولًا',
+    retrieving: 'لديك مهمة إحضار جارية',
+    busy_with_next: 'لديك مهمة إحضار جارية',
+    on_break: 'أنت في استراحة',
+  },
+  noOpenEvent: 'لا يوجد حفل مفتوح في الموقع الآن. تواصل مع المشرف.',
+  chooseEvent: 'لأي حفل هذه المركبة؟',
+  /** TaskCard rows of the D-04 table: heading before «#n», the stage line, the button. */
+  task: {
+    intake: { heading: 'تسجيل مركبة', line: 'أكمل بيانات الاستلام', action: 'متابعة التسجيل' },
+    park: { heading: 'صف', line: 'اركن المركبة ثم سجّل الموقف وخانة المفتاح', action: 'إتمام الصف' },
+    repark: {
+      heading: 'إعادة صف',
+      line: 'أعد المركبة إلى موقف وسجّل الموقف وخانة المفتاح',
+      action: 'إتمام إعادة الصف',
+    },
+    key: { heading: 'إحضار', line: 'استلم المفتاح من الخانة {slot}', action: 'متابعة' },
+    start: { heading: 'إحضار', line: 'ابدأ الإحضار من الموقف {spot}', action: 'متابعة' },
+    retrieving: { heading: 'جارٍ الإحضار', line: 'عند الوصول اضغط «جاهزة»', action: 'متابعة' },
+    /** The line is «منذ {مدة}» = `components.time.sinceMinutes` (02 §1.2 «منذ 3 د»). */
+    ready: { heading: 'بانتظار العميل', action: 'التسليم' },
+  },
+  /** The reserved next task: badge, then «منذ {مدة}» since the request and this line. */
+  reserved: 'محجوزة لك',
+  nextLine: 'تبدأ بعد إنهاء مهمتك الحالية. لا تبدأ الحركة قبل ذلك.',
+  promoted: 'بدأت مهمتك التالية: #{n}',
+  goToTask: 'الانتقال',
+} as const;
+
+/** D-05 — استلام مركبة (1): المركبة والعميل */
+export const d05 = {
+  title: 'استلام مركبة · #{n}',
+  steps: { vehicle: 'المركبة والعميل', keyPhotos: 'المفتاح والصور' },
+  event: 'الحفل: {event}',
+  plateIncomplete: 'أكمل أحرف اللوحة الثلاثة وأرقامها.',
+  make: 'الشركة المصنعة',
+  model: 'الطراز (اختياري)',
+  color: 'اللون',
+  paperSerial: 'رقم التذكرة الورقية',
+  paperSerialPlaceholder: '004521',
+  paperHint: 'انسخ الرقم المطبوع على الكعب كما هو.',
+  next: 'التالي',
+  notSaved: 'لم تُحفظ الخطوة الأولى على الخادم بعد؛ سنعيد المحاولة تلقائيًا.',
+  cancelTitle: 'إلغاء الاستلام؟',
+  cancelConfirm: 'إلغاء الاستلام',
+  cancelKeep: 'متابعة التسجيل',
+  canceled: 'أُلغي الاستلام',
+  // not in 02 (docs/progress/notes/pnt-035.md): labels of the «أخرى» free-text fields
+  makeOther: 'اسم الشركة',
+  colorOther: 'وصف اللون',
+} as const;
+
+/** D-06 — استلام مركبة (2): المفتاح والصور */
+export const d06 = {
+  keyTag: 'رقم علاقة المفتاح',
+  photos: 'صور الحالة ({n} من {total})',
+  damagePhoto: 'صورة ضرر',
+  notes: 'ملاحظات الأضرار (اختياري)',
+  incomplete: 'الفحص غير مكتمل: {n} من {total} صور.',
+  submit: 'إتمام التسجيل',
+  submitWaiting: 'إتمام التسجيل (بانتظار رفع {n} صورة)',
+  continueWithout: 'المتابعة دون انتظار',
+  inspectionTitle: 'الفحص غير مكتمل ({n} من {total} صور). المتابعة ستُبلغ المشرف لاعتماد استثناء.',
+  completePhotos: 'إكمال الصور',
+  continueAndNotify: 'متابعة وإبلاغ المشرف',
+  needsConnection: 'يلزم الاتصال لإتمام التسجيل',
+} as const;
+
+/** D-07 — تأكيد التذكرة الورقية (mode C; WhatsApp modes A/B arrive with PNT-043/PNT-044) */
+export const d07 = {
+  paperTitle: 'تذكرة ورقية · #{n}',
+  paperText: 'سلّم العميل الكعب رقم {serial}، وعلّق الجزء الآخر على المفتاح.',
+  stubGiven: 'سلّمت الكعب للعميل',
+  toParking: 'متابعة إلى الصف',
+} as const;
+
+/** D-08 — إتمام الصف (وإعادة الصف) */
+export const d08 = {
+  title: 'إتمام الصف',
+  reparkTitle: 'إعادة الصف',
+  early: 'العميل طلب السيارة أثناء الصف. سيُنشأ طلب الإحضار فور إتمام الصف.',
+  zone: 'المنطقة',
+  spot: 'الموقف',
+  noSpot: 'بدون موقف محدد',
+  spotNote: 'وصف المكان',
+  spotNotePlaceholder: 'بجانب البوابة 3',
+  board: 'لوحة المفاتيح',
+  slot: 'الخانة',
+  deposited: 'أودعت المفتاح في الخانة المختارة',
+  submit: 'تم الصف',
+  parked: 'تم صف #{n}',
+  chooseBoth: 'اختر الموقف وخانة المفتاح.',
+  needsConnection: 'يلزم الاتصال لتسجيل الصف',
+} as const;
+
+/** D-09 — بطاقة العرض والبث */
+export const d09 = {
+  accepted: 'قبلت الطلب #{n}',
+  reserved: 'حُجز الطلب #{n} كمهمة تالية. لا تبدأ قبل إنهاء مهمتك الحالية.',
+} as const;
+
+/** D-10 — المهمة الحالية (الإحضار) */
+export const d10 = {
+  title: 'إحضار · #{n}',
+  waiting: 'ينتظر العميل منذ {time}',
+  keySlot: 'خانة المفتاح: {board} · {slot}',
+  spot: 'الموقف: {spot} (المنطقة {zone})',
+  damageNotes: 'ملاحظات الأضرار: {notes}',
+  photos: 'الصور',
+  pickedUp: 'استلمت المفتاح',
+  startRetrieval: 'بدء الإحضار',
+  ready: 'وصلت — جاهزة',
+  handover: 'التسليم',
+  stopAtHandover: 'توقف عند نقطة التسليم',
+  startHint: 'عند البدء يصل العميل إشعار «جارٍ إحضار سيارتك».',
+  readyHint: 'عند الضغط يصل العميل رمز التسليم. لا تطلب الرمز قبل هذه الخطوة.',
+  needsConnection: 'يلزم الاتصال لتأكيد كل خطوة',
+} as const;
+
+/** D-11 — التسليم والتحصيل */
+export const d11 = {
+  title: 'التسليم · #{n}',
+  askCode: 'اطلب من العميل رمز التسليم',
+  codeMeta: 'المحاولات المتبقية: {n} · صالح حتى {time}',
+  askStub: 'اطلب من العميل كعب التذكرة الورقية',
+  stub: 'رقم الكعب',
+  payment: 'التحصيل',
+  amountDue: 'المبلغ المستحق: {amount}',
+  method: 'طريقة التحصيل',
+  posReference: 'رقم إيصال الشبكة (اختياري)',
+  posHint: 'رقم الإيصال فقط — لا تُدخل رقم البطاقة.',
+  received: 'استلمت المبلغ',
+  submit: 'تأكيد التسليم',
+  delivered: 'تم تسليم #{n}',
+  customerNotified: 'وصل العميل تأكيد التسليم.',
+  promoted: 'مهمتك التالية بدأت الآن: #{n}',
+  newCode: 'إرسال رمز جديد',
+  resent: 'أُرسل رمز جديد للعميل. الرمز السابق لم يعد صالحًا.',
+  offline: 'لا يمكن التسليم دون اتصال. انتظر عودة الاتصال أو اطلب المشرف.',
 } as const;
 
 /** D-12 — المركبات */
@@ -410,6 +589,19 @@ export const d14 = {
   endAndLogout: 'إنهاء الوردية والخروج',
   endShiftConfirm: 'إنهاء الوردية؟ لن تصلك طلبات بعد الآن.',
   addToHomeLink: 'كيف أضيف {brand} إلى الشاشة الرئيسية؟',
+  /** «دليل الإضافة للشاشة الرئيسية» (Sheet shared with D-03). */
+  guide: {
+    iphone: [
+      'افتح {brand} في Safari.',
+      'اضغط زر المشاركة.',
+      'اختر «إضافة إلى الشاشة الرئيسية».',
+      'افتح {brand} من الأيقونة الجديدة.',
+      'من «حسابي» اضغط «تفعيل الإشعارات».',
+    ],
+    iphoneNote: 'إشعارات الويب على iPhone تتطلب إضافة الموقع للشاشة الرئيسية وإصدارًا حديثًا من iOS.',
+    android: 'من قائمة المتصفح اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».',
+    all: 'الإشعارات مساعدة فقط؛ لا تضمن صوتًا والجهاز مقفل أو صامت. أبقِ {brand} مفتوحًا أثناء الوردية.',
+  },
 } as const;
 
 /** D-15 — حالات النظام */
@@ -455,6 +647,182 @@ export const s01 = {
   setupQrAlt: 'رمز QR لإعداد التحقق الثنائي',
   setupSubmit: 'تأكيد',
   driverLink: 'دخول السائقين',
+} as const;
+
+/** Setup-item status (venues, pools, zones, spots, boards, slots). */
+export const setupStatus = {
+  active: 'نشط',
+  inactive: 'معطّل',
+} as const;
+
+/** S-05 — السائقون */
+export const s05 = {
+  search: 'ابحث بالاسم أو الرقم الوظيفي أو الجوال',
+  filters: {
+    all: 'الكل',
+    available: 'متاح',
+    busy: 'مشغول',
+    on_break: 'استراحة',
+    off_duty: 'خارج الوردية',
+    disabled: 'معطّل',
+  },
+  add: 'إضافة سائق',
+  addTitle: 'إضافة سائق',
+  fullName: 'الاسم الكامل',
+  phone: 'رقم الجوال',
+  employeeCode: 'الرقم الوظيفي',
+  initialVenue: 'الموقع الأولي (اختياري)',
+  tempSecret: 'الرقم السري المؤقت: {secret}. أعطه للسائق؛ سيُطلب منه تغييره عند أول دخول. لن يظهر مرة أخرى.',
+  // not in 02 (docs/progress/notes/pnt-023.md)
+  venue: 'الموقع',
+  allVenues: 'كل المواقع',
+  empty: 'لا يوجد سائقون مطابقون.',
+  none: 'بلا تعيين',
+} as const;
+
+/** S-06 — ملف السائق */
+export const s06 = {
+  phone: 'رقم الجوال',
+  employeeCode: 'الرقم الوظيفي',
+  status: 'الحالة',
+  duty: 'المناوبة الحالية',
+  dutyStart: 'البداية',
+  connection: 'الاتصال',
+  history: 'سجل التعيينات',
+  from: 'من',
+  to: 'إلى',
+  reason: 'السبب',
+  assign: 'تعيين على موقع',
+  edit: 'تعديل البيانات',
+  disable: 'تعطيل الحساب',
+  enable: 'تفعيل الحساب',
+  resetSecret: 'إعادة تعيين الرقم السري',
+  // not in 02 (docs/progress/notes/pnt-023.md)
+  venue: 'الموقع',
+  assignReason: 'السبب (اختياري)',
+  noDuty: 'لا توجد مناوبة مفتوحة.',
+  noHistory: 'لا توجد تعيينات.',
+  current: 'التعيين الحالي',
+  itemType: {
+    vehicle: 'مركبة',
+    key: 'مفتاح',
+    task: 'مهمة',
+    next_task: 'مهمة تالية',
+    draft: 'مسودة استلام',
+  },
+} as const;
+
+/** S-08 — المواقع والحفلات */
+export const s08 = {
+  newVenue: 'موقع جديد',
+  events: 'الحفلات',
+  shifts: 'الورديات',
+  today: 'اليوم',
+  upcoming: 'القادمة',
+  closed: 'المغلقة',
+  newEvent: 'حفل جديد',
+  eventName: 'اسم الحفل',
+  host: 'المضيف (اختياري)',
+  date: 'التاريخ',
+  start: 'البداية',
+  end: 'النهاية',
+  pricing: 'التسعير',
+  included: 'مشمول',
+  perVehicle: 'رسوم لكل مركبة',
+  amount: 'المبلغ',
+  methods: 'وسائل التحصيل',
+  open: 'فتح',
+  edit: 'تعديل',
+  cancel: 'إلغاء',
+  newShift: 'وردية جديدة',
+  openShift: 'فتح الوردية',
+  closeShift: 'إغلاق الوردية',
+  closeShiftBody:
+    'مناوبات السائقين الذين لا عهدة لديهم ولا مهام مفتوحة تُنهى آليًا؛ يمنع الإغلاق فقط سائق بعهدته عناصر أو لديه مهمة مفتوحة.',
+  openEvents: 'الحفلات المفتوحة: {n}',
+  shiftLine: 'الوردية: {status}',
+  setup: 'إعداد الموقع',
+  // not in 02 (docs/progress/notes/pnt-023.md)
+  editVenue: 'تعديل الموقع',
+  venueCode: 'رمز الموقع',
+  venueName: 'اسم الموقع',
+  venueNameEn: 'الاسم بالإنجليزية (اختياري)',
+  city: 'المدينة (اختياري)',
+  address: 'العنوان (اختياري)',
+  pool: 'مجموعة التوزيع',
+  shiftName: 'اسم الوردية (اختياري)',
+  shiftEnd: 'النهاية (اختياري)',
+  perVehiclePrice: '{amount} لكل مركبة',
+  cancelEvent: 'إلغاء الحفل',
+  emptyVenues: 'لا توجد مواقع.',
+  emptyEvents: 'لا توجد حفلات في هذا القسم.',
+  emptyShifts: 'لا توجد ورديات.',
+  noShift: '—',
+} as const;
+
+/** S-09 — إعداد الموقع */
+export const s09 = {
+  sections: {
+    parking: 'المناطق والمواقف',
+    keys: 'لوحات المفاتيح',
+    pools: 'مجموعات التوزيع',
+    timers: 'المؤقتات',
+    handover: 'التسليم والتحصيل',
+    inspection: 'الفحص والصف',
+  },
+  poolsHint: 'الافتراضي مجموعة واحدة لكل موقع. لا تُنشئ مجموعة إضافية إلا عند فصل التوزيع بين حفلات متزامنة.',
+  timersHint: 'القيم أولية قابلة للتعديل بعد الاختبار.',
+  occupied: 'لا يمكن تعطيله الآن؛ مشغول بتذكرة مفتوحة.',
+  spotsPattern: 'A-01 إلى A-40',
+  slotsPattern: '1 إلى 120',
+  // not in 02 (docs/progress/notes/pnt-023.md); setting labels are the «المعنى» column of canon §12
+  newZone: 'منطقة جديدة',
+  zoneName: 'اسم المنطقة',
+  addSpots: 'إضافة مواقف',
+  newBoard: 'لوحة جديدة',
+  boardName: 'اسم اللوحة',
+  addSlots: 'إضافة خانات',
+  newPool: 'مجموعة جديدة',
+  poolName: 'اسم المجموعة',
+  defaultPool: 'الافتراضية',
+  prefix: 'البادئة',
+  from: 'من',
+  to: 'إلى',
+  disable: 'تعطيل',
+  enable: 'تفعيل',
+  zonesCount: 'المناطق: {n}',
+  spotsCount: 'المواقف: {n}',
+  boardsCount: 'اللوحات: {n}',
+  slotsCount: 'الخانات: {n}',
+  poolsCount: 'المجموعات: {n}',
+  emptyZones: 'لا توجد مناطق بعد.',
+  emptyBoards: 'لا توجد لوحات مفاتيح بعد.',
+  ttlAboveReminder: 'مهلة العرض الفردي أكبر من تذكيره، وكل القيم أعداد موجبة.',
+  outOfRange: 'القيمة خارج الحدود المسموحة ({min}–{max}).',
+  units: { s: 'ثانية', min: 'دقيقة', ms: 'مللي ثانية' },
+  parkingModes: { assigned_spots: 'مواقف مرقمة', free_text: 'وصف المكان', mixed: 'مختلط' },
+  settings: {
+    'dispatch.single_offer_reminder_s': 'تذكير العرض الفردي',
+    'dispatch.single_offer_ttl_s': 'انتهاء العرض الفردي',
+    'dispatch.broadcast_reminder_s': 'تذكير واحد للبث المفتوح',
+    'dispatch.unaccepted_escalation_s': 'تصعيد للمشرف من وقت دخول الطابور دون قبول',
+    'dispatch.next_task_wait_alert_s': 'تنبيه مهمة تالية تنتظر طويلًا',
+    'dispatch.idle_driver_alert': 'تنبيه المشرف بوجود متاح بينما الأقدم محجوز تالٍ',
+    'dispatch.accept_grace_ms': 'سماحية وصول القبول بعد انتهاء العرض بسبب تأخر الشبكة',
+    'dispatch.offline_drivers_last': 'تأخير السائقين ذوي الاتصال غير المؤكد في ترتيب العرض الفردي',
+    'handover.code_ttl_min': 'صلاحية رمز التسليم من الجاهزية',
+    'handover.max_attempts': 'محاولات الرمز قبل القفل',
+    'handover.max_resends': 'حد إعادة الإرسال',
+    'ready.uncollected_alert_min': 'تنبيه مركبة جاهزة لم تُستلم',
+    'pricing.default_mode': 'الافتراضي للحفلات الجديدة',
+    'pricing.default_fee_halalas': 'الرسوم الافتراضية',
+    'pricing.allowed_methods': 'وسائل التحصيل',
+    'inspection.required_photos': 'صور الفحص الإلزامية',
+    'inspection.max_extra_photos': 'صور إضافية',
+    'link.qr_ttl_min': 'صلاحية رمز ربط QR',
+    'parking.mode': 'نمط الصف',
+    'keys.require_slot': 'إلزام خانة مفتاح عند الصف',
+  },
 } as const;
 
 // ---------------------------------------------------------------- component-internal strings (03 §3)
@@ -610,9 +978,21 @@ export const ar = {
   d02,
   d03,
   d04,
+  d05,
+  d06,
+  d07,
+  d08,
+  d09,
+  d10,
+  d11,
   d12,
   d14,
   d15,
   s01,
+  setupStatus,
+  s05,
+  s06,
+  s08,
+  s09,
   components,
 } as const;

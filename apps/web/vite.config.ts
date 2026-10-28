@@ -7,14 +7,20 @@ import { defineConfig, loadEnv } from 'vite';
 const appDir = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
-/** Local API (`API_PORT` in 05 §8). Same origin everywhere (DEC-29): the dev server proxies these paths. */
-const API_TARGET = 'http://localhost:3000';
-const proxy = {
-  '/v1': { target: API_TARGET, changeOrigin: false },
-  '/ws': { target: API_TARGET, ws: true, changeOrigin: false },
-  '/webhooks': { target: API_TARGET, changeOrigin: false },
-  '/health': { target: API_TARGET, changeOrigin: false },
-};
+/**
+ * Local API on `API_PORT` (05 §8, default 3000). Same origin everywhere (DEC-29): the dev server and
+ * `vite preview` (the e2e server, also for the live-API mode of PNT-036) proxy these paths.
+ */
+function apiProxy(mode: string) {
+  const port = process.env.API_PORT ?? loadEnv(mode, repoRoot, '').API_PORT ?? '3000';
+  const target = `http://localhost:${port}`;
+  return {
+    '/v1': { target, changeOrigin: false },
+    '/ws': { target, ws: true, changeOrigin: false },
+    '/webhooks': { target, changeOrigin: false },
+    '/health': { target, changeOrigin: false },
+  };
+}
 
 /**
  * Brand names come from VITE_BRAND_* (canon §1, 05 §8). The single `.env` lives at the repo root (envDir).
@@ -35,6 +41,7 @@ function applyBrandDefaults(mode: string): void {
 
 export default defineConfig(({ mode }) => {
   applyBrandDefaults(mode);
+  const proxy = apiProxy(mode);
   return {
     root: appDir,
     envDir: repoRoot,

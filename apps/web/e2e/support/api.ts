@@ -69,6 +69,12 @@ export class MockApi {
     public me: Record<string, unknown> | null = null,
   ) {
     this.on('GET', '/v1/me', () => (this.me ? ok(this.me) : apiError('AUTH_UNAUTHENTICATED', 401)));
+    // the driver's snapshot (D-03/D-04) follows `me`; flows that need tasks use the stateful fake (./fake)
+    this.on('GET', '/v1/me/home', () => {
+      if (!this.me) return apiError('AUTH_UNAUTHENTICATED', 401);
+      const home = homeFromMe(this.me);
+      return home ? ok(home) : apiError('ASSIGNMENT_REQUIRED', 403);
+    });
     this.on('POST', '/v1/auth/logout', () => {
       this.me = null;
       return ok(undefined, 204);
@@ -80,10 +86,13 @@ export class MockApi {
     return this;
   }
 
-  /** Replies in order; the last one repeats. */
-  sequence(method: string, path: string, replies: Array<Reply | 'abort'>): this {
+  /** Replies in order (a function runs when its turn comes, e.g. to change `me`); the last one repeats. */
+  sequence(method: string, path: string, replies: Array<Reply | 'abort' | (() => Reply | 'abort')>): this {
     let i = 0;
-    return this.on(method, path, () => replies[Math.min(i++, replies.length - 1)] as Reply | 'abort');
+    return this.on(method, path, () => {
+      const reply = replies[Math.min(i++, replies.length - 1)] as Reply | 'abort' | (() => Reply | 'abort');
+      return typeof reply === 'function' ? reply() : reply;
+    });
   }
 
   callsTo(method: string, path: string): Call[] {
@@ -124,6 +133,30 @@ export class MockApi {
 // ---------------------------------------------------------------- fixtures (07_openapi.yaml `Me`)
 
 const NOW = () => new Date().toISOString();
+
+/** A `DriverHome` consistent with a `Me` fixture: one open event, an open shift, no tasks or offers. */
+export function homeFromMe(me: Record<string, any>): Record<string, unknown> | null {
+  const assignment = me.active_assignment;
+  if (!assignment) return null;
+  return {
+    server_time: NOW(),
+    user: { id: me.user.id, full_name: me.user.full_name, employee_code: me.user.employee_code },
+    venue: { id: assignment.venue_id, code: 'RMS', name_ar: assignment.venue_name_ar },
+    open_events: [{ id: 'evt-1', name_ar: 'حفل آل فلان', status: 'open' }],
+    active_assignment: assignment,
+    shift_open: true,
+    duty_session: me.duty_session ?? null,
+    driver_state: me.driver_state ?? 'off_duty',
+    connection_state: me.duty_session ? 'online' : null,
+    current_task: null,
+    next_task: null,
+    offer: null,
+    draft_ticket_id: null,
+    cash_outstanding_halalas: 0,
+    checks: { audio_tested: false, push_enabled: false, pwa_installed: false },
+    channel_health: 'healthy',
+  };
+}
 
 export function driverMe(
   opts: { mustChange?: boolean; onDuty?: boolean; state?: string; venue?: string | null } = {},

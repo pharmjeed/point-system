@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { onApiError, onApiSuccess } from '@/api/client';
 import { queryKeys } from '@/api/queryClient';
+import { clearFieldData } from '@/features/driver/intakeStore';
 import { useOnlineListener } from '@/hooks/useOnline';
 import { applyTheme } from '@/lib/theme';
 import { ui } from '@/i18n/ar';
@@ -48,6 +49,7 @@ export function RootLayout() {
           const end = sessionEndFrom(error);
           endSession(end);
           qc.clear();
+          clearFieldData();
           navigate(sessionEndPath(end, area), { replace: true });
         } else if (error.code === 'AUTH_SECRET_CHANGE_REQUIRED') {
           if (area === 'staff') goToStaffStep('password');

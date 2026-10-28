@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:live": "pnpm --filter @point/shared --filter @point/db --filter @point/server --filter @point/api build && E2E_BACKEND=live playwright test --project=g1-live",
     "brand:sync": "node scripts/sync-brand.mjs"
   },
   "dependencies": {
@@ -33,10 +34,12 @@
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "pg": "^8.23.1",
     "tailwindcss": "^4.3.3",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

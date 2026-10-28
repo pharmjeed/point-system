@@ -316,10 +316,10 @@
   "epic": "EP-03",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (web)"
+  "note": "S-08 venues/events/shifts, S-09 layout + settings, S-05/S-06 basics; buttons by /v1/me permissions; e2e on a stateful fake API (07/08) seeded from 17 §4"
  },
  {
   "ticket": "PNT-024",
@@ -484,10 +484,10 @@
   "epic": "EP-06",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (web, mocked API until S2 lands)"
+  "note": "D-03…D-11 on 5 s polling, paper channel: two-step intake with on-device JPEG + presigned PUT, parking pickers, offer accept, retrieval steps, stub handover + collection; G1 and 08-error e2e at 390 on the stateful fake, layout 360/390/430; live-API seam for PNT-036"
  },
  {
   "ticket": "PNT-036",
@@ -498,10 +498,10 @@
   "epic": "EP-13",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "next for the web agent after PNT-023/035 (real-API Playwright run)"
+  "note": "G1 in the browser against the real API (g1-live project, E2E_BACKEND=live): fresh seeded PostgreSQL, D-01 sign-in, vite proxy, photos into the in-memory bucket; actors, custody chain and one audit row per command checked in SQL; CI e2e job step"
  },
  {
   "ticket": "PNT-037",

@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Building2, ChartColumn, ShieldCheck, ShieldX, Users } from 'lucide-react';
+import { Activity, ArrowRight, ChartColumn, ShieldCheck, ShieldX } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { canAdmin, paths } from '@/app/paths';
 import { EmptyState } from '@/components';
@@ -6,19 +6,9 @@ import { PlaceholderPage } from '@/features/common/PlaceholderPage';
 import { buttons, nav, ui } from '@/i18n/ar';
 import { useStaffMe } from './StaffLayout';
 
-/** S-02 shell; the live operations board is PNT-074. */
+/** S-02 shell; the live operations board is PNT-074. S-05/S-06 and S-08/S-09 live in features/drivers|venues. */
 export function OpsPage() {
   return <PlaceholderPage title={nav.ops} icon={Activity} />;
-}
-
-/** S-05 shell (PNT-023 / PNT-076). */
-export function DriversPage() {
-  return <PlaceholderPage title={nav.drivers} icon={Users} />;
-}
-
-/** S-08 shell (PNT-023). */
-export function VenuesPage() {
-  return <PlaceholderPage title={nav.venues} icon={Building2} />;
 }
 
 /** S-11 shell (PNT-086…). */

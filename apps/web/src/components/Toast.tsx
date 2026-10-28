@@ -1,5 +1,5 @@
 import { CircleCheck, CircleX, Info } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { cx } from '@/lib/cx';
 import { useUiStore, type ToastItem, type ToastTone } from '@/stores/ui';
 import { Icon } from './Icon';
@@ -7,7 +7,7 @@ import { Icon } from './Icon';
 const TONE_ICON = { success: CircleCheck, error: CircleX, info: Info } as const;
 
 export interface ToastProps {
-  message: string;
+  message: ReactNode;
   tone?: ToastTone;
 }
 

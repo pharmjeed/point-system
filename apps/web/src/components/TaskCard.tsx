@@ -21,6 +21,8 @@ export interface TaskCardProps {
   stageIcon?: LucideIcon;
   /** The reserved next task: dimmed, «تالية» badge, no buttons until promoted (03 §3.4). */
   next?: boolean;
+  /** The next-task badge text when the screen names it (02 D-04 «محجوزة لك»). */
+  badge?: string;
   actionLabel?: string;
   actionVariant?: ButtonVariant;
   onAction?: () => Promise<unknown> | void;
@@ -40,6 +42,7 @@ export function TaskCard({
   stage,
   stageIcon = MapPin,
   next,
+  badge,
   actionLabel,
   actionVariant = 'primary',
   onAction,
@@ -58,7 +61,7 @@ export function TaskCard({
         {next ? (
           <span className="pt-chip pt-chip--next">
             <Icon icon={Bookmark} size={16} />
-            <span>{components.task.nextBadge}</span>
+            <span>{badge ?? components.task.nextBadge}</span>
           </span>
         ) : status ? (
           <StatusChip status={status} />

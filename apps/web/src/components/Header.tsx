@@ -4,7 +4,8 @@ import { nav } from '@/i18n/ar';
 import { IconButton } from './IconButton';
 
 export interface HeaderProps {
-  title: string;
+  /** Text, or text with an isolated ticket number («استلام مركبة · #125», `withTicket`). */
+  title: ReactNode;
   /** Shows «‹ رجوع»; the arrow is mirrored so it points to the inline start in RTL. */
   onBack?: () => void;
   actions?: ReactNode;

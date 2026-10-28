@@ -29,6 +29,7 @@ test('an expired session on any request ends the shell (D-15, expiry text)', asy
   await api.install();
   await page.goto('/d/start');
   await page.getByRole('button', { name: 'بدء الوردية' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'البدء دون اختبار' }).click();
   await expect(page).toHaveURL(/\/session-ended$/);
   await expect(page.getByText('انتهت مدة الجلسة. سجّل الدخول من جديد.')).toBeVisible();
 });
