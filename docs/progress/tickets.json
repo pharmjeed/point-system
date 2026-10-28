@@ -498,10 +498,10 @@
   "epic": "EP-13",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "next for the web agent after PNT-023/035 (real-API Playwright run)"
+  "note": "G1 in the browser against the real API (g1-live project, E2E_BACKEND=live): fresh seeded PostgreSQL, D-01 sign-in, vite proxy, photos into the in-memory bucket; actors, custody chain and one audit row per command checked in SQL; CI e2e job step"
  },
  {
   "ticket": "PNT-037",

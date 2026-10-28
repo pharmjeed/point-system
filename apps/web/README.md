@@ -18,6 +18,7 @@ pnpm --filter @point/web build       # tsc --noEmit + vite build → dist/
 pnpm --filter @point/web typecheck
 pnpm --filter @point/web test        # vitest, pure logic (test/*.test.ts)
 pnpm --filter @point/web test:e2e    # Playwright: builds, serves `vite preview` on :5317, API mocked in the browser
+pnpm --filter @point/web test:e2e:live  # G1 against the real API on a fresh seeded PostgreSQL (TEST_DATABASE_URL), PNT-036
 pnpm --filter @point/web brand:sync  # re-copy icons, sounds and manifest from brand/ into public/
 ```
 
@@ -68,8 +69,11 @@ e2e/                  Playwright specs + support/api.ts (static in-browser mock)
                       backend seeded from packages/db/src/seed: sessions, canon §10 permissions, scope,
                       Idempotency-Key replay, 07/08 errors, a small dispatch engine and a fake presigned
                       storage), support/actors.ts (one context per actor), support/driver.ts (command-press
-                      contract, API-level arrangements), support/backend.ts (`E2E_BACKEND=live` sign-in and
-                      calls against the real API for PNT-036), support/checks.ts
+                      contract, API-level arrangements), support/g1.ts (the G1 UI path, shared by both
+                      backends), support/commandLog.ts (browser-side log of a page's `/v1` calls),
+                      support/backend.ts (`E2E_BACKEND=live` sign-in and calls), support/checks.ts;
+                      live/ (PNT-036: api-server.mjs starts the built API on a seeded database, fixtures.ts,
+                      g1.live.spec.ts)
 ```
 
 ## Tokens, fonts, themes
@@ -173,3 +177,7 @@ preview strings). `components/bundle.js` is never imported.
   the reply; actors, custody chain and audit rows asserted); `e2e/driver-errors.spec.ts` shows the 08 texts of the
   path's errors (real conflicts between actors, a closed shift, a dropped upload); `e2e/layout.spec.ts` covers D-03 …
   D-11 at 360/390/430 in both themes.
+- Gate G1 (PNT-036): `e2e/live/g1.live.spec.ts` (project `g1-live`, only with `E2E_BACKEND=live`) runs the same path
+  against the real API: `/v1` through the `vite preview` proxy to `localhost:API_PORT`, drivers signed in through D-01,
+  photos into the API's in-memory private bucket, then the actors, the custody chain and one audit row per command
+  (by request id) in SQL.

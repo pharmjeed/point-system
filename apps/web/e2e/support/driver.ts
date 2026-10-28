@@ -1,11 +1,13 @@
 import { deflateSync } from 'node:zlib';
 import { expect, type Locator, type Page } from '@playwright/test';
-import { SEED_IDS, type FakeCall, type FakeServer, type SeedUserKey } from './fake';
+import type { CommandLog, LoggedCall } from './commandLog';
+import { SEED_IDS, type FakeServer, type SeedUserKey } from './fake';
 
 /**
  * Driver-flow helpers for the e2e specs: a camera photo, the command-press contract (PNT-035 acceptance 2),
  * D-03 from the UI, and API-level arrangements through the fake (`fake.exec`) so a spec can start at D-08,
- * D-10 or D-11 with a consistent world.
+ * D-10 or D-11 with a consistent world. The press checks take any `CommandLog`: the fake backend, or the
+ * browser-side log of a page talking to the real API (PNT-036).
  */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -53,44 +55,47 @@ let pressSeq = 0;
  * Presses a command button and proves the contract: while the (delayed) reply is pending the button —
  * or `pending`, the one that carries the state (a dialog closes and the page button spins) — is disabled
  * and busy; a second press sends nothing; exactly one request reaches `route` with a UUIDv4
- * Idempotency-Key. Returns that call.
+ * Idempotency-Key, and its reply has the expected status. Returns that call.
  */
 export async function pressCommand(
-  fake: FakeServer,
+  log: CommandLog,
   route: string,
   button: Locator,
   options: { pending?: Locator; delayMs?: number; expectStatus?: number } = {},
-): Promise<FakeCall> {
+): Promise<LoggedCall> {
   const page = button.page();
   pressSeq += 1;
   const tag = `press-${pressSeq}`;
   // the label turns into «جارٍ…» while pending: follow the same DOM node, not the name
   await (options.pending ?? button).evaluate((el, t) => el.setAttribute('data-e2e-press', t), tag);
   const pending = page.locator(`[data-e2e-press="${tag}"]`);
-  const before = fake.callsTo(route).length;
-  fake.delayNext(route, options.delayMs ?? 700);
+  const before = log.callsTo(route).length;
+  log.delayNext(route, options.delayMs ?? 700);
   await button.click();
   await expect(pending).toBeDisabled();
   await expect(pending).toHaveAttribute('aria-busy', 'true');
   await pending.click({ force: true, timeout: 1000 }).catch(() => undefined); // a second press while pending
-  await expect.poll(() => fake.callsTo(route).length, { timeout: 15_000 }).toBe(before + 1);
+  await expect.poll(() => log.callsTo(route).length, { timeout: 15_000 }).toBe(before + 1);
+  const call = log.callsTo(route).at(-1) as LoggedCall;
+  await expect.poll(() => call.status, { timeout: 15_000, message: `${route} answered` }).not.toBe(0);
   await page.waitForTimeout(300);
-  const calls = fake.callsTo(route);
-  expect(calls, `${route}: one request per press`).toHaveLength(before + 1);
-  const call = calls.at(-1) as FakeCall;
+  expect(log.callsTo(route), `${route}: one request per press`).toHaveLength(before + 1);
   expect(call.headers['idempotency-key'], `${route} Idempotency-Key`).toMatch(UUID_V4);
   expect(call.headers['x-requested-with']).toBe('point-web');
   if (options.expectStatus !== undefined) expect(call.status, route).toBe(options.expectStatus);
-  else expect(call.status, `${route} answered`).toBeLessThan(400);
+  else {
+    expect(call.status, `${route} succeeded`).toBeGreaterThanOrEqual(200);
+    expect(call.status, `${route} succeeded`).toBeLessThan(300);
+  }
   return call;
 }
 
 /** D-03 from the UI: «بدء الوردية» → «البدء دون اختبار» (no audio test in headless runs) → D-04. */
-export async function startDutyFromUi(fake: FakeServer, page: Page): Promise<void> {
+export async function startDutyFromUi(log: CommandLog, page: Page): Promise<void> {
   await page.goto('/d/start');
   await page.getByRole('button', { name: 'بدء الوردية' }).click();
   await pressCommand(
-    fake,
+    log,
     'POST /v1/me/duty/start',
     page.getByRole('alertdialog').getByRole('button', { name: 'البدء دون اختبار' }),
     { pending: page.locator('#duty-start') },

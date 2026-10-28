@@ -1,4 +1,5 @@
-# PNT-004: lint · typecheck · unit · db drift · db invariants · integration (Testcontainers, PostgreSQL 16) · build · e2e.
+# PNT-004: lint · typecheck · unit · db drift · db invariants · integration (Testcontainers, PostgreSQL 16) · build · e2e
+# (mocked API) · PNT-036: the G1 path in the browser against the real API on a seeded PostgreSQL.
 # Private repository with limited minutes: runs on pull requests and on main only; superseded runs are cancelled.
 name: CI
 
@@ -64,9 +65,21 @@ jobs:
         run: pnpm test:int
 
   e2e:
-    name: e2e (Playwright 360/390/430, RTL)
+    name: e2e (Playwright 360/390/430, RTL · G1 on the real API)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres: # for the G1 run against the real API (PNT-036)
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -80,6 +93,10 @@ jobs:
         run: pnpm --filter @point/shared build
       - name: Playwright
         run: pnpm test:e2e
+      - name: Playwright — G1 against the real API and a seeded PostgreSQL (gate G1)
+        run: pnpm --filter @point/web test:e2e:live
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

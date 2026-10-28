@@ -1,4 +1,5 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import type { CommandLog } from './commandLog';
 import type { FakeServer, SeedUserKey, Session } from './fake';
 
 /**
@@ -10,8 +11,15 @@ export async function actorPage(
   fake: FakeServer,
   as: SeedUserKey | null,
 ): Promise<{ page: Page; session: Session }> {
+  const page = await (await actorContext(browser)).newPage();
+  const session = await fake.attach(page, as ?? undefined);
+  return { page, session };
+}
+
+/** A fresh context with the project's device, locale and time zone (one actor = one context). */
+export function actorContext(browser: Browser): Promise<BrowserContext> {
   const use = test.info().project.use;
-  const context = await browser.newContext({
+  return browser.newContext({
     baseURL: use.baseURL,
     viewport: use.viewport,
     userAgent: use.userAgent,
@@ -22,9 +30,6 @@ export async function actorPage(
     timezoneId: use.timezoneId,
     colorScheme: use.colorScheme,
   });
-  const page = await context.newPage();
-  const session = await fake.attach(page, as ?? undefined);
-  return { page, session };
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -33,7 +38,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
  * 07 §1.3/§1.4 for every command the UI sent through the fake: CSRF header, a UUIDv4 Idempotency-Key on
  * each required command, and a new key per intent (two different bodies never share a key).
  */
-export function expectCommandContract(fake: FakeServer, routes: string[] = []): void {
+export function expectCommandContract(fake: CommandLog, routes: string[] = []): void {
   const commands = fake.calls.filter(
     (c) =>
       c.method !== 'GET' &&
