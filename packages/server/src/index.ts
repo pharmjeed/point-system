@@ -14,7 +14,7 @@ export * from './modules/venues-events/index.js';
 
 export * from './modules/whatsapp/index.js';
 
-// export * from './modules/notifications/index.js';
+export * from './modules/notifications/index.js';
 
 // export * from './modules/incidents/index.js';
 
