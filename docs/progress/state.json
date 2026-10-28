@@ -417,7 +417,7 @@
   "PNT-072": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agent (push sending + realtime planners)"
+    "note": "backend done; SW/web pending"
   },
   "PNT-095": {
     "status": "in_progress",
