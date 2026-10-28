@@ -21,6 +21,12 @@ const SAFE_KEYS = new Set([
   'secret_kind',
   'must_change_secret',
   'phone_masked',
+  // canon names that describe a code/token/PIN/phone without carrying one (DEC-131)
+  'code_expires_at', // 11 §8.2 ticket.ready
+  'code_ttl_min', // handover.code_ttl_min
+  'pin_length', // security.pin_length
+  'reveal_phone_per_hour', // security.reveal_phone_per_hour
+  'action_token_ttl_h', // wa.action_token_ttl_h
   'code', // the error code inside an error envelope is never sensitive: see isErrorEnvelopeCode
 ]);
 

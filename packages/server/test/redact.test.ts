@@ -87,6 +87,23 @@ describe('log redaction (PNT-006 AC3)', () => {
     expect(findSensitiveKeys({ a: { claim_code: '1' } })).toEqual(['a.claim_code']);
   });
 
+  it('canon names that only describe a code, PIN, token or phone are not sensitive (DEC-131)', () => {
+    const payload = {
+      code_expires_at: '2026-10-29T18:00:00.000Z',
+      handover: { code_ttl_min: 30 },
+      security: { pin_length: 6, reveal_phone_per_hour: 20 },
+      wa: { action_token_ttl_h: 24 },
+    };
+    expect(findSensitiveKeys(payload)).toEqual([]);
+    expect(redact(payload)).toEqual(payload);
+    // the values they describe stay redacted
+    expect(findSensitiveKeys({ handover_code: '123456', pin: '314159', action_token: 't' })).toEqual([
+      'handover_code',
+      'pin',
+      'action_token',
+    ]);
+  });
+
   it('masks phones as 05•••••123', () => {
     expect(maskPhone('+966551234123')).toBe('05•••••123');
   });
