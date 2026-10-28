@@ -648,7 +648,7 @@ paths:
                 venue_id:
                   type: [string, 'null']
                   format: uuid
-                  description: إلزامي للمشرف can_drive إذا له أكثر من موقع
+                  description: إلزامي للمشرف can_drive إذا له أكثر من موقع، وإلا VALIDATION_FAILED (required_multiple_venues)؛ وبلا موقع في نطاقه no_venue_scope؛ وموقع خارج نطاقه SCOPE_VENUE_DENIED (DEC-182)
                 device_id:
                   type: [string, 'null']
                   format: uuid
@@ -684,7 +684,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: ASSIGNMENT_REQUIRED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: ASSIGNMENT_REQUIRED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '409':
           $ref: '#/components/responses/Error'
           description: DRIVER_DISABLED | DUTY_ALREADY_STARTED | IDEMPOTENCY_IN_PROGRESS | SHIFT_NOT_OPEN
@@ -709,7 +709,7 @@ paths:
       x-permission: duty.self
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [ASSIGNMENT_REQUIRED, DRIVER_DISABLED, DUTY_ALREADY_STARTED, SHIFT_NOT_OPEN]
+      x-error-codes: [ASSIGNMENT_REQUIRED, DRIVER_DISABLED, DUTY_ALREADY_STARTED, SCOPE_VENUE_DENIED, SHIFT_NOT_OPEN]
       x-domain-events: [driver.duty_started, driver.availability_changed]
       x-ws-events: [driver.state_changed]
   /v1/me/duty/break:
@@ -1564,7 +1564,7 @@ paths:
       description: |-
         للمسودات المهجورة أو الخاطئة قبل إتمام الصف. يقرّ المشرف بعودة المركبة والمفتاح للعميل قبل تحرير السائق. لتذاكر متوقفة خاطئة استخدم /manual-reconcile.
 
-        الشروط: status ∈ {received, parking} · لا دورة استرجاع مفتوحة
+        الشروط: status ∈ {received, parking} (تذكرة نهائية ← INVALID_STATE_TRANSITION بـallowed_from [received, parking] لا TICKET_CLOSED) · لا دورة استرجاع مفتوحة · custody_returned_to_customer=true وإلا CUSTODY_OPEN (DEC-175)
 
         الأثر: voided + عهدة → customer (correction) + حل تنبيه draft_abandoned
       parameters:
@@ -1584,7 +1584,7 @@ paths:
                   description: سبب إلزامي يُحفظ في سجل التدقيق
                 custody_returned_to_customer:
                   type: boolean
-                  const: true
+                  description: يجب أن يكون true (إقرار عودة المركبة والمفتاح للعميل)، وإلا CUSTODY_OPEN بالعناصر التي لم تعد للعميل (DEC-175)
                 expected_version:
                   type: integer
                   minimum: 1
@@ -2052,7 +2052,7 @@ paths:
       x-permission: ticket.read_minimal
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED, TICKET_NOT_FOUND]
+      x-error-codes: [TICKET_NOT_FOUND]
   /v1/tickets/{ticketId}/timeline:
     get:
       operationId: getTicketTimeline
@@ -2089,7 +2089,7 @@ paths:
       x-permission: ticket.read_full
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED, TICKET_NOT_FOUND]
+      x-error-codes: [TICKET_NOT_FOUND]
   /v1/tasks/{taskId}/complete-parking:
     post:
       operationId: completeParking
@@ -3699,7 +3699,7 @@ paths:
       x-permission: cash.handover_confirm
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [EVENT_ALREADY_CLOSED, SCOPE_VENUE_DENIED]
+      x-error-codes: [EVENT_ALREADY_CLOSED]
       x-domain-events: [cash.handover_recorded, incident.opened]
   /v1/events/{eventId}/settlement:
     get:
@@ -3737,7 +3737,7 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: []
   /v1/venues:
     get:
       operationId: listVenues
@@ -7506,7 +7506,7 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: []
   /v1/reports/drivers:
     get:
       operationId: getDriversReport
@@ -7735,7 +7735,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -7806,7 +7806,7 @@ paths:
       operationId: getWhatsAppChannel
       summary: قناة واتساب (مصاف)
       tags: [Admin]
-      description: قناة واتساب (مصاف)
+      description: قناة واتساب (مصاف)؛ بلا قناة مضبوطة بعد يرد RESOURCE_NOT_FOUND (DEC-142).
       responses:
         '200':
           description: OK
@@ -7820,6 +7820,9 @@ paths:
         '403':
           $ref: '#/components/responses/Error'
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
         '429':
           $ref: '#/components/responses/RateLimited'
           description: RATE_LIMITED
@@ -7947,7 +7950,10 @@ paths:
       operationId: syncWhatsAppTemplates
       summary: مزامنة حالة القوالب من Meta
       tags: [Admin]
-      description: مزامنة حالة القوالب من Meta
+      description: |-
+        مزامنة حالة القوالب من Meta، وإنشاء الناقص من تعريفات WA_TEMPLATE_DEFINITIONS (DEC-139).
+
+        يستدعي Graph في حارس بعد الجلسة والصلاحية وقبل معاملة الأمر (لا شبكة داخل المعاملة)، ويتخطى الاستدعاء إن كان مفتاح التكرار مكتملًا. المهلة ← DEPENDENCY_TIMEOUT؛ التعطل أو 5xx أو خطأ فئة القناة ← WA_CHANNEL_UNAVAILABLE (503 مع Retry-After)؛ وغير ذلك ← WA_SEND_FAILED (DEC-142).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -7978,6 +7984,9 @@ paths:
         '500':
           $ref: '#/components/responses/Error'
           description: INTERNAL_ERROR
+        '502':
+          $ref: '#/components/responses/Error'
+          description: WA_SEND_FAILED
         '503':
           $ref: '#/components/responses/Error'
           description: SERVICE_UNAVAILABLE | WA_CHANNEL_UNAVAILABLE
@@ -7990,7 +7999,7 @@ paths:
       x-permission: wa.templates_manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [DEPENDENCY_TIMEOUT, WA_CHANNEL_UNAVAILABLE]
+      x-error-codes: [DEPENDENCY_TIMEOUT, WA_CHANNEL_UNAVAILABLE, WA_SEND_FAILED]
   /v1/admin/outbox:
     get:
       operationId: listOutbox
@@ -8064,7 +8073,10 @@ paths:
       operationId: retryOutbox
       summary: إعادة جدولة حدث فاشل
       tags: [Admin]
-      description: يعيد failed/dead إلى pending. رسائل العميل القديمة تمر بفحص الحداثة قبل الإرسال وقد تُتخطى (skipped=stale).
+      description: |-
+        يعيد failed/dead إلى pending. رسائل العميل القديمة تمر بفحص الحداثة قبل الإرسال وقد تُتخطى (skipped=stale).
+
+        صف job.* يحمل aggregate_version لكيان ذي إصدار تغيّر إصداره أو زال كيانه يُغلق canceled بالسبب في last_error ويرد 200 دون إعادة تشغيل (canceled_stale في التدقيق)؛ والصف الذي له توأم معلّق بمفتاح التكرار نفسه يُغلق كذلك (canceled_superseded)؛ وأحداث النطاق تُعاد دائمًا (DEC-150).
       parameters:
       - $ref: '#/components/parameters/outboxId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -8234,7 +8246,10 @@ paths:
       operationId: putRetentionPolicy
       summary: اعتماد سياسة الاحتفاظ
       tags: [Admin]
-      description: 'الأثر: يطبقها job.retention_purge مع استثناء الوقائع المفتوحة'
+      description: |-
+        الأثر: يطبقها job.retention_purge مع استثناء الوقائع المفتوحة
+
+        المفاتيح الستة كلها إلزامية، أعدادًا صحيحة موجبة حتى 36,500 يوم أو 1,200 شهر، دون حدود دنيا نظامية يفرضها الخادم؛ الحفظ يضبط approved_by_owner = true (اعتماد المالك، Q-06)، وupdated_at وقت آخر صف تدقيق retention.manage (DEC-154).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -8247,21 +8262,27 @@ paths:
                 photos_days:
                   type: integer
                   minimum: 1
+                  maximum: 36500
                 wa_messages_days:
                   type: integer
                   minimum: 1
+                  maximum: 36500
                 tickets_months:
                   type: integer
                   minimum: 1
+                  maximum: 1200
                 audit_months:
                   type: integer
                   minimum: 1
+                  maximum: 1200
                 wa_raw_days:
                   type: integer
                   minimum: 1
+                  maximum: 36500
                 analytics_months:
                   type: integer
                   minimum: 1
+                  maximum: 1200
               required: [photos_days, wa_messages_days, tickets_months, audit_months, wa_raw_days, analytics_months]
               additionalProperties: false
       responses:
@@ -8393,7 +8414,10 @@ paths:
       operationId: postTelemetry
       summary: دفعة قياسات العميل
       tags: [Admin]
-      description: 'الأثر: analytics_events(source=client)'
+      description: |-
+        الأثر: analytics_events(source=client)
+
+        ليس أمرًا: بلا Idempotency-Key ولا صف تدقيق، ويرد 202 بلا جسم من معاملته الخاصة (DEC-149). ترد مشكلات الدفعة وحدها: VALIDATION_FAILED للشكل، أو أكثر من 50 حدثًا، أو جسم أكبر من 64 KB ((body) بالمشكلة too_large)، أو جهاز ليس من أجهزة المستخدم غير الملغاة (device_id بالمشكلة not_owned)؛ وRATE_LIMITED فوق 120 حدثًا في الدقيقة لكل مستخدم وجهاز. الحدث غير الصالح يُسقط ويُعد في point_analytics_rejected_total{source="client",reason} ولا يُفشل الدفعة (DEC-148، 15 §9).
       requestBody:
         required: true
         content:
@@ -12094,10 +12118,11 @@ components:
           default: 24
         approved_by_owner:
           type: boolean
-          description: القيم الافتراضية مقترحة حتى يعتمدها المالك (Q-06)
+          description: القيم الافتراضية مقترحة حتى يعتمدها المالك (Q-06)؛ أي PUT من المالك يضبطها true (DEC-154)
         updated_at:
           type: [string, 'null']
           format: date-time
+          description: وقت آخر صف تدقيق retention.manage، وnull قبل أول اعتماد (DEC-154)
       required: [photos_days, wa_messages_days, tickets_months, audit_months, wa_raw_days, analytics_months, approved_by_owner]
       description: organizations.settings.retention.*
     TicketTimeline:

@@ -48,7 +48,7 @@
 8. حراس الانتقال الخاصة (مثل `KEY_NOT_PICKED_UP`، `PAYMENT_PENDING`، `OLDER_REQUEST_PENDING`).
 9. قيود قاعدة البيانات أثناء التنفيذ: انتهاك فهرس فريد جزئي متوقع يُترجم إلى رمزه (الجدول في 08 §5)، ولا يصل `INTERNAL_ERROR` للمستخدم بسبب قيد متوقع.
 
-استثناء ملزم: حراس قبول العرض تُفحص بترتيب الملف 10 §5.2 (انظر TT-09).
+استثناء ملزم: حراس قبول العرض تُفحص بترتيب الملف 10 §5.2 (انظر TT-09)، وحراس التسليم بترتيب DEC-177 (07، TT-18).
 
 ### 1.3 قالب المعاملة
 
@@ -231,20 +231,20 @@ stateDiagram-v2
 - رقم العرض لا يُعاد استخدامه حتى لو أُلغيت المسودة.
 
 **TT-03 · `received` ← `parking` — `POST /v1/tickets/{ticketId}/submit-intake`**
-- الحراس: المسودة لمكلّف مهمة `park` نفسه؛ الحفل `open` أو `closing` (المركبة استُلمت قبل بدء الإغلاق)؛ الحقول الإلزامية وإلا `INTAKE_INCOMPLETE` مع `details.missing`: اللوحة (`plate_digits` + `plate_letters_ar` أو `plate_raw`)، `vehicle_color`، `key_tag`، القناة. قناة `whatsapp` بالربط المباشر تتطلب جوالًا صالحًا (`PHONE_INVALID`) وموافقة (`CONSENT_REQUIRED`) وعميلًا لم يوقف الرسائل (`customers.wa_opted_out_at` مضبوط ← `WA_CUSTOMER_OPTED_OUT`؛ البديل ربط QR، فرسالة العميل نفسه تستعيد الموافقة، أو الورق)، أو ربط QR مكتملًا أو جاريًا؛ قناة `paper` تتطلب `paper_serial` غير مستخدم (`PAPER_SERIAL_IN_USE`)؛ `key_tag` غير مستخدم لتذكرة مفتوحة (`KEY_TAG_IN_USE`)؛ صور `inspection.required_photos` بحالة `uploaded`، وإلا `INSPECTION_INCOMPLETE` ما لم يرسل السائق تأكيدًا صريحًا بالمتابعة بفحص ناقص (اسم الحقل في 07).
-- الآثار: `status = parking`، `submitted_at`؛ `vehicle_inspections` (`kind = intake`)؛ `inspection_status = complete` أو `incomplete` مع تنبيه `inspection_incomplete`؛ التسعير لا يتغير (لقطته في TT-01، DEC-43)؛ القناة واتساب مباشر: إنشاء/مطابقة `customers` بالجوال المطبّع، `customer_consents` بطريقة `verbal_staff_confirmed`، و`wa_link_status = pending_send` مع إشعار W-01.
+- الحراس: المسودة لمكلّف مهمة `park` نفسه؛ الحفل `open` أو `closing` (المركبة استُلمت قبل بدء الإغلاق)؛ الحقول الإلزامية وإلا `INTAKE_INCOMPLETE` مع `details.missing` بالأسماء `plate` (`plate_digits` + `plate_letters_ar` أو `plate_raw`)، `vehicle.make`، `vehicle.color`، `key_tag`، ومعها `paper_serial` (ورقية) أو `customer_phone` (واتساب بلا عميل ولا رمز QR حي أو مستهلك ولا ربط) (DEC-172). قناة `whatsapp` بالربط المباشر تتطلب جوالًا صالحًا (`PHONE_INVALID`) وموافقة (`CONSENT_REQUIRED`) وعميلًا لم يوقف الرسائل (`customers.wa_opted_out_at` مضبوط ← `WA_CUSTOMER_OPTED_OUT`؛ البديل ربط QR، فرسالة العميل نفسه تستعيد الموافقة، أو الورق)، أو ربط QR مكتملًا أو جاريًا؛ قناة `paper` تتطلب `paper_serial` غير مستخدم (`PAPER_SERIAL_IN_USE`)؛ `key_tag` غير مستخدم لتذكرة مفتوحة (`KEY_TAG_IN_USE`)؛ صور `inspection.required_photos` بحالة `uploaded`، وإلا `INSPECTION_INCOMPLETE` ما لم يرسل السائق تأكيدًا صريحًا بالمتابعة بفحص ناقص (اسم الحقل في 07).
+- الآثار: `status = parking`، `submitted_at`؛ `vehicle_inspections` (`kind = intake`)؛ `inspection_status = complete` أو `incomplete` مع تنبيه `inspection_incomplete`؛ التسعير لا يتغير (لقطته في TT-01، DEC-43)؛ القناة واتساب مباشر: `wa_link_status = pending_send` مع إشعار W-01. العميل وموافقته كُتبا في المسودة (`PATCH .../intake`: upsert `customers` بالجوال المطبّع، و`customer_consents` بطريقة `verbal_staff_confirmed` لكل تذكرة؛ تغيير الجوال أو مسحه يبطل موافقة التذكرة بـ`revoke_source = staff`)، والإرسال يفحص الموافقة والإيقاف فقط (DEC-170).
 - الأحداث: `ticket.intake_submitted`، `ticket.wa_link_changed` (إن تغيّر)، `alert.raised` (فحص ناقص).
 - العميل: W-01 عند الربط المباشر (الربط عبر QR يرسل W-01 عند تأكيد السائق، §2.4).
 
 **TT-04 · `received` أو `parking` ← `voided`**
-- (أ) `POST /v1/tickets/{ticketId}/discard-draft` — السائق، مسودته فقط (`received`)، بشرط ألا تحتوي بيانات: لا لوحة ولا جوال ولا `key_tag` ولا صورة `uploaded`. وإلا `DRAFT_HAS_DATA` ويُرفع تنبيه `draft_abandoned` للمشرف (DEC-20).
+- (أ) `POST /v1/tickets/{ticketId}/discard-draft` — السائق، مسودته فقط (`received`)، بشرط ألا تحتوي أي بيانات مُدخلة. وإلا `DRAFT_HAS_DATA` مع `fields_present` ∈ `plate`، `vehicle`، `customer_phone`، `key_tag`، `paper_serial`، `notes`، `damage_marks`، `photos` (DEC-173)، ويُرفع تنبيه `draft_abandoned` للمشرف (DEC-20).
 - (ب) `POST /v1/tickets/{ticketId}/void` — المشرف أو الإدارة، سبب إلزامي (`REASON_REQUIRED`)، والتذكرة `received` أو `parking` فقط (DEC-45؛ بعد `parked` يُصحح بالمطابقة اليدوية TT-22)، بعد تحقق ميداني من إعادة المركبة والمفتاح للعميل.
 - الآثار: مهمة `park` ← `canceled`؛ التذكرة `voided` مع `voided_at` و`voided_by` و`void_reason` (للحالة أ نص ثابت يصف التجاهل)؛ `custody_events` للمركبة والمفتاح من `driver` إلى `customer` بسبب `correction`؛ لقطة التسعير لا تتغير (DEC-43؛ التذكرة `voided` تُستبعد من التسوية في 13)؛ إبطال `link_codes` الحية و`action_tokens` (`revoked_at`)؛ تحرير السائق: ترقية مهمته التالية (TT-11) إن وُجدت وإلا `available_since = now()` وتمريرة توزيع؛ حل تنبيه `draft_abandoned`.
 - الأحداث: `ticket.voided` (`via = discard_draft` أو `void`)، `task.canceled`، `custody.changed` ×2، ثم `task.promoted` أو `driver.availability_changed`، و`alert.resolved`.
 
 **TT-05 · `parking` ← `parked` — `POST /v1/tasks/{taskId}/complete-parking` (مهمة `park`)**
 - الحراس: المكلّف؛ المهمة `in_progress` والتذكرة `parking`؛ الموقف حسب `parking.mode` (`assigned_spots`: معرّف موقف إلزامي، `free_text`: ملاحظة إلزامية، `mixed`: أحدهما)؛ خانة مفتاح إلزامية إن `keys.require_slot = true` (`VALIDATION_FAILED`)؛ الموقف والخانة شاغران (`PARKING_SPOT_OCCUPIED`، `KEY_SLOT_OCCUPIED`).
-- الآثار: إدراج `spot_allocations` (إن وُجد موقف محدد) و`key_slot_allocations`؛ التذكرة: `parked`، `current_spot_id` أو `current_spot_note`، `current_key_slot_id`، `vehicle_holder_type = spot`، `key_holder_type = key_slot`، `parked_by`، `parked_at`؛ عهدة: المركبة من `driver` إلى `spot` بسبب `parked`، والمفتاح من `driver` إلى `key_slot` بسبب `key_deposited`؛ المهمة ← `completed`؛ تحرير السائق (ترقية التالية أو `available_since = now()`)؛ إن كان `pending_retrieval_at` مضبوطًا ← TT-08 في المعاملة نفسها؛ تمريرة توزيع.
+- الآثار: إدراج `spot_allocations` (إن وُجد موقف محدد) و`key_slot_allocations`؛ التذكرة: `parked`، `current_spot_id` أو `current_spot_note`، `current_key_slot_id`، `vehicle_holder_type = spot`، `key_holder_type = key_slot`، `parked_by`، `parked_at`؛ عهدة: المركبة من `driver` إلى `spot` بسبب `parked`، والمفتاح من `driver` إلى `key_slot` بسبب `key_deposited` (وبلا خانة، `keys.require_slot = false`، يصير حائز المفتاح `unknown`، DEC-187)؛ المهمة ← `completed`؛ تحرير السائق (ترقية التالية أو `available_since = now()`)؛ إن كان `pending_retrieval_at` مضبوطًا ← TT-08 في المعاملة نفسها؛ تمريرة توزيع.
 - الأحداث: `ticket.parked`، `task.completed`، `custody.changed` ×2، ثم (`task.promoted` + `ticket.assigned` للتذكرة الأخرى) أو `driver.availability_changed`.
 
 **TT-06 · `parked` ← `requested`**
@@ -314,7 +314,7 @@ stateDiagram-v2
 - العميل: W-07.
 
 **TT-16 · `assigned` ← `retrieving` — `POST /v1/tasks/{taskId}/start-retrieval`**
-- الحراس: المكلّف (`NOT_TASK_ASSIGNEE`)؛ المهمة `accepted` (وهي `assigned_waiting` ← `TASK_NOT_STARTABLE`)؛ `key_picked_up_at` مضبوط (`KEY_NOT_PICKED_UP`).
+- الحراس: المكلّف (`NOT_TASK_ASSIGNEE`)؛ المهمة `accepted` (وهي `assigned_waiting` ← `TASK_NOT_STARTABLE`)؛ `key_picked_up_at` مضبوط (`KEY_NOT_PICKED_UP`). مفتاح صُف بلا خانة (حائزه `unknown`) لا يُستلم بـ`key-pickup` (`CUSTODY_HOLDER_MISMATCH`) بل يصل السائق بنقل عهدة رسمي `POST /v1/tickets/{ticketId}/custody-transfers` (DEC-187).
 - الآثار: المهمة `in_progress` و`started_at`؛ الدورة `started_at` و`retrieved_by`؛ التذكرة `retrieving` و`retrieved_by` و`current_spot_id = NULL` و`current_spot_note = NULL`؛ تحرير `spot_allocations` بسبب `retrieval_start`؛ عهدة المركبة من `spot` إلى `driver` بسبب `retrieval_start`.
 - الأحداث: `task.started`، `ticket.retrieving`، `custody.changed`.
 - العميل: W-04. لا تُرسل W-04 قبل هذا الأمر أبدًا، ولو كانت المهمة محجوزة تالية.
@@ -327,8 +327,8 @@ stateDiagram-v2
 - العميل: W-05.
 
 **TT-18 · `ready` ← `delivered` — `POST /v1/tickets/{ticketId}/handover`**
-- الحراس: المكلّف بمهمة الإحضار؛ التذكرة `ready` (وإلا `HANDOVER_NOT_READY`، أو `TICKET_CLOSED` إن كانت نهائية؛ فالتسليم الثاني بعد النجاح لا يعيد 200 إلا بنفس المفتاح، §1.4)؛ طريقة التحقق: رمز ← الرمز الحي (§5.1: `HANDOVER_CODE_INVALID` مع `attempts_left`، `HANDOVER_CODE_EXPIRED`، `HANDOVER_CODE_LOCKED`، `HANDOVER_CODE_CONSUMED`)؛ ورق ← مطابقة كعب `paper_serial` (`PAPER_STUB_MISMATCH`)؛ الدفع: `payment_status` ∈ (`collected`، `waived`، `not_required`) أو تحصيل مضمّن في الطلب نفسه، وإلا `PAYMENT_PENDING` (ومع التحصيل المضمّن: `PAYMENT_AMOUNT_MISMATCH`، `PAYMENT_METHOD_NOT_ALLOWED`).
-- المحاولة الخاطئة تُحتسب في معاملة الأمر نفسها **وتلتزم** رغم رفض الطلب (لا تراجع إلى نقطة الحفظ، ورد الخطأ يُحفظ مع مفتاح التكرار فلا تستهلك إعادة الطلب نفسه محاولة ثانية): `attempts + 1`، وعند `attempts = max_attempts` ضبط `locked_at` وتنبيه `handover_code_locked`.
+- الحراس: المكلّف بمهمة الإحضار؛ التذكرة `ready` (وإلا `HANDOVER_NOT_READY`، أو `TICKET_CLOSED` إن كانت نهائية؛ فالتسليم الثاني بعد النجاح لا يعيد 200 إلا بنفس المفتاح، §1.4)؛ طريقة التحقق: رمز ← الرمز الحي (§5.1: `HANDOVER_CODE_INVALID` مع `attempts_left`، `HANDOVER_CODE_EXPIRED`، `HANDOVER_CODE_LOCKED`، `HANDOVER_CODE_CONSUMED`)؛ ورق ← مطابقة كعب `paper_serial` (`PAPER_STUB_MISMATCH`)؛ الدفع: `payment_status` ∈ (`collected`، `waived`، `not_required`) أو تحصيل مضمّن في الطلب نفسه، وإلا `PAYMENT_PENDING` (ومع التحصيل المضمّن: `PAYMENT_AMOUNT_MISMATCH`، `PAYMENT_METHOD_NOT_ALLOWED`). ترتيب الفحص ملزم (DEC-177): مغلقة ← غير جاهزة ← المكلّف ← الإصدار ← العهدة (`CUSTODY_HOLDER_MISMATCH`) ← الدفع ← التحقق، فلا تُحتسب محاولة خاطئة قبل بوابة الدفع.
+- المحاولة الخاطئة تُحتسب في معاملة الأمر نفسها **وتلتزم** رغم رفض الطلب (لا تراجع إلى نقطة الحفظ، ورد الخطأ يُحفظ مع مفتاح التكرار فلا تستهلك إعادة الطلب نفسه محاولة ثانية): `attempts + 1`، وعند `attempts = max_attempts` ضبط `locked_at` وتنبيه `handover_code_locked`. ولتذكرة الورق (بلا صف `claim_codes`) تُعد المحاولات من صفوف `ticket_events` من النوع `handover.code_attempt_failed` بـ`data.cycle_id` مقابل `handover.max_attempts`، والقفل يرفع `handover_code_locked:<cycle_id>` (DEC-176).
 - الآثار: `claim_codes.consumed_at` و`consumed_by`؛ إدراج `payments` عند التحصيل المضمّن و`payment_status = collected`؛ المهمة `completed`؛ الدورة مغلقة `outcome = delivered` (`delivered_at`، `delivered_by`، `retrieved_by`)؛ التذكرة `delivered` و`delivered_at` و`delivered_by` و`active_cycle_id = NULL`؛ عهدة المركبة والمفتاح من `driver` إلى `customer` بسبب `handover`؛ تحرير السائق (TT-11 أو متاح)؛ تمريرة توزيع؛ حل `ready_not_collected`.
 - الأحداث: `handover.completed`، `ticket.delivered`، `task.completed`، `custody.changed` ×2، و`payment.recorded` عند التحصيل.
 - العميل: W-06 (مرتبطة بـ`ticket.delivered` فقط لتفادي التكرار).
@@ -373,7 +373,7 @@ stateDiagram-v2
 | `PATCH /v1/tickets/{ticketId}/customer-phone` | `ticket.change_phone` | أي حالة مفتوحة | `link_version + 1`، إبطال كل `action_tokens` للتذكرة، `pending_send` + W-01 للرقم الجديد، سبب وتدقيق |
 | `POST /v1/tickets/{ticketId}/reveal-phone` | `ticket.reveal_phone` | أي حالة | تدقيق فقط (`audit_log` بالسبب) |
 | `POST /v1/tickets/{ticketId}/inspection-exception` | `ticket.inspection_exception` | مفتوحة و`inspection_status = incomplete` | `exception_approved`، حل التنبيه |
-| `POST /v1/tasks/{taskId}/key-pickup` | `task.execute` | المهمة `accepted` | تحرير `key_slot_allocations` بسبب `key_pickup`، عهدة المفتاح من `key_slot` إلى `driver`، `key_picked_up_at`، `current_key_slot_id = NULL` |
+| `POST /v1/tasks/{taskId}/key-pickup` | `task.execute` | المهمة `accepted` | تحرير `key_slot_allocations` بسبب `key_pickup`، عهدة المفتاح من `key_slot` إلى `driver`، `key_picked_up_at`، `current_key_slot_id = NULL`؛ خانة لا تطابق موضع المفتاح، أو مفتاح بلا خانة حائزه `unknown`، ← `CUSTODY_HOLDER_MISMATCH` (DEC-187) |
 | `POST /v1/tasks/{taskId}/release-custody` | `task.release_custody` | المهمة `accepted` و`key_picked_up_at` مضبوط | عهدة المفتاح من `driver` إلى `key_slot` بسبب `withdrawal_release`، تخصيص خانة (نفسها إن كانت شاغرة)، `key_picked_up_at = NULL`؛ لا يحرر السائق (المهمة تبقى `accepted` له) |
 | `POST /v1/tickets/{ticketId}/handover-code/resend` | `handover.resend_code` | `ready` | إبطال الرمز الحي (`resend`) وإصدار بديل + W-05 (§5.1) |
 | `POST /v1/tickets/{ticketId}/payments` | `payment.record` | `ready` (أو ضمن TT-18) | `payments` و`payment_status = collected` |
@@ -787,7 +787,7 @@ stateDiagram-v2
 | `next_task_waiting_long`، `idle_driver_while_next_waiting` | ترقية المهمة أو سحبها أو إلغاؤها |
 | `ready_not_collected` | التسليم أو إعادة الصف أو إلغاء الطلب |
 | `inspection_incomplete` | `complete` أو `exception_approved` |
-| `draft_abandoned` | خروج المسودة من `received` |
+| `draft_abandoned` | خروج المسودة من `received` بالإرسال أو الإلغاء (DEC-174)؛ ويرفعه `SystemMonitor` لمسودة أقدم من `intake.draft_abandoned_alert_min`، بلا نوع مهمة |
 | `handover_code_locked` | التسليم أو إعادة الإرسال بمشرف أو الاستثناء |
 | `wa_channel_down` | عودة القناة `healthy` |
 | `transfer_blocked` | اكتمال النقل أو إلغاؤه |
@@ -823,7 +823,7 @@ stateDiagram-v2
 - التأجير: `status = processing`، `locked_by`، `locked_until = now() + مدة`، `attempts + 1`. انتهاء `locked_until` دون إنهاء يجعله قابلًا للالتقاط من عامل آخر.
 - الإعادة: `available_at = now() + تأخير أسي محدود`؛ عند `attempts >= max_attempts` ← `dead` مع تنبيه للإدارة. `failed` للخطأ الدائم (مثل قالب غير معتمد). `canceled` لمؤقت أُلغي صراحةً (مثل `offer_expire:<offer_id>` بعد القبول) — إلغاء اختياري لأن إعادة التحقق تضمن الأمان.
 - `dedupe_key` فريد ما دام الحدث `pending` أو `processing`.
-- `POST /v1/admin/outbox/{outboxId}/retry` يعيد `failed` أو `dead` إلى `pending` بقرار إداري مُدقّق.
+- `POST /v1/admin/outbox/{outboxId}/retry` يعيد `failed` أو `dead` إلى `pending` بقرار إداري مُدقّق؛ عدا صف `job.*` تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، فيُغلق `canceled` بالسبب في `last_error` دون إعادة تشغيل (DEC-150).
 
 ---
 
@@ -910,7 +910,7 @@ interface DomainEventEnvelope<TType extends string, TPayload> {
 interface TicketRef { ticket_id: UUID; display_number: number; ticket_version: number }
 ```
 
-اصطلاحات أعمدة الكتالوج: «WS» = الغرفة ← حدث WS (§9)؛ «واتساب» = الرسالة التي يطلقها الحدث (بعد إعادة التحقق)؛ «Push» = نوع الإشعار ويساوي معرّف الصوت من canon §13 (انظر §11 بند 8)؛ «تنبيه» = نوع التنبيه المرفوع أو المحلول. رسائل العميل يخطّطها `NotificationPlanner` داخل معاملة الأمر نفسها من أحداثها (مصفوفة 14 §3.1، DEC-41): صفوف `notifications` ومهام `job.wa_send` بمفتاح الترتيب `'wa:<ticket_id>'`، والعامل يعيد الفحص لحظة الإرسال (التجاوز، الإيقاف، `link_version`، تعطل القناة). الأحداث النطاقية نفسها تُكتب بـ`ordering_key = NULL`: مستهلكوها لا يعتمدون الترتيب ويتحققون من `aggregate_version`. كل الأحداث تُسجّل في `analytics_events` حسب 15، يكتبها `AnalyticsProjector` في العامل من أحداث Outbox لا داخل معاملة الأمر.
+اصطلاحات أعمدة الكتالوج: «WS» = الغرفة ← حدث WS (§9)؛ «واتساب» = الرسالة التي يطلقها الحدث (بعد إعادة التحقق)؛ «Push» = نوع الإشعار ويساوي معرّف الصوت من canon §13 (انظر §11 بند 8)؛ «تنبيه» = نوع التنبيه المرفوع أو المحلول. رسائل العميل يخطّطها `NotificationPlanner` داخل معاملة الأمر نفسها من أحداثها (مصفوفة 14 §3.1، DEC-41): صفوف `notifications` ومهام `job.wa_send` بمفتاح الترتيب `'wa:<ticket_id>'`، والعامل يعيد الفحص لحظة الإرسال (التجاوز، الإيقاف، `link_version`، تعطل القناة). الأحداث النطاقية نفسها تُكتب بـ`ordering_key = NULL`: مستهلكوها لا يعتمدون الترتيب ويتحققون من `aggregate_version`. كل الأحداث تُسجّل في `analytics_events` حسب 15، يكتبها `AnalyticsProjector` في العامل من أحداث Outbox لا داخل معاملة الأمر. الخط الزمني: أحداث `ticket.*` و`task.*` و`custody.changed` تُكتب أيضًا في `ticket_events`، وأحداث `offer.*` في Outbox وحده؛ والترقية تصدر `task.promoted` و`ticket.assigned` (`via = promotion`) دون `driver.availability_changed` لأن السائق لا يمر بحالة متاح بينهما (DEC-186).
 
 ### 8.2 أحداث التذكرة
 
@@ -1068,7 +1068,7 @@ interface OfferRevoked { offer_id: UUID; task_id: UUID; mode: OfferMode; close_r
 | `driver.break_started` | بدء الاستراحة | كذلك | قد يرفع `no_drivers_on_duty` إن وُجد طلب مفتوح |
 | `driver.break_ended` | نهاية الاستراحة | كذلك | يحل `no_drivers_on_duty` |
 | `driver.duty_ended` | إنهاء ذاتي أو قسري أو نظامي | كذلك | قد يرفع `no_drivers_on_duty` |
-| `driver.availability_changed` | أي أمر غيّر `driver_state` | كذلك | قد يرفع `idle_driver_while_next_waiting` |
+| `driver.availability_changed` | أي أمر غيّر `driver_state`، عدا الترقية (TT-11) التي يكفيها `task.promoted` (DEC-186) | كذلك | قد يرفع `idle_driver_while_next_waiting` |
 | `driver.connection_changed` | `job.heartbeat_sweep` | المشرفون ← `driver.state_changed` | يرفع/يحل `driver_connection_lost_with_custody` |
 | `driver.transfer_requested` | إنشاء نقل | مشرفو الموقعين ← `driver.state_changed` | — |
 | `driver.transfer_blocked` | `job.transfer_activate` | مشرفو الموقعين | يرفع `transfer_blocked` |
@@ -1194,6 +1194,8 @@ interface ShiftStatusChanged { shift_id: UUID; dispatch_pool_id: UUID; status: '
 interface WaInboundReceived {
   whatsapp_message_id: UUID; kind: 'inbound_text' | 'inbound_button' | 'inbound_interactive' | 'inbound_other';
   customer_id: UUID | null; ticket_id: UUID | null;    // لا نص ولا رقم في الحمولة
+  message_type: string;                                // نوع رسالة Meta (text، button، image…)، DEC-141
+  matched: 'action_token' | 'link_code' | 'opt_out' | 'none'; link_result: 'received' | 'invalid' | null;   // DEC-141
 }
 interface WaButtonPressed {
   whatsapp_message_id: UUID; ticket_id: UUID | null; customer_id: UUID | null;
@@ -1205,8 +1207,13 @@ interface WaMessageStatusChanged {
   status: 'sent' | 'delivered' | 'read' | 'failed'; status_rank: number; error_code: string | null;
 }
 interface WaChannelHealthChanged { channel_id: UUID; from: 'healthy' | 'degraded' | 'down'; to: 'healthy' | 'degraded' | 'down' }
-interface WaCustomerOptedOut { customer_id: UUID; affected_ticket_ids: UUID[] }
+interface WaCustomerOptedOut {
+  customer_id: UUID; affected_ticket_ids: UUID[];
+  opted_out_at: ISODateTime; inbound_message_id: UUID;   // مفتاح W-12 وسياق الرد (DEC-141)
+}
 ```
+
+`wa.message_status_changed` يصدر عند تغير فعلي للحالة فقط، لا للنسخ المكررة أو المتأخرة (DEC-141).
 
 ### 8.11 المهام المؤجلة `job.*`
 
@@ -1215,7 +1222,7 @@ interface WaCustomerOptedOut { customer_id: UUID; affected_ticket_ids: UUID[] }
 | النوع | يُجدول | الحمولة | الشرط عند التنفيذ | الأثر |
 |---|---|---|---|---|
 | `job.dispatch_pass` | عند تغيّر عرض/طلب خارج معاملة تحمل القفل؛ `dedupe_key = dispatch_pass:<pool_id>` | `{ dispatch_pool_id, reason }` | المجموعة نشطة | تمريرة توزيع (10) |
-| `job.dispatch_sweep` | دوري كل 5 ثوانٍ (DEC-08)؛ `dedupe_key = dispatch_sweep` | `{}` | — | تمريرة لكل مجموعة لديها طلب مفتوح أو جولة متجاوزة لمهلتها؛ إصلاح `claimed_elsewhere` |
+| `job.dispatch_sweep` | دوري كل 5 ثوانٍ (DEC-08)؛ `dedupe_key = dispatch_sweep`؛ سلسلة عامة واحدة تجدول تاليتها، ويبذرها عند الحاجة كل أمر ينشئ طلبًا أو جولة (DEC-179) | `{}` | — | تمريرة لكل مجموعة لديها طلب مفتوح أو جولة حية أو متجاوزة لمهلتها أو مهمة تالية، كل مجموعة في معاملتها الخاصة؛ إصلاح `claimed_elsewhere` |
 | `job.offer_remind` | `reminder_at` لجولة `single` | `{ offer_id, task_id, aggregate_version }` | الجولة `active` و`reminded_at` فارغ | OF-02، `offer.reminded` |
 | `job.offer_expire` | `expires_at + dispatch.accept_grace_ms` (DEC-47) | `{ offer_id, task_id }` | الجولة `active` و`expires_at + dispatch.accept_grace_ms <= now()` | OF-04، RT-04، تدوير المستلم (`available_since = now()` إن بقي متاحًا، DEC-26)، تمريرة توزيع |
 | `job.broadcast_remind` | `reminder_at` لجولة `broadcast` | `{ offer_id, task_id }` | الجولة `active` و`reminded_at` فارغ | تذكير واحد للمهمة المفتوحة فقط |
@@ -1225,12 +1232,12 @@ interface WaCustomerOptedOut { customer_id: UUID; affected_ticket_ids: UUID[] }
 | `job.claim_code_expire` | `expires_at` للرمز | `{ claim_code_id }` | الرمز غير مستهلك ولا مبطل | `revoked_at` (`expired_cleanup`)، مسح النسخة المشفرة |
 | `job.link_code_expire` | `expires_at` لرمز الربط | `{ link_code_id }` | `active` أو `pending_confirmation` | ← `expired`؛ `wa_link_status` يعود `none` إن كان `pending_confirmation` |
 | `job.transfer_activate` | `scheduled_at`، ثم عند الحجب: لحظة انتهاء مهمة السائق أو تحرير عهدته | `{ transfer_id, aggregate_version }` | النقل `pending` أو `blocked` | §6.7 |
-| `job.wa_send` | يخطّطه `NotificationPlanner` داخل معاملة الأمر من أحداثها (DEC-41)؛ `ordering_key = 'wa:<ticket_id>'` | `{ notification_id }` (W-05 يقرأ الرمز من `claim_codes`) | الإشعار `pending`؛ قاعدة التجاوز §6.9؛ موافقة سارية والعميل لم يوقف الرسائل؛ `link_version` مطابق؛ القناة غير `down` | إرسال، `whatsapp_messages`، `notification_attempts` |
+| `job.wa_send` | يخطّطه `NotificationPlanner` داخل معاملة الأمر من أحداثها (DEC-41)؛ `ordering_key = 'wa:<ticket_id>'` | `{ notification_id }` ومعه حسب الغرض `cycle_id`، `claim_code_id`، `link_version`، `variant` (`status`/`inactive` لـW-09، `received`/`invalid` لـW-11)، `inbound_message_id`، `early` — معرّفات وأعلام فقط (`WaSendJobPayloadSchema`، DEC-133)؛ W-05 يقرأ الرمز من `claim_codes` | الإشعار `pending`؛ قاعدة التجاوز §6.9؛ موافقة سارية والعميل لم يوقف الرسائل؛ `link_version` مطابق؛ القناة غير `down` | إرسال، `whatsapp_messages`، `notification_attempts` |
 | `job.wa_process_inbound` | بعد حفظ الطلب الخام وإرسال 200 | `{ inbound_event_id }` | `whatsapp_inbound_events.status = pending` | تحليل الرسائل والحالات، أحداث §8.10 |
 | `job.push_send` | من حدث يطلق Push؛ بلا `ordering_key` (منع التكرار فقط) | `{ notification_id }` | الإشعار `pending`؛ لعروض المهام: الجولة ما زالت نشطة، وإلا يُرسل البديل الهادئ أو يُتجاوز | Web Push؛ اشتراك منتهٍ (410) يمسح حقول Push من الجهاز |
 | `job.ws_publish` | احتياطي فقط (DEC-48): حين يتعذر النشر داخل المعاملة (حمولة أكبر من حد NOTIFY أو نشر مؤجل)؛ الأصل `pg_notify` داخل المعاملة نفسها | `{ outbox_event_id, rooms }` | — | نشر عبر `pg_notify` لعمليات الـAPI؛ لا إعادة للعميل غير المتصل |
 | `job.heartbeat_sweep` | دوري كل `heartbeat.interval_s` | `{}` | — | `connection_state` من `last_heartbeat_at` حسب `heartbeat.uncertain_after_s` و`heartbeat.offline_after_s`؛ `driver.connection_changed` |
-| `job.retention_purge` | يومي | `{ scope }` | سياسة `retention.*` | حذف/إخفاء وفق 06؛ لا يمس بيانات واقعة مفتوحة |
+| `job.retention_purge` | يومي عند `RETENTION_PURGE_CRON_UTC`: صف واحد لكل المؤسسات بمفتاح `retention:<date>`، تُعاد جدولته بعد كل تشغيل فعلي ويُنشئه المراقب إن غاب (DEC-161) | `{ scope: 'all' }` (واختياريًا `org_id`، `dry_run`، `reschedule`) | سياسة `retention.*` لكل مؤسسة | حذف/إخفاء وفق 06؛ لا يمس بيانات واقعة مفتوحة |
 | `job.export_generate` | `POST /v1/exports` | `{ export_id }` | التصدير `pending` | ملف مؤقت، `ready` أو `failed` |
 
 ---

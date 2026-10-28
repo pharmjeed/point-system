@@ -106,6 +106,8 @@
 | WA-CH | `whatsapp_channel` | `mode = simulator`، `phone_number_id` واحد |
 | مركبات | — | «تويوتا كامري بيضاء 1234 ب ح د»، «شفروليه تاهو سوداء 5678 ر س ص»، «هيونداي سوناتا رمادية 910 ط ع ق» |
 
+لا صفوف `whatsapp_templates` في البذر: تنشئها المزامنة `POST /v1/admin/whatsapp/templates/sync` من تعريفات `WA_TEMPLATE_DEFINITIONS`، والاختبار الذي يحتاج قالبًا معتمدًا (مثل TC-018) ينشئ صفه في إعداده (DEC-52، DEC-139).
+
 بناة الحالات (builders) في `packages/testing`: `givenOpenEvent`، `givenDriverOnDuty(driver, state)`، `givenParkedTicket({ event, customer, channel })`، `givenRequested(ticket)`، `givenSingleOffer(task, driver)`، `givenAllBusy(pool)`، `givenBroadcast(task)`، `givenAssignedWaiting(driver, task)`، `givenReady(ticket)`، `givenTransferPending(driver, toVenue)`. كل باني يمر عبر أوامر الخدمة الحقيقية وليس إدخالًا مباشرًا في الجداول، حتى تبقى الحالات قانونية.
 
 ---

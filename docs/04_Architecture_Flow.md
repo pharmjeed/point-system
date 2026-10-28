@@ -145,7 +145,7 @@ flowchart TB
 
 - المسؤولية: القاعات، مجموعات التوزيع، الحفلات وحالاتها وتسعيرها، الورديات، مناطق الوقوف والمواقف، لوحات وخانات المفاتيح، إعدادات الموقع والمؤسسة.
 - الجداول: `organizations`, `venues`, `dispatch_pools`, `events`, `shifts`, `parking_zones`, `parking_spots`, `key_boards`, `key_slots`.
-- الواجهة: `VenueService`، `EventService.open / startClosing / cancel`، `ShiftService.open / close`، `TicketNumberAllocator.next(tx, eventId)` (يقفل صف الحفل L2 ويزيد `next_display_number`)، `SettingsService.forVenue(venueId)`.
+- الواجهة: `VenueService`، `EventService.open / startClosing / cancel`، `ShiftService.open / close`، `TicketNumberAllocator.next(tx, eventId)` (يقفل صف الحفل L2 ويزيد `next_display_number`؛ يخصصه حاليًا StartIntake نفسه بـ`UPDATE … RETURNING` على صف الحفل المقفول دون رفع إصداره، ويحل محله المخصص بالـSQL نفسه، DEC-184)، `SettingsService.forVenue(venueId)`.
 - يُصدر: `event.opened`, `event.closing_started`, `event.closed`, `shift.opened`, `shift.closed`.
 
 **3) Tickets & Custody — `tickets-custody`**
@@ -154,6 +154,7 @@ flowchart TB
 - الجداول: `tickets`, `ticket_events`, `retrieval_cycles`, `vehicle_inspections`, `media_assets`, `spot_allocations`, `key_slot_allocations`, `custody_events`, `claim_codes`.
 - الواجهة: `TicketLifecycle.transition(tx, ticket, to, ctx)` (يتحقق من آلة الحالة في الملف 11)، `IntakeService`، `CycleService.open / close`، `CustodyService.move(tx, subject, from, to, reason)`، `AllocationService.allocateSpot / allocateKeySlot / release`، `ClaimCodeService.issue / verify / resend / revoke`، `MediaService.presignUpload / complete / presignRead`.
 - يُصدر: كل `ticket.*`، `custody.changed`، كل `handover.*`.
+- يبطل رموز الربط الحية عند التحويل إلى الورق أو الإلغاء (`revoke_reason = channel_paper` أو `ticket_voided`) رغم أن `link_codes` جدول whatsapp؛ ويجوز أن ينقله PNT-044 إلى whatsapp خلف خطاف (DEC-188).
 - معالجات العامل: `job.ready_uncollected_check`, `job.claim_code_expire`.
 
 **4) Dispatch — `dispatch`**
@@ -236,7 +237,7 @@ flowchart BT
 
 | حالة الاستخدام | المسار المُطلِق | الوحدات المركّبة | تحمل L1 |
 |---|---|---|---|
-| `StartIntake` | `POST /v1/tickets` | venues-events (رقم التذكرة) + tickets-custody + dispatch (مهمة `park`) | نعم |
+| `StartIntake` | `POST /v1/tickets` | venues-events (رقم التذكرة على صف الحفل المقفول L2، DEC-184) + tickets-custody + dispatch (مهمة `park`) | نعم |
 | `UpdateIntake` | `PATCH /v1/tickets/{ticketId}/intake` | tickets-custody | لا |
 | `SubmitIntake` | `POST /v1/tickets/{ticketId}/submit-intake` | tickets-custody + whatsapp (موافقة ورمز إجراء) + notifications (W-01) | لا |
 | `CompleteParking` | `POST /v1/tasks/{taskId}/complete-parking` | tickets-custody + dispatch (+ تحويل الطلب المبكر DEC-13) | نعم |
@@ -405,7 +406,7 @@ RETURNING e.*;
 
 - كل معاملة تكتب Outbox تنفّذ `pg_notify('point_outbox', <venue_id أو فارغ>)`؛ العامل يستمع ويوقظ الحلقة فورًا.
 - احتياطًا يستطلع العامل كل `WORKER_POLL_INTERVAL_MS` (الافتراضي 500 مللي ثانية) لالتقاط المؤقتات المستحقة والإشعارات الضائعة.
-- المهام الدورية (`job.dispatch_sweep` كل 5 ثوانٍ لكل مجموعة نشطة، `job.heartbeat_sweep` كل 15 ثانية، `job.retention_purge` يوميًا 02:00 UTC أي 05:00 بتوقيت الرياض) تُحفظ صفًا واحدًا معلقًا لكل مهمة بفضل `dedupe_key`، ويعيد معالجها جدولة نفسه بعد التنفيذ.
+- المهام الدورية (`job.dispatch_sweep` كل 5 ثوانٍ: سلسلة عامة واحدة تمرّر كل مجموعة لها طلب مفتوح أو جولة حية أو مهمة تالية في معاملتها الخاصة، ويبذرها عند الحاجة كل أمر ينشئ طلبًا أو جولة، DEC-179؛ `job.heartbeat_sweep` كل 15 ثانية، `job.retention_purge` يوميًا 02:00 UTC أي 05:00 بتوقيت الرياض) تُحفظ صفًا واحدًا معلقًا لكل مهمة بفضل `dedupe_key`، ويعيد معالجها جدولة نفسه بعد التنفيذ.
 
 ### 6.3 التسلسل حسب `ordering_key`
 
@@ -429,6 +430,7 @@ RETURNING e.*;
 - **خطأ قابل لإعادة المحاولة** (انقطاع شبكة، 5xx، حد معدل من المزود): `status = 'pending'`, `available_at = now() + backoff`, `last_error`.
 - **خطأ نهائي** (رقم غير قابل للتسليم، قالب غير معتمد، معاملات غير صالحة): `status = 'failed'`، الإشعار `notifications.status = 'failed'`، تنبيه `wa_send_failed` للمشرف، وتظهر للسائق في بطاقة التذكرة.
 - **استنفاد المحاولات:** `status = 'dead'` + تنبيه `outbox_lag` (صف لكل موقع متأثر فيه حفل مفتوح أو قيد الإغلاق، يصل مشرفيه والإدارة — DEC-46)، وإعادة يدوية عبر `POST /v1/admin/outbox/{outboxId}/retry` فقط بعد مراجعة.
+- **`job.wa_send`:** الانتظار (بوابة الترتيب، دلو المستلم، السقف العام، تعطل القناة، نافذة الانهيار) يعيد الصف دون استهلاك محاولة؛ محاولات المزود تُعد في `notifications.attempts` مقابل `wa.send_max_attempts`؛ و`max_attempts` للصف 50 لإيقاف مهمة تتعطل باستمرار فقط (DEC-134).
 - لا حلقة إعادة إرسال بلا نهاية (المعمارية §14).
 
 ### 6.5 المؤقتات وإعادة التحقق
@@ -438,6 +440,7 @@ RETURNING e.*;
 1. يُقفل ما يلزم بالترتيب المرجعي (§5.3).
 2. يُقارن الحالة/النسخة الحالية بما جُدول عليه المؤقت. أي اختلاف = إنهاء المؤقت `done` دون أثر.
 3. يطبق الأثر في المعاملة نفسها (انتهاء عرض، تذكير، تصعيد، تنبيه).
+4. الإعادة الإدارية (`POST /v1/admin/outbox/{outboxId}/retry`) لصف `job.*` تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، تغلقه `canceled` بالسبب في `last_error` ولا تعيد تشغيله؛ وأحداث النطاق تُعاد دائمًا (DEC-150).
 
 | المؤقت | يُجدول عند | التوقيت الافتراضي (Canon §12) | الأثر |
 |---|---|---|---|
@@ -471,7 +474,7 @@ RETURNING e.*;
 | `job.push_send` | notifications | `notifications.dedupe_key` بصيغة الملف 14 §6.1 |
 | `job.ws_publish` | notifications | `ws:<event_id>` |
 | `job.heartbeat_sweep` | dispatch | `heartbeat_sweep` |
-| `job.retention_purge` | audit-monitoring | `retention:<date>` |
+| `job.retention_purge` | audit-monitoring | `retention:<date>` (صف واحد يوميًا لكل المؤسسات، DEC-161) |
 | `job.export_generate` | payments-reports | `export:<export_id>` |
 
 كل معالج idempotent: يعتمد على القيود الفريدة (`wa_message_id`، `dedupe_key`)، وعلى فحص الحالة قبل الأثر، ولا يفترض أن الصف لم يُعالج جزئيًا من قبل.
@@ -479,8 +482,9 @@ RETURNING e.*;
 ### 6.7 صحة Outbox
 
 - مقاييس: عدد `pending` المستحق، عمر أقدم صف مستحق (p50/p95/max)، معدل `failed` و`dead` حسب `type`.
-- تنبيه `outbox_lag` (حرج، الملف 14 هو المرجع) عندما يتجاوز عمر أقدم صف مستحق 30 ثانية (`ops.outbox_lag_alert_s`)، أو عند تحول أي صف إلى `dead`.
-- `StuckDetector` يرفع التنبيه `task_stuck` (تحذير، مفتاح `task_stuck:{task_id}`، لمشرفي الموقع) للمهام المعلقة (مهمة `accepted` بلا بدء أكثر من 10 دقائق، `retrieving` أكثر من 20 دقيقة) — قيم أولية تُعدل بعد التشغيل التجريبي.
+- تنبيه `outbox_lag` (حرج، الملف 14 هو المرجع) عندما يتجاوز عمر أقدم صف مستحق 30 ثانية (`ops.outbox_lag_alert_s`)، أو عند تحول أي صف إلى `dead`. المستحق: `pending` بلغ `available_at`، أو `processing` انتهى تأجيره؛ والصف `dead` تأخر حتى يُعاد أو يُغلق (DEC-158).
+- يقيّمها `SystemMonitor` في العامل وفي الـAPI معًا (فيُلاحظ توقف العامل)، بمقيّم واحد في كل دورة بقفل استشاري، كل `MONITOR_INTERVAL_S` (الافتراضي 10 ثوانٍ، 0 يعطله)؛ حد الكشف = العتبة + دورة واحدة (DEC-157).
+- `StuckDetector` يرفع التنبيه `task_stuck` (تحذير، مفتاح `task_stuck:{task_id}`، لمشرفي الموقع) للمهام المعلقة: `retrieve` مقبولة دون بدء أكثر من 10 دقائق، و`retrieve` جارية دون جاهزية أكثر من 20 دقيقة، و`park`/`repark` جارية أكثر من 20 دقيقة — ثوابت في الكود لا إعدادات، تُراجع بعد التشغيل التجريبي (DEC-160).
 
 ---
 
@@ -994,7 +998,7 @@ sequenceDiagram
 | المرحلة | الإعداد | متى ننتقل |
 |---|---|---|
 | الإطلاق التجريبي | نسخة `api` واحدة + نسخة `worker` واحدة + PostgreSQL مُدار | — |
-| التشغيل الأولي | نسختا `api` خلف موازن (تثبيت الجلسة إذا فُعّل نقل polling في Socket.IO؛ لا حاجة له مع WebSocket فقط) + نسختا `worker` | لتوفر أعلى أو عند تجاوز 60% من المعالج |
+| التشغيل الأولي | نسختا `api` خلف موازن (تثبيت الجلسة إذا فُعّل نقل polling في Socket.IO؛ لا حاجة له مع WebSocket فقط) + نسختا `worker` (سقف واتساب العام `wa.global_mps` في ذاكرة العامل، فيُقسم على النسختين حتى يضاف مخزن مشترك، DEC-136) | لتوفر أعلى أو عند تجاوز 60% من المعالج |
 | النمو | نسخ إضافية؛ نسخة قراءة للتقارير والتصدير | عندما تبطئ التقارير مسار الأوامر |
 | فصل Messaging | خدمة مستقلة لإرسال واتساب ومعالجة الوارد | عند حاجة مقاسة: حجم إرسال يتطلب عزلًا، أو أعطال المزود تؤثر على بقية العمل |
 | فصل Dispatch | خدمة مستقلة للتوزيع | فقط إذا تجاوز p95 لزمن قبول المهمة على الخادم 300 مللي ثانية بسبب تنافس أقفال المجموعات في الحمل المتفق عليه |

@@ -272,6 +272,8 @@ async function runDispatchPass(tx: Tx, poolId: UUID, reason: PassReason): Promis
 - **R-5** تحويل البث إلى فردي يحدث فقط لمتاح لم يُجرَّب لنفس الطلب، فلا تحدث حلقة «فردي ← انتهاء ← بث ← فردي لنفس السائق».
 - **R-6** البث يشمل كل المناوبين في المجموعة عدا المستريحين، بما فيهم `busy_with_next` (يرون التنبيه ولا يقبلون — المعمارية §4و.3).
 
+ملاحظة S2 (DEC-178): قبل PNT-052 وPNT-053 لا بث (`BroadcastPolicy` يبقي المهمة `queued`)؛ الطلب الذي استنفد مرشحيه غير المجرَّبين يبقى `queued` حتى يظهر متاح جديد (مناوبة جديدة، مهمة منتهية، نهاية استراحة)، ولا يُصفَّر المجرَّبون إلا بنوبة جديدة (§2.5).
+
 ### 4.2 قراءة الطابور والسائقين (SQL مُجرّب)
 
 ```sql
@@ -299,6 +301,8 @@ SELECT s.duty_session_id, s.user_id, s.duty_status, s.driver_state, s.available_
          LIMIT 1) AS live_single_offer_id
 FROM v_driver_state s
 JOIN users u ON u.id = s.user_id AND u.status = 'active'
+JOIN duty_sessions d ON d.id = s.duty_session_id
+JOIN shifts sh ON sh.id = d.shift_id AND sh.status = 'open'   -- DEC-189: a closing shift's sessions are skipped
 WHERE s.dispatch_pool_id = $1                  -- on_duty + on_break (ended excluded by the view)
 ORDER BY s.available_since NULLS LAST, s.user_id;
 ```
@@ -715,7 +719,7 @@ async function handleTimer(job: OutboxJob): Promise<void> {
 | `job.claim_code_expire` | إصدار رمز التسليم | `claim_codes.expires_at` | الرمز حي (غير مستهلك ولا ملغى) | مسح `code_ciphertext`، `revoked_at`، `revoke_reason = 'expired_cleanup'`؛ التحقق بعده يعيد `HANDOVER_CODE_EXPIRED` | `claim_code_expire:<claim_code_id>` |
 | `job.transfer_activate` | إنشاء نقل مجدول، أو إنهاء مهمة سائق لديه نقل `blocked` | `scheduled_at` أو الآن | النقل `pending`/`blocked` | §9.7 | `transfer_activate:<transfer_id>` |
 | `job.heartbeat_sweep` | متكرر كل 15 ثانية | — | — | `connection_state`: `uncertain` بعد 45 ث، `offline` بعد 120 ث؛ تنبيه `driver_connection_lost_with_custody` إن كان يحوز عهدة أو مهمة؛ **لا** يغيّر التوفر ولا يسحب مهمة | `heartbeat_sweep` |
-| `job.dispatch_sweep` | متكرر كل 5 ثوانٍ | — | — | تمريرة لكل مجموعة لها طلب مفتوح أو جولة حية أو مهمة تالية، كلٌّ في معاملة | `dispatch_sweep` |
+| `job.dispatch_sweep` | متكرر كل 5 ثوانٍ: سلسلة عامة واحدة تجدول تاليتها دائمًا، ويبذرها عند الحاجة كل أمر ينشئ طلبًا أو جولة بقراءة عادية أولًا (DEC-179) | — | — | تمريرة لكل مجموعة لها طلب مفتوح أو جولة حية أو مهمة تالية، كلٌّ في معاملة، فلا توقف مجموعة فاشلة غيرها | `dispatch_sweep` |
 | `job.dispatch_pass` | أمر يحتاج تمريرة لمجموعة لا يحمل قفلها | الآن | — | `runDispatchPass(…, reason)` | `dispatch_pass:<pool_id>` |
 
 `job.link_code_expire` يملكه محوّل واتساب (الملف 12) ولا يمس التوزيع.
@@ -779,7 +783,7 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 
 الآثار:
 
-- **إلى الطابور:** المهمة `queued`، `assignee_id = NULL`، `claimed_at/accepted_at/assigned_waiting_at = NULL`، `queued_at = now()` (نوبة جديدة، `priority_at` كما هو)؛ التذكرة `requested`؛ الدورة `accepted_by = NULL`؛ جدولة تصعيد جديد؛ تمريرة. السائق السابق لا يتلقى عرضًا فرديًا لها لاحقًا (ضمن المجرَّبين §2.5) ويبقى مستلمًا للبث.
+- **إلى الطابور:** المهمة `queued`، `assignee_id = NULL`، `claimed_at/accepted_at/assigned_waiting_at = NULL`، `queued_at = now()` (نوبة جديدة، `priority_at` كما هو)؛ التذكرة `requested`؛ الدورة `accepted_by` و`assigned_at` و`assigned_waiting_at` = `NULL` (تنتظر من جديد، DEC-180)؛ جدولة تصعيد جديد؛ تمريرة. السائق السابق لا يتلقى عرضًا فرديًا لها لاحقًا (ضمن المجرَّبين §2.5) ويبقى مستلمًا للبث.
 - **إلى سائق محدد:** يجب أن يكون مناوبًا في نفس المجموعة (`DUTY_REQUIRED`)؛ هدف لا يستطيع أخذ المهمة (مثل الاستراحة) ← `DRIVER_NOT_AVAILABLE`؛ إن كان `busy_with_next` ← `NEXT_TASK_ALREADY_RESERVED`؛ متاح ← `accepted`؛ مشغول بلا تالية ← `assigned_waiting` (W-03 فقط إن لم تُرسل في هذه الدورة). حارس الأولوية يُطبق على السائق الهدف إلا مع `override_priority = true` وسبب ← سجل تدقيق إضافي بالفعل `dispatch.priority_override`. صوت `offer` وws `task.updated` للهدف.
 - **السائق السابق:** ws `task.updated` (إزالة البطاقة + رسالة «سحب المشرف المهمة»)؛ إن كانت مهمته الحالية ⇒ §6.1 (تُرقّى تاليته أو يصبح متاحًا).
 - الأحداث: `task.withdrawn` (للطابور) أو `task.reassigned` (لسائق)، `audit_log` بالفعل `task.reassign` مع السبب.
@@ -813,6 +817,7 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 - مهمة تالية `assigned_waiting` ← تعود للطابور بأولويتها الأصلية (نوبة جديدة، `task.withdrawn`).
 - مهمة إحضار `accepted` قبل استلام المفتاح ← تعود للطابور بأولويتها الأصلية (`task.withdrawn`).
 - ثم `duty_sessions.status = 'ended'`، `end_reason = 'forced'`، `available_since = NULL`، ws `sync.required` للسائق، تمريرة. صفوف مستلمي البث القائمة تبقى لكنه لا يستطيع القبول (`DUTY_REQUIRED`) وتختفي بطاقته بالمزامنة.
+- الإجراء المشترك `releaseDriverWork` (DEC-32) لهذه المسارات (والتعطيل وإغلاق الوردية) يُبقي صفوف مستلمي البث للسائق ويستثنيه من التمريرة التي يشغّلها، ولا ينهي المناوبة بنفسه (DEC-180).
 
 ### 9.6 الاستراحة وإنهاء المناوبة الذاتي
 

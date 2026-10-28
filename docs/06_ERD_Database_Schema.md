@@ -644,7 +644,7 @@ erDiagram
 - **الغرض:** صاحب المركبة كما يعرفه واتساب. لا حساب ولا صفحة للعميل.
 - **أعمدة أساسية:** `phone_e164` (مطبّع؛ فارغ فقط لمستخدم أسماء واتساب الذي يصل بمعرّفه دون رقم ظاهر)، `wa_id` (من Webhook)، `wa_user_id` (معرّف BSUID حين يُخفى الرقم، DEC-35)، `locale`، `last_inbound_at` (مرساة نافذة خدمة العملاء)، `wa_opted_out_at` (طلب «إيقاف»).
 - **القيود:** `customers_org_id_phone_e164_key`، `uq_customers_wa_id`، `uq_customers_wa_user_id` (معرّف BSUID فريد في المؤسسة)، `ck_customers_identifier` (`phone_e164` أو `wa_user_id` إلزامي)، `customers_phone_e164_check`.
-- **الكتابة/القراءة:** إدخال/مطابقة بالجوال عند الاستلام (`PATCH /v1/tickets/{ticketId}/intake`)، تحديث `wa_id`/`wa_user_id` و`last_inbound_at` في `job.wa_process_inbound`، إيقاف الرسائل (W-12). يُقرأ قبل كل إرسال (الموافقة والإيقاف) وفي تفاصيل التذكرة (مقنّعًا).
+- **الكتابة/القراءة:** إدخال/مطابقة بالجوال عند الاستلام (`PATCH /v1/tickets/{ticketId}/intake`)، تحديث `wa_id`/`wa_user_id` و`last_inbound_at` في `job.wa_process_inbound`، وصف بمعرّفاته فقط لكل مرسل وارد غير معروف لأن ردود W-10…W-12 تشترط `recipient_customer_id` (`ck_notifications_recipient`، DEC-132)، إيقاف الرسائل (W-12). يُقرأ قبل كل إرسال (الموافقة والإيقاف) وفي تفاصيل التذكرة (مقنّعًا).
 
 #### 14) `customer_consents`
 - **الغرض:** دليل موافقة العميل على رسائل واتساب ومصدرها.
@@ -754,7 +754,7 @@ erDiagram
 - **الغرض:** رمز التسليم (6 أرقام) لكل دورة استرجاع (DEC-15).
 - **أعمدة أساسية:** `cycle_id`، `code_hash` (HMAC-SHA256 بمفتاح `CODE_PEPPER` على `cycle_id:code`)، `code_ciphertext` (نسخة مشفرة للإرسال فقط تُمسح بعد قبول المزود أو الانتهاء)، `issued_at`، `expires_at`، `attempts`/`max_attempts`، `locked_at`، `consumed_at/by`، `revoked_at`، `revoke_reason`، `resend_no`، `sent_message_id`.
 - **القيود:** `uq_claim_codes_live` (رمز حي واحد لكل دورة)، `ck_claim_attempts` (المحاولات ضمن الحد)، `ck_claim_consumed_xor_revoked` (لا يجتمع الاستهلاك والإبطال).
-- **الكتابة/القراءة:** `POST /v1/tasks/{taskId}/ready` (إصدار)، `POST /v1/tickets/{ticketId}/handover-code/resend` (إبطال `resend` ثم إصدار جديد)، `POST /v1/tickets/{ticketId}/handover` (محاولة/استهلاك)، `job.claim_code_expire`، `job.wa_send` (يربط `sent_message_id` ويمسح النسخة المشفرة). لا يوجد أي مسار يقرأ الرمز للواجهة.
+- **الكتابة/القراءة:** `POST /v1/tasks/{taskId}/ready` (إصدار)، `POST /v1/tickets/{ticketId}/handover-code/resend` (إبطال `resend` ثم إصدار جديد)، `POST /v1/tickets/{ticketId}/handover` (محاولة/استهلاك)، `job.claim_code_expire`، `job.wa_send` (يربط `sent_message_id` ويمسح النسخة المشفرة). لا يوجد أي مسار يقرأ الرمز للواجهة. التذكرة الورقية بلا صف هنا: محاولات كعبها تُعد من صفوف `ticket_events` (`handover.code_attempt_failed` بـ`data.cycle_id`) مقابل `handover.max_attempts` (DEC-176).
 
 #### 31) `link_codes`
 - **الغرض:** ربط محادثة العميل بالتذكرة عبر QR يفتح واتساب برسالة جاهزة فيها رمز قصير؛ المسح وحده ليس إرسالًا (المعمارية §4د).
@@ -833,8 +833,8 @@ erDiagram
 #### 43) `outbox_events`
 - **الغرض:** الأحداث والمهام المؤجلة والمؤقتات بشكل دائم؛ مصدر عمل العامل (DEC-07). كل مؤقت يحمل `aggregate_version` ويُعاد التحقق منه عند التنفيذ.
 - **أعمدة أساسية:** `type` (Canon §7.1 أو §7.2)، `aggregate_type/id/version`، `venue_id`، `seq` (ترتيب ثابت مستقل عن الالتزام)، `ordering_key` (`'wa:<ticket_id>'` لمهام `job.wa_send` فقط؛ `NULL` لأحداث النطاق ولـ`job.push_send` الذي يكتفي بالدمج، DEC-41)، `dedupe_key`، `payload` (بلا أسرار — DEC-38)، `available_at`، `status`، `attempts`/`max_attempts`، `locked_by`/`locked_until` (التأجير)، `last_error`، `processed_at`.
-- **الحالات:** `pending` ← `processing` ← `done`؛ عند خطأ قابل لإعادة المحاولة يعود `pending` بتأخير متزايد؛ عند استنفاد المحاولات `dead`؛ عند خطأ دائم لا يُعاد `failed`؛ `canceled` لما لم يعد مطلوبًا.
-- **القيود:** `uq_outbox_dedupe_pending` (دمج المهام المكررة المعلّقة، مثل تمريرة توزيع واحدة لكل مجموعة)، `ck_outbox_processing_lease` (المؤجَّر له مالك ومدة)، `ix_outbox_due`، `ix_outbox_lease`، `ix_outbox_ordering`.
+- **الحالات:** `pending` ← `processing` ← `done`؛ عند خطأ قابل لإعادة المحاولة يعود `pending` بتأخير متزايد؛ عند استنفاد المحاولات `dead`؛ عند خطأ دائم لا يُعاد `failed`؛ `canceled` لما لم يعد مطلوبًا (ومنه الإعادة الإدارية لمهمة قديمة أو مكررة، DEC-150).
+- **القيود:** `uq_outbox_dedupe_pending` (دمج المهام المكررة المعلّقة، مثل تمريرة توزيع واحدة لكل مجموعة)، `ck_outbox_processing_lease` (المؤجَّر له مالك ومدة)، `ix_outbox_due`، `ix_outbox_lease`، `ix_outbox_ordering`؛ و`ix_outbox_failed_dead` (جزئي على `failed`/`dead` للمراقب ولقائمة الإدارة؛ الترحيل `0004`، DEC-153).
 - **الكتابة/القراءة:** كل معاملة أمر (إدراج)، العامل (تأجير وإتمام)، `GET /v1/admin/outbox` و`POST /v1/admin/outbox/{outboxId}/retry`. الأنماط في §5.5–§5.6.
 
 #### 44) `idempotency_keys`
@@ -845,7 +845,7 @@ erDiagram
 
 #### 45) `audit_log`
 - **الغرض:** سجل تدقيق إلحاقي لكل أمر: من فعل ماذا ولماذا ومتى ومن أين.
-- **أعمدة أساسية:** `occurred_at`، `actor_type`، `actor_id`، `action` (اسم الصلاحية أو الأمر مثل `task.reassign` أو `ticket.reveal_phone`)، `entity_type`، `entity_id`، `venue_id`، `request_id`، `ip`، `user_agent`، `reason`، `before`/`after` (فروق دنيا بلا أسرار ولا رموز ولا جوالات كاملة)، `metadata`.
+- **أعمدة أساسية:** `occurred_at`، `actor_type`، `actor_id`، `action` (اسم الصلاحية أو الأمر مثل `task.reassign` أو `ticket.reveal_phone`؛ ولفاعل النظام نوع المهمة: `job.wa_process_inbound` و`job.wa_send` (DEC-145)، و`job.retention_purge` (DEC-152))، `entity_type`، `entity_id`، `venue_id`، `request_id`، `ip`، `user_agent`، `reason`، `before`/`after` (فروق دنيا بلا أسرار ولا رموز ولا جوالات كاملة)، `metadata`.
 - **القيود:** `ix_audit_entity`، `ix_audit_actor`، `ix_audit_time`. لا تحديث ولا حذف إلا بمهمة الاحتفاظ.
 - **الكتابة/القراءة:** كل أمر في معاملته. يُقرأ في `GET /v1/admin/audit-log`.
 
@@ -1366,7 +1366,7 @@ SELECT h.driver_id,
 | الجدول | القاعدة | المدة |
 |---|---|---|
 | `media_assets` + كائنات التخزين | حذف الكائن وتحويل السطر إلى `upload_status = 'deleted'` و`delete_reason = 'retention'` (يبقى السطر شاهدًا) | `retention.photos_days` (90 يومًا) من إغلاق التذكرة |
-| `media_assets` بحالة `pending` | تحويل السطر إلى `upload_status = 'failed'` (رفع لم يكتمل أو إتمام مرفوض ترك السطر `pending`، DEC-101)؛ والأصل في `incoming/` تحذفه قاعدة دورة حياة الدلو (DEC-97) | تقني: أقدم من مدة رابط الرفع `MEDIA_UPLOAD_URL_TTL_S` منذ إنشاء السطر |
+| `media_assets` بحالة `pending` | تحويل السطر إلى `upload_status = 'failed'` (رفع لم يكتمل أو إتمام مرفوض ترك السطر `pending`، DEC-101)؛ والأصل في `incoming/` تحذفه قاعدة دورة حياة الدلو (DEC-97) | تقني: أقدم من مدة رابط الرفع `MEDIA_UPLOAD_URL_TTL_S` + 3,600 ثانية هامشًا منذ إنشاء السطر (DEC-162) |
 | `whatsapp_messages` | تنقيح: تفريغ `body_redacted` و`payload_redacted` و`recipient_wa_id`/`sender_wa_id` و`recipient_user_id`/`sender_user_id`؛ يبقى الهيكل (المعرّفات والحالات والأوقات) | `retention.wa_messages_days` (180 يومًا)؛ الهيكل يُحذف مع حذف العميل |
 | `whatsapp_inbound_events` | تفريغ `raw_body` بعد المعالجة، ثم حذف السطر | `retention.wa_raw_days` (7 أيام) للتفريغ، و`retention.wa_messages_days` للحذف |
 | `notifications` · `notification_attempts` | حذف | `retention.wa_messages_days` |
@@ -1376,8 +1376,8 @@ SELECT h.driver_id,
 | `idempotency_keys` | حذف | بعد `expires_at` (24 ساعة) |
 | `auth_sessions` | حذف | تقني: 30 يومًا بعد الانتهاء أو الإبطال |
 | `outbox_events` | حذف `done`/`canceled`؛ و`failed`/`dead` بعد مراجعتها | تقني: 14 يومًا / 90 يومًا |
-| `tickets` وتوابعها (`ticket_events`، `custody_events`، `retrieval_cycles`، `tasks`، `task_offers`، `offer_recipients`، `spot_allocations`، `key_slot_allocations`، `vehicle_inspections`) | **إخفاء هوية** لا حذف: تفريغ `plate_*`، `vehicle_*`، `notes`، `key_tag`، `paper_serial`، `current_spot_note`، `custody_events.note`، `vehicle_inspections.notes/damage_marks`، و`tickets.customer_id`؛ يبقى الهيكل للإحصاء والمال | `retention.tickets_months` (36 شهرًا) من الإغلاق |
-| `customers` · `customer_consents` | حذف العميل الذي ليست له تذكرة أحدث من المدة، بعد حذف رموزه وموافقاته وهياكل رسائله وإشعاراته وتفريغ `tickets.customer_id` | `retention.tickets_months` |
+| `tickets` وتوابعها (`ticket_events`، `custody_events`، `retrieval_cycles`، `tasks`، `task_offers`، `offer_recipients`، `spot_allocations`، `key_slot_allocations`، `vehicle_inspections`) | **إخفاء هوية** لا حذف: تفريغ `plate_*`، `vehicle_*`، `notes`، `key_tag`، `current_spot_note`، `custody_events.note`، `vehicle_inspections.notes/damage_marks`، و`tickets.customer_id`؛ يبقى `paper_serial` (يشترطه `ck_tickets_paper_serial` للتذكرة الورقية غير الملغاة، DEC-155)؛ يبقى الهيكل للإحصاء والمال | `retention.tickets_months` (36 شهرًا) من الإغلاق |
+| `customers` · `customer_consents` | لا حذف في الإصدار الأول (DEC-155): دورات واتساب تحتفظ بـ`requested_by_customer_id` (`ck_cycles_whatsapp_requester`)، وصف العميل يحتاج معرّفه (`ck_customers_identifier`)؛ حذف العميل الذي ليست له تذكرة أحدث من المدة (بعد حذف رموزه وموافقاته وهياكل رسائله وإشعاراته) يحتاج قاعدة خاصة به | — (`retention.tickets_months` حين تُعتمد القاعدة) |
 | `payments` · `cash_handovers` | لا تُحذف مع التذاكر؛ مدتها حسب سياسة السجلات المالية (Q-05/Q-06)؛ التذاكر المرتبطة تبقى هياكل مخفية الهوية | يحددها المالك مع المحاسب |
 | `incidents` | تتبع التذكرة؛ المفتوحة حجز قانوني (§8.2) | `retention.tickets_months` |
 | `alerts` | حذف المحلولة | تقني: 12 شهرًا |
@@ -1388,16 +1388,17 @@ SELECT h.driver_id,
 
 ### 8.2 الحجز القانوني
 
-- أي تذكرة لها واقعة بحالة `open` أو `in_review` تُستثنى من كل خطوات الحذف والتنقيح وإخفاء الهوية (صورها ورسائلها وبياناتها).
-- عند حل الواقعة تبدأ مدة الاحتفاظ لتلك التذكرة من `max(وقت إغلاق التذكرة، incidents.resolved_at)`.
+- أي تذكرة لها واقعة بحالة `open` أو `in_review`، أو لحفلها واقعة بلا تذكرة بهذه الحالة (مثل `payment_discrepancy` لفرق تسليم النقد؛ نزاعات التحصيل وقائع)، تُستثنى من كل خطوات الحذف والتنقيح وإخفاء الهوية بكل صفوفها: الصور والرسائل والإشعارات ورموز الإجراء ورموز الربط وبياناتها (DEC-156).
+- عند حل الواقعة تبدأ مدة الاحتفاظ لتلك التذكرة من `max(وقت إغلاق التذكرة، incidents.resolved_at)`، أي من آخر حل لواقعة كهذه إن تأخر عن الإغلاق.
+- تذاكر حفل ليس `closed` لا تُمس أبدًا (DEC-156).
 - لحجز يدوي بلا واقعة تشغيلية، يفتح المشرف واقعة من نوع `other` بوصف «حجز».
 
 ### 8.3 تنفيذ مهمة الاحتفاظ
 
-- `job.retention_purge` ليلًا خارج وقت الذروة (مثل 11:00 بتوقيت `Asia/Riyadh`، بعيدًا عن ليالي الحفلات).
-- دفعات صغيرة (1000 سطر لكل معاملة) بدور قاعدة بيانات منفصل له `DELETE` على الجداول القابلة للحذف فقط (تعليق القسم 17 في `06_schema.sql`).
-- تكتب سطر `audit_log` لكل دفعة (`action = 'retention.purge'` مع الأعداد)، ولها وضع تجربة (dry-run) وقياسات للعدد والزمن.
-- تحذف كائنات التخزين أولًا ثم تحدّث السطر، وتعيد المحاولة على ما فشل حذفه.
+- `job.retention_purge` صف واحد يوميًا لكل المؤسسات عند `RETENTION_PURGE_CRON_UTC` (02:00 UTC = 05:00 بتوقيت `Asia/Riyadh`، خارج وقت الذروة وبعيدًا عن ليالي الحفلات) بمفتاح `retention:<date>`، وداخله تشغيل لكل مؤسسة؛ تُعاد جدولته بعد كل تشغيل فعلي ويُنشئه المراقب إن غاب (DEC-161).
+- دفعات صغيرة (1000 سطر لكل معاملة؛ 10,000 للتحليلات) بدور قاعدة البيانات `point_retention` (الترحيل `0004_retention_role.sql`: عضو في `point_app`، مع `DELETE` على الجداول القابلة للحذف فقط و`UPDATE (note)` على `custody_events`) تأخذه المهمة بـ`SET LOCAL ROLE`، وتمنح كل بيئة دور دخول العامل عضويته (DEC-153؛ تعليق القسم 17 في `06_schema.sql` أمثلة فقط).
+- تكتب سطر `audit_log` لكل دفعة بالفعل `job.retention_purge` (`entity_type` = الجدول، ومعرّف التشغيل والخطوة والأعداد والكائنات المحذوفة والفاشلة) وسطر ملخص لكل تشغيل (`entity_type = organization`، السياسة وكل خطوة)، ولها وضع تجربة (dry-run) يكتب الملخص وحده، وقياسات للعدد والزمن (DEC-152).
+- المرشحون يُقرؤون خارج أي معاملة، وتُحذف كائنات التخزين دون معاملة مفتوحة، ثم تُعلَّم في معاملة قصيرة الصفوف التي زالت كائناتها فقط، ويُعاد ما فشل حذفه في التشغيل التالي؛ وبلا حاذف كائنات مسجل تُتخطى الخطوة ويُبلَّغ بها (`no_object_deleter`)؛ والحجز (§8.2) يُفحص عند اختيار المرشحين فقط، فالكائن المحذوف فعلًا يُعلَّم دائمًا (DEC-151).
 
 ---
 
@@ -1406,7 +1407,7 @@ SELECT h.driver_id,
 ### 9.1 Drizzle والمرجع
 
 - `06_schema.sql` هو المرجع؛ مخطط Drizzle في `packages/db` مرآة نوعية له لكتابة الاستعلامات.
-- الترحيل الأول `0000_init` = محتوى `06_schema.sql` حرفيًا كترحيل SQL يدوي (ملف ترحيل مخصص من drizzle-kit، مثل `drizzle-kit generate --custom`؛ يُتحقق من الأمر في وثائق الإصدار المستخدم).
+- الترحيل الأول `0001_init` = محتوى `06_schema.sql` حرفيًا كترحيل SQL يدوي (ملف ترحيل مخصص من drizzle-kit، مثل `drizzle-kit generate --custom`؛ يُتحقق من الأمر في وثائق الإصدار المستخدم). لا يُعدَّل بعد تسليمه: كل تصحيح لاحق لـ`06_schema.sql` يُشحن ترحيلًا جديدًا (مثل `0003_fix_wa_template_name_check.sql`)، واختبار الترحيلات لا يقبل بين الاثنين إلا التصحيحات الموثقة (DEC-129).
 - كل بنية لا يعبّر عنها Drizzle بدقة في الإصدار المستخدم (فهرس جزئي بشرط `WHERE`، `CHECK`، عمود مولّد، عرض، مشغّل، دالة) تُكتب في ترحيل SQL يدوي. لا يُعتمد على توليد آلي قد يُسقط شرط فهرس جزئي.
 
 ### 9.2 قواعد الترحيل
@@ -1430,7 +1431,7 @@ SELECT h.driver_id,
 - المرجع الوحيد لمحتوى البذر هو جدول بيانات الاختبار في `17_Test_Acceptance_Plan.md` §4 (DEC-51)؛ التنفيذ في `packages/db/src/seed/` ويُشغّل بـ`pnpm db:seed`.
 - معرّفات ثابتة مقروءة بالصيغة `00000000-0000-4000-8000-KKKKAAAABBBB` مصدّرة في `SEED_IDS` (DEC-53)، وبيانات دخول التطوير والاختبار في `SEED_CREDENTIALS` (DEC-55).
 - لا يعمل السكربت في الاختبار المرحلي ولا الإنتاج، ولا على قاعدة فيها قناة `live` (DEC-56). البصمات argon2id مع `AUTH_SECRET_PEPPER` (DEC-58)، وتشفير أسرار MFA بالصيغة في DEC-57.
-- لا يُنشئ البذر قوالب واتساب؛ تضيفها PNT-039 (DEC-52).
+- لا يُنشئ البذر قوالب واتساب؛ تنشئها المزامنة `POST /v1/admin/whatsapp/templates/sync` من تعريفات `WA_TEMPLATE_DEFINITIONS` (DEC-52، DEC-139).
 
 ## 10. ملاحظات الأداء
 
