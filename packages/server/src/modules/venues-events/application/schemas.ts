@@ -3,6 +3,7 @@ import {
   PaymentMethodSchema,
   PricingModeSchema,
   SetupStatusSchema,
+  ShiftStatusSchema,
   venueSettingsSchema,
 } from '@point/shared';
 import { z } from 'zod';
@@ -75,6 +76,9 @@ export const ListEventsQuery = z
   })
   .refine((q) => !q.from || !q.to || q.from <= q.to, { path: ['to'], message: 'to must not be before from' });
 export type ListEventsQuery = z.output<typeof ListEventsQuery>;
+
+export const ListShiftsQuery = z.object({ status: ShiftStatusSchema.optional(), limit, cursor });
+export type ListShiftsQuery = z.output<typeof ListShiftsQuery>;
 
 // ---------------------------------------------------------------------------------------------
 // venues and settings
@@ -202,3 +206,15 @@ export const CancelEventBody = z.strictObject({
   expected_version: version().optional(),
 });
 export type CancelEventBody = z.output<typeof CancelEventBody>;
+
+// ---------------------------------------------------------------------------------------------
+// shifts
+// ---------------------------------------------------------------------------------------------
+
+export const CreateShiftBody = z.strictObject({
+  name: z.string().trim().max(60).nullable().optional(),
+  starts_at: isoDateTime(),
+  ends_at: isoDateTime().nullable().optional(),
+  dispatch_pool_id: id().optional(),
+});
+export type CreateShiftBody = z.output<typeof CreateShiftBody>;

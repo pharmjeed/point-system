@@ -1,9 +1,9 @@
-import type { EventStatus, PaymentMethod, PricingMode, SetupStatus } from '@point/shared';
+import type { EventStatus, PaymentMethod, PricingMode, SetupStatus, ShiftStatus } from '@point/shared';
 
 /**
- * Rows of the venue-setup and event tables and their wire shapes (07_openapi components `Venue`, `DispatchPool`,
- * `ParkingZone`, `ParkingSpot`, `KeyBoard`, `KeySlot`, `VenueEvent`). Wire data is snake_case; times are ISO-8601
- * UTC; `event_date` is the local date `YYYY-MM-DD` (read as text, never as a Date).
+ * Rows of the venue-setup, event and shift tables and their wire shapes (07_openapi components `Venue`,
+ * `DispatchPool`, `ParkingZone`, `ParkingSpot`, `KeyBoard`, `KeySlot`, `VenueEvent`, `Shift`). Wire data is
+ * snake_case; times are ISO-8601 UTC; `event_date` is the local date `YYYY-MM-DD` (read as text, never as a Date).
  */
 
 const iso = (d: Date | string | null | undefined): string | null =>
@@ -304,5 +304,56 @@ export function toVenueEvent(r: VenueEventRow): VenueEventDto {
     close_summary: r.close_summary,
     version: r.version,
     created_at: iso(r.created_at),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// shifts
+// ---------------------------------------------------------------------------------------------
+
+export const SHIFT_COLUMNS = `sh.id, sh.org_id, sh.venue_id, sh.dispatch_pool_id, sh.name, sh.starts_at, sh.ends_at,
+  sh.status, sh.opened_at, sh.closed_at, sh.version, sh.starts_at::text AS starts_at_key`;
+
+export interface ShiftRow {
+  id: string;
+  org_id: string;
+  venue_id: string;
+  dispatch_pool_id: string;
+  name: string | null;
+  starts_at: Date;
+  ends_at: Date | null;
+  status: ShiftStatus;
+  opened_at: Date | null;
+  closed_at: Date | null;
+  version: number;
+  /** `starts_at` as text, full precision (keyset cursor). */
+  starts_at_key: string;
+}
+
+export interface ShiftDto {
+  id: string;
+  venue_id: string;
+  dispatch_pool_id: string;
+  name: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: ShiftStatus;
+  opened_at: string | null;
+  closed_at: string | null;
+  version: number;
+}
+
+export function toShift(r: ShiftRow): ShiftDto {
+  return {
+    id: r.id,
+    venue_id: r.venue_id,
+    dispatch_pool_id: r.dispatch_pool_id,
+    name: r.name,
+    starts_at: iso(r.starts_at),
+    ends_at: iso(r.ends_at),
+    status: r.status,
+    opened_at: iso(r.opened_at),
+    closed_at: iso(r.closed_at),
+    version: r.version,
   };
 }
