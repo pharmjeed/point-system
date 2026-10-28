@@ -47,3 +47,5 @@ export {
 } from './infra/media-queries.js';
 export { PHOTO_UPLOADED_TIMELINE_TYPE } from './domain/media-events.js';
 export { canReadTicketPhotos } from './domain/media-policy.js';
+// signed read URLs for other modules' reads (PNT-076 ticket timeline)
+export { MediaReadUrlQuery, type SignedUrlDto } from './application/media-read-url.js';

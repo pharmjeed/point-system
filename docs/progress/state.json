@@ -352,37 +352,37 @@
   "PNT-074": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "backend done, screen pending"
   },
   "PNT-075": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "backend done, screen pending: alerts list/acknowledge/resolve (publishStatus), AlertAutoResolver projector, ready_not_collected timer, draft_abandoned in the SystemMonitor; the escalation sound stop is client-side"
   },
   "PNT-076": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "backend done, screen pending: timeline with masked messages, custody chain, signed photo URLs, driver view; the server refuses supervisor actions to drivers"
   },
   "PNT-077": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "reveal-phone: reason, audit without the number, per-user hourly limit (RATE_LIMITED + Retry-After), masked stored replay; 4 API tests"
   },
   "PNT-079": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "inspection-exception and custody-transfers (official_transfer, task follows the item with settlement, allocations, unknown key to the assignee); 8 API tests"
   },
   "PNT-083": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "incidents list/create/get/PATCH (11 §6.11, resolution required, drivers for their venue only), incident.opened/updated/resolved, openIncident() seam"
   },
   "PNT-085": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (backend + screens)"
+    "note": "manual-reconcile (TT-22): no customer message, custody manual_reconcile, payment per 13 §8.5, drivers settled, audit; 6 API tests"
   },
   "PNT-080": {
     "status": "in_progress",

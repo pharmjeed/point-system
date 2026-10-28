@@ -228,7 +228,8 @@ export class MovementUseCase {
         code_expires_at: code?.expires_at ?? null,
       },
     });
-    if (cycle) await scheduleReadyUncollectedCheck(tx, tk, cycle.id, tx.now); // PNT-061 (10 §8.2)
+    // TT-17 timer: job.ready_uncollected_check at ready_at + ready.uncollected_alert_min (ready_not_collected)
+    if (cycle) await scheduleReadyUncollectedCheck(tx, tk, cycle.id, tx.now);
     await auditCommand(tx, actor, {
       action: 'task.execute',
       operation: op,

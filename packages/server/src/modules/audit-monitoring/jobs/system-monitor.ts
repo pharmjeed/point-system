@@ -10,6 +10,7 @@ import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import type { Logger } from '../../../core/logging/logger.js';
 import { metrics } from '../../../core/metrics/metrics.js';
+import { venueSettings } from '../../../core/settings/settings-service.js';
 import {
   OUTBOX_LAG_RESOLVE_AFTER_MS,
   TASK_STUCK_THRESHOLD_MIN,
@@ -62,6 +63,20 @@ export interface MonitorReport {
   evaluated: boolean;
   outbox: OrgLagReport[];
   stuck: { raised: string[]; resolved: string[] };
+  /** `draft_abandoned` raised (ticket ids) and resolved because the draft left `received` (PNT-075) */
+  drafts: { raised: string[]; resolved: string[] };
+}
+
+export interface AbandonedDraft {
+  ticket_id: string;
+  org_id: string;
+  venue_id: string;
+  dispatch_pool_id: string;
+  event_id: string;
+  display_number: number;
+  created_by: string;
+  created_at: Date;
+  task_id: string | null;
 }
 
 /**
@@ -72,6 +87,8 @@ export interface MonitorReport {
  *    resolves it once the lag stayed below the threshold for two minutes with no dead row — the moment it
  *    turned healthy is kept in the alert's `details.below_since`, so any process can continue the window;
  *  - raises/resolves `task_stuck` (StuckDetector, `task_stuck:{task_id}`);
+ *  - raises `draft_abandoned` (`draft_abandoned:{ticket_id}`) for intake drafts left in `received` beyond
+ *    `intake.draft_abandoned_alert_min`, and resolves the live ones whose draft left `received` (14 §8);
  *  - keeps the daily job.retention_purge scheduled.
  * It runs in the worker and in the api (a stopped worker is still detected); a transaction-scoped advisory
  * lock lets one process evaluate per tick. Time comes from the injected clock; `tick()` is public for tests.
@@ -126,14 +143,22 @@ export class SystemMonitor {
       if (!lock.ok) return null;
       const outbox = await this.evaluateOutboxLag(tx);
       const stuck = await this.evaluateStuckTasks(tx);
+      const drafts = await this.evaluateAbandonedDrafts(tx);
       if (this.opts.retentionCron !== null)
         await ensureRetentionScheduled(
           tx,
           this.opts.retentionCron ?? process.env.RETENTION_PURGE_CRON_UTC ?? '0 2 * * *',
         );
-      return { evaluated: true, outbox, stuck };
+      return { evaluated: true, outbox, stuck, drafts };
     });
-    return report ?? { evaluated: false, outbox: [], stuck: { raised: [], resolved: [] } };
+    return (
+      report ?? {
+        evaluated: false,
+        outbox: [],
+        stuck: { raised: [], resolved: [] },
+        drafts: { raised: [], resolved: [] },
+      }
+    );
   }
 
   // ------------------------------------------------------------------ outbox_lag
@@ -315,6 +340,87 @@ export class SystemMonitor {
     }
     metrics.tasksStuck.reset();
     for (const [type, n] of counts) metrics.tasksStuck.set({ type }, n);
+    return { raised, resolved };
+  }
+
+  // ------------------------------------------------------------------ draft_abandoned (14 §8, 15 §12)
+
+  /**
+   * Drafts still `received` (TT-01 → TT-03 not done) for at least `intake.draft_abandoned_alert_min` of their
+   * venue, measured from the draft's creation (the moment custody passed to the driver). The 1-minute floor is
+   * the setting's lower bound (canon §12), so no draft below it is ever read.
+   */
+  async abandonedDrafts(tx: Tx, now: Date): Promise<AbandonedDraft[]> {
+    const candidates = await tx.rows<AbandonedDraft>(
+      `SELECT t.id AS ticket_id, t.org_id, t.venue_id, t.dispatch_pool_id, t.event_id, t.display_number, t.created_by,
+              t.created_at, k.id AS task_id
+         FROM tickets t
+         LEFT JOIN tasks k ON k.ticket_id = t.id AND k.type = 'park' AND k.status = 'in_progress'
+        WHERE t.status = 'received' AND t.created_at <= $1::timestamptz - interval '1 minute'
+        ORDER BY t.venue_id, t.created_at, t.id`,
+      [now],
+    );
+    const thresholds = new Map<string, number>();
+    const out: AbandonedDraft[] = [];
+    for (const c of candidates) {
+      let min = thresholds.get(c.venue_id);
+      if (min === undefined) {
+        min = (await venueSettings(tx, c.venue_id)).intake.draft_abandoned_alert_min;
+        thresholds.set(c.venue_id, min);
+      }
+      if (now.getTime() - new Date(c.created_at).getTime() >= min * 60_000) out.push(c);
+    }
+    return out;
+  }
+
+  private async evaluateAbandonedDrafts(tx: Tx) {
+    const raised: string[] = [];
+    const resolved: string[] = [];
+    // a draft that left `received` (submitted, voided, reconciled) no longer needs a supervisor (14 §8)
+    const gone = await tx.rows<{ org_id: string; venue_id: string; dedupe_key: string; ticket_id: string }>(
+      `SELECT a.org_id, a.venue_id, a.dedupe_key, a.ticket_id FROM alerts a JOIN tickets t ON t.id = a.ticket_id
+        WHERE a.type = 'draft_abandoned' AND a.status <> 'resolved' AND t.status <> 'received'
+        ORDER BY a.id`,
+    );
+    for (const a of gone) {
+      const r = await autoResolveAlerts(tx, {
+        orgId: a.org_id,
+        venueId: a.venue_id,
+        dedupeKeys: [a.dedupe_key],
+        note: 'draft left received',
+      });
+      resolved.push(...r.map((x) => x.ticket_id ?? x.id));
+    }
+    for (const d of await this.abandonedDrafts(tx, tx.now)) {
+      const dedupeKey = `draft_abandoned:${d.ticket_id}`;
+      // a live alert (from this timer or from a refused discard, 08) keeps its details
+      const live = await tx.maybeOne(
+        `SELECT 1 FROM alerts WHERE venue_id = $1 AND dedupe_key = $2 AND status <> 'resolved'`,
+        [d.venue_id, dedupeKey],
+      );
+      if (live) continue;
+      const since = new Date(d.created_at);
+      const threshold = (await venueSettings(tx, d.venue_id)).intake.draft_abandoned_alert_min;
+      const { created } = await raiseAlert(tx, {
+        orgId: d.org_id,
+        venueId: d.venue_id,
+        type: 'draft_abandoned',
+        dedupeKey,
+        poolId: d.dispatch_pool_id,
+        eventId: d.event_id,
+        ticketId: d.ticket_id,
+        taskId: d.task_id,
+        userId: d.created_by,
+        details: {
+          display_number: d.display_number,
+          cause: 'timer',
+          since: since.toISOString(),
+          waited_min: Math.floor((tx.now.getTime() - since.getTime()) / 60_000),
+          threshold_min: threshold,
+        },
+      });
+      if (created) raised.push(d.ticket_id);
+    }
     return { raised, resolved };
   }
 

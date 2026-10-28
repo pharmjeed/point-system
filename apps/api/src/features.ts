@@ -26,8 +26,8 @@ FEATURE_MODULES.push(CustomerFlowsHttpModule);
 import { NotificationsHttpModule } from '@point/server';
 FEATURE_MODULES.push(NotificationsHttpModule);
 
-// import { IncidentsHttpModule } from '@point/server';
-// FEATURE_MODULES.push(IncidentsHttpModule);
+import { IncidentsHttpModule } from '@point/server';
+FEATURE_MODULES.push(IncidentsHttpModule);
 
 // import { PaymentsReportsHttpModule } from '@point/server';
 // FEATURE_MODULES.push(PaymentsReportsHttpModule);
@@ -37,3 +37,6 @@ FEATURE_MODULES.push(AuditMonitoringHttpModule);
 
 import { MediaHttpModule } from '@point/server';
 FEATURE_MODULES.push(MediaHttpModule);
+
+import { SupervisorHttpModule } from '@point/server';
+FEATURE_MODULES.push(SupervisorHttpModule);

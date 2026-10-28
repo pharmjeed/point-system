@@ -49,7 +49,12 @@ export {
   type IntakePatch,
 } from './application/intake-service.js';
 export { loadTaskCard, type TaskCard } from './application/task-card.js';
-export { ticketsCustodyJobs, readyUncollectedHandler, scheduleReadyUncollectedCheck } from './jobs/index.js';
+export { ticketsCustodyJobs } from './jobs/index.js';
+export {
+  READY_UNCOLLECTED_JOB,
+  readyUncollectedHandler,
+  scheduleReadyUncollectedCheck,
+} from './jobs/ready-uncollected.js';
 // handover codes (PNT-047; 11 §5.1, DEC-38)
 export {
   CLAIM_CODE_DIGITS,

@@ -1033,7 +1033,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "backend done, screen pending"
  },
  {
   "ticket": "PNT-075",
@@ -1047,7 +1047,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "backend done, screen pending: alerts list/acknowledge/resolve (publishStatus), AlertAutoResolver projector, ready_not_collected timer, draft_abandoned in the SystemMonitor; the escalation sound stop is client-side"
  },
  {
   "ticket": "PNT-076",
@@ -1061,7 +1061,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "backend done, screen pending: timeline with masked messages, custody chain, signed photo URLs, driver view; the server refuses supervisor actions to drivers"
  },
  {
   "ticket": "PNT-077",
@@ -1072,10 +1072,10 @@
   "epic": "EP-09",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "reveal-phone: reason, audit without the number, per-user hourly limit (RATE_LIMITED + Retry-After), masked stored replay; 4 API tests"
  },
  {
   "ticket": "PNT-078",
@@ -1100,10 +1100,10 @@
   "epic": "EP-09",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "inspection-exception and custody-transfers (official_transfer, task follows the item with settlement, allocations, unknown key to the assignee); 8 API tests"
  },
  {
   "ticket": "PNT-080",
@@ -1156,10 +1156,10 @@
   "epic": "EP-08",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "incidents list/create/get/PATCH (11 §6.11, resolution required, drivers for their venue only), incident.opened/updated/resolved, openIncident() seam"
  },
  {
   "ticket": "PNT-084",
@@ -1184,10 +1184,10 @@
   "epic": "EP-08",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (backend + screens)"
+  "note": "manual-reconcile (TT-22): no customer message, custody manual_reconcile, payment per 13 §8.5, drivers settled, audit; 6 API tests"
  },
  {
   "ticket": "PNT-086",
