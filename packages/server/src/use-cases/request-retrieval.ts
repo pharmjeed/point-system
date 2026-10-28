@@ -137,12 +137,23 @@ export async function requestRetrievalForCustomer(
   if (!pre) throw new AppError('TICKET_NOT_FOUND');
   await lockPools(tx, [pre.dispatch_pool_id]); // L1
   const [locked] = (await lockTickets(tx, [m.ticketId])) as TicketRow[]; // L5
-  const t = locked!;
+  return applyCustomerRequest(tx, locked!, m);
+}
+
+/**
+ * The state logic of {@link requestRetrievalForCustomer} for a caller that already holds L1 (the ticket's pool)
+ * and L5 (the ticket) — the WhatsApp button handler, which locks first to check the action token (PNT-045).
+ */
+export async function applyCustomerRequest(
+  tx: Tx,
+  t: TicketRow,
+  m: { customerId: string | null; requestedAt?: Date },
+): Promise<CustomerRequestResult> {
   const actor: EventActor = m.customerId
     ? { type: 'customer', id: m.customerId }
     : { type: 'system', id: null };
   if (isClosedTicket(t.status)) return { kind: 'closed', ticketStatus: t.status };
-  if (t.status === 'parked') {
+  if (t.status === 'parked' && !t.active_cycle_id) {
     const r = await openRetrievalCycle(tx, t, {
       source: 'whatsapp',
       requestedAt: m.requestedAt ?? tx.now,
@@ -153,7 +164,7 @@ export async function requestRetrievalForCustomer(
     await runDispatchPass(tx, t.dispatch_pool_id, 'request_created');
     return { kind: 'created', ticketStatus: r.ticket.status, cycleId: r.cycle.id, taskId: r.task.id };
   }
-  if (t.status === 'received' || t.status === 'parking' || t.status === 'reparking') {
+  if ((t.status === 'received' || t.status === 'parking' || t.status === 'reparking') && !t.active_cycle_id) {
     if (t.pending_retrieval_at)
       return {
         kind: 'already_pending',
@@ -166,8 +177,9 @@ export async function requestRetrievalForCustomer(
         WHERE id = $1 RETURNING *`,
       [t.id, at],
     );
+    // the open park/repark task, started or not: its driver gets the early-request banner
     const parking = await tx.maybeOne<{ assignee_id: string | null }>(
-      `SELECT assignee_id FROM tasks WHERE ticket_id = $1 AND type IN ('park','repark') AND status = 'in_progress'`,
+      `SELECT assignee_id FROM tasks WHERE ticket_id = $1 AND type IN ('park','repark') AND status NOT IN ('completed','canceled')`,
       [t.id],
     );
     await emitForTicket(tx, updated, {

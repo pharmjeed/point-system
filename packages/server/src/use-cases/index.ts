@@ -34,6 +34,17 @@ export {
   transferView,
   type TransferRow,
 } from './transfers.js';
-export { requestRetrievalForCustomer, type CustomerRequestResult } from './request-retrieval.js';
+export {
+  requestRetrievalForCustomer,
+  applyCustomerRequest,
+  type CustomerRequestResult,
+} from './request-retrieval.js';
 export { registerIncidentRecorder, type IncidentRecorder } from './hooks.js';
 export { useCasesJobs } from './jobs.js';
+
+// S3 customer flows (PNT-043 … PNT-051, PNT-078): installed at load (button press, direct link at submit)
+export { installCustomerFlows } from './customer-flows/install.js';
+export { CustomerFlowsHttpModule } from './http/customer-flows.module.js';
+export { handleButtonPress } from './customer-flows/button-press.js';
+export { claimCodeHookFor, claimCodeSecrets } from './customer-flows/handover-codes.js';
+export { identityMethods, claimedChecks } from './customer-flows/handover-exception.js';

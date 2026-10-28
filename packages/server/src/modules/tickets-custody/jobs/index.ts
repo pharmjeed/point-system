@@ -3,6 +3,7 @@ import { lockTickets } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import type { JobHandler } from '../../../core/outbox/dispatcher.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
+import { claimCodeExpireHandler } from '../application/claim-codes.js';
 import { venueSettingsFor } from '../../venues-events/index.js';
 import type { TicketRow } from '../infra/rows.js';
 
@@ -83,9 +84,9 @@ export const readyUncollectedHandler: JobHandler = {
 };
 
 /**
- * Worker handlers of tickets-custody (04 §4.2): `job.ready_uncollected_check` (S4). `job.claim_code_expire`
- * arrives with the claim codes (PNT-047).
+ * Worker handlers of tickets-custody (04 §4.2): `job.ready_uncollected_check` (S4) and `job.claim_code_expire`
+ * (PNT-047).
  */
 export function ticketsCustodyJobs(): JobHandler[] {
-  return [readyUncollectedHandler];
+  return [readyUncollectedHandler, claimCodeExpireHandler];
 }

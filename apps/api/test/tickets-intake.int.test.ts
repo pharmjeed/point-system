@@ -26,6 +26,7 @@ import {
   submitIntake,
   U,
 } from './dispatch-fixtures.js';
+import { approveWaTemplates } from './wa-templates-fixture.js';
 
 const DUMMY = '00000000-0000-4000-8000-0000deadbeef';
 const brk = (t: TestApp, as: string, active: boolean) =>
@@ -434,8 +435,9 @@ describe('PNT-026 — PATCH /v1/tickets/{ticketId}/intake', () => {
       }),
     );
     await addPhotos(t.db, d.ticketId, U.DRV1);
+    await approveWaTemplates(t.db); // the direct link at submit needs an approved W-01 (PNT-043)
     const parking = ok(await submitIntake(t, 'DRV1', d.ticketId, { expected_version: filled.version }));
-    expect(parking).toMatchObject({ status: 'parking', channel: 'whatsapp' });
+    expect(parking).toMatchObject({ status: 'parking', channel: 'whatsapp', wa_link_status: 'pending_send' });
     // a live QR link code of this ticket (issued by the whatsapp module)
     await t.db.query(
       `INSERT INTO link_codes (org_id, ticket_id, code, status, created_by, expires_at) SELECT org_id, id, 'ABCDEF', 'active', $2, now() + interval '10 minutes' FROM tickets WHERE id = $1`,
@@ -477,6 +479,7 @@ describe('PNT-026 — PATCH /v1/tickets/{ticketId}/intake', () => {
     });
     const ev = (await outboxEvents(t.db, 'ticket.wa_link_changed')).map((e) => e.payload.payload);
     expect(ev).toEqual([
+      expect.objectContaining({ method: 'direct', to: 'pending_send', link_version: before.link_version }),
       expect.objectContaining({ method: 'channel_paper', to: 'none', link_version: before.link_version + 1 }),
     ]);
     // a second conversion, a linked ticket or a parked ticket are invalid transitions

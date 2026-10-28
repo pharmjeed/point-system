@@ -7,6 +7,7 @@ import {
   emitEvent,
   encrypt,
   hmacHex,
+  installCustomerFlows,
   notificationsJobs,
   parseEncryptionKey,
   resetWhatsappSeams,
@@ -101,6 +102,7 @@ export async function createWaTestApp(opts: { env?: Record<string, string> } = {
     },
     async close() {
       resetWhatsappSeams();
+      installCustomerFlows(); // the S3 flows registered at load (PNT-045 button press, PNT-043 direct link)
       await sim.close();
       await t.close();
     },

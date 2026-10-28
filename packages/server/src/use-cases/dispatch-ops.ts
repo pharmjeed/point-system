@@ -40,7 +40,7 @@ import {
   loadTicketDetail,
   loadTicketSummary,
   moveCustody,
-  revokeLiveClaimCode,
+  revokeClaimCodes,
   ticketRef,
   type CycleRow,
   type EventActor,
@@ -486,7 +486,7 @@ export class CancelCycleUseCase {
     } else {
       // TT-20b (DEC-30): the driver keeps the vehicle and the key and parks it again
       const driverId = holder!;
-      await revokeLiveClaimCode(tx, c.id, 'canceled');
+      await revokeClaimCodes(tx, c.id, 'canceled');
       finalTicket = await tx.one<TicketRow>(
         `UPDATE tickets SET status = 'reparking', active_cycle_id = NULL, version = version + 1 WHERE id = $1 RETURNING *`,
         [k.id],
@@ -607,7 +607,7 @@ export class ReparkUseCase {
     const reason = body.reason.trim();
     const ea = eventActor(actor);
 
-    await revokeLiveClaimCode(tx, cycle.id, 'reparked');
+    await revokeClaimCodes(tx, cycle.id, 'reparked');
     const closed = await tx.one<CycleRow>(
       `UPDATE retrieval_cycles SET outcome = 'reparked', reparked_at = $2, closed_at = $2 WHERE id = $1 RETURNING *`,
       [cycle.id, tx.now],
