@@ -39,6 +39,7 @@ export function createWorker(deps: WorkerDeps) {
     );
   db.onRetry = (sqlstate) => metrics.dbTxRetries.inc({ sqlstate });
   const logger = createLogger({ level: deps.env.LOG_LEVEL, name: 'point-worker' });
+  db.onIdleError = (err) => logger.warn({ err }, 'idle database connection failed; it will be replaced');
   const dispatcher = new OutboxDispatcher(
     db,
     clock,

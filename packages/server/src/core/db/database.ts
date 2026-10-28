@@ -31,6 +31,11 @@ export class Database {
   readonly pool: pg.Pool;
   /** called with the SQLSTATE each time a transaction is retried (point_db_tx_retries_total). */
   onRetry: ((sqlstate: string) => void) | null = null;
+  /**
+   * Called when an idle pooled connection fails (server restart, failover, terminated backend). pg drops that client
+   * and opens a new one on demand; without a listener the pool's 'error' event would crash the process.
+   */
+  onIdleError: ((err: Error) => void) | null = null;
 
   constructor(
     readonly config: DatabaseConfig,
@@ -42,6 +47,7 @@ export class Database {
       ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
       application_name: config.applicationName ?? 'point',
     });
+    this.pool.on('error', (err) => this.onIdleError?.(err));
   }
 
   async query<R extends pg.QueryResultRow = any>(

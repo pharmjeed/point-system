@@ -43,6 +43,8 @@ export class CoreModule {
       );
     database.onRetry = (sqlstate) => metrics.dbTxRetries.inc({ sqlstate });
     const logger = createLogger({ level: opts.env.LOG_LEVEL, name: 'point-api' });
+    database.onIdleError = (err) =>
+      logger.warn({ err }, 'idle database connection failed; it will be replaced');
     return {
       module: CoreModule,
       providers: [
