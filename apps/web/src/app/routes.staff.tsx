@@ -39,6 +39,10 @@ export const staffRoutes: RouteObject[] = [
     path: routePatterns.transfer,
     lazy: async () => ({ Component: (await import('@/features/supervisor/TransferPage')).TransferPage }),
   },
+  {
+    path: routePatterns.eventClose,
+    lazy: async () => ({ Component: (await import('@/features/supervisor/EventClosePage')).EventClosePage }),
+  },
   // S-11 is built in a later commit of this stream: the PNT-021 placeholder until then
   {
     path: paths.reports,

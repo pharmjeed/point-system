@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { eventFixture, MockApi, mockStaffApi, roleMe, secondsAgo } from './support/api';
+import { EVENT_ID, eventFixture, MockApi, mockStaffApi, roleMe, secondsAgo } from './support/api';
 import { expectMobileLayout } from './support/checks';
 
 /**
@@ -22,6 +22,13 @@ const SCREENS: Array<{
     role: 'supervisor',
     heading: /نقل سائق/,
     ready: '[data-testid="transfer-checklist"]',
+  },
+  {
+    path: `/events/${EVENT_ID}/close`,
+    role: 'supervisor',
+    heading: /إغلاق الحفل/,
+    ready: '[data-testid="close-summary"]',
+    closing: true,
   },
 ];
 
