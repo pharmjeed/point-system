@@ -162,22 +162,32 @@ export async function raiseAlert(tx: Tx, a: RaiseAlertInput): Promise<{ alert: A
   return { alert, created: inserted };
 }
 
-/** DEC-46: one row per venue that has an open or closing event (multi-venue alert types). */
+/** Venues with an open or closing event: the "affected venues" of the multi-venue alert types (DEC-46). */
+export async function affectedVenueIds(tx: Pick<Tx, 'rows'>, orgId: string): Promise<string[]> {
+  const rows = await tx.rows<{ venue_id: string }>(
+    `SELECT DISTINCT venue_id FROM events WHERE org_id = $1 AND status IN ('open','closing') ORDER BY venue_id`,
+    [orgId],
+  );
+  return rows.map((r) => r.venue_id);
+}
+
+/**
+ * DEC-46: one row per venue that has an open or closing event (multi-venue alert types). `dedupeKey` may
+ * be a function of the venue for the per-venue keys of 14 §8 (`outbox_lag:{venue_id}`, `wa_webhook_silent:{venue_id}`).
+ */
 export async function raiseAlertForAffectedVenues(
   tx: Tx,
-  a: Omit<RaiseAlertInput, 'venueId'> & { venueIds?: string[] },
+  a: Omit<RaiseAlertInput, 'venueId' | 'dedupeKey'> & {
+    venueIds?: string[];
+    dedupeKey: string | ((venueId: string) => string);
+  },
 ): Promise<AlertRow[]> {
-  const venues = a.venueIds?.length
-    ? a.venueIds
-    : (
-        await tx.rows<{ venue_id: string }>(
-          `SELECT DISTINCT venue_id FROM events WHERE org_id = $1 AND status IN ('open','closing')`,
-          [a.orgId],
-        )
-      ).map((r) => r.venue_id);
+  const venues = a.venueIds?.length ? a.venueIds : await affectedVenueIds(tx, a.orgId);
   const out: AlertRow[] = [];
-  for (const venueId of [...new Set(venues)].sort())
-    out.push((await raiseAlert(tx, { ...a, venueId })).alert);
+  for (const venueId of [...new Set(venues)].sort()) {
+    const dedupeKey = typeof a.dedupeKey === 'function' ? a.dedupeKey(venueId) : a.dedupeKey;
+    out.push((await raiseAlert(tx, { ...a, venueId, dedupeKey })).alert);
+  }
   return out;
 }
 

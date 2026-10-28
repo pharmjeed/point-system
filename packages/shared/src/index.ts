@@ -17,3 +17,4 @@ export * from './errors.js';
 export * from './settings.js';
 export * from './envelopes.js';
 export * from './phone.js';
+export * from './analytics.js';

@@ -10,6 +10,7 @@ import {
   LOGGER,
   MeService,
   RealtimeServer,
+  TelemetryIngest,
   requestContextMiddleware,
   type Clock,
   type Database,
@@ -58,12 +59,15 @@ export async function createApp(opts: CoreModuleOptions): Promise<NestExpressApp
 
   // Socket.IO on /ws relays what committed transactions publish with pg_notify (DEC-48)
   const me = app.get(MeService, { strict: false });
+  const telemetry = app.get(TelemetryIngest, { strict: false });
   const realtime = new RealtimeServer({
     db: app.get<Database>(DATABASE),
     clock: app.get<Clock>(CLOCK),
     env: app.get<Env>(ENV),
     logger: app.get<Logger>(LOGGER),
     heartbeat: (tx, actor, body) => me.heartbeat(tx, actor, body),
+    // 15 §9.4: the WS sighting writes offer_card_seen in the same transaction as seen_at
+    offerSeen: (tx, actor, payload) => telemetry.recordOfferSeen(tx, actor, payload),
   });
   await realtime.attach(app.getHttpServer());
   const close = app.close.bind(app);

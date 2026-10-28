@@ -94,6 +94,8 @@ export const envSchema = z.object({
   DISPATCH_SWEEP_INTERVAL_S: int(5),
   HEARTBEAT_SWEEP_INTERVAL_S: int(15),
   RETENTION_PURGE_CRON_UTC: z.string().default('0 2 * * *'),
+  // SystemMonitor loop (outbox_lag, task_stuck, gauges) in the worker and the api; 0 disables it
+  MONITOR_INTERVAL_S: int(10),
 
   WS_PATH: z.string().default('/ws'),
   WS_TRANSPORTS: z.string().default('websocket'),

@@ -20,6 +20,12 @@ export interface HeartbeatPayload {
   app_version?: string;
 }
 
+/** `client.offer_seen` (07 §4: `{offer_id}`; `receive_latency_ms` optional, 15 §9.4). */
+export interface OfferSeenPayload {
+  offer_id?: string;
+  receive_latency_ms?: number;
+}
+
 export interface RealtimeDeps {
   db: Database;
   clock: Clock;
@@ -31,6 +37,11 @@ export interface RealtimeDeps {
     actor: ActorContext,
     body: HeartbeatPayload & { ws_connected: boolean },
   ) => Promise<unknown>;
+  /**
+   * records `client.offer_seen` inside a transaction: `seen_at` + the `offer_card_seen` analytics row
+   * (audit-monitoring's TelemetryIngest.recordOfferSeen, 15 §9.4); without it only `seen_at` is filled
+   */
+  offerSeen?: (tx: Tx, actor: ActorContext, payload: OfferSeenPayload) => Promise<unknown>;
   revalidateEveryMs?: number;
 }
 
@@ -143,13 +154,16 @@ export class RealtimeServer {
       }
     });
 
-    socket.on('client.offer_seen', async (payload: { offer_id?: string }, ack?: (r: unknown) => void) => {
+    socket.on('client.offer_seen', async (payload: OfferSeenPayload, ack?: (r: unknown) => void) => {
       try {
         if (payload?.offer_id && /^[0-9a-f-]{36}$/i.test(payload.offer_id)) {
-          await this.deps.db.query(
-            `UPDATE offer_recipients SET seen_at = COALESCE(seen_at, $3) WHERE offer_id = $1 AND user_id = $2`,
-            [payload.offer_id, data.actor.userId, this.deps.clock.now()],
-          );
+          const record = this.deps.offerSeen;
+          if (record) await this.deps.db.transaction((tx) => record(tx, data.actor, payload));
+          else
+            await this.deps.db.query(
+              `UPDATE offer_recipients SET seen_at = COALESCE(seen_at, $3) WHERE offer_id = $1 AND user_id = $2`,
+              [payload.offer_id, data.actor.userId, this.deps.clock.now()],
+            );
         }
         ack?.({ data: { ok: true } });
       } catch {

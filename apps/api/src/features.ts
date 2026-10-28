@@ -29,8 +29,8 @@ FEATURE_MODULES.push(NotificationsHttpModule);
 // import { PaymentsReportsHttpModule } from '@point/server';
 // FEATURE_MODULES.push(PaymentsReportsHttpModule);
 
-// import { AuditMonitoringHttpModule } from '@point/server';
-// FEATURE_MODULES.push(AuditMonitoringHttpModule);
+import { AuditMonitoringHttpModule } from '@point/server';
+FEATURE_MODULES.push(AuditMonitoringHttpModule);
 
 import { MediaHttpModule } from '@point/server';
 FEATURE_MODULES.push(MediaHttpModule);

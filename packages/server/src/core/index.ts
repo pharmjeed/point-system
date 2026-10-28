@@ -24,4 +24,5 @@ export * from './metrics/metrics.js';
 export * from './actor-context/index.js';
 export * from './phone.js';
 export * from './hooks/driver-release.js';
+export * from './hooks/media-objects.js';
 export * from './alerts/alerts.js';

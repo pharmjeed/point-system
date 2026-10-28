@@ -100,6 +100,26 @@ export const metrics = {
     'venue',
   ]),
   backupLastSuccess: g('point_backup_last_success_timestamp_seconds', 'Last successful backup'),
+  // PNT-090/091/094 additions (proposed for 05 §12.2, docs/progress/notes/audit-monitoring.md)
+  outboxDead: g('point_outbox_dead', 'Outbox rows in status dead', ['type']),
+  dispatchEligibleDrivers: g('point_dispatch_eligible_drivers', 'Drivers on duty and not on break per pool', [
+    'pool',
+  ]),
+  tasksStuck: g('point_tasks_stuck', 'Tasks past their task_stuck threshold (14 §8)', ['type']),
+  analyticsRejected: c(
+    'point_analytics_rejected_total',
+    'Analytics events dropped by the allow-list (15 §9.2, §13.1)',
+    ['source', 'reason'],
+  ),
+  retentionRows: c('point_retention_rows_total', 'Rows purged, redacted or marked by job.retention_purge', [
+    'step',
+  ]),
+  retentionDuration: h(
+    'point_retention_duration_seconds',
+    'Duration of a job.retention_purge run',
+    [],
+    HUMAN,
+  ),
 };
 
 /** /metrics on the internal METRICS_PORT only (canon §9.8: internal network). */

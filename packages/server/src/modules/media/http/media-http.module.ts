@@ -1,6 +1,7 @@
-import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Module, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { Clock } from '../../../core/clock/clock.js';
 import type { Env } from '../../../core/config/env.js';
+import { deleterForStore, registerMediaObjectDeleter } from '../../../core/hooks/media-objects.js';
 import type { Logger } from '../../../core/logging/logger.js';
 import { CLOCK, ENV, LOGGER } from '../../../http/tokens.js';
 import { CompleteMediaUploadUseCase } from '../application/complete-media-upload.js';
@@ -33,10 +34,16 @@ import { MediaUploadRequestPipe } from './media-upload-request.pipe.js';
   ],
   exports: [OBJECT_STORAGE],
 })
-export class MediaHttpModule implements OnModuleDestroy {
+export class MediaHttpModule implements OnModuleInit, OnModuleDestroy {
   constructor(@Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage) {}
 
+  /** job.retention_purge deletes photo objects through this storage (core seam; the worker wires its own). */
+  onModuleInit(): void {
+    registerMediaObjectDeleter(deleterForStore(this.storage), 'media');
+  }
+
   async onModuleDestroy(): Promise<void> {
+    registerMediaObjectDeleter(null, 'media');
     await this.storage.close?.();
   }
 }

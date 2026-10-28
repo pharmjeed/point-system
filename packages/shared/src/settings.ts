@@ -279,6 +279,26 @@ export const orgSettingsEditableSchema = z.strictObject({
 });
 export type OrgSettingsEditable = z.output<typeof orgSettingsEditableSchema>;
 
+/**
+ * Upper bounds of `PUT /v1/admin/retention-policy` (07_openapi states only `minimum: 1`): 100 years,
+ * so the purge cut-offs stay inside the timestamp range.
+ */
+export const RETENTION_POLICY_LIMITS = { maxDays: 36_500, maxMonths: 1_200 } as const;
+
+/**
+ * Body of `PUT /v1/admin/retention-policy` (07_openapi): the six `retention.*` durations of canon §12,
+ * all required, strict. `approved_by_owner` is set by the command itself (DEC-67, Q-06).
+ */
+export const retentionPolicyEditableSchema = z.strictObject({
+  photos_days: positiveInt().max(RETENTION_POLICY_LIMITS.maxDays),
+  wa_messages_days: positiveInt().max(RETENTION_POLICY_LIMITS.maxDays),
+  tickets_months: positiveInt().max(RETENTION_POLICY_LIMITS.maxMonths),
+  audit_months: positiveInt().max(RETENTION_POLICY_LIMITS.maxMonths),
+  wa_raw_days: positiveInt().max(RETENTION_POLICY_LIMITS.maxDays),
+  analytics_months: positiveInt().max(RETENTION_POLICY_LIMITS.maxMonths),
+});
+export type RetentionPolicyEditable = z.output<typeof retentionPolicyEditableSchema>;
+
 // ---------------------------------------------------------------------------------------------
 // Parsing, defaults and dotted-key access
 // ---------------------------------------------------------------------------------------------
