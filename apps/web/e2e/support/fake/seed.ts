@@ -60,6 +60,7 @@ export function seedWorld(options: SeedOptions = {}): World {
     media: [],
     payments: [],
     custody: [],
+    audit: [],
   };
   for (const v of SEED_VENUES) {
     world.venues.push({

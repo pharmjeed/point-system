@@ -2,7 +2,7 @@
  * Wire shapes of 07_openapi.yaml built from the fake world (field names exactly as the contract).
  */
 import type { FAssignment, FDuty, FEvent, FShift, FUser, FVenue } from './model';
-import type { FakeServer } from './server';
+import type { FakeServer, Session } from './server';
 
 export function mask(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -83,7 +83,7 @@ export function driverState(s: FakeServer, userId: string) {
   return active.type === 'retrieve' ? ('retrieving' as const) : ('intake_parking' as const);
 }
 
-export function meView(s: FakeServer, u: FUser) {
+export function meView(s: FakeServer, u: FUser, session?: Session) {
   const a = s.activeAssignment(u.id);
   const duty = openDuty(s, u.id);
   const drives = u.role === 'driver' || (u.role === 'supervisor' && u.can_drive);
@@ -103,6 +103,7 @@ export function meView(s: FakeServer, u: FUser) {
       mfa_verified: true,
       restricted: u.must_change_secret,
       pending: u.must_change_secret ? ['secret_change'] : [],
+      device_id: session?.deviceId ?? null,
     },
     // no brand literals in e2e support (canon §1): the app falls back to VITE_BRAND_*
     brand: {},

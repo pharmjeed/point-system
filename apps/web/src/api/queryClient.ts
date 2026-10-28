@@ -28,6 +28,10 @@ export function createQueryClient(): QueryClient {
 
 export const queryKeys = {
   me: ['me'] as const,
+  /** Under `me`: invalidating the session also re-reads the driver's home (02 §1.7). */
+  home: ['me', 'home'] as const,
+  ticket: (ticketId: string) => ['tickets', ticketId] as const,
+  mediaUrl: (mediaId: string) => ['media', mediaId, 'url'] as const,
   venues: ['venues'] as const,
   venue: (venueId: string) => ['venues', venueId] as const,
   venueSettings: (venueId: string) => ['venues', venueId, 'settings'] as const,

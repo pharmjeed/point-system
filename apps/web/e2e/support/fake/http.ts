@@ -8,6 +8,9 @@ export interface Reply {
   status: number;
   body?: unknown;
   headers?: Record<string, string>;
+  /** Raw bytes instead of a JSON body (the fake object storage serving a photo). */
+  raw?: Buffer;
+  contentType?: string;
 }
 
 const meta = (extra: Record<string, unknown> = {}) => ({

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { logout } from '@/api/auth';
 import { ApiError, displayMessage } from '@/api/errors';
 import { paths } from '@/app/paths';
+import { clearFieldData } from '@/features/driver/intakeStore';
 import { useSubmitGuard } from '@/hooks/useCommand';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
@@ -30,6 +31,7 @@ export function useLogout(area: 'driver' | 'staff') {
       }
       qc.clear();
       reset();
+      clearFieldData();
       navigate(area === 'staff' ? paths.staffLogin : paths.login, { replace: true });
     });
   return { run, pending };

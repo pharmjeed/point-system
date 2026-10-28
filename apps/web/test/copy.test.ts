@@ -75,9 +75,25 @@ const NOT_IN_02: Record<string, string[]> = {
     'parkingModes',
     'settings', // labels from canon §12 (checked below)
   ],
+  d05: ['makeOther', 'colorOther'], // labels of the «أخرى» free-text inputs
 };
 
-const SCREENS = { s05: ar.s05, s06: ar.s06, s08: ar.s08, s09: ar.s09 } as const;
+const SCREENS = {
+  s05: ar.s05,
+  s06: ar.s06,
+  s08: ar.s08,
+  s09: ar.s09,
+  d03: ar.d03,
+  d04: ar.d04,
+  d05: ar.d05,
+  d06: ar.d06,
+  d07: ar.d07,
+  d08: ar.d08,
+  d09: ar.d09,
+  d10: ar.d10,
+  d11: ar.d11,
+  d14: ar.d14,
+} as const;
 
 describe('screen copy comes from 02', () => {
   for (const [name, dict] of Object.entries(SCREENS)) {

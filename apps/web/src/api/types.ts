@@ -139,6 +139,12 @@ export interface Me {
     restricted?: boolean;
     /** What the restricted session must still do, in order (DEC-82); empty when not restricted. */
     pending?: ('secret_change' | 'mfa_setup')[];
+    /**
+     * The `devices` row this sign-in linked (09 §9.5) — needed by `POST /v1/me/audio-test` and
+     * `PUT /v1/me/devices/{deviceId}`. Proposed in docs/progress/notes/pnt-035.md (not in 07 yet): without
+     * it the app keeps the D-03 checks on the device only.
+     */
+    device_id?: string | null;
   };
   brand: {
     staff_name_ar?: string;
@@ -387,4 +393,347 @@ export interface CustodyItem {
 export interface BlockingDriver {
   driver: UserRef;
   items: CustodyItem[];
+}
+
+// ---------------------------------------------------------------- tickets, tasks, offers (07 §2.1–§2.3)
+
+export type TicketChannel = 'whatsapp' | 'paper';
+export type WaLinkStatus =
+  'none' | 'pending_send' | 'pending_confirmation' | 'linked' | 'failed' | 'opted_out';
+export type InspectionStatus = 'pending' | 'complete' | 'incomplete' | 'exception_approved';
+export type PaymentStatus = 'not_required' | 'due' | 'collected' | 'waived';
+export type TaskType = 'park' | 'retrieve' | 'repark';
+export type TaskStatus =
+  | 'queued'
+  | 'offered'
+  | 'broadcast'
+  | 'assigned_waiting'
+  | 'accepted'
+  | 'in_progress'
+  | 'completed'
+  | 'canceled';
+export type OfferMode = 'single' | 'broadcast';
+export type OfferEligibility = 'accept' | 'reserve_next' | 'view_only';
+export type MediaUploadStatus = 'pending' | 'uploaded' | 'failed' | 'deleted';
+export type MediaContentType = 'image/jpeg' | 'image/webp' | 'image/heic' | 'image/png';
+export type WaHealthStatus = 'healthy' | 'degraded' | 'down';
+export type HolderType = 'customer' | 'driver' | 'spot' | 'key_slot' | 'supervisor' | 'unknown';
+
+export interface Plate {
+  country: string;
+  digits?: string | null;
+  letters_ar?: string | null;
+  letters_en?: string | null;
+  raw?: string | null;
+  display: string;
+}
+
+/** `PlateInput` body: SA = digits + letters_ar; any other country = raw (PLATE_INVALID otherwise). */
+export interface PlateBody {
+  country: string;
+  digits?: string;
+  letters_ar?: string;
+  letters_en?: string;
+  raw?: string;
+}
+
+export interface VehicleInfo {
+  make?: string | null;
+  model?: string | null;
+  color?: string | null;
+  type?: 'sedan' | 'suv' | 'pickup' | 'van' | 'other' | null;
+}
+
+export interface ConsentInput {
+  method: 'verbal_staff_confirmed';
+  confirmed: true;
+}
+
+export interface HolderRef {
+  type: HolderType;
+  id?: string | null;
+  label?: string | null;
+}
+
+export interface Media {
+  id: string;
+  ticket_id: string;
+  kind: MediaKind;
+  content_type: MediaContentType;
+  byte_size?: number | null;
+  upload_status: MediaUploadStatus;
+  captured_at?: string | null;
+  uploaded_at?: string | null;
+  uploaded_by?: string;
+}
+
+/** A presigned PUT to the private object storage (07 §2.2). */
+export interface UploadInstruction {
+  method: 'PUT';
+  url: string;
+  headers: Record<string, string>;
+  expires_at: string;
+}
+
+export interface ClaimCodeState {
+  issued_at: string;
+  expires_at: string;
+  attempts: number;
+  max_attempts: number;
+  attempts_left: number;
+  locked_at?: string | null;
+  consumed_at?: string | null;
+  revoked_at?: string | null;
+  resend_no: number;
+  resends_left?: number;
+  sent_status?: string | null;
+}
+
+export interface Payment {
+  id: string;
+  ticket_id: string;
+  method: PaymentMethod;
+  amount_halalas: number;
+  currency: 'SAR';
+  pos_reference?: string | null;
+  collected_by: UserRef;
+  collected_at: string;
+  status: 'recorded' | 'reversed';
+}
+
+export interface RetrievalCycle {
+  id: string;
+  ticket_id: string;
+  cycle_no: number;
+  requested_at: string;
+  request_source: 'whatsapp' | 'staff';
+  requested_early: boolean;
+  accepted_by?: string | null;
+  started_at?: string | null;
+  ready_at?: string | null;
+  delivered_at?: string | null;
+  retrieved_by?: string | null;
+  delivered_by?: string | null;
+  outcome?: 'delivered' | 'canceled' | 'reparked' | null;
+  closed_at?: string | null;
+}
+
+export interface Task {
+  id: string;
+  ticket_id: string;
+  cycle_id?: string | null;
+  event_id?: string;
+  venue_id?: string;
+  dispatch_pool_id?: string;
+  type: TaskType;
+  status: TaskStatus;
+  priority_at: string;
+  seq: number;
+  assignee?: UserRef | null;
+  claimed_at?: string | null;
+  accepted_at?: string | null;
+  key_picked_up_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  canceled_at?: string | null;
+  cancel_reason?: string | null;
+  version: number;
+}
+
+/** Minimal projection (`ticket.read_minimal`). */
+export interface TicketSummary {
+  id: string;
+  display_number: number;
+  event_id: string;
+  event_name_ar?: string;
+  venue_id: string;
+  venue_name_ar?: string;
+  status: TicketStatus;
+  channel: TicketChannel;
+  plate: Plate;
+  vehicle?: { make?: string | null; color?: string | null };
+  wa_link_status: WaLinkStatus;
+  payment_status: PaymentStatus;
+  requested_at?: string | null;
+  created_at?: string;
+  version: number;
+}
+
+/** Full projection for the creator during intake, the assignee of an open task, and staff (07 §1.10). */
+export interface TicketDetail extends TicketSummary {
+  projection: 'minimal' | 'full';
+  vehicle_detail?: VehicleInfo;
+  customer?: {
+    phone_masked?: string | null;
+    consent?: { method: string; captured_at: string; revoked_at?: string | null } | null;
+    opted_out?: boolean;
+  } | null;
+  wa_link_pending?: { link_code_id: string; inbound_phone_masked: string; received_at: string } | null;
+  paper_serial?: string | null;
+  key_tag?: string | null;
+  inspection_status?: InspectionStatus;
+  notes?: string | null;
+  current_spot?: { id: string; label: string; zone_name: string } | null;
+  current_spot_note?: string | null;
+  current_key_slot?: { id: string; label: string; board_name: string } | null;
+  vehicle_holder?: HolderRef;
+  key_holder?: HolderRef;
+  pending_retrieval_at?: string | null;
+  active_cycle?: RetrievalCycle | null;
+  open_task?: Task | null;
+  fee_halalas?: number;
+  payment?: Payment | null;
+  claim_code?: ClaimCodeState | null;
+  media?: Media[];
+  created_by?: UserRef;
+  parked_by?: UserRef | null;
+  retrieved_by?: UserRef | null;
+  delivered_by?: UserRef | null;
+  submitted_at?: string | null;
+  parked_at?: string | null;
+  delivered_at?: string | null;
+}
+
+/** The driver's current or next task (D-04 / D-10). `parking` and `key_slot` are for the assignee only. */
+export interface TaskCard {
+  task: Task;
+  ticket: {
+    id: string;
+    display_number: number;
+    event_name_ar?: string;
+    plate?: Plate;
+    vehicle?: VehicleInfo;
+    status: TicketStatus;
+    version: number;
+  };
+  parking?: { spot_label?: string | null; zone_name?: string | null; spot_note?: string | null } | null;
+  key_slot?: { id: string; board_name: string; label: string } | null;
+  requested_at?: string | null;
+  waiting_seconds?: number | null;
+  payment_due?: { amount_halalas: number; allowed_methods: PaymentMethod[] } | null;
+  claim_code?: ClaimCodeState | null;
+}
+
+/** The single offer card shown to the driver: the oldest actionable request (D-09). */
+export interface OfferCard {
+  offer_id: string;
+  task_id: string;
+  mode: OfferMode;
+  eligible_as: OfferEligibility;
+  expires_at?: string | null;
+  reminder_at?: string | null;
+  server_time: string;
+  ticket: {
+    display_number: number;
+    event_name_ar?: string;
+    plate?: Plate;
+    vehicle?: { make?: string | null; color?: string | null };
+  };
+  requested_at: string;
+  waiting_seconds: number;
+  can_accept: boolean;
+  can_reserve_next: boolean;
+  safety_note_ar?: string | null;
+}
+
+/** `GET /v1/me/home` — the driver's full sync source (02 §1.7). */
+export interface DriverHome {
+  server_time: string;
+  user: UserRef;
+  venue?: { id: string; code: string; name_ar: string } | null;
+  open_events: Array<{ id: string; name_ar: string; status: EventStatus }>;
+  active_assignment?: DriverAssignment | null;
+  shift_open: boolean;
+  /**
+   * Proposed (docs/progress/notes/pnt-035.md): the pool's shift, for D-03 «الوردية: مفتوحة منذ 6:30 م»;
+   * without it D-03 shows «الوردية: مفتوحة».
+   */
+  shift?: { id: string; status: ShiftStatus; opened_at?: string | null } | null;
+  /**
+   * Proposed (pnt-035.md): the venue settings a driver screen needs but cannot read (`venue.read` is not a
+   * driver permission): D-06 photos, D-08 parking rules, the D-09 ring. Defaults apply when absent.
+   */
+  settings?: {
+    inspection?: { required_photos?: MediaKind[]; max_extra_photos?: number };
+    parking?: { mode?: ParkingMode };
+    keys?: { require_slot?: boolean };
+    dispatch?: { single_offer_ttl_s?: number };
+  } | null;
+  duty_session?: DutySession | null;
+  driver_state: DriverState;
+  connection_state?: ConnectionState | null;
+  current_task?: TaskCard | null;
+  next_task?: TaskCard | null;
+  offer?: OfferCard | null;
+  draft_ticket_id?: string | null;
+  cash_outstanding_halalas?: number;
+  checks: { audio_tested?: boolean; push_enabled?: boolean; pwa_installed?: boolean };
+  channel_health: WaHealthStatus;
+}
+
+export interface DriverStateResult {
+  driver_state: DriverState;
+  promoted_next_task?: TaskCard | null;
+}
+
+export type AudioTestResult = 'heard' | 'not_heard' | 'blocked';
+export type NotificationPermissionState = 'default' | 'granted' | 'denied' | 'unsupported';
+export type DisplayMode = 'browser' | 'standalone';
+export type DevicePlatform = 'ios' | 'android' | 'desktop' | 'other';
+
+export interface Device {
+  id: string;
+  label?: string | null;
+  platform: DevicePlatform;
+  display_mode: DisplayMode;
+  notification_permission: NotificationPermissionState;
+  push_subscribed: boolean;
+  audio_tested_at?: string | null;
+  audio_test_result?: AudioTestResult | null;
+  last_seen_at?: string | null;
+  created_at?: string;
+}
+
+/** A short-lived signed GET for a private photo (≤ 300 s, 07 §1.10); kept in memory only (02 §1.11). */
+export interface SignedUrl {
+  url: string;
+  expires_at: string;
+}
+
+export interface StartDutyResult {
+  duty_session: DutySession;
+  driver_state: DriverState;
+  checks: { audio_tested?: boolean; push_enabled?: boolean };
+}
+
+/** `POST /v1/tickets`: the draft ticket and its park task, created atomically (07 §2.2). */
+export interface CreateTicketResult {
+  ticket: TicketDetail;
+  task: Task;
+  driver_state: DriverState;
+}
+
+export interface MediaUploadResult {
+  media: Media;
+  upload: UploadInstruction;
+}
+
+export interface CompleteParkingResult {
+  ticket: TicketDetail;
+  task: Task;
+  driver: DriverStateResult;
+}
+
+export interface AcceptOfferResult {
+  result: 'accepted' | 'assigned_waiting';
+  task: Task;
+  ticket: TicketSummary;
+  driver_state: DriverState;
+}
+
+export interface HandoverResult {
+  ticket: TicketDetail;
+  cycle: RetrievalCycle;
+  payment?: Payment | null;
+  driver: DriverStateResult;
 }

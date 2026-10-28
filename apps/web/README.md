@@ -2,7 +2,8 @@
 
 React 19 + Vite 8 + TypeScript (strict) PWA used only by staff: driver, supervisor, admin, owner.
 Arabic-first, RTL (`<html lang="ar" dir="rtl">`), Western digits (DEC-17), times shown in `Asia/Riyadh`.
-Built in PNT-021 (shell + design system) and PNT-022 (sign-in screens D-01, D-02, S-01).
+Built in PNT-021 (shell + design system), PNT-022 (sign-in screens D-01, D-02, S-01), PNT-023 (setup screens
+S-05, S-06, S-08, S-09) and PNT-035 (the driver's field screens of the first vertical path, D-03 … D-11).
 
 Customers never use this app (WhatsApp only). The staff brand name comes from `VITE_BRAND_STAFF_NAME_AR`
 (and `brand` in `GET /v1/me`); the customer brand appears only on the surfaces canon §1 allows (D-07 QR panel,
@@ -12,7 +13,7 @@ S-03 message preview, S-13 channel settings). No brand name is written in `src/`
 ## Commands
 
 ```bash
-pnpm --filter @point/web dev         # Vite on :5173, proxies /v1 /ws /webhooks /health → http://localhost:3000 (DEC-29)
+pnpm --filter @point/web dev         # Vite on :5173, proxies /v1 /ws /webhooks /health → localhost:API_PORT (3000, DEC-29)
 pnpm --filter @point/web build       # tsc --noEmit + vite build → dist/
 pnpm --filter @point/web typecheck
 pnpm --filter @point/web test        # vitest, pure logic (test/*.test.ts)
@@ -40,25 +41,35 @@ src/
                       guards (RequireSession/RequireDriver/RequireStaff), RootLayout (theme, connectivity,
                       session-level error codes), paths, sessionEnd
   api/                client.ts (fetch wrapper), command.ts (Idempotency-Key + retries), errors.ts (ApiError,
-                      NetworkError), auth.ts (auth endpoints), queryClient.ts, types.ts (07_openapi.yaml shapes)
+                      NetworkError), auth.ts (auth endpoints), setup.ts / drivers.ts (S-05…S-09), field.ts
+                      (driver home, duty, intake, media + presigned PUT, parking, offers, retrieval, handover),
+                      queryClient.ts, types.ts (07_openapi.yaml shapes)
   stores/             zustand: session.ts (MFA step token, why a session ended — memory only), ui.ts (toasts,
-                      theme preference, online, last sync)
+                      theme preference, online, last sync), field.ts (last event chosen, audio check, the
+                      promotion to announce — memory only)
   hooks/              useCommand / useSubmitGuard, useMe / useBrand, useOnline, useThemeArea, useCountdown, useServerNow
-  i18n/               ar.ts (all of 02 §8 + screen copy, stable keys), errors.ts (08 text per canon error code), fmt.ts
+  i18n/               ar.ts (all of 02 §8 + screen copy, stable keys), errors.ts (08 text per canon error code), fmt.ts,
+                      fmtNode.tsx (templates with isolated LTR parts: `withTicket` for «#125», `Ltr`)
   lib/                format.ts (Intl ar-SA-u-nu-latn, Asia/Riyadh), phone.ts (E.164, mask), digits.ts,
-                      brand.ts, theme.ts, serverClock.ts, secretPolicy.ts, contrast.ts, cx.ts
+                      brand.ts, theme.ts, serverClock.ts, secretPolicy.ts, contrast.ts, cx.ts, audio.ts (one
+                      AudioContext opened by a tap, the D-03 test), deviceChecks.ts (notifications, display mode,
+                      wake lock), photos.ts (JPEG compression on the device, EXIF dropped)
   styles/             index.css (Tailwind v4 + brand/tokens imported in place), components.css, fonts.ts,
                       contrastPairs.ts (token pairs checked by test/contrast.test.ts)
   components/         the design-system components (names from 03 §3)
-  features/           auth (D-01, D-02, S-01), driver (shell, D-03/D-04/D-12/D-14), ops (staff shell + S-xx
-                      placeholders), venues (S-08, S-09), drivers (S-05, S-06), common (FormSheet, QueryView,
-                      StateChip, form error placement), session (logout, connection sheet), system (D-15, 404)
+  features/           auth (D-01, D-02, S-01), driver (shell, D-03, D-04, D-12, D-14; fieldModel.ts = the pure
+                      rules, intakeStore.ts = the in-memory intake drafts; tasks/ = D-05 … D-11, one lazy
+                      chunk), ops (staff shell + S-xx placeholders), venues (S-08, S-09), drivers (S-05, S-06),
+                      common (FormSheet, QueryView, StateChip, form error placement), session (logout,
+                      connection sheet), system (D-15, 404)
   dev/Gallery.tsx     component gallery (VITE_ENABLE_GALLERY only)
 test/                 vitest unit tests
 e2e/                  Playwright specs + support/api.ts (static in-browser mock), support/fake/ (stateful fake
                       backend seeded from packages/db/src/seed: sessions, canon §10 permissions, scope,
-                      Idempotency-Key replay, 07/08 errors), support/actors.ts (one context per actor),
-                      support/checks.ts
+                      Idempotency-Key replay, 07/08 errors, a small dispatch engine and a fake presigned
+                      storage), support/actors.ts (one context per actor), support/driver.ts (command-press
+                      contract, API-level arrangements), support/backend.ts (`E2E_BACKEND=live` sign-in and
+                      calls against the real API for PNT-036), support/checks.ts
 ```
 
 ## Tokens, fonts, themes
@@ -101,8 +112,14 @@ e2e/                  Playwright specs + support/api.ts (static in-browser mock)
 | `/account/secret` | D-02 | forced on first sign-in (no back), from D-14 later; then `/d/start` (first sign-in) or `/d/account` |
 | `/staff/login` | S-01 | steps: credentials → TOTP code → password change → MFA setup (QR generated locally) |
 | `/session-ended` | D-15 (c) | reason text: transfer / disabled / admin / expired |
-| `/d/start` | D-03 | shell + «بدء الوردية» (`POST /v1/me/duty/start` with Idempotency-Key); checklist in PNT-066/070 |
-| `/d`, `/d/vehicles`, `/d/account` | D-04, D-12, D-14 | driver shell, three tabs |
+| `/d/start` | D-03 | assignment, shift and open events (`GET /v1/me/home`), audio test, notifications, wake lock, «بدء الوردية» |
+| `/d`, `/d/vehicles`, `/d/account` | D-04, D-12, D-14 | driver shell, three tabs; D-04 polls `GET /v1/me/home` every 5 s (live updates: PNT-065) |
+| `/d/intake/:ticketId/vehicle` | D-05 | plate, make, model, colour, paper stub number → `PATCH /v1/tickets/{id}/intake` |
+| `/d/intake/:ticketId/key-photos` | D-06 | key tag, photos (compress → `POST …/media` → PUT → `POST /v1/media/{id}/complete`), submit |
+| `/d/intake/:ticketId/link` | D-07 | paper channel (WhatsApp modes: PNT-043/044) |
+| `/d/tasks/:taskId/park` | D-08 | spot and key slot pickers → `POST /v1/tasks/{id}/complete-parking` |
+| `/d/tasks/:taskId` | D-10 | key pickup → start → ready; D-09 offers are accepted on D-04 |
+| `/d/tickets/:ticketId/handover` | D-11 | paper stub (code: PNT-047) and the collection → `POST /v1/tickets/{id}/handover` |
 | `/ops`, `/drivers`, `/venues`, `/reports`, `/admin` | S-02, S-05, S-08, S-11, S-13 | staff shell, four destinations (+ admin by permission) |
 | `/drivers/:driverId` | S-06 | profile, assignment history, account actions by permission (PNT-023) |
 | `/venues/:venueId` | S-08 venue page | «الحفلات» (اليوم · القادمة · المغلقة) / «الورديات» (`?tab=shifts`) |
@@ -112,7 +129,8 @@ e2e/                  Playwright specs + support/api.ts (static in-browser mock)
 Buttons are shown only for the permissions in `GET /v1/me` `permissions` (`src/app/permissions.ts`); the server checks
 every call anyway.
 
-The driver sign-in and shell are in the main chunk; D-02, S-01 and the staff area are lazy chunks.
+The driver sign-in and shell are in the main chunk; D-02, S-01, the staff area and the driver task screens
+(D-05 … D-11, preloaded from D-04) are lazy chunks.
 
 ## Components ↔ design system
 
@@ -150,3 +168,8 @@ preview strings). `components/bundle.js` is never imported.
   sign-in page in both themes; each sign-in error code shows its 08 text; secrets never in browser storage; D-02 → D-03;
   S-01 MFA and first-time setup; session end; theme; the customer brand absent from staff pages; the command contract on
   «بدء الوردية»; gallery screenshots of every component attached to the report.
+- Driver path (PNT-035): `e2e/driver-g1.spec.ts` runs the whole G1 path at 390 px on the fake backend (two drivers,
+  paper channel, every press checked for one request with a UUIDv4 Idempotency-Key and a disabled, busy button until
+  the reply; actors, custody chain and audit rows asserted); `e2e/driver-errors.spec.ts` shows the 08 texts of the
+  path's errors (real conflicts between actors, a closed shift, a dropped upload); `e2e/layout.spec.ts` covers D-03 …
+  D-11 at 360/390/430 in both themes.

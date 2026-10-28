@@ -368,15 +368,51 @@ export const d02 = {
   weak: 'اختر رقمًا سريًا أقوى.',
 } as const;
 
-/** D-03 — بدء الوردية واختبار الصوت (shell only in PNT-022; the screen is PNT-035/PNT-070) */
+/** D-03 — بدء الوردية واختبار الصوت */
 export const d03 = {
   title: 'بدء الوردية',
   assignment: 'تعيينك: {venue}',
+  shiftOpenSince: 'الوردية: مفتوحة منذ {time}',
+  shiftOpen: 'الوردية: مفتوحة',
+  openEvents: 'الحفلات المفتوحة: {events}',
   start: 'بدء الوردية',
   logout: 'تسجيل الخروج',
   notificationsBanner: 'إشعارات الجهاز مساعدة فقط. أبقِ {brand} مفتوحًا أثناء الوردية لتسمع الطلبات.',
   noAssignment: 'لا يوجد تعيين نشط لك على أي موقع. تواصل مع مشرفك لتعيينك.',
+  shiftNotOpen: 'لا توجد وردية مفتوحة في {venue} الآن. اطلب من المشرف فتح الوردية.',
+  checks: {
+    audio: 'الصوت',
+    notifications: 'إشعارات الجهاز',
+    wakeLock: 'إبقاء الشاشة مضاءة',
+  },
+  audio: {
+    untested: 'لم يُختبر',
+    ok: 'يعمل',
+    notHeard: 'لم يُسمع',
+    blocked: 'محجوب',
+  },
+  notifications: {
+    off: 'غير مفعّلة',
+    on: 'مفعّلة',
+    denied: 'مرفوضة',
+    unsupported: 'غير مدعومة على هذا المتصفح',
+    needsInstall: 'تتطلب الإضافة للشاشة الرئيسية',
+  },
+  wakeLock: {
+    supported: 'مدعوم',
+    unsupported: 'غير مدعوم',
+  },
   testAudio: 'تفعيل واختبار الصوت',
+  enableNotifications: 'تفعيل الإشعارات',
+  how: 'كيف؟',
+  heardQuestion: 'هل سمعت النغمة؟',
+  heardYes: 'نعم، سمعتها',
+  heardNo: 'لا',
+  notHeardHint: 'ارفع صوت الجهاز وأوقف الوضع الصامت ثم أعد الاختبار.',
+  deniedHint: 'يمكنك تفعيلها لاحقًا من إعدادات المتصفح. الوظائف الأساسية تعمل دونها.',
+  untestedConfirm: 'لم تختبر الصوت بعد، وقد لا تسمع طلبات الإحضار. هل تريد البدء الآن؟',
+  testNow: 'اختبار الصوت الآن',
+  startWithoutTest: 'البدء دون اختبار',
 } as const;
 
 /** D-04 — الرئيسية */
@@ -389,6 +425,147 @@ export const d04 = {
   emptyBody: 'ستسمع تنبيهًا عند وصول طلب.',
   onBreak: 'أنت في استراحة ولن تصلك الطلبات.',
   endBreak: 'إنهاء الاستراحة',
+  /** Why «استلام مركبة» is disabled, by driver_state. */
+  disabled: {
+    intake_parking: 'أكمل تسجيل أو صف المركبة الحالية أولًا',
+    retrieving: 'لديك مهمة إحضار جارية',
+    busy_with_next: 'لديك مهمة إحضار جارية',
+    on_break: 'أنت في استراحة',
+  },
+  noOpenEvent: 'لا يوجد حفل مفتوح في الموقع الآن. تواصل مع المشرف.',
+  chooseEvent: 'لأي حفل هذه المركبة؟',
+  /** TaskCard rows of the D-04 table: heading before «#n», the stage line, the button. */
+  task: {
+    intake: { heading: 'تسجيل مركبة', line: 'أكمل بيانات الاستلام', action: 'متابعة التسجيل' },
+    park: { heading: 'صف', line: 'اركن المركبة ثم سجّل الموقف وخانة المفتاح', action: 'إتمام الصف' },
+    repark: {
+      heading: 'إعادة صف',
+      line: 'أعد المركبة إلى موقف وسجّل الموقف وخانة المفتاح',
+      action: 'إتمام إعادة الصف',
+    },
+    key: { heading: 'إحضار', line: 'استلم المفتاح من الخانة {slot}', action: 'متابعة' },
+    start: { heading: 'إحضار', line: 'ابدأ الإحضار من الموقف {spot}', action: 'متابعة' },
+    retrieving: { heading: 'جارٍ الإحضار', line: 'عند الوصول اضغط «جاهزة»', action: 'متابعة' },
+    /** The line is «منذ {مدة}» = `components.time.sinceMinutes` (02 §1.2 «منذ 3 د»). */
+    ready: { heading: 'بانتظار العميل', action: 'التسليم' },
+  },
+  /** The reserved next task: badge, then «منذ {مدة}» since the request and this line. */
+  reserved: 'محجوزة لك',
+  nextLine: 'تبدأ بعد إنهاء مهمتك الحالية. لا تبدأ الحركة قبل ذلك.',
+  promoted: 'بدأت مهمتك التالية: #{n}',
+  goToTask: 'الانتقال',
+} as const;
+
+/** D-05 — استلام مركبة (1): المركبة والعميل */
+export const d05 = {
+  title: 'استلام مركبة · #{n}',
+  steps: { vehicle: 'المركبة والعميل', keyPhotos: 'المفتاح والصور' },
+  event: 'الحفل: {event}',
+  plateIncomplete: 'أكمل أحرف اللوحة الثلاثة وأرقامها.',
+  make: 'الشركة المصنعة',
+  model: 'الطراز (اختياري)',
+  color: 'اللون',
+  paperSerial: 'رقم التذكرة الورقية',
+  paperSerialPlaceholder: '004521',
+  paperHint: 'انسخ الرقم المطبوع على الكعب كما هو.',
+  next: 'التالي',
+  notSaved: 'لم تُحفظ الخطوة الأولى على الخادم بعد؛ سنعيد المحاولة تلقائيًا.',
+  cancelTitle: 'إلغاء الاستلام؟',
+  cancelConfirm: 'إلغاء الاستلام',
+  cancelKeep: 'متابعة التسجيل',
+  canceled: 'أُلغي الاستلام',
+  // not in 02 (docs/progress/notes/pnt-035.md): labels of the «أخرى» free-text fields
+  makeOther: 'اسم الشركة',
+  colorOther: 'وصف اللون',
+} as const;
+
+/** D-06 — استلام مركبة (2): المفتاح والصور */
+export const d06 = {
+  keyTag: 'رقم علاقة المفتاح',
+  photos: 'صور الحالة ({n} من {total})',
+  damagePhoto: 'صورة ضرر',
+  notes: 'ملاحظات الأضرار (اختياري)',
+  incomplete: 'الفحص غير مكتمل: {n} من {total} صور.',
+  submit: 'إتمام التسجيل',
+  submitWaiting: 'إتمام التسجيل (بانتظار رفع {n} صورة)',
+  continueWithout: 'المتابعة دون انتظار',
+  inspectionTitle: 'الفحص غير مكتمل ({n} من {total} صور). المتابعة ستُبلغ المشرف لاعتماد استثناء.',
+  completePhotos: 'إكمال الصور',
+  continueAndNotify: 'متابعة وإبلاغ المشرف',
+  needsConnection: 'يلزم الاتصال لإتمام التسجيل',
+} as const;
+
+/** D-07 — تأكيد التذكرة الورقية (mode C; WhatsApp modes A/B arrive with PNT-043/PNT-044) */
+export const d07 = {
+  paperTitle: 'تذكرة ورقية · #{n}',
+  paperText: 'سلّم العميل الكعب رقم {serial}، وعلّق الجزء الآخر على المفتاح.',
+  stubGiven: 'سلّمت الكعب للعميل',
+  toParking: 'متابعة إلى الصف',
+} as const;
+
+/** D-08 — إتمام الصف (وإعادة الصف) */
+export const d08 = {
+  title: 'إتمام الصف',
+  reparkTitle: 'إعادة الصف',
+  early: 'العميل طلب السيارة أثناء الصف. سيُنشأ طلب الإحضار فور إتمام الصف.',
+  zone: 'المنطقة',
+  spot: 'الموقف',
+  noSpot: 'بدون موقف محدد',
+  spotNote: 'وصف المكان',
+  spotNotePlaceholder: 'بجانب البوابة 3',
+  board: 'لوحة المفاتيح',
+  slot: 'الخانة',
+  deposited: 'أودعت المفتاح في الخانة المختارة',
+  submit: 'تم الصف',
+  parked: 'تم صف #{n}',
+  chooseBoth: 'اختر الموقف وخانة المفتاح.',
+  needsConnection: 'يلزم الاتصال لتسجيل الصف',
+} as const;
+
+/** D-09 — بطاقة العرض والبث */
+export const d09 = {
+  accepted: 'قبلت الطلب #{n}',
+  reserved: 'حُجز الطلب #{n} كمهمة تالية. لا تبدأ قبل إنهاء مهمتك الحالية.',
+} as const;
+
+/** D-10 — المهمة الحالية (الإحضار) */
+export const d10 = {
+  title: 'إحضار · #{n}',
+  waiting: 'ينتظر العميل منذ {time}',
+  keySlot: 'خانة المفتاح: {board} · {slot}',
+  spot: 'الموقف: {spot} (المنطقة {zone})',
+  damageNotes: 'ملاحظات الأضرار: {notes}',
+  photos: 'الصور',
+  pickedUp: 'استلمت المفتاح',
+  startRetrieval: 'بدء الإحضار',
+  ready: 'وصلت — جاهزة',
+  handover: 'التسليم',
+  stopAtHandover: 'توقف عند نقطة التسليم',
+  startHint: 'عند البدء يصل العميل إشعار «جارٍ إحضار سيارتك».',
+  readyHint: 'عند الضغط يصل العميل رمز التسليم. لا تطلب الرمز قبل هذه الخطوة.',
+  needsConnection: 'يلزم الاتصال لتأكيد كل خطوة',
+} as const;
+
+/** D-11 — التسليم والتحصيل */
+export const d11 = {
+  title: 'التسليم · #{n}',
+  askCode: 'اطلب من العميل رمز التسليم',
+  codeMeta: 'المحاولات المتبقية: {n} · صالح حتى {time}',
+  askStub: 'اطلب من العميل كعب التذكرة الورقية',
+  stub: 'رقم الكعب',
+  payment: 'التحصيل',
+  amountDue: 'المبلغ المستحق: {amount}',
+  method: 'طريقة التحصيل',
+  posReference: 'رقم إيصال الشبكة (اختياري)',
+  posHint: 'رقم الإيصال فقط — لا تُدخل رقم البطاقة.',
+  received: 'استلمت المبلغ',
+  submit: 'تأكيد التسليم',
+  delivered: 'تم تسليم #{n}',
+  customerNotified: 'وصل العميل تأكيد التسليم.',
+  promoted: 'مهمتك التالية بدأت الآن: #{n}',
+  newCode: 'إرسال رمز جديد',
+  resent: 'أُرسل رمز جديد للعميل. الرمز السابق لم يعد صالحًا.',
+  offline: 'لا يمكن التسليم دون اتصال. انتظر عودة الاتصال أو اطلب المشرف.',
 } as const;
 
 /** D-12 — المركبات */
@@ -412,6 +589,19 @@ export const d14 = {
   endAndLogout: 'إنهاء الوردية والخروج',
   endShiftConfirm: 'إنهاء الوردية؟ لن تصلك طلبات بعد الآن.',
   addToHomeLink: 'كيف أضيف {brand} إلى الشاشة الرئيسية؟',
+  /** «دليل الإضافة للشاشة الرئيسية» (Sheet shared with D-03). */
+  guide: {
+    iphone: [
+      'افتح {brand} في Safari.',
+      'اضغط زر المشاركة.',
+      'اختر «إضافة إلى الشاشة الرئيسية».',
+      'افتح {brand} من الأيقونة الجديدة.',
+      'من «حسابي» اضغط «تفعيل الإشعارات».',
+    ],
+    iphoneNote: 'إشعارات الويب على iPhone تتطلب إضافة الموقع للشاشة الرئيسية وإصدارًا حديثًا من iOS.',
+    android: 'من قائمة المتصفح اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».',
+    all: 'الإشعارات مساعدة فقط؛ لا تضمن صوتًا والجهاز مقفل أو صامت. أبقِ {brand} مفتوحًا أثناء الوردية.',
+  },
 } as const;
 
 /** D-15 — حالات النظام */
@@ -788,6 +978,13 @@ export const ar = {
   d02,
   d03,
   d04,
+  d05,
+  d06,
+  d07,
+  d08,
+  d09,
+  d10,
+  d11,
   d12,
   d14,
   d15,

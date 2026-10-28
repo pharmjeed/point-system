@@ -75,21 +75,23 @@ export function registerSetupRoutes(s: FakeServer): void {
       if (!user || user.secret !== String(ctx.body?.secret ?? '')) fail('AUTH_INVALID_CREDENTIALS');
       if (user.status === 'disabled') fail('AUTH_ACCOUNT_DISABLED');
       ctx.session.userId = user.id;
+      ctx.session.deviceId = s.newDevice(user.id);
       return ok({
         mfa_required: false,
         mfa_token: null,
         mfa_setup_required: false,
         must_change_secret: user.must_change_secret,
-        me: meView(s, user),
+        me: meView(s, user, ctx.session),
       });
     },
     { public: true },
   );
   s.on('POST /v1/auth/logout', (ctx) => {
     ctx.session.userId = null;
+    ctx.session.deviceId = null;
     return ok(undefined, 204);
   });
-  s.on('GET /v1/me', (ctx) => ok(meView(s, ctx.user as FUser)));
+  s.on('GET /v1/me', (ctx) => ok(meView(s, ctx.user as FUser, ctx.session)));
 
   // ---------------------------------------------------------------- venues
   s.on('GET /v1/venues', (ctx) => {

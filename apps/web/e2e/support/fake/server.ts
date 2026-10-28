@@ -18,6 +18,7 @@ import {
   matchRoute,
   nowIso,
   stable,
+  uuid,
   type Reply,
   type RoutePattern,
 } from './http';
@@ -26,11 +27,26 @@ import { seedWorld, type SeedOptions, type SeedUserKey } from './seed';
 
 export interface Session {
   userId: string | null;
+  /** The `devices` row this sign-in linked (09 §9.5), exposed as `Me.session.device_id` (proposed). */
+  deviceId: string | null;
+}
+
+export interface FDevice {
+  id: string;
+  user_id: string;
+  platform: 'ios' | 'android' | 'desktop' | 'other';
+  display_mode: 'browser' | 'standalone';
+  notification_permission: 'default' | 'granted' | 'denied' | 'unsupported';
+  audio_test_result: 'heard' | 'not_heard' | 'blocked' | null;
+  audio_tested_at: string | null;
+  created_at: string;
 }
 
 export interface Ctx {
   method: string;
   path: string;
+  /** `http://localhost:5317` — for absolute URLs in replies (presigned uploads). */
+  origin: string;
   params: Record<string, string>;
   query: URLSearchParams;
   body: any;
@@ -79,11 +95,28 @@ export class FakeServer {
   private readonly idem = new Map<string, { fingerprint: string; reply: Reply }>();
   private readonly faults: Array<{ pattern: RoutePattern; reply: Reply | 'abort'; times: number }> = [];
   private readonly delays: Array<{ pattern: RoutePattern; ms: number; times: number }> = [];
-  /** Uploaded object sizes by media id (the fake object storage). */
-  readonly storage = new Map<string, number>();
+  /** Uploaded objects by media id (the fake private object storage). */
+  readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
+  readonly devices = new Map<string, FDevice>();
 
   constructor(options: SeedOptions = {}) {
     this.world = seedWorld(options);
+  }
+
+  /** Every sign-in links a device row (09 §9.5). */
+  newDevice(userId: string): string {
+    const id = uuid();
+    this.devices.set(id, {
+      id,
+      user_id: userId,
+      platform: 'android',
+      display_mode: 'browser',
+      notification_permission: 'default',
+      audio_test_result: null,
+      audio_tested_at: null,
+      created_at: nowIso(),
+    });
+    return id;
   }
 
   // ---------------------------------------------------------------- wiring
@@ -116,7 +149,8 @@ export class FakeServer {
 
   /** Attaches a page: its `/v1/*` requests are answered here, as its own session (optionally signed in). */
   async attach(page: Page, as?: SeedUserKey): Promise<Session> {
-    const session: Session = { userId: as ? this.userByKey(as).id : null };
+    const session: Session = { userId: null, deviceId: null };
+    if (as) this.signIn(session, as);
     await page.route(
       (url) => url.pathname.startsWith('/v1/') || url.pathname.startsWith(STORAGE_PREFIX),
       (route) => this.serve(route, session),
@@ -125,7 +159,36 @@ export class FakeServer {
   }
 
   signIn(session: Session, key: SeedUserKey): void {
-    session.userId = this.userByKey(key).id;
+    const user = this.userByKey(key);
+    session.userId = user.id;
+    session.deviceId = this.newDevice(user.id);
+  }
+
+  /**
+   * Runs a route as a seeded user without a browser (test set-up and the «other actor» of a scenario: a
+   * supervisor's request on behalf, a second driver). Same handlers and rules as the UI's calls, with a
+   * fresh Idempotency-Key; not recorded in `calls`. Throws on an error reply.
+   */
+  exec<T = any>(as: SeedUserKey, spec: string, params: Record<string, string> = {}, body?: unknown): T {
+    const def = this.routes.find((r) => r.pattern.spec === spec);
+    if (!def) throw new Error(`fake exec: no route ${spec}`);
+    const user = this.userByKey(as);
+    const path = (spec.split(' ')[1] ?? '').replace(/:([A-Za-z]+)/g, (_, k: string) =>
+      encodeURIComponent(params[k] ?? ''),
+    );
+    const reply = this.dispatch(def, {
+      method: def.pattern.method,
+      path,
+      origin: 'http://localhost',
+      query: new URLSearchParams(),
+      body,
+      rawBody: null,
+      headers: { 'x-requested-with': 'point-web', 'idempotency-key': uuid() },
+      session: { userId: user.id, deviceId: null },
+    });
+    if (reply.status >= 400)
+      throw new Error(`fake exec ${spec} → ${reply.status} ${JSON.stringify(reply.body)}`);
+    return (reply.body as { data?: T } | undefined)?.data as T;
   }
 
   userByKey(key: SeedUserKey): FUser {
@@ -181,6 +244,7 @@ export class FakeServer {
       : this.dispatch(def, {
           method,
           path: url.pathname,
+          origin: url.origin,
           query: url.searchParams,
           body,
           rawBody,
@@ -188,6 +252,15 @@ export class FakeServer {
           session,
         });
     call.status = reply.status;
+    if (reply.raw) {
+      await route.fulfill({
+        status: reply.status,
+        contentType: reply.contentType,
+        headers: reply.headers,
+        body: reply.raw,
+      });
+      return;
+    }
     await route.fulfill({
       status: reply.status,
       contentType: 'application/json',
@@ -239,6 +312,8 @@ export class FakeServer {
         reply = e.reply;
       }
       if (reply.status < 500) this.idem.set(store, { fingerprint, reply });
+      if (reply.status < 300)
+        this.world.audit.push({ route: def.pattern.spec, actor_id: user.id, at: nowIso() });
       return reply;
     } catch (e) {
       if (e instanceof HttpError) return e.reply;

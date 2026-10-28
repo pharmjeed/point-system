@@ -11,6 +11,7 @@ import { d15, nav } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { ConnectionSheet } from '@/features/session/ConnectionSheet';
 import { useConnection } from '@/features/session/useConnection';
+import { useCachedHome } from './useDriverHome';
 
 /** Exactly three destinations for the driver (02 §1.4, 03 §3.2). */
 export const DRIVER_NAV: NavItem[] = [
@@ -19,18 +20,22 @@ export const DRIVER_NAV: NavItem[] = [
   { to: paths.driverAccount, label: nav.account, icon: User },
 ];
 
-/** TopBar + offline banner + content (+ BottomNav). D-03 uses it without the navigation. */
+/**
+ * TopBar + offline banner + content (+ BottomNav). D-03 and the task screens (D-05 … D-11) use it without
+ * the navigation. The driver state follows the latest `GET /v1/me/home` snapshot when there is one.
+ */
 export function DriverFrame({ me, withNav, children }: { me: Me; withNav: boolean; children: ReactNode }) {
   const brand = useBrand();
   const connection = useConnection();
+  const home = useCachedHome();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const title = me.active_assignment?.venue_name_ar || brand.staffNameAr;
+  const title = home?.venue?.name_ar || me.active_assignment?.venue_name_ar || brand.staffNameAr;
   return (
     <AppShell
       topBar={
         <TopBar
           title={title}
-          driverState={me.driver_state ?? 'off_duty'}
+          driverState={home?.driver_state ?? me.driver_state ?? 'off_duty'}
           connection={connection.state}
           lastSync={connection.lastSync}
           onConnectionClick={() => setSheetOpen(true)}
@@ -66,6 +71,20 @@ export function DriverLayout() {
     <RequireDriver>
       {(me) => (
         <DriverFrame me={me} withNav>
+          <Outlet context={me} />
+        </DriverFrame>
+      )}
+    </RequireDriver>
+  );
+}
+
+/** The task screens D-05 … D-11: same TopBar, no BottomNav (02 §3 wireframes), a Header per screen. */
+export function DriverTaskLayout() {
+  useThemeArea('driver');
+  return (
+    <RequireDriver>
+      {(me) => (
+        <DriverFrame me={me} withNav={false}>
           <Outlet context={me} />
         </DriverFrame>
       )}

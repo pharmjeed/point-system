@@ -202,8 +202,26 @@ export interface FTicket {
   submitted_at: string | null;
   parked_at: string | null;
   delivered_at: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  /** Early request while received/parking/reparking (DEC-13). */
+  pending_retrieval_at: string | null;
+  /** The live handover code of a WhatsApp ticket (the real server keeps a hash only, DEC-38). */
+  claim: FClaim | null;
   version: number;
   created_at: string;
+}
+
+export interface FClaim {
+  code: string;
+  attempts: number;
+  max_attempts: number;
+  issued_at: string;
+  expires_at: string;
+  locked_at: string | null;
+  consumed_at: string | null;
+  resend_no: number;
+  max_resends: number;
 }
 
 export interface FCycle {
@@ -248,6 +266,10 @@ export interface FTask {
   key_picked_up_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  canceled_at: string | null;
+  cancel_reason: string | null;
+  /** Drivers a single offer already went to in this cycle (the next round skips them). */
+  offered_to: string[];
   version: number;
 }
 
@@ -256,9 +278,12 @@ export interface FOffer {
   task_id: string;
   mode: 'single' | 'broadcast';
   status: 'active' | 'accepted' | 'expired' | 'revoked';
+  /** Single offers: the one recipient. Broadcasts: everyone on duty in the pool (computed on read). */
   recipients: string[];
   created_at: string;
   expires_at: string | null;
+  accepted_by: string | null;
+  close_reason: string | null;
   version: number;
 }
 
@@ -280,6 +305,7 @@ export interface FCustodyEvent {
   reason: string;
   actor_id: string;
   task_id: string | null;
+  occurred_at: string;
 }
 
 export interface World {
@@ -301,4 +327,6 @@ export interface World {
   media: FMedia[];
   payments: FPayment[];
   custody: FCustodyEvent[];
+  /** One row per successful command, like `audit_log` (route + actor). */
+  audit: Array<{ route: string; actor_id: string; at: string }>;
 }

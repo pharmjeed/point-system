@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import { DriverLoginPage } from '@/features/auth/DriverLoginPage';
 import { AccountPage } from '@/features/driver/AccountPage';
 import { DriverHomePage } from '@/features/driver/DriverHomePage';
-import { DriverLayout } from '@/features/driver/DriverLayout';
+import { DriverLayout, DriverTaskLayout } from '@/features/driver/DriverLayout';
 import { StartShiftPage } from '@/features/driver/StartShiftPage';
 import { VehiclesPage } from '@/features/driver/VehiclesPage';
 import { BootSkeleton, NotFoundPage, RootRedirect, SessionEndedPage } from '@/features/system/SystemPages';
@@ -13,6 +13,8 @@ import { RootLayout } from './RootLayout';
  * Component gallery (design-system comparison, e2e screenshots). Only in builds with
  * VITE_ENABLE_GALLERY=true; otherwise the branch is dead code and the chunk is not emitted.
  */
+const tasks = () => import('@/features/driver/tasks');
+
 const galleryRoutes: RouteObject[] =
   import.meta.env.VITE_ENABLE_GALLERY === 'true'
     ? [{ path: paths.gallery, lazy: async () => ({ Component: (await import('@/dev/Gallery')).default }) }]
@@ -51,6 +53,30 @@ export const routes: RouteObject[] = [
           { index: true, element: <DriverHomePage /> },
           { path: 'vehicles', element: <VehiclesPage /> },
           { path: 'account', element: <AccountPage /> },
+        ],
+      },
+      {
+        // D-05 … D-11: one lazy chunk (prefetched by D-04), no BottomNav
+        element: <DriverTaskLayout />,
+        children: [
+          {
+            path: '/d/intake/:ticketId/vehicle',
+            lazy: async () => ({ Component: (await tasks()).IntakeVehiclePage }),
+          },
+          {
+            path: '/d/intake/:ticketId/key-photos',
+            lazy: async () => ({ Component: (await tasks()).IntakeKeyPhotosPage }),
+          },
+          {
+            path: '/d/intake/:ticketId/link',
+            lazy: async () => ({ Component: (await tasks()).IntakeLinkPage }),
+          },
+          { path: '/d/tasks/:taskId/park', lazy: async () => ({ Component: (await tasks()).ParkPage }) },
+          { path: '/d/tasks/:taskId', lazy: async () => ({ Component: (await tasks()).RetrievalPage }) },
+          {
+            path: '/d/tickets/:ticketId/handover',
+            lazy: async () => ({ Component: (await tasks()).HandoverPage }),
+          },
         ],
       },
       {

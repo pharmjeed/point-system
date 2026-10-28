@@ -235,9 +235,9 @@
     "note": "S-08 venues/events/shifts, S-09 layout + settings, S-05/S-06 basics; buttons by /v1/me permissions; e2e on a stateful fake API (07/08) seeded from 17 §4"
   },
   "PNT-035": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (web, mocked API until S2 lands)"
+    "note": "D-03…D-11 on 5 s polling, paper channel: two-step intake with on-device JPEG + presigned PUT, parking pickers, offer accept, retrieval steps, stub handover + collection; G1 and 08-error e2e at 390 on the stateful fake, layout 360/390/430; live-API seam for PNT-036"
   },
   "PNT-043": {
     "status": "in_progress",

@@ -8,7 +8,7 @@ import { TextArea } from './TextArea';
 export interface DialogProps {
   open: boolean;
   onOpenChange?: (open: boolean) => void;
-  title: string;
+  title: ReactNode;
   body?: ReactNode;
   children?: ReactNode;
   /** Shows the mandatory reason field (`REASON_REQUIRED`, 03 §3.14). */
@@ -26,6 +26,8 @@ export interface DialogProps {
   error?: ReactNode;
   onConfirm?: () => void | Promise<unknown>;
   onCancel?: () => void;
+  /** Escape without choosing, when the cancel button is itself an action (default: `onCancel`). */
+  onDismiss?: () => void;
   /** Static rendering inside the page (component gallery). */
   inline?: boolean;
   id?: string;
@@ -101,7 +103,7 @@ export function Dialog(props: DialogProps) {
       onOpenChange={(open) => {
         if (!open && props.loading) return; // keep it open while the command runs
         props.onOpenChange?.(open);
-        if (!open) props.onCancel?.();
+        if (!open) (props.onDismiss ?? props.onCancel)?.();
       }}
     >
       <RadixDialog.Portal>

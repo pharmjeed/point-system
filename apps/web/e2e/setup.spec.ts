@@ -374,6 +374,10 @@ function ticketHeldBy(driverId: string, eventId: string) {
     submitted_at: null,
     parked_at: null,
     delivered_at: null,
+    voided_at: null,
+    void_reason: null,
+    pending_retrieval_at: null,
+    claim: null,
     version: 3,
     created_at: new Date().toISOString(),
   };
