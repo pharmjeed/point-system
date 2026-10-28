@@ -1,3 +1,4 @@
+import { seedKeySlotId, seedSpotId } from '@point/db/seed';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createCustomerApp,
@@ -13,15 +14,23 @@ import {
 import {
   accept,
   auditCount,
+  completeParking,
   err,
+  EVT_R2,
   expectConsistent,
   handover,
   keyPickup,
   markReady,
+  newDraft,
   ok,
   outboxEvents,
+  PAPER_DRAFT,
+  patchIntake,
+  addPhotos,
   requestRetrieval,
   startRetrieval,
+  submitIntake,
+  U,
 } from './dispatch-fixtures.js';
 import { newKey } from './harness.js';
 import { ORG } from './wa-harness.js';
@@ -31,6 +40,8 @@ const newPhone = () => `+96655${phoneSeq++}`;
 
 const resend = (w: CustomerApp, as: string, ticketId: string, key?: string) =>
   w.command('post', `/v1/tickets/${ticketId}/handover-code/resend`, { as, body: {}, key });
+const exception = (w: CustomerApp, as: string, ticketId: string, body: Record<string, unknown>) =>
+  w.command('post', `/v1/tickets/${ticketId}/handover-exception`, { as, body });
 const codes = async (w: CustomerApp, ticketId: string) =>
   (
     await w.db.query(`SELECT * FROM claim_codes WHERE ticket_id = $1 ORDER BY issued_at, resend_no`, [
@@ -41,7 +52,7 @@ const byCode = (code: string) => ({ verification: { method: 'code', code } });
 /** A 6-digit value bounded by non-hex characters (a uuid or a hash never matches by accident). */
 const codePattern = (code: string) => new RegExp(`(^|[^0-9a-f])${code}([^0-9a-f]|$)`);
 
-describe('S3 handover codes (PNT-047)', () => {
+describe('S3 handover codes (PNT-047) and the exceptional handover (PNT-078)', () => {
   let w: CustomerApp;
   beforeAll(async () => {
     w = await createCustomerApp();
@@ -351,5 +362,202 @@ describe('S3 handover codes (PNT-047)', () => {
       [t.ticketId, t.driver],
     );
     err(await handover(w, t.driver, t.ticketId, byCode('123456')), 'HANDOVER_CODE_CONSUMED', 409);
+  });
+
+  describe('PNT-078 — POST /v1/tickets/{ticketId}/handover-exception', () => {
+    const checks = { vehicle_description_confirmed: true, plate_confirmed: true };
+
+    it('TC-031: a driver is refused, the plate alone is not enough, a wrong last-4 is refused; the documented exception delivers with an incident, the code revoked and the approval audited', async () => {
+      const t = await readyTicket();
+      const last4 = t.phone.slice(-4);
+      const body = { reason: 'لم يصل الرمز للعميل', identity_checks: { ...checks, phone_last4: last4 } };
+      err(await exception(w, t.driver, t.ticketId, body), 'PERMISSION_DENIED', 403);
+      expect(
+        err(
+          await exception(w, 'SUP-R', t.ticketId, {
+            reason: 'ضاع الجوال',
+            identity_checks: { plate_confirmed: true },
+          }),
+          'VALIDATION_FAILED',
+          422,
+        ).fields,
+      ).toEqual([{ field: 'identity_checks', issue: 'insufficient_checks', min_checks: 2 }]);
+      expect(
+        err(await exception(w, 'SUP-R', t.ticketId, { ...body, reason: 'x' }), 'REASON_REQUIRED', 422),
+      ).toEqual({
+        field: 'reason',
+        min_length: 3,
+      });
+      const wrong = String((Number(last4) + 1) % 10000).padStart(4, '0');
+      expect(
+        err(
+          await exception(w, 'SUP-R', t.ticketId, {
+            ...body,
+            identity_checks: { ...body.identity_checks, phone_last4: wrong },
+          }),
+          'VALIDATION_FAILED',
+          422,
+        ).fields,
+      ).toEqual([{ field: 'identity_checks.phone_last4', issue: 'mismatch' }]);
+
+      const r = ok(await exception(w, 'SUP-R', t.ticketId, body));
+      expect(r.ticket).toMatchObject({ status: 'delivered' });
+      expect(r.cycle).toMatchObject({ outcome: 'delivered', delivered_by: t.driver });
+      expect(r.payment).toBeNull();
+      const row = await ticketRow(w, t.ticketId);
+      expect(row).toMatchObject({
+        delivered_by: t.driver,
+        vehicle_holder_type: 'customer',
+        key_holder_type: 'customer',
+      });
+      const cycle = (
+        await w.db.query(`SELECT handover_method FROM retrieval_cycles WHERE ticket_id = $1`, [t.ticketId])
+      ).rows[0];
+      expect(cycle.handover_method).toBe('supervisor_exception');
+      expect((await codes(w, t.ticketId))[0]).toMatchObject({
+        revoke_reason: 'exception_handover',
+        code_ciphertext: null,
+      });
+      const incident = (await w.db.query(`SELECT * FROM incidents WHERE ticket_id = $1`, [t.ticketId])).rows;
+      expect(incident).toEqual([
+        expect.objectContaining({
+          type: 'manual_verification',
+          status: 'resolved',
+          opened_by: U['SUP-R'],
+          description: body.reason,
+        }),
+      ]);
+      const approved = (await outboxEvents(w.db, 'handover.exception_approved')).filter(
+        (e) => e.payload.payload.ticket_id === t.ticketId,
+      );
+      expect(approved.map((e) => e.payload.payload)).toEqual([
+        expect.objectContaining({
+          approved_by: U['SUP-R'],
+          reason: body.reason,
+          incident_id: incident[0].id,
+        }),
+      ]);
+      const completed = (await outboxEvents(w.db, 'handover.completed')).filter(
+        (e) => e.payload.payload.ticket_id === t.ticketId,
+      );
+      expect(completed.map((e) => e.payload.payload)).toEqual([
+        expect.objectContaining({
+          method: 'supervisor_exception',
+          delivered_by: t.driver,
+          approved_by: U['SUP-R'],
+        }),
+      ]);
+      const audit = (
+        await w.db.query(
+          `SELECT reason, metadata FROM audit_log WHERE action = 'handover.exception' AND entity_id = $1`,
+          [t.ticketId],
+        )
+      ).rows[0];
+      expect(audit.reason).toBe(body.reason);
+      expect(audit.metadata).toMatchObject({
+        identity_methods: ['phone_last4', 'plate', 'vehicle_description'],
+        self_approved: false,
+        incident_id: incident[0].id,
+      });
+      expect(JSON.stringify(audit)).not.toMatch(new RegExp(`(^|[^0-9a-f])${last4}([^0-9a-f]|$)`));
+      await settle(w, t.phone);
+      expect((await messagesTo(w, t.phone)).at(-1)!.purpose).toBe('W-06');
+      // the assignee is free again
+      const state = (
+        await w.db.query(`SELECT driver_state FROM v_driver_state WHERE user_id = $1`, [t.driver])
+      ).rows[0];
+      expect(state.driver_state).toBe('available');
+      await expectConsistent(w.db);
+    });
+
+    it('after a locked code: the exception resolves handover_code_locked; HANDOVER_NOT_READY, VERSION_CONFLICT, TICKET_NOT_FOUND, TICKET_CLOSED', async () => {
+      const t = await readyTicket();
+      const wrong = t.code === '999999' ? '888888' : '999999';
+      for (let i = 0; i < 5; i++) await handover(w, t.driver, t.ticketId, byCode(wrong));
+      const alert = (
+        await w.db.query(`SELECT id FROM alerts WHERE ticket_id = $1 AND type = 'handover_code_locked'`, [
+          t.ticketId,
+        ])
+      ).rows[0];
+      const v = (await ticketRow(w, t.ticketId)).version;
+      const body = {
+        reason: 'قفل الرمز بعد محاولات',
+        identity_checks: { plate_confirmed: true, document_note: 'اطّلعت على الاستمارة' },
+      };
+      err(await exception(w, 'SUP-R', '00000000-0000-4000-8000-0000deadbeef', body), 'TICKET_NOT_FOUND', 404);
+      expect(
+        err(
+          await exception(w, 'SUP-R', t.ticketId, { ...body, expected_version: v + 1 }),
+          'VERSION_CONFLICT',
+          409,
+        ),
+      ).toMatchObject({
+        current_version: v,
+      });
+      ok(await exception(w, 'SUP-R', t.ticketId, { ...body, expected_version: v }));
+      expect((await w.db.query(`SELECT status FROM alerts WHERE id = $1`, [alert.id])).rows[0].status).toBe(
+        'resolved',
+      );
+      expect((await codes(w, t.ticketId))[0]).toMatchObject({ revoke_reason: 'exception_handover' });
+      err(await exception(w, 'SUP-R', t.ticketId, body), 'TICKET_CLOSED', 409);
+      const parked = await freshDriver(w);
+      const p = await whatsappTicket(w, parked, newPhone());
+      await park(w, parked, p.taskId);
+      expect(err(await exception(w, 'SUP-R', p.ticketId, body), 'HANDOVER_NOT_READY', 409)).toEqual({
+        ticket_status: 'parked',
+      });
+    });
+
+    it('a paper ticket with a lost stub: incident lost_ticket; a due ticket without payment is PAYMENT_PENDING', async () => {
+      const drv = await freshDriver(w);
+      const d = await newDraft(w, drv, EVT_R2);
+      const p = ok(
+        await patchIntake(w, drv, d.ticketId, {
+          expected_version: d.version,
+          ...PAPER_DRAFT('LS-1', 'LK-1', '7777'),
+        }),
+      );
+      await addPhotos(w.db, d.ticketId, drv);
+      ok(await submitIntake(w, drv, d.ticketId, { expected_version: p.version }));
+      const slot = seedKeySlotId('RMS', 59);
+      ok(await completeParking(w, drv, d.taskId, { parking_spot_id: seedSpotId('B-29'), key_slot_id: slot }));
+      ok(await requestRetrieval(w, drv, d.ticketId), 201);
+      const offer = (
+        await w.db.query<{ id: string; task_id: string; user_id: string }>(
+          `SELECT o.id, o.task_id, r.user_id FROM task_offers o JOIN offer_recipients r ON r.offer_id = o.id JOIN tasks k ON k.id = o.task_id
+            WHERE k.ticket_id = $1 AND o.status = 'active'`,
+          [d.ticketId],
+        )
+      ).rows[0]!;
+      ok(await accept(w, offer.user_id, offer.id));
+      ok(await keyPickup(w, offer.user_id, offer.task_id, slot));
+      ok(await startRetrieval(w, offer.user_id, offer.task_id));
+      ok(await markReady(w, offer.user_id, offer.task_id));
+      const readyEv = (await outboxEvents(w.db, 'ticket.ready')).find(
+        (e) => e.payload.payload.ticket.ticket_id === d.ticketId,
+      )!;
+      expect(readyEv.payload.payload).toMatchObject({
+        expected_method: 'paper_stub',
+        claim_code_id: null,
+        code_expires_at: null,
+      });
+      expect(await codes(w, d.ticketId)).toEqual([]); // no code for paper
+      const body = {
+        reason: 'فقد العميل الكعب',
+        identity_checks: { plate_confirmed: true, vehicle_description_confirmed: true },
+      };
+      expect(err(await exception(w, 'SUP-R', d.ticketId, body), 'PAYMENT_PENDING', 409)).toMatchObject({
+        amount_halalas: 2000,
+      });
+      await w.db.query(
+        `UPDATE tickets SET payment_status = 'waived', payment_waived_at = now(), payment_waived_by = $2, payment_waiver_reason = 'ضيف' WHERE id = $1`,
+        [d.ticketId, U['SUP-R']],
+      );
+      ok(await exception(w, 'SUP-R', d.ticketId, body));
+      const incident = (
+        await w.db.query(`SELECT type, status FROM incidents WHERE ticket_id = $1`, [d.ticketId])
+      ).rows;
+      expect(incident).toEqual([{ type: 'lost_ticket', status: 'resolved' }]);
+    });
   });
 });

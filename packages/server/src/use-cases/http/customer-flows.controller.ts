@@ -2,6 +2,11 @@ import { Body, Controller, Param, Patch, Post } from '@nestjs/common';
 import type { ActorContext } from '../../core/actor-context/actor-context.js';
 import type { Tx } from '../../core/db/tx.js';
 import { Command, CurrentActor, CurrentTx, RequestId, RequirePermission } from '../../http/decorators.js';
+import {
+  HandoverExceptionPipe,
+  HandoverExceptionUseCase,
+  type HandoverExceptionBody,
+} from '../customer-flows/handover-exception.js';
 import { ResendHandoverCodeUseCase } from '../customer-flows/handover-codes.js';
 import {
   ChangeCustomerPhonePipe,
@@ -10,12 +15,16 @@ import {
 } from '../customer-flows/linking.js';
 import { ticketIdParam } from './pipes.js';
 
-/** Canon §9.2 / §9.3 — the customer side of a ticket (S3): phone change (PNT-049), handover code resend (PNT-047). */
+/**
+ * Canon §9.2 / §9.3 — the customer side of a ticket (S3): phone change (PNT-049), handover code resend
+ * (PNT-047) and the supervisor's exceptional handover (PNT-078).
+ */
 @Controller('v1/tickets')
 export class CustomerFlowsController {
   constructor(
     private readonly changePhone: ChangeCustomerPhoneUseCase,
     private readonly resend: ResendHandoverCodeUseCase,
+    private readonly exception: HandoverExceptionUseCase,
   ) {}
 
   @Patch(':ticketId/customer-phone')
@@ -41,5 +50,18 @@ export class CustomerFlowsController {
     @Param('ticketId', ticketIdParam) id: string,
   ) {
     return this.resend.execute(tx, actor, id, rid);
+  }
+
+  @Post(':ticketId/handover-exception')
+  @RequirePermission('handover.exception')
+  @Command('POST /v1/tickets/{ticketId}/handover-exception')
+  handoverException(
+    @CurrentTx() tx: Tx,
+    @CurrentActor() actor: ActorContext,
+    @RequestId() rid: string,
+    @Param('ticketId', ticketIdParam) id: string,
+    @Body(new HandoverExceptionPipe()) body: HandoverExceptionBody,
+  ) {
+    return this.exception.execute(tx, actor, id, body, rid);
   }
 }
