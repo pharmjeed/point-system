@@ -17,8 +17,8 @@ FEATURE_MODULES.push(VenuesEventsHttpModule);
 // import { DispatchHttpModule } from '@point/server';
 // FEATURE_MODULES.push(DispatchHttpModule);
 
-// import { WhatsappHttpModule } from '@point/server';
-// FEATURE_MODULES.push(WhatsappHttpModule);
+import { WhatsappHttpModule } from '@point/server';
+FEATURE_MODULES.push(WhatsappHttpModule);
 
 // import { NotificationsHttpModule } from '@point/server';
 // FEATURE_MODULES.push(NotificationsHttpModule);
