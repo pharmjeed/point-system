@@ -1,4 +1,10 @@
-import { SetupStatusSchema, venueSettingsSchema } from '@point/shared';
+import {
+  EventStatusSchema,
+  PaymentMethodSchema,
+  PricingModeSchema,
+  SetupStatusSchema,
+  venueSettingsSchema,
+} from '@point/shared';
 import { z } from 'zod';
 
 /**
@@ -9,6 +15,7 @@ import { z } from 'zod';
 const id = () => z.guid();
 const version = () => z.number().int().min(1);
 const int32 = () => z.number().int().min(-2147483648).max(2147483647);
+const isoDateTime = () => z.iso.datetime({ offset: true });
 const text = (max: number) => z.string().trim().min(1).max(max);
 
 function isTimeZone(tz: string): boolean {
@@ -30,6 +37,11 @@ const flag = z
   .enum(['true', 'false', '1', '0'])
   .transform((v) => v === 'true' || v === '1')
   .optional();
+const many = <T extends z.ZodType>(item: T) =>
+  z
+    .union([item, z.array(item)])
+    .transform((v) => (Array.isArray(v) ? v : [v]) as z.output<T>[])
+    .optional();
 
 export const ListVenuesQuery = z.object({ status: SetupStatusSchema.optional(), limit, cursor });
 export type ListVenuesQuery = z.output<typeof ListVenuesQuery>;
@@ -52,6 +64,17 @@ export type ListSpotsQuery = z.output<typeof ListSpotsQuery>;
 
 export const ListKeyBoardsQuery = z.object({ active_only: flag });
 export type ListKeyBoardsQuery = z.output<typeof ListKeyBoardsQuery>;
+
+export const ListEventsQuery = z
+  .object({
+    status: many(EventStatusSchema),
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+    limit,
+    cursor,
+  })
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { path: ['to'], message: 'to must not be before from' });
+export type ListEventsQuery = z.output<typeof ListEventsQuery>;
 
 // ---------------------------------------------------------------------------------------------
 // venues and settings
@@ -136,3 +159,46 @@ export type UpdateLabelledBody = z.output<typeof UpdateLabelledBody>;
 
 export const CreateKeyBoardBody = z.strictObject({ name: text(60) });
 export type CreateKeyBoardBody = z.output<typeof CreateKeyBoardBody>;
+
+// ---------------------------------------------------------------------------------------------
+// events
+// ---------------------------------------------------------------------------------------------
+
+const eventFields = {
+  name_ar: text(120),
+  host_name: z.string().trim().max(120).nullable().optional(),
+  event_date: z.iso.date(),
+  starts_at: isoDateTime().nullable().optional(),
+  ends_at: isoDateTime().nullable().optional(),
+  dispatch_pool_id: id().optional(),
+  pricing_mode: PricingModeSchema,
+  fee_halalas: z.number().int().min(0).optional(),
+  allowed_payment_methods: z.array(PaymentMethodSchema).min(1).optional(),
+};
+
+export const CreateEventBody = z.strictObject(eventFields);
+export type CreateEventBody = z.output<typeof CreateEventBody>;
+
+export const UpdateEventBody = z.strictObject({
+  name_ar: eventFields.name_ar.optional(),
+  host_name: eventFields.host_name,
+  event_date: eventFields.event_date.optional(),
+  starts_at: eventFields.starts_at,
+  ends_at: eventFields.ends_at,
+  dispatch_pool_id: eventFields.dispatch_pool_id,
+  pricing_mode: eventFields.pricing_mode.optional(),
+  fee_halalas: eventFields.fee_halalas,
+  allowed_payment_methods: eventFields.allowed_payment_methods,
+  expected_version: version(),
+});
+export type UpdateEventBody = z.output<typeof UpdateEventBody>;
+
+export const VersionOnlyBody = z.strictObject({ expected_version: version().optional() });
+export type VersionOnlyBody = z.output<typeof VersionOnlyBody>;
+
+/** `reason` length is checked by the handler so that a missing/short reason is REASON_REQUIRED (08 §4.16). */
+export const CancelEventBody = z.strictObject({
+  reason: z.string().max(500).nullable().optional(),
+  expected_version: version().optional(),
+});
+export type CancelEventBody = z.output<typeof CancelEventBody>;

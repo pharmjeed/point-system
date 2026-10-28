@@ -1,4 +1,4 @@
-import type { SetupStatus } from '@point/shared';
+import type { EventStatus, SetupStatus } from '@point/shared';
 import type { Q } from '../infra/scope.js';
 
 /**
@@ -17,4 +17,31 @@ export async function findDefaultDispatchPool(
     [venueId],
   );
   return r.rows[0] ?? null;
+}
+
+export interface VenueOpenEvent {
+  id: string;
+  name_ar: string;
+  status: EventStatus;
+  dispatch_pool_id: string;
+  event_date: string;
+}
+
+/**
+ * Events of a venue in the given statuses (default `open`, the events that accept intake — EVENT_NOT_OPEN
+ * otherwise; DEC-37 picks one when several are open), newest first. `GET /v1/me/home` `open_events` may pass
+ * `['open', 'closing']`.
+ */
+export async function listVenueEventsByStatus(
+  q: Q,
+  venueId: string,
+  statuses: readonly EventStatus[] = ['open'],
+): Promise<VenueOpenEvent[]> {
+  const r = await q.query<VenueOpenEvent>(
+    `SELECT id, name_ar, status, dispatch_pool_id, event_date::text AS event_date
+       FROM events WHERE venue_id = $1 AND status = ANY($2::text[])
+      ORDER BY event_date DESC, opened_at DESC NULLS LAST, id DESC`,
+    [venueId, [...statuses]],
+  );
+  return r.rows;
 }

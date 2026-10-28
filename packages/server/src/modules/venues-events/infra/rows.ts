@@ -1,8 +1,9 @@
-import type { SetupStatus } from '@point/shared';
+import type { EventStatus, PaymentMethod, PricingMode, SetupStatus } from '@point/shared';
 
 /**
- * Rows of the venue-setup tables and their wire shapes (07_openapi components `Venue`, `DispatchPool`,
- * `ParkingZone`, `ParkingSpot`, `KeyBoard`, `KeySlot`). Wire data is snake_case; times are ISO-8601 UTC.
+ * Rows of the venue-setup and event tables and their wire shapes (07_openapi components `Venue`, `DispatchPool`,
+ * `ParkingZone`, `ParkingSpot`, `KeyBoard`, `KeySlot`, `VenueEvent`). Wire data is snake_case; times are ISO-8601
+ * UTC; `event_date` is the local date `YYYY-MM-DD` (read as text, never as a Date).
  */
 
 const iso = (d: Date | string | null | undefined): string | null =>
@@ -221,5 +222,87 @@ export function toKeySlot(r: KeySlotRow): KeySlotDto {
     label: r.label,
     status: r.status,
     occupied: r.occupied,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// events
+// ---------------------------------------------------------------------------------------------
+
+export const EVENT_COLUMNS = `e.id, e.org_id, e.venue_id, e.dispatch_pool_id, e.name_ar, e.host_name,
+  e.event_date::text AS event_date, e.starts_at, e.ends_at, e.status, e.pricing_mode, e.fee_halalas,
+  e.allowed_payment_methods, e.opened_at, e.opened_by, e.closing_started_at, e.closed_at, e.canceled_at,
+  e.cancel_reason, e.close_summary, e.version, e.created_at`;
+
+export interface VenueEventRow {
+  id: string;
+  org_id: string;
+  venue_id: string;
+  dispatch_pool_id: string;
+  name_ar: string;
+  host_name: string | null;
+  event_date: string;
+  starts_at: Date | null;
+  ends_at: Date | null;
+  status: EventStatus;
+  pricing_mode: PricingMode;
+  fee_halalas: number;
+  allowed_payment_methods: PaymentMethod[];
+  opened_at: Date | null;
+  opened_by: string | null;
+  closing_started_at: Date | null;
+  closed_at: Date | null;
+  canceled_at: Date | null;
+  cancel_reason: string | null;
+  close_summary: Record<string, unknown> | null;
+  version: number;
+  created_at: Date;
+}
+
+export interface VenueEventDto {
+  id: string;
+  venue_id: string;
+  dispatch_pool_id: string;
+  name_ar: string;
+  host_name: string | null;
+  event_date: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: EventStatus;
+  pricing_mode: PricingMode;
+  fee_halalas: number;
+  allowed_payment_methods: PaymentMethod[];
+  opened_at: string | null;
+  closing_started_at: string | null;
+  closed_at: string | null;
+  canceled_at: string | null;
+  cancel_reason: string | null;
+  close_summary: Record<string, unknown> | null;
+  version: number;
+  created_at: string | null;
+}
+
+export function toVenueEvent(r: VenueEventRow): VenueEventDto {
+  return {
+    id: r.id,
+    venue_id: r.venue_id,
+    dispatch_pool_id: r.dispatch_pool_id,
+    name_ar: r.name_ar,
+    host_name: r.host_name,
+    event_date: r.event_date,
+    starts_at: iso(r.starts_at),
+    ends_at: iso(r.ends_at),
+    status: r.status,
+    pricing_mode: r.pricing_mode,
+    fee_halalas: Number(r.fee_halalas),
+    allowed_payment_methods: r.allowed_payment_methods,
+    opened_at: iso(r.opened_at),
+    closing_started_at: iso(r.closing_started_at),
+    closed_at: iso(r.closed_at),
+    canceled_at: iso(r.canceled_at),
+    cancel_reason: r.cancel_reason,
+    close_summary: r.close_summary,
+    version: r.version,
+    created_at: iso(r.created_at),
   };
 }
