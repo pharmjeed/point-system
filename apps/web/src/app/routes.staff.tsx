@@ -23,6 +23,16 @@ export const staffRoutes: RouteObject[] = [
         path: paths.opsAlerts,
         lazy: async () => ({ Component: (await import('@/features/supervisor/AlertsPage')).AlertsPage }),
       },
+      {
+        path: paths.incidents,
+        lazy: async () => ({
+          Component: (await import('@/features/supervisor/IncidentsPage')).IncidentsPage,
+        }),
+      },
+      {
+        path: routePatterns.incident,
+        lazy: async () => ({ Component: (await import('@/features/supervisor/IncidentsPage')).IncidentPage }),
+      },
     ],
   },
   // S-11 is built in a later commit of this stream: the PNT-021 placeholder until then

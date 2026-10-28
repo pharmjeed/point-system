@@ -16,6 +16,7 @@ const SCREENS: Array<{
   { path: '/ops', role: 'supervisor', heading: /لوحة التشغيل/, ready: '[data-ticket="47"]' },
   { path: '/ops/tickets/t-47', role: 'supervisor', heading: /#47/, ready: '#ticket-panel-timeline' },
   { path: '/ops/alerts', role: 'supervisor', heading: /مركز التنبيهات/, ready: '[data-alert-id="al-47"]' },
+  { path: '/incidents', role: 'supervisor', heading: /الوقائع/, ready: '.pt-list a' },
 ];
 
 for (const s of SCREENS) {
