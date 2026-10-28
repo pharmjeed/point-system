@@ -17,6 +17,12 @@ const SCREENS: Array<{
   { path: '/ops/tickets/t-47', role: 'supervisor', heading: /#47/, ready: '#ticket-panel-timeline' },
   { path: '/ops/alerts', role: 'supervisor', heading: /مركز التنبيهات/, ready: '[data-alert-id="al-47"]' },
   { path: '/incidents', role: 'supervisor', heading: /الوقائع/, ready: '.pt-list a' },
+  {
+    path: '/drivers/d-saad/transfer',
+    role: 'supervisor',
+    heading: /نقل سائق/,
+    ready: '[data-testid="transfer-checklist"]',
+  },
 ];
 
 for (const s of SCREENS) {
