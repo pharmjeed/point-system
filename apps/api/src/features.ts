@@ -34,3 +34,6 @@ FEATURE_MODULES.push(AuditMonitoringHttpModule);
 
 import { MediaHttpModule } from '@point/server';
 FEATURE_MODULES.push(MediaHttpModule);
+
+import { SupervisorHttpModule } from '@point/server';
+FEATURE_MODULES.push(SupervisorHttpModule);

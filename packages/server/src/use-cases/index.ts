@@ -18,3 +18,8 @@ export {
   type ClaimCodeHook,
   type InlinePaymentHook,
 } from './hooks.js';
+// S6 supervisor backend (PNT-074 … PNT-085)
+export { SupervisorHttpModule } from './http/supervisor.module.js';
+export { maskCustomerText, waMessageView, custodyEventView, paymentView } from './supervisor-views.js';
+export { InspectionExceptionUseCase } from './inspection-exception.js';
+export { CustodyTransferUseCase, type CustodyTransferBody } from './custody-transfer.js';

@@ -12,14 +12,21 @@ import { expect } from 'vitest';
 import type { TestApp } from './harness.js';
 import {
   accept,
+  addPhotos,
+  completeParking,
   handover,
   keyPickup,
   liveOffer,
   markReady,
+  newDraft,
+  nextSlot,
+  nextSpot,
   ok,
   parkedPaperTicket,
+  patchIntake,
   requestRetrieval,
   startRetrieval,
+  submitIntake,
   U,
 } from './dispatch-fixtures.js';
 
@@ -118,4 +125,34 @@ export async function auditRows(t: TestApp, action: string, entityId?: string) {
       [action, entityId ?? null],
     )
   ).rows;
+}
+
+let tagSeq = 500;
+/**
+ * A WhatsApp ticket with the customer's phone and the staff-confirmed consent, submitted to `parking` (the W-01
+ * link itself is the whatsapp module's flow); `park: true` completes the parking in a fresh spot and slot.
+ */
+export async function whatsappTicket(
+  t: TestApp,
+  driver: string,
+  opts: { phone?: string; eventId?: string; park?: boolean } = {},
+) {
+  const d = await newDraft(t, driver, opts.eventId);
+  const p = ok(
+    await patchIntake(t, driver, d.ticketId, {
+      expected_version: d.version,
+      plate: { digits: String(2000 + (tagSeq % 7000)).slice(0, 4), letters_ar: 'س ص ع' },
+      vehicle: { make: 'هيونداي', model: 'سوناتا', color: 'رمادي', type: 'sedan' },
+      customer_phone: opts.phone ?? '0551234567',
+      consent: { method: 'verbal_staff_confirmed', confirmed: true },
+      key_tag: `W-${tagSeq++}`,
+    }),
+  );
+  await addPhotos(t.db, d.ticketId, (U as Record<string, string>)[driver] ?? driver);
+  const s = ok(await submitIntake(t, driver, d.ticketId, { expected_version: p.version }));
+  if (!opts.park) return { ...d, version: s.version as number, spotId: null, slotId: null };
+  const spotId = nextSpot();
+  const slotId = nextSlot();
+  const r = ok(await completeParking(t, driver, d.taskId, { parking_spot_id: spotId, key_slot_id: slotId }));
+  return { ...d, version: r.ticket.version as number, spotId, slotId };
 }
