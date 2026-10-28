@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ActorContext } from '../../../core/actor-context/actor-context.js';
+import { autoResolveAlerts } from '../../../core/alerts/alerts.js';
 import { audit } from '../../../core/audit/audit-writer.js';
 import type { Env } from '../../../core/config/env.js';
 import type { Tx } from '../../../core/db/tx.js';
@@ -128,6 +129,13 @@ export class MeService {
       `UPDATE devices SET ${sets.join(', ')} WHERE id = $1 AND user_id = $2 RETURNING *`,
       params,
     );
+    // 14 §8: a new subscription resolves `push_failed_repeatedly` (key of the notifications push sender)
+    if (body.push_subscription)
+      await autoResolveAlerts(tx, {
+        orgId: actor.orgId,
+        dedupeKeys: [`push_failed_repeatedly:${deviceId}`],
+        note: 'new push subscription',
+      });
     await audit(tx, {
       orgId: actor.orgId,
       actor: { type: 'user', id: actor.userId, role: actor.role },

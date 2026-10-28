@@ -18,3 +18,5 @@ export * from './settings.js';
 export * from './envelopes.js';
 export * from './phone.js';
 export * from './analytics.js';
+export * from './canon/push.js';
+export * from './canon/realtime.js';

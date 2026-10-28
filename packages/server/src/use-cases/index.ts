@@ -18,3 +18,5 @@ export {
   type ClaimCodeHook,
   type InlinePaymentHook,
 } from './hooks.js';
+
+export { wireTicketRealtime } from './realtime-projections.js';
