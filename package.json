@@ -23,7 +23,8 @@
     "db:seed": "pnpm --filter @point/db seed",
     "db:invariants": "pnpm --filter @point/db invariants",
     "db:drift": "pnpm --filter @point/db drift",
-    "progress": "node tools/progress/build.mjs"
+    "progress": "node tools/progress/build.mjs",
+    "ops:restore-drill": "bash infra/backup/restore-drill.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

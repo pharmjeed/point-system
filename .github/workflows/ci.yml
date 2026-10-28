@@ -64,6 +64,12 @@ jobs:
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - name: Integration tests (Testcontainers postgres:16)
         run: pnpm test:int
+      - name: Ops scripts (shellcheck, preinstalled on the runner)
+        run: shellcheck -s bash infra/backup/*.sh && shellcheck -s sh infra/compose/*.sh
+      - name: Restore drill (PNT-095, encrypted backup → restore → verify; openssl when age is absent)
+        run: pnpm ops:restore-drill
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
   e2e:
     name: e2e (Playwright 360/390/430, RTL)
