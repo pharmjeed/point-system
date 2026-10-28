@@ -22,28 +22,42 @@ export { dispatchSettings, type DispatchSettings } from './application/settings.
 export { emitTaskEvent, emitOfferEvent, emitAvailability } from './application/events.js';
 export {
   createSingleRound,
+  openBroadcast,
+  extendBroadcast,
+  remindRound,
   revokeRound,
   revokeDriverSingleOffers,
   expireSingleRound,
   ensureDispatchSweep,
   requestDispatchPass,
+  scheduleEscalation,
+  scheduleNextTaskWaitCheck,
+  eligibilityOf,
   SWEEP_INTERVAL_MS,
 } from './application/offers.js';
 export {
   runDispatchPass,
   registerBroadcastPolicy,
   registerPassAdvisor,
+  registerPassGate,
+  BROADCAST_MODE,
+  IDLE_DRIVER_ADVISOR,
   type PassReason,
   type PassResult,
   type BroadcastPolicy,
   type PassAdvisor,
+  type PassGate,
 } from './application/pass.js';
+export { findOlderActionable, type OlderActionable } from './application/priority-guard.js';
 export {
   insertParkTask,
   insertRetrieveTask,
+  insertReparkTask,
+  cancelTask,
   settleDriverAfterTask,
   withdrawTask,
   type SettleOutcome,
+  type TaskCancelReason,
 } from './application/tasks.js';
 export { DutyService, dutyItems, type DutyItem } from './application/duty-service.js';
 export {
@@ -51,4 +65,36 @@ export {
   dispatchDriverReleaseHook,
 } from './application/driver-release.js';
 export { dutySessionView, currentDriverState } from './application/views.js';
-export { dispatchJobs, offerExpireHandler, dispatchPassHandler, dispatchSweepHandler } from './jobs/index.js';
+export {
+  cardEligibility,
+  loadOfferCards,
+  loadHeadOfferCard,
+  loadDriverLives,
+  SAFETY_NOTE_AR,
+  type OfferCard,
+  type DriverLive,
+  type DriverWhere,
+} from './application/cards.js';
+export {
+  connectionStateAt,
+  ensureHeartbeatSweep,
+  sweepHeartbeats,
+  HEARTBEAT_SWEEP_KEY,
+  type ConnectionState,
+} from './application/heartbeat.js';
+export {
+  dispatchRealtimePlanner,
+  registerDispatchRealtime,
+  unregisterDispatchRealtime,
+} from './application/realtime.js';
+export {
+  dispatchJobs,
+  offerExpireHandler,
+  offerRemindHandler,
+  broadcastRemindHandler,
+  escalateUnacceptedHandler,
+  nextTaskWaitCheckHandler,
+  dispatchPassHandler,
+  dispatchSweepHandler,
+  heartbeatSweepHandler,
+} from './jobs/index.js';

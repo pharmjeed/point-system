@@ -8,10 +8,13 @@ import {
   ticketRef,
   type CycleRow,
   type EventActor,
+  type TicketCtx,
   type TicketRow,
 } from '../../tickets-custody/index.js';
 import type { DutyRow, TaskRow } from '../infra/rows.js';
 import { emitAvailability, emitTaskEvent } from './events.js';
+import { scheduleEscalation } from './offers.js';
+import { dispatchSettings } from './settings.js';
 
 /** TT-01: the park task of a new ticket, `in_progress` for the driver who started the intake. */
 export async function insertParkTask(tx: Tx, ticket: TicketRow, assigneeId: string): Promise<TaskRow> {
@@ -54,6 +57,74 @@ export async function insertRetrieveTask(
       tx.now,
     ],
   );
+}
+
+/**
+ * TT-20 / TT-20b: the `repark` task of the driver who holds the vehicle, created directly `in_progress` (canon §5.2:
+ * park and repark tasks are never offered). The caller canceled the retrieve task first (uq_tasks_open_per_ticket,
+ * uq_tasks_active_movement_driver are not deferrable).
+ */
+export async function insertReparkTask(
+  tx: Tx,
+  ticket: Pick<TicketRow, 'id' | 'org_id' | 'venue_id' | 'dispatch_pool_id' | 'event_id'>,
+  assigneeId: string,
+): Promise<TaskRow> {
+  return tx.one<TaskRow>(
+    `INSERT INTO tasks (id, org_id, venue_id, dispatch_pool_id, event_id, ticket_id, type, status, priority_at,
+                        assignee_id, accepted_at, started_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'repark', 'in_progress', $7, $8, $7, $7, $7, $7) RETURNING *`,
+    [
+      newId(),
+      ticket.org_id,
+      ticket.venue_id,
+      ticket.dispatch_pool_id,
+      ticket.event_id,
+      ticket.id,
+      tx.now,
+      assigneeId,
+    ],
+  );
+}
+
+export type TaskCancelReason =
+  | 'customer_field_cancel'
+  | 'supervisor_cancel'
+  | 'repark_customer_absent'
+  | 'manual_reconcile'
+  | 'draft_discarded'
+  | 'ticket_voided';
+
+/**
+ * Cancels an open task (`task.canceled`, 11 §8.3) — no silent delete. The caller holds the task row (L4) and
+ * revoked its live round before (offer.revoked → offer.closed); releasing the driver is the caller's business.
+ */
+export async function cancelTask(
+  tx: Tx,
+  task: TaskRow,
+  m: { cancelReason: TaskCancelReason; canceledBy: string | null; actor: EventActor; ticket?: TicketCtx },
+): Promise<TaskRow> {
+  const canceled = await tx.one<TaskRow>(
+    `UPDATE tasks SET status = 'canceled', canceled_at = $2, canceled_by = $3, cancel_reason = $4, version = version + 1
+      WHERE id = $1 AND status NOT IN ('completed','canceled') RETURNING *`,
+    [task.id, tx.now, m.canceledBy, m.cancelReason],
+  );
+  await emitTaskEvent(
+    tx,
+    canceled,
+    'task.canceled',
+    m.actor,
+    {
+      task_id: canceled.id,
+      ticket_id: canceled.ticket_id,
+      type: canceled.type,
+      previous_status: task.status,
+      assignee_id: task.assignee_id,
+      cancel_reason: m.cancelReason,
+      canceled_by: m.canceledBy,
+    },
+    m.ticket,
+  );
+  return canceled;
 }
 
 export type SettleOutcome =
@@ -134,8 +205,9 @@ export async function settleDriverAfterTask(
 }
 
 /**
- * Back to the queue with the original priority (TT-12/TT-13, DEC-32): a new episode (`queued_at = now`), the
- * ticket `requested`, the cycle unassigned, `task.withdrawn`. Caller holds L1 and the task/ticket/cycle rows.
+ * Back to the queue with the original priority (TT-12/TT-13, DEC-32): a new episode (`queued_at = now`, a new
+ * `job.escalate_unaccepted` from it), the ticket `requested`, the cycle unassigned, `task.withdrawn`; the
+ * waiting alerts of the reserved task are resolved (10 §8.4). Caller holds L1 and the task/ticket/cycle rows.
  */
 export async function withdrawTask(
   tx: Tx,
@@ -172,8 +244,16 @@ export async function withdrawTask(
       previous_status: previous,
       reason: m.reason,
       trigger: m.trigger,
+      key_was_picked_up: task.key_picked_up_at != null,
     },
     ticket,
   );
+  await scheduleEscalation(tx, updated, await dispatchSettings(tx, updated.venue_id));
+  await autoResolveAlerts(tx, {
+    orgId: updated.org_id,
+    venueId: updated.venue_id,
+    dedupeKeys: [`next_task_waiting_long:${task.id}`, `idle_driver_while_next_waiting:${task.id}`],
+    note: 'withdrawn',
+  });
   return { task: updated, ticket };
 }

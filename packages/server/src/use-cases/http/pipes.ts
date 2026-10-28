@@ -28,3 +28,15 @@ export const taskIdParam = new ParseUUIDPipe({
   exceptionFactory: () => new AppError('RESOURCE_NOT_FOUND', { resource: 'task' }),
 });
 export const offerIdParam = new ParseUUIDPipe({ exceptionFactory: () => new AppError('OFFER_NOT_FOUND') });
+export const cycleIdParam = new ParseUUIDPipe({
+  exceptionFactory: () => new AppError('RESOURCE_NOT_FOUND', { resource: 'retrieval_cycle' }),
+});
+export const sessionIdParam = new ParseUUIDPipe({
+  exceptionFactory: () => new AppError('RESOURCE_NOT_FOUND', { resource: 'duty_session' }),
+});
+export const driverIdParam = new ParseUUIDPipe({
+  exceptionFactory: () => new AppError('RESOURCE_NOT_FOUND', { resource: 'driver' }),
+});
+export const transferIdParam = new ParseUUIDPipe({
+  exceptionFactory: () => new AppError('RESOURCE_NOT_FOUND', { resource: 'driver_transfer' }),
+});

@@ -12,14 +12,17 @@ import {
 } from '../core/db/locks.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError, InvariantViolation } from '../core/errors/app-error.js';
+import { metrics } from '../core/metrics/metrics.js';
 import {
   currentDriverState,
   dispatchSettings,
   driverStateOf,
   emitAvailability,
   emitTaskEvent,
+  findOlderActionable,
   revokeDriverSingleOffers,
   runDispatchPass,
+  scheduleNextTaskWaitCheck,
   type DutyRow,
   type OfferRow,
   type TaskRow,
@@ -45,6 +48,16 @@ const CLAIMED: ReadonlySet<string> = new Set(['accepted', 'assigned_waiting', 'i
 @Injectable()
 export class AcceptOfferUseCase {
   async execute(tx: Tx, actor: ActorContext, offerId: string, requestId: string) {
+    try {
+      return await this.run(tx, actor, offerId, requestId);
+    } catch (e) {
+      // point_dispatch_accept_rejections_total{code} (10 §12.2)
+      if (e instanceof AppError) metrics.dispatchAcceptRejections.inc({ code: e.code });
+      throw e;
+    }
+  }
+
+  private async run(tx: Tx, actor: ActorContext, offerId: string, requestId: string) {
     // 1. the offer within the caller's venues, without a lock
     const pre = await tx.maybeOne<{ task_id: string; dispatch_pool_id: string; venue_id: string }>(
       `SELECT o.task_id, o.dispatch_pool_id, p.venue_id FROM task_offers o JOIN dispatch_pools p ON p.id = o.dispatch_pool_id
@@ -142,25 +155,15 @@ export class AcceptOfferUseCase {
       s.driver_state === 'available' ? 'accepted' : 'assigned_waiting';
 
     // 14. priority guard (10 §5.4): an older live round of this pool on which the actor is a recipient
-    const older = await tx.maybeOne<{ older_task_id: string; older_offer_id: string }>(
-      `SELECT t2.id AS older_task_id, o2.id AS older_offer_id
-         FROM tasks t2
-         JOIN task_offers o2 ON o2.task_id = t2.id AND o2.status = 'active'
-         JOIN offer_recipients r2 ON r2.offer_id = o2.id AND r2.user_id = $1
-        WHERE t2.dispatch_pool_id = $2 AND t2.status IN ('offered','broadcast') AND t2.id <> $3
-          AND (t2.priority_at, t2.seq) < ($4::timestamptz, $5::bigint)
-          AND (o2.mode = 'broadcast' OR o2.expires_at > $6)
-        ORDER BY t2.priority_at, t2.seq
-        LIMIT 1`,
-      [
-        actor.userId,
-        pre.dispatch_pool_id,
-        task!.id,
-        task!.priority_at,
-        task!.seq,
-        new Date(tx.now.getTime() - cfg.acceptGraceMs),
-      ],
-    );
+    const older = await findOlderActionable(tx, {
+      poolId: pre.dispatch_pool_id,
+      userId: actor.userId,
+      taskId: task!.id,
+      priorityAt: task!.priority_at,
+      seq: task!.seq,
+      now: tx.now,
+      graceMs: cfg.acceptGraceMs,
+    });
     if (older) throw new AppError('OLDER_REQUEST_PENDING', older);
 
     // 15. apply (10 §5.3)
@@ -242,8 +245,14 @@ export class AcceptOfferUseCase {
       dedupeKeys: [`request_unaccepted:${claimed.id}`],
       note: 'claimed',
     });
-    // extension points: W-03 is planned by the NotificationPlanner from ticket.assigned_waiting (PNT-045);
-    // job.next_task_wait_check (S4, PNT-055) once assigned_waiting is reachable through broadcast rounds.
+    // W-03 is planned by the NotificationPlanner from ticket.assigned_waiting (once per cycle); the reservation
+    // is watched by job.next_task_wait_check (10 §5.3)
+    if (outcome === 'assigned_waiting') await scheduleNextTaskWaitCheck(tx, claimed, cfg);
+    metrics.dispatchOffers.inc({ mode: accepted.mode, outcome: 'accepted' });
+    if (claimed.queued_at)
+      metrics.dispatchTimeToClaim.observe(
+        Math.max(0, (tx.now.getTime() - new Date(claimed.queued_at).getTime()) / 1000),
+      );
 
     // 16. the pass completes the newer requests
     await runDispatchPass(tx, pre.dispatch_pool_id, 'offer_accepted');

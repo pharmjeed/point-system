@@ -48,4 +48,6 @@ export {
   revokeLiveLinkCodes,
   type IntakePatch,
 } from './application/intake-service.js';
-export { ticketsCustodyJobs } from './jobs/index.js';
+export { loadTaskCard, type TaskCard } from './application/task-card.js';
+export { revokeLiveClaimCode } from './application/claim-codes.js';
+export { ticketsCustodyJobs, readyUncollectedHandler, scheduleReadyUncollectedCheck } from './jobs/index.js';

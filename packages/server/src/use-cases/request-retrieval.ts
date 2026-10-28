@@ -1,14 +1,17 @@
 import { Injectable } from '@nestjs/common';
+import type { TicketStatus } from '@point/shared';
 import { requireDuty, type ActorContext } from '../core/actor-context/actor-context.js';
 import { newId } from '../core/crypto/ids.js';
 import { lockPools, lockTickets } from '../core/db/locks.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
 import {
+  dispatchSettings,
   emitTaskEvent,
   ensureDispatchSweep,
   insertRetrieveTask,
   runDispatchPass,
+  scheduleEscalation,
   type TaskRow,
 } from '../modules/dispatch/index.js';
 import {
@@ -27,9 +30,10 @@ import { auditCommand, eventActor } from './shared.js';
 
 /**
  * 10 §7.2 insert of a retrieval cycle and its retrieve task `queued` (`priority_at = requested_at`); the ticket
- * becomes `requested`. Used by the staff request (TT-06b) and by the early-request conversion (TT-08,
- * DEC-13: `requested_at` = the original press time). Caller holds L1 and the ticket (L5), ticket `parked`.
- * The escalation timer (`job.escalate_unaccepted`) is an S4 extension point (no handler yet).
+ * becomes `requested`. Used by the staff request (TT-06b), the customer's button (TT-06a) and the early-request
+ * conversion (TT-08, DEC-13: `requested_at` = the original press time). Caller holds L1 and the ticket (L5),
+ * ticket `parked`. `job.escalate_unaccepted` is scheduled from `queued_at` (the escalation measures the time in
+ * the queue, not since the original press).
  */
 export async function openRetrievalCycle(
   tx: Tx,
@@ -100,8 +104,87 @@ export async function openRetrievalCycle(
     },
     updated,
   );
+  await scheduleEscalation(tx, task, await dispatchSettings(tx, ticket.venue_id));
   await ensureDispatchSweep(tx, ticket.org_id);
   return { cycle, task, ticket: updated };
+}
+
+export type CustomerRequestResult =
+  | { kind: 'created'; ticketStatus: TicketStatus; cycleId: string; taskId: string }
+  | { kind: 'pending_early'; ticketStatus: TicketStatus; pendingRetrievalAt: string }
+  | { kind: 'already_pending'; ticketStatus: TicketStatus; pendingRetrievalAt: string }
+  | { kind: 'already_active'; ticketStatus: TicketStatus; cycleId: string | null }
+  | { kind: 'closed'; ticketStatus: TicketStatus };
+
+/**
+ * The customer's «طلب السيارة» (10 §7.2/§7.3, TT-06a/TT-07; DispatchService.requestRetrieval of 10 §13.2),
+ * called by the WhatsApp button handler (PNT-045) inside the inbound message transaction once the action token
+ * and the sender were verified. L1 pool → L5 ticket, then by ticket status: `parked` → a new cycle (`whatsapp`,
+ * the customer) and its queued task + an immediate pass; `received`/`parking`/`reparking` → an early request
+ * (DEC-13, PNT-060): `pending_retrieval_at` is set once (a repeated press keeps the original time) with
+ * `ticket.retrieval_requested_early` (W-02 once, the parking driver's banner); an open cycle → `already_active`
+ * and a closed ticket → `closed` (both answered with W-09 by the caller). No movement is ever created while the
+ * vehicle is being parked (no two movements for one vehicle).
+ */
+export async function requestRetrievalForCustomer(
+  tx: Tx,
+  m: { ticketId: string; customerId: string | null; requestedAt?: Date },
+): Promise<CustomerRequestResult> {
+  const pre = await tx.maybeOne<{ dispatch_pool_id: string }>(
+    `SELECT dispatch_pool_id FROM tickets WHERE id = $1`,
+    [m.ticketId],
+  );
+  if (!pre) throw new AppError('TICKET_NOT_FOUND');
+  await lockPools(tx, [pre.dispatch_pool_id]); // L1
+  const [locked] = (await lockTickets(tx, [m.ticketId])) as TicketRow[]; // L5
+  const t = locked!;
+  const actor: EventActor = m.customerId
+    ? { type: 'customer', id: m.customerId }
+    : { type: 'system', id: null };
+  if (isClosedTicket(t.status)) return { kind: 'closed', ticketStatus: t.status };
+  if (t.status === 'parked') {
+    const r = await openRetrievalCycle(tx, t, {
+      source: 'whatsapp',
+      requestedAt: m.requestedAt ?? tx.now,
+      early: false,
+      customerId: m.customerId ?? t.customer_id,
+      actor,
+    });
+    await runDispatchPass(tx, t.dispatch_pool_id, 'request_created');
+    return { kind: 'created', ticketStatus: r.ticket.status, cycleId: r.cycle.id, taskId: r.task.id };
+  }
+  if (t.status === 'received' || t.status === 'parking' || t.status === 'reparking') {
+    if (t.pending_retrieval_at)
+      return {
+        kind: 'already_pending',
+        ticketStatus: t.status,
+        pendingRetrievalAt: new Date(t.pending_retrieval_at).toISOString(),
+      };
+    const at = m.requestedAt ?? tx.now;
+    const updated = await tx.one<TicketRow>(
+      `UPDATE tickets SET pending_retrieval_at = $2, pending_retrieval_source = 'whatsapp', version = version + 1
+        WHERE id = $1 RETURNING *`,
+      [t.id, at],
+    );
+    const parking = await tx.maybeOne<{ assignee_id: string | null }>(
+      `SELECT assignee_id FROM tasks WHERE ticket_id = $1 AND type IN ('park','repark') AND status = 'in_progress'`,
+      [t.id],
+    );
+    await emitForTicket(tx, updated, {
+      type: 'ticket.retrieval_requested_early',
+      actor,
+      payload: {
+        ticket: ticketRef(updated),
+        pending_retrieval_at: at.toISOString(),
+        request_source: 'whatsapp',
+        requested_by_customer_id: m.customerId ?? t.customer_id,
+        parking_task_assignee_id: parking?.assignee_id ?? null,
+        status_at_request: t.status,
+      },
+    });
+    return { kind: 'pending_early', ticketStatus: t.status, pendingRetrievalAt: at.toISOString() };
+  }
+  return { kind: 'already_active', ticketStatus: t.status, cycleId: t.active_cycle_id };
 }
 
 const OPERATION = 'POST /v1/tickets/{ticketId}/retrievals';

@@ -71,7 +71,7 @@ export async function releaseDriverWork(tx: Tx, args: ReleaseArgs): Promise<{ re
       returned.push(t.id);
     }
   }
-  // extension point (S4): job.escalate_unaccepted for each requeued episode
+  // each requeued task started a new episode with its own job.escalate_unaccepted (withdrawTask)
   await runDispatchPass(tx, pool.id, args.reason === 'transfer' ? 'transfer' : 'requeued', {
     excludeUserIds: [args.driverId],
   });

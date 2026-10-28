@@ -97,7 +97,8 @@ export class AdminService {
     const rows = await q.query(
       `SELECT u.*, a.id AS a_id, a.venue_id AS a_venue_id, v.name_ar AS a_venue_name_ar, a.status AS a_status, a.starts_at AS a_starts_at,
               a.ends_at AS a_ends_at, a.reason AS a_reason, a.transfer_id AS a_transfer_id,
-              s.driver_state, s.connection_state, s.last_heartbeat_at, s.available_since, s.active_task_id, s.next_task_id, d.started_at AS duty_started_at
+              s.driver_state, s.connection_state, s.last_heartbeat_at, s.available_since, s.active_task_id, s.next_task_id, d.started_at AS duty_started_at,
+              s.duty_session_id
          FROM users u
          LEFT JOIN driver_assignments a ON a.driver_id = u.id AND a.status = 'active'
          LEFT JOIN venues v ON v.id = a.venue_id
@@ -123,7 +124,8 @@ export class AdminService {
     const r = await q.query(
       `SELECT u.*, a.id AS a_id, a.venue_id AS a_venue_id, v.name_ar AS a_venue_name_ar, a.status AS a_status, a.starts_at AS a_starts_at,
               a.ends_at AS a_ends_at, a.reason AS a_reason, a.transfer_id AS a_transfer_id,
-              s.driver_state, s.connection_state, s.last_heartbeat_at, s.available_since, s.active_task_id, s.next_task_id, d.started_at AS duty_started_at
+              s.driver_state, s.connection_state, s.last_heartbeat_at, s.available_since, s.active_task_id, s.next_task_id, d.started_at AS duty_started_at,
+              s.duty_session_id
          FROM users u
          LEFT JOIN driver_assignments a ON a.driver_id = u.id AND a.status = 'active'
          LEFT JOIN venues v ON v.id = a.venue_id
@@ -843,6 +845,8 @@ function driverListItem(r: any, actor: ActorContext) {
           active_task_id: r.active_task_id,
           next_task_id: r.next_task_id,
           duty_started_at: r.duty_started_at ? new Date(r.duty_started_at).toISOString() : null,
+          // S4 (PNT-084): the path id of POST /v1/duty-sessions/{sessionId}/force-end (DEC-PROPOSED, 07 DriverLive)
+          duty_session_id: r.duty_session_id ?? null,
         }
       : null,
   };

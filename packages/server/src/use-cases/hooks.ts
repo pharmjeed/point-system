@@ -1,6 +1,7 @@
 import type { ActorContext } from '../core/actor-context/actor-context.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
+import { emitEvent } from '../core/outbox/outbox-writer.js';
 import type { CycleRow, TicketRow } from '../modules/tickets-custody/index.js';
 
 /**
@@ -88,3 +89,61 @@ export function registerInlinePaymentHook(h: InlinePaymentHook | null): void {
 export const customerLinking = () => linking;
 export const claimCodeHook = () => claimCodes;
 export const inlinePaymentHook = () => inlinePayment;
+
+/**
+ * S4 (PNT-061): TT-20 leaves a documented `customer_absent` incident (11 §2.3). The incidents module (PNT-077)
+ * may register its own recorder; the default writes the row already `resolved` (the repark is the resolution)
+ * with `incident.opened` + `incident.resolved` (11 §8.8) in the command's transaction.
+ */
+export interface IncidentRecorder {
+  recordDocumented(
+    tx: Tx,
+    i: {
+      orgId: string;
+      venueId: string;
+      eventId: string | null;
+      ticketId: string | null;
+      type: 'customer_absent';
+      description: string;
+      resolution: string;
+      actorId: string;
+    },
+  ): Promise<{ incident_id: string }>;
+}
+
+const directIncidents: IncidentRecorder = {
+  async recordDocumented(tx, i) {
+    const r = await tx.one<{ id: string; version: number }>(
+      `INSERT INTO incidents (org_id, venue_id, event_id, ticket_id, type, status, severity, description, opened_by,
+                              owner_id, resolution, resolved_by, resolved_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'resolved', 'low', $6, $7, $7, $8, $7, $9, $9, $9) RETURNING id, version`,
+      [i.orgId, i.venueId, i.eventId, i.ticketId, i.type, i.description, i.actorId, i.resolution, tx.now],
+    );
+    for (const type of ['incident.opened', 'incident.resolved'])
+      await emitEvent(tx, {
+        type,
+        orgId: i.orgId,
+        venueId: i.venueId,
+        eventId: i.eventId,
+        aggregate: { type: 'incident', id: r.id, version: r.version },
+        actor: { type: 'user', id: i.actorId },
+        payload: {
+          incident_id: r.id,
+          type: i.type,
+          status: 'resolved',
+          severity: 'low',
+          ticket_id: i.ticketId,
+          auto_created: true,
+        },
+      });
+    return { incident_id: r.id };
+  },
+};
+
+let incidents: IncidentRecorder = directIncidents;
+
+export function registerIncidentRecorder(h: IncidentRecorder | null): void {
+  incidents = h ?? directIncidents;
+}
+
+export const incidentRecorder = () => incidents;
