@@ -1,0 +1,618 @@
+/**
+ * Arabic UI copy for the staff app (05 §7.8: no hard-coded text in components).
+ * Source of every string: docs/02_Wireframes_Spec.md — §8 (shared dictionary, complete), the screen tables
+ * (D-xx / S-xx) and §1.6/§1.9; component-internal strings come from 03 §3 and the design system READMEs.
+ * Error texts per code are in ./errors.ts (generated from 08).
+ *
+ * Brand names are never written here (canon §1, scripts/check-brand.mjs): strings that name a brand use the
+ * `{brand}` placeholder (staff brand) and are filled with `fmt()` + `useBrand()`.
+ * Keys are stable identifiers; change the text, not the key.
+ */
+
+// ---------------------------------------------------------------- 02 §8.1 statuses
+
+export const ticketStatus = {
+  received: 'مستلمة',
+  parking: 'جارٍ الصف',
+  parked: 'متوقفة',
+  requested: 'مطلوبة',
+  assigned: 'مُسندة',
+  assigned_waiting: 'محجوزة تالية',
+  retrieving: 'جارٍ الإحضار',
+  ready: 'جاهزة',
+  delivered: 'مُسلّمة',
+  reparking: 'جارٍ إعادة الصف',
+  voided: 'ملغاة',
+} as const;
+
+export const driverState = {
+  available: 'متاح',
+  intake_parking: 'يسجل/يصف',
+  retrieving: 'يحضر/يسلّم',
+  busy_with_next: 'مشغول + مهمة تالية',
+  on_break: 'استراحة',
+  off_duty: 'خارج الوردية',
+} as const;
+
+export const connectionState = {
+  online: 'متصل',
+  uncertain: 'الاتصال غير مؤكد',
+  offline: 'غير متصل',
+} as const;
+
+export const taskStatus = {
+  queued: 'في الطابور',
+  offered: 'معروض',
+  broadcast: 'بث',
+  assigned_waiting: 'محجوز تالٍ',
+  accepted: 'مقبول',
+  in_progress: 'جارٍ التنفيذ',
+  completed: 'مكتمل',
+  canceled: 'ملغى',
+} as const;
+
+export const taskType = {
+  park: 'صف',
+  retrieve: 'إحضار',
+  repark: 'إعادة صف',
+} as const;
+
+export const waLinkStatus = {
+  none: 'غير مربوطة',
+  pending_send: 'جارٍ الإرسال',
+  pending_confirmation: 'بانتظار تأكيد السائق',
+  linked: 'مربوطة',
+  failed: 'تعذر الإرسال',
+  opted_out: 'أوقف العميل الرسائل',
+} as const;
+
+export const inspectionStatus = {
+  pending: 'لم يكتمل بعد',
+  complete: 'مكتمل',
+  incomplete: 'غير مكتمل',
+  exception_approved: 'استثناء معتمد',
+} as const;
+
+export const paymentStatus = {
+  not_required: 'غير مطلوب',
+  due: 'مستحق',
+  collected: 'محصّل',
+  waived: 'معفى',
+} as const;
+
+export const paymentMethod = {
+  cash: 'نقدًا',
+  pos: 'شبكة (نقاط بيع)',
+} as const;
+
+export const waMessageStatus = {
+  queued: 'في الطابور',
+  sent: 'أُرسلت',
+  delivered: 'وصلت',
+  read: 'قُرئت',
+  failed: 'فشلت',
+  skipped: 'تُجووزت',
+  received: 'واردة',
+} as const;
+
+export const eventStatus = {
+  draft: 'مسودة',
+  open: 'مفتوح',
+  closing: 'قيد الإغلاق',
+  closed: 'مغلق',
+  canceled: 'ملغى',
+} as const;
+
+export const shiftStatus = {
+  scheduled: 'مجدولة',
+  open: 'مفتوحة',
+  closed: 'مغلقة',
+} as const;
+
+export const transferStatus = {
+  pending: 'مجدول',
+  blocked: 'متعثر',
+  completed: 'تم',
+  canceled: 'ملغى',
+} as const;
+
+export const userStatus = {
+  active: 'نشط',
+  disabled: 'معطّل',
+} as const;
+
+export const incidentStatus = {
+  open: 'مفتوحة',
+  in_review: 'قيد المراجعة',
+  resolved: 'محلولة',
+  closed: 'مغلقة',
+} as const;
+
+export const incidentSeverity = {
+  low: 'منخفضة',
+  medium: 'متوسطة',
+  high: 'عالية',
+} as const;
+
+export const alertSeverity = {
+  info: 'معلومة',
+  warning: 'تحذير',
+  critical: 'حرج',
+} as const;
+
+export const alertStatus = {
+  open: 'مفتوح',
+  acknowledged: 'مستلم',
+  resolved: 'محلول',
+} as const;
+
+// ---------------------------------------------------------------- 02 §8.2 alert, incident and custody types
+
+export const alertType = {
+  no_drivers_on_duty: 'لا يوجد سائقون في الوردية',
+  request_unaccepted: 'طلب لم يُقبل في الوقت المحدد',
+  next_task_waiting_long: 'مهمة تالية تنتظر طويلًا',
+  idle_driver_while_next_waiting: 'سائق متاح والطلب الأقدم محجوز تالٍ',
+  ready_not_collected: 'مركبة جاهزة لم تُستلم',
+  wa_send_failed: 'فشل إرسال رسالة واتساب',
+  wa_channel_down: 'قناة واتساب متوقفة',
+  driver_connection_lost_with_custody: 'انقطع اتصال سائق بعهدته عناصر',
+  handover_code_locked: 'رمز تسليم مقفل',
+  inspection_incomplete: 'فحص غير مكتمل',
+  draft_abandoned: 'مسودة استلام متروكة',
+  transfer_blocked: 'نقل سائق متعثر',
+  outbox_lag: 'تأخر معالجة الأحداث',
+  push_failed_repeatedly: 'فشل متكرر لإشعارات جهاز',
+  task_stuck: 'مهمة متوقفة',
+  wa_webhook_silent: 'لا تصل أحداث واتساب',
+} as const;
+
+export const incidentType = {
+  key_missing: 'مفتاح مفقود',
+  vehicle_damage: 'ضرر في المركبة',
+  customer_absent: 'غياب العميل',
+  manual_verification: 'تحقق يدوي',
+  lost_ticket: 'فقد التذكرة',
+  payment_discrepancy: 'فرق تحصيل',
+  inspection_incomplete: 'فحص غير مكتمل',
+  wrong_vehicle: 'مركبة خاطئة',
+  custody_mismatch: 'عدم تطابق العهدة',
+  other: 'أخرى',
+} as const;
+
+export const custodyReason = {
+  intake: 'استلام من العميل',
+  parked: 'صف',
+  key_deposited: 'إيداع المفتاح',
+  key_pickup: 'استلام المفتاح',
+  retrieval_start: 'بدء الإحضار',
+  handover: 'تسليم للعميل',
+  repark: 'إعادة صف',
+  official_transfer: 'نقل عهدة رسمي',
+  withdrawal_release: 'تحرير عند السحب',
+  manual_reconcile: 'مطابقة يدوية',
+  correction: 'تصحيح',
+} as const;
+
+/** Custody holder; `{name}` / `{label}` are filled from the data. */
+export const custodyHolder = {
+  customer: 'العميل',
+  driver: 'السائق {name}',
+  spot: 'الموقف {label}',
+  key_slot: 'الخانة {label}',
+  supervisor: 'المشرف {name}',
+  unknown: 'غير معروف',
+} as const;
+
+export const mediaKind = {
+  photo_front: 'الأمام',
+  photo_rear: 'الخلف',
+  photo_right: 'الجانب الأيمن',
+  photo_left: 'الجانب الأيسر',
+  photo_extra: 'إضافية',
+  photo_damage: 'ضرر',
+} as const;
+
+// ---------------------------------------------------------------- 02 §8.3 repeated buttons
+
+export const buttons = {
+  continue: 'متابعة',
+  cancel: 'إلغاء',
+  save: 'حفظ',
+  confirm: 'تأكيد',
+  retry: 'إعادة المحاولة',
+  back: 'العودة',
+  open: 'فتح',
+  close: 'إغلاق',
+  refresh: 'تحديث',
+  syncNow: 'مزامنة الآن',
+  gotIt: 'فهمت',
+} as const;
+
+// ---------------------------------------------------------------- 02 §8.4 intake pick lists
+
+/** Stored as English keys, translated in the UI (02 §9.3 item 16). `other` opens a free-text field. */
+export const vehicleColor = {
+  white: 'أبيض',
+  black: 'أسود',
+  silver: 'فضي',
+  gray: 'رمادي',
+  red: 'أحمر',
+  blue: 'أزرق',
+  navy: 'كحلي',
+  green: 'أخضر',
+  beige: 'بيج',
+  brown: 'بني',
+  gold: 'ذهبي',
+  yellow: 'أصفر',
+  orange: 'برتقالي',
+  other: 'أخرى',
+} as const;
+
+export const vehicleMake = {
+  toyota: 'تويوتا',
+  hyundai: 'هيونداي',
+  nissan: 'نيسان',
+  kia: 'كيا',
+  lexus: 'لكزس',
+  ford: 'فورد',
+  chevrolet: 'شيفروليه',
+  gmc: 'جي إم سي',
+  mercedes: 'مرسيدس',
+  bmw: 'بي إم دبليو',
+  honda: 'هوندا',
+  mazda: 'مازدا',
+  mitsubishi: 'ميتسوبيشي',
+  land_rover: 'لاند روفر',
+  audi: 'أودي',
+  geely: 'جيلي',
+  changan: 'شانجان',
+  mg: 'إم جي',
+  other: 'أخرى',
+} as const;
+
+export const onBehalfReason = {
+  paper_ticket: 'العميل حضر بتذكرة ورقية',
+  no_whatsapp: 'العميل لا يستخدم واتساب',
+  wa_down: 'واتساب متوقف',
+  verbal: 'طلب شفهي من العميل',
+  other: 'أخرى',
+} as const;
+
+// ---------------------------------------------------------------- shared UI states (02 §1.6, §1.9)
+
+export const ui = {
+  loading: 'جارٍ…',
+  loadingPage: 'جارٍ التحميل',
+  syncing: 'جارٍ المزامنة…',
+  lastSync: 'آخر مزامنة {time}',
+  lastSyncLabel: 'آخر مزامنة',
+  requestId: 'رمز المتابعة: {id}',
+  forbiddenPage: 'لا تملك صلاحية عرض هذه الصفحة.',
+  notFound: 'لم نجد هذا العنصر. ربما أُغلق أو تغيّر.',
+  sessionExpired: 'انتهت الجلسة. سجّل الدخول للمتابعة.',
+  sessionRevoked: 'أُنهيت جلستك.',
+  permissionDenied: 'لا تملك صلاحية هذا الإجراء.',
+  scopeDenied: 'هذا العنصر خارج نطاق موقعك.',
+  validation: 'راجع الحقول المظللة.',
+  versionConflict: 'تغيّرت بيانات هذا السجل. حدّثنا الشاشة؛ راجعها ثم أعد المحاولة.',
+  invalidState: 'لا يمكن تنفيذ هذا الإجراء في الحالة الحالية.',
+  idempotencyInProgress: 'جارٍ تنفيذ طلبك السابق…',
+  idempotencyConflict: 'حدث تعارض في الطلب. أعد المحاولة.',
+  rateLimited: 'طلبات كثيرة. انتظر قليلًا ثم حاول.',
+  internal: 'حدث خطأ غير متوقع. رمز المتابعة: {id}',
+  unavailable: 'الخدمة غير متاحة مؤقتًا. حاول بعد قليل.',
+  dutyRequired: 'ابدأ ورديتك أولًا.',
+  assignmentRequired: 'لا يوجد تعيين نشط لك على هذا الموقع. تواصل مع مشرفك.',
+  reasonRequired: 'اكتب سبب هذا الإجراء.',
+  noResponse: 'تعذر الوصول للخادم. سنعيد إرسال الطلب نفسه دون تكرار.',
+  offline: 'لا يوجد اتصال بالإنترنت.',
+  /** Placeholder screens until their ticket lands (not part of 02; see docs/progress/notes/pnt-021.md). */
+  placeholderTitle: 'قيد الإنشاء',
+  placeholderBody: 'تُبنى هذه الشاشة في مرحلة لاحقة من الخطة.',
+  notFoundPage: 'الصفحة غير موجودة.',
+} as const;
+
+// ---------------------------------------------------------------- navigation (02 §1.3, §1.4; 03 §3.2)
+
+export const nav = {
+  home: 'الرئيسية',
+  vehicles: 'المركبات',
+  account: 'حسابي',
+  ops: 'التشغيل',
+  drivers: 'السائقون',
+  venues: 'المواقع والحفلات',
+  reports: 'التقارير',
+  admin: 'الإدارة',
+  alerts: 'التنبيهات',
+  menu: 'القائمة',
+  mainNav: 'التنقل الرئيسي',
+  sideNav: 'أقسام لوحة المشرف',
+  logout: 'تسجيل الخروج',
+  switchToDriver: 'التبديل إلى واجهة السائق',
+  backToOps: 'العودة إلى لوحة التشغيل',
+  back: 'رجوع',
+} as const;
+
+// ---------------------------------------------------------------- screens
+
+/** D-01 — الدخول */
+export const d01 = {
+  title: 'تسجيل الدخول',
+  phoneLabel: 'رقم الجوال',
+  phonePlaceholder: '5X XXX XXXX',
+  secretLabel: 'الرقم السري',
+  submit: 'دخول',
+  staffLink: 'دخول المشرفين والإدارة',
+  forgot: 'نسيت الرقم السري؟ تواصل مع مشرفك.',
+  offline: 'لا يوجد اتصال بالإنترنت.',
+  phoneInvalid: 'أدخل رقم جوال سعودي صحيح يبدأ بـ 5.',
+  reveal: 'إظهار',
+  hide: 'إخفاء',
+  lockedUntil: 'يمكنك المحاولة بعد {time}',
+} as const;
+
+/** D-02 — تغيير الرقم السري */
+export const d02 = {
+  title: 'تغيير الرقم السري',
+  intro: 'اختر رقمًا سريًا من 6 أرقام لا يعرفه غيرك.',
+  current: 'الرقم السري الحالي',
+  next: 'الرقم السري الجديد',
+  confirm: 'تأكيد الرقم الجديد',
+  hint: 'لا تستخدم أرقامًا متكررة أو متسلسلة مثل 111111 أو 123456.',
+  submit: 'حفظ والمتابعة',
+  mismatch: 'الرقمان غير متطابقين.',
+  currentWrong: 'الرقم السري الحالي غير صحيح.',
+  weak: 'اختر رقمًا سريًا أقوى.',
+} as const;
+
+/** D-03 — بدء الوردية واختبار الصوت (shell only in PNT-022; the screen is PNT-035/PNT-070) */
+export const d03 = {
+  title: 'بدء الوردية',
+  assignment: 'تعيينك: {venue}',
+  start: 'بدء الوردية',
+  logout: 'تسجيل الخروج',
+  notificationsBanner: 'إشعارات الجهاز مساعدة فقط. أبقِ {brand} مفتوحًا أثناء الوردية لتسمع الطلبات.',
+  noAssignment: 'لا يوجد تعيين نشط لك على أي موقع. تواصل مع مشرفك لتعيينك.',
+  testAudio: 'تفعيل واختبار الصوت',
+} as const;
+
+/** D-04 — الرئيسية */
+export const d04 = {
+  intake: 'استلام مركبة',
+  currentTask: 'المهمة الحالية',
+  nextTask: 'المهمة التالية',
+  offerSection: 'طلب الإحضار',
+  emptyTitle: 'لا توجد طلبات إحضار الآن',
+  emptyBody: 'ستسمع تنبيهًا عند وصول طلب.',
+  onBreak: 'أنت في استراحة ولن تصلك الطلبات.',
+  endBreak: 'إنهاء الاستراحة',
+} as const;
+
+/** D-12 — المركبات */
+export const d12 = {
+  title: 'المركبات',
+} as const;
+
+/** D-14 — حسابي */
+export const d14 = {
+  title: 'حسابي',
+  alerts: 'التنبيهات',
+  appearance: 'المظهر',
+  themeSystem: 'تلقائي',
+  themeLight: 'فاتح',
+  themeDark: 'داكن',
+  changeSecret: 'تغيير الرقم السري',
+  endShift: 'إنهاء الوردية',
+  logout: 'تسجيل الخروج',
+  version: 'الإصدار {version} · الجهاز {device}',
+  logoutDuringDuty: 'أنهِ ورديتك قبل تسجيل الخروج حتى لا تُحسب متاحًا.',
+  endAndLogout: 'إنهاء الوردية والخروج',
+  endShiftConfirm: 'إنهاء الوردية؟ لن تصلك طلبات بعد الآن.',
+  addToHomeLink: 'كيف أضيف {brand} إلى الشاشة الرئيسية؟',
+} as const;
+
+/** D-15 — حالات النظام */
+export const d15 = {
+  offline: 'لا يوجد اتصال. البيانات المعروضة من {time} وقد تكون قديمة.',
+  offlineDetail: 'القبول والتسليم متوقفان حتى عودة الاتصال.',
+  sessionTitle: 'انتهت جلستك',
+  sessionReason: {
+    transfer: 'تم نقلك إلى {venue}. سجّل الدخول لمتابعة العمل في موقعك الجديد.',
+    disabled: 'تم تعطيل حسابك. تواصل مع الإدارة.',
+    admin: 'أُنهيت جلستك من الإدارة. سجّل الدخول من جديد.',
+    expired: 'انتهت مدة الجلسة. سجّل الدخول من جديد.',
+  },
+  login: 'تسجيل الدخول',
+  audio: 'الصوت متوقف — اضغط هنا لتفعيله.',
+  notificationsDenied: 'الإشعارات مرفوضة؛ أبقِ {brand} مفتوحًا لتسمع الطلبات.',
+  update: 'يتوفر تحديث ل{brand}.',
+  updateNow: 'تحديث الآن',
+  whatsappDown:
+    'رسائل واتساب للعملاء متوقفة مؤقتًا. استقبل الطلبات من العملاء مباشرة واستخدم التذكرة الورقية.',
+  serviceUnavailable: 'النظام غير متاح مؤقتًا. اتبع الإجراء الورقي حتى عودة الخدمة.',
+} as const;
+
+/** S-01 — الدخول والتحقق الثنائي */
+export const s01 = {
+  title: 'دخول المشرفين والإدارة',
+  phoneLabel: 'رقم الجوال',
+  passwordLabel: 'كلمة المرور',
+  submit: 'دخول',
+  mfaTitle: 'أدخل رمز التحقق من تطبيق المصادقة',
+  mfaCodeLabel: 'رمز التحقق',
+  mfaSubmit: 'تحقق',
+  changeTitle: 'تغيير كلمة المرور',
+  currentPassword: 'كلمة المرور الحالية',
+  newPassword: 'كلمة المرور الجديدة',
+  confirmPassword: 'تأكيدها',
+  passwordHint: 'استخدم كلمة مرور طويلة يصعب تخمينها.',
+  passwordMismatch: 'كلمتا المرور غير متطابقتين.',
+  changeSubmit: 'حفظ والمتابعة',
+  setupTitle: 'إعداد التحقق الثنائي',
+  setupBody: 'امسح الرمز بتطبيق المصادقة على جوالك ثم أدخل الرمز الظاهر.',
+  setupManual: 'أو أدخل هذا المفتاح يدويًا في التطبيق:',
+  setupQrAlt: 'رمز QR لإعداد التحقق الثنائي',
+  setupSubmit: 'تأكيد',
+  driverLink: 'دخول السائقين',
+} as const;
+
+// ---------------------------------------------------------------- component-internal strings (03 §3)
+
+export const components = {
+  loadingLabel: 'جارٍ…',
+  close: 'إغلاق',
+  phonePrefix: '+966',
+  code: {
+    label: 'رمز التسليم',
+    digit: 'الرقم {n}',
+    attemptsLeft: 'المحاولات المتبقية: {n}',
+    locked: 'تواصل مع المشرف',
+  },
+  offer: {
+    single: 'طلب إحضار — لك',
+    broadcast: 'طلب إحضار — لكل السائقين',
+    accept: 'قبول الطلب',
+    reserve: 'حجز كمهمة تالية',
+    reserveNote: 'احجزه فقط وأنت متوقف. لا تستخدم الجوال أثناء القيادة.',
+    viewOnly: 'لديك مهمة تالية محجوزة؛ لا يمكنك حجز أخرى.',
+    waitingSince: 'ينتظر منذ {time}',
+    waitingSinceLabel: 'ينتظر منذ',
+    requiresConnection: 'يتطلب اتصالًا',
+    announce: 'طلب إحضار جديد، تذكرة {n}',
+    layer: 'طلبات الإحضار',
+  },
+  ring: {
+    remaining: 'متبقٍ {n} ثانية',
+  },
+  task: {
+    current: 'المهمة الحالية',
+    next: 'المهمة التالية',
+    nextBadge: 'تالية',
+  },
+  stepper: {
+    key: 'المفتاح',
+    retrieve: 'الإحضار',
+    ready: 'جاهزة',
+    handover: 'التسليم',
+  },
+  plate: {
+    label: 'رقم اللوحة',
+    other: 'لوحة أخرى',
+    otherHint: 'اكتب اللوحة كما هي',
+    saudi: 'لوحة سعودية',
+    letters: 'أحرف اللوحة',
+    selected: 'الأحرف المختارة',
+    deleteLast: 'حذف آخر حرف',
+    delete: 'حذف',
+    aria: 'لوحة: {letters}، {digits}',
+  },
+  photo: {
+    uploading: 'جارٍ الرفع',
+    retry: 'إعادة المحاولة',
+    capture: 'تصوير {angle}',
+    recapture: 'إعادة تصوير {angle}',
+    photoOf: 'صورة {angle}',
+    extra: 'صورة إضافية',
+  },
+  qr: {
+    title: 'اربط تذكرة سيارتك على واتساب',
+    step1: 'امسح الرمز بكاميرا جوالك',
+    step2: 'اضغط «إرسال» في واتساب',
+    expiresIn: 'ينتهي الرمز خلال {ttl}',
+    expiresInLabel: 'ينتهي الرمز خلال',
+    expired: 'انتهت صلاحية الرمز',
+    driverHint: 'ارفع سطوع الشاشة',
+    alt: 'رمز QR لربط التذكرة على واتساب',
+  },
+  spot: {
+    search: 'ابحث برقم الخانة',
+    searchLabel: 'بحث عن خانة',
+    choose: 'اختر الموقف',
+    occupied: 'مشغول',
+    note: 'ملاحظة نصية بدل الخانة',
+  },
+  search: {
+    placeholder: 'ابحث برقم اللوحة أو رقم التذكرة',
+    label: 'بحث',
+    clear: 'مسح البحث',
+  },
+  filters: 'تصفية',
+  colors: 'لون المركبة',
+  queue: {
+    unassigned: 'غير مُسند',
+    waiting: 'ينتظر',
+    changed: 'تغيّر',
+  },
+  driverRow: {
+    current: 'الحالية',
+    next: 'التالية',
+    custody: 'العهدة: {n}',
+  },
+  alert: {
+    ack: 'إقرار',
+    resolve: 'حل',
+    acked: 'أُقِرّ',
+  },
+  timeline: {
+    failed: 'لم تُسلَّم الرسالة',
+  },
+  table: {
+    prev: 'السابق',
+    next: 'التالي',
+  },
+  dialog: {
+    reason: 'السبب (إلزامي)',
+  },
+  banner: {
+    enableAudio: 'تفعيل الصوت',
+  },
+  money: {
+    currency: 'ر.س',
+  },
+  time: {
+    sinceMinutes: 'منذ {n} د',
+  },
+} as const;
+
+/** Everything in one object for discovery; prefer the named exports above in code. */
+export const ar = {
+  ticketStatus,
+  driverState,
+  connectionState,
+  taskStatus,
+  taskType,
+  waLinkStatus,
+  inspectionStatus,
+  paymentStatus,
+  paymentMethod,
+  waMessageStatus,
+  eventStatus,
+  shiftStatus,
+  transferStatus,
+  userStatus,
+  incidentStatus,
+  incidentSeverity,
+  alertSeverity,
+  alertStatus,
+  alertType,
+  incidentType,
+  custodyReason,
+  custodyHolder,
+  mediaKind,
+  buttons,
+  vehicleColor,
+  vehicleMake,
+  onBehalfReason,
+  ui,
+  nav,
+  d01,
+  d02,
+  d03,
+  d04,
+  d12,
+  d14,
+  d15,
+  s01,
+  components,
+} as const;
