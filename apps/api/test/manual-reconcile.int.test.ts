@@ -65,9 +65,11 @@ describe('manual reconcile after an outage', () => {
     t.clock.advanceSeconds(1);
     const r = ok(await requestRetrieval(t, 'SUP-R', w.ticketId), 201);
     // the W-02 planned before the outage is still pending (no worker ran)
-    const w02 = await one(t.db, `SELECT id, purpose, status FROM notifications WHERE ticket_id = $1`, [
-      w.ticketId,
-    ]);
+    const w02 = await one(
+      t.db,
+      `SELECT id, purpose, status FROM notifications WHERE ticket_id = $1 AND purpose = 'W-02'`,
+      [w.ticketId],
+    );
     expect(w02).toMatchObject({ purpose: 'W-02', status: 'pending' });
     const offer = await one(
       t.db,
@@ -187,7 +189,7 @@ describe('manual reconcile after an outage', () => {
       evidence_note: 'السجل الورقي للبوابة',
       canceled_task_id: r.task.id,
       closed_cycle_id: r.cycle.id,
-      skipped_notifications: 1,
+      skipped_notifications: 2, // the direct link's pending W-01 (PNT-043) and the W-02
       settled: 'available',
     });
     await expectConsistent(t.db);

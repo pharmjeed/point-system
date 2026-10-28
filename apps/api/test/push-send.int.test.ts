@@ -316,13 +316,8 @@ describe('Web Push — expiry, failures and the push_failed_repeatedly alert', (
   it('retries stop at the attempt limit within the TTL; a new subscription resolves the alert (14 §8)', async () => {
     ok(await startDuty(t, 'DRV3'), 201);
     const d3 = await t.device('DRV3');
-    t.push.respond(
-      d3.endpoint,
-      { statusCode: 503 },
-      { statusCode: 503 },
-      { statusCode: 503 },
-      { statusCode: 503 },
-    );
+    // the offer's four attempts, then the 15 s reminder's (S4) — every push to this device keeps failing
+    t.push.respond(d3.endpoint, ...Array.from({ length: 8 }, () => ({ statusCode: 503 })));
     const k = await parkedPaperTicket(t, 'DRV3');
     t.clock.advanceSeconds(5);
     ok(await requestRetrieval(t, 'SUP-R', k.ticketId), 201);
@@ -331,7 +326,8 @@ describe('Web Push — expiry, failures and the push_failed_repeatedly alert', (
     await t.advance(2); // 2
     await t.advance(5); // 3 → alert
     await t.advance(15); // 4: the last provider attempt, then failed
-    const n = (await pushRows(t, d3.deviceId)).at(-1);
+    // the offer's own row (S4 also sends the 15 s single-offer reminder meanwhile, 10 §5.1)
+    const n = (await pushRows(t, d3.deviceId)).filter((p) => p.purpose === 'offer').at(-1);
     expect(n).toMatchObject({ purpose: 'offer', status: 'failed', attempts: 4, last_error_code: 'http_503' });
     const key = `push_failed_repeatedly:${d3.deviceId}`;
     expect((await one(t.db, `SELECT status FROM alerts WHERE dedupe_key = $1`, [key])).status).toBe('open');

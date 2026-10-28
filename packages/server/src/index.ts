@@ -18,7 +18,7 @@ export * from './modules/notifications/index.js';
 
 export * from './modules/incidents/index.js';
 
-// export * from './modules/payments-reports/index.js';
+export * from './modules/payments-reports/index.js';
 
 export * from './modules/audit-monitoring/index.js';
 

@@ -15,4 +15,6 @@ export {
 } from './application/read-api.js';
 // signed keyset cursors and the VenueEvent view, shared with the S6 supervisor reads (incidents, operations board)
 export { ListCursorCodec, pageOf, type CursorValue } from './infra/cursor.js';
+// the event close (CloseEvent use-case, PNT-087) and the reports read events with the module's own shapes
+export { assertClosable, FINAL_EVENT_STATUSES } from './domain/event-lifecycle.js';
 export { EVENT_COLUMNS, toVenueEvent, type VenueEventRow, type VenueEventDto } from './infra/rows.js';

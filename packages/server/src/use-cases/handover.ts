@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { autoResolveAlerts, raiseAlert } from '../core/alerts/alerts.js';
 import type { ActorContext } from '../core/actor-context/actor-context.js';
-import { lockCycles, lockPools, lockTasks, lockTickets } from '../core/db/locks.js';
+import { lockCycles, lockEvents, lockPools, lockTasks, lockTickets } from '../core/db/locks.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
 import {
@@ -38,7 +38,8 @@ const OPERATION = 'POST /v1/tickets/{ticketId}/handover';
 const FAILED = 'handover.code_attempt_failed';
 
 /**
- * Handover (PNT-034; 11 TT-18): L1 pool → L4 retrieve task → L5 ticket → L6 cycle. Paper tickets are
+ * Handover (PNT-034; 11 TT-18): L1 pool → (L2 event FOR SHARE when money is due or sent, 13 §5.5) → L4
+ * retrieve task → L5 ticket → L6 cycle. Paper tickets are
  * verified against the stub (`paper_serial`); a wrong stub counts toward `handover.max_attempts` like a wrong
  * code and is kept although the command fails (keepEffects, the error is the saved idempotent response).
  * The payment gate refuses a due ticket (PNT-080 collects inline through the InlinePaymentHook).
@@ -48,7 +49,13 @@ export class HandoverUseCase {
   async execute(tx: Tx, actor: ActorContext, ticketId: string, body: HandoverBody, requestId: string) {
     const pre = await findTicketInScope(tx, actor, ticketId);
     const taskId = await openTaskIdOf(tx, ticketId);
+    const money = await tx.one<{ event_id: string; payment_status: string }>(
+      `SELECT event_id, payment_status FROM tickets WHERE id = $1`,
+      [ticketId],
+    );
     await lockPools(tx, [pre.dispatch_pool_id]); // L1
+    // 13 §5.5: a handover that collects (or must collect) holds the event row FOR SHARE (L2), like the close
+    if (money.payment_status === 'due' || body.payment) await lockEvents(tx, [money.event_id], 'FOR SHARE');
     const [task] = taskId ? ((await lockTasks(tx, [taskId])) as TaskRow[]) : [null]; // L4
     const [locked] = (await lockTickets(tx, [ticketId])) as TicketRow[]; // L5
     const t = locked!;
@@ -75,18 +82,22 @@ export class HandoverUseCase {
     // payment gate before any attempt is counted (no side effect)
     let payment: Record<string, unknown> | null = null;
     const pay = inlinePaymentHook();
-    if (t.payment_status === 'due' && !(body.payment && pay)) {
-      const ev = await tx.one<{ allowed_payment_methods: string[] }>(
-        `SELECT allowed_payment_methods FROM events WHERE id = $1`,
-        [t.event_id],
-      );
-      throw new AppError('PAYMENT_PENDING', {
-        amount_halalas: Number(t.fee_halalas),
-        allowed_methods: ev.allowed_payment_methods,
-      });
+    if (pay?.check) {
+      await pay.check(tx, { ticket: t, payment: body.payment ?? null, actor }); // 13 §5.3 step 5 (PNT-080)
+    } else {
+      if (t.payment_status === 'due' && !(body.payment && pay)) {
+        const ev = await tx.one<{ allowed_payment_methods: string[] }>(
+          `SELECT allowed_payment_methods FROM events WHERE id = $1`,
+          [t.event_id],
+        );
+        throw new AppError('PAYMENT_PENDING', {
+          amount_halalas: Number(t.fee_halalas),
+          allowed_methods: ev.allowed_payment_methods,
+        });
+      }
+      if (t.payment_status !== 'due' && body.payment)
+        throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
     }
-    if (t.payment_status !== 'due' && body.payment)
-      throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
 
     const settings = await venueSettingsFor(tx, t.venue_id);
     const max = settings.handover.max_attempts;
@@ -161,7 +172,7 @@ export class HandoverUseCase {
       ).claim_code_id;
     }
     if (t.payment_status === 'due' && body.payment && pay)
-      payment = await pay.collect(tx, { ticket: t, cycle, payment: body.payment, actor });
+      payment = await pay.collect(tx, { ticket: t, cycle, payment: body.payment, actor, requestId });
 
     const done = await tx.one<TaskRow>(
       `UPDATE tasks SET status = 'completed', completed_at = $2, version = version + 1 WHERE id = $1 RETURNING *`,

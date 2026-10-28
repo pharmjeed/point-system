@@ -16,6 +16,7 @@ import {
   type TaskRow,
 } from '../modules/dispatch/index.js';
 import { scopeStillGranted } from '../modules/incidents/index.js';
+import { normalizePosReference } from '../modules/payments-reports/index.js';
 import {
   checkVersion,
   emitForTicket,
@@ -58,9 +59,12 @@ const fields = (field: string, issue: string) =>
   new AppError('VALIDATION_FAILED', { fields: [{ field, issue }] });
 
 /** 13 §5.6: strip spaces and hyphens, uppercase, `^[A-Z0-9]{1,24}$`, never 13+ consecutive digits. */
-export function normalizePosReference(raw: string | null | undefined): string | null {
-  if (raw == null) return null;
-  const v = raw.replace(/[\s-]+/g, '').toUpperCase();
+/**
+ * The documented POS reference of a reconciled payment: the payments module's normalization (13 §5.2: Arabic-Indic
+ * digits, spaces and dashes) and its shape rules, reported on `payment.pos_reference`.
+ */
+function reconcilePosReference(raw: string | null | undefined): string | null {
+  const v = normalizePosReference(raw);
   if (!v) return null;
   if (/[0-9]{13,}/.test(v)) throw fields('payment.pos_reference', 'looks_like_card_number');
   if (!/^[A-Z0-9]{1,24}$/.test(v)) throw fields('payment.pos_reference', 'invalid_format');
@@ -184,7 +188,7 @@ export class ManualReconcileUseCase {
         });
       if (body.payment.method === 'cash' && body.payment.pos_reference)
         throw fields('payment.pos_reference', 'not_applicable');
-      const posRef = normalizePosReference(body.payment.pos_reference);
+      const posRef = reconcilePosReference(body.payment.pos_reference);
       const collector = await tx.maybeOne(`SELECT 1 FROM users WHERE id = $1 AND org_id = $2`, [
         body.payment.collected_by,
         actor.orgId,

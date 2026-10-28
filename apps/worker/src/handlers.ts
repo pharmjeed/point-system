@@ -44,8 +44,9 @@ import { incidentsJobs, incidentsProjectors } from '@point/server';
 handlers.push(...incidentsJobs());
 projectors.push(...incidentsProjectors());
 
-// import { paymentsReportsJobs } from '@point/server';
-// handlers.push(...paymentsReportsJobs());
+import { paymentsReportsJobs, paymentsReportsWorkerService } from '@point/server';
+handlers.push(...paymentsReportsJobs());
+services.push((deps) => paymentsReportsWorkerService(deps));
 
 import { auditMonitoringJobs, auditMonitoringMonitor, auditMonitoringProjectors } from '@point/server';
 handlers.push(...auditMonitoringJobs());

@@ -5,7 +5,8 @@ import { invalidTransition } from './errors.js';
 /**
  * `events.status` (11 §6.4): draft → open → closing → closed; closing → open (reopen, canon §5 note);
  * draft/open → canceled. `closed` and `canceled` are final: any command on them is EVENT_ALREADY_CLOSED.
- * start-closing / close belong to S6/S7 and are not implemented here.
+ * start-closing is EventsService.startClosing; the close (closing → closed) is the CloseEvent use-case (04 §4.4),
+ * which checks the reconciliation blockers after `assertClosable`.
  */
 export const FINAL_EVENT_STATUSES: readonly EventStatus[] = ['closed', 'canceled'];
 
@@ -62,6 +63,36 @@ export function assertCancelable(ev: EventStateRow, command: string): void {
       currentVersion: ev.version,
       command,
       allowedFrom: ['draft', 'open'],
+    });
+  }
+}
+
+/** POST /v1/events/{eventId}/start-closing: open → closing (11 §6.4; intake stops, retrievals go on). */
+export function assertStartClosing(ev: EventStateRow, command: string): void {
+  assertNotFinal(ev);
+  if (ev.status !== 'open') {
+    throw invalidTransition({
+      entityType: 'event',
+      entityId: ev.id,
+      currentStatus: ev.status,
+      currentVersion: ev.version,
+      command,
+      allowedFrom: ['open'],
+    });
+  }
+}
+
+/** POST /v1/events/{eventId}/close: closing → closed only (11 §6.4); the blockers are the use-case's. */
+export function assertClosable(ev: EventStateRow, command: string): void {
+  assertNotFinal(ev);
+  if (ev.status !== 'closing') {
+    throw invalidTransition({
+      entityType: 'event',
+      entityId: ev.id,
+      currentStatus: ev.status,
+      currentVersion: ev.version,
+      command,
+      allowedFrom: ['closing'],
     });
   }
 }

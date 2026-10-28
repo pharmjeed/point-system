@@ -233,6 +233,12 @@ export async function createDrivers(db: Database, n: number, venueId = RMS): Pro
  * of the pool with the eligibility of 10 §4.4. Used to reach broadcast-only outcomes (assigned_waiting, races).
  */
 export async function openBroadcastBySql(db: Database, taskId: string): Promise<string> {
+  // the S4 engine may already have opened the broadcast itself (no single candidate, 10 §6)
+  const live = await db.query<{ id: string }>(
+    `SELECT id FROM task_offers WHERE task_id = $1 AND status = 'active' AND mode = 'broadcast'`,
+    [taskId],
+  );
+  if (live.rows[0]) return live.rows[0].id;
   const offer = await one<{ id: string }>(
     db,
     `INSERT INTO task_offers (org_id, task_id, dispatch_pool_id, mode, round_no, status, created_at, reminder_at)

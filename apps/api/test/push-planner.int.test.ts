@@ -4,7 +4,6 @@ import {
   accept,
   ok,
   one,
-  openBroadcastBySql,
   parkedPaperTicket,
   POOL_R,
   requestRetrieval,
@@ -135,46 +134,60 @@ describe('Web Push — broadcast, reminder, claim and withdrawal', () => {
   });
   afterAll(async () => t.close());
 
-  it('every driver tried once: single rounds expire, then a broadcast pushes every recipient', async () => {
+  // drivers by role, taken from the order of the single rounds (the longest-idle driver first, 10 §4)
+  let failing: string; // first single recipient; his push service refuses the broadcast and the reminder
+  let seen: string; // second; sees the broadcast card, so no reminder
+  let acceptor: string; // third; his expiry opens the broadcast in the same transaction, then he accepts it
+
+  it('every driver tried once: single rounds expire, then the engine broadcasts and pushes every recipient', async () => {
     const k = await parkedPaperTicket(t, 'DRV1');
     ticketNo = k.displayNumber;
     t.clock.advanceSeconds(5);
     ok(await requestRetrieval(t, 'SUP-R', k.ticketId), 201);
+    await t.drain();
+    const order: string[] = [];
+    const byId = new Map(['DRV1', 'DRV2', 'DRV3'].map((u) => [(U as Record<string, string>)[u]!, u]));
     for (let i = 0; i < 3; i++) {
-      await t.drain();
-      await t.advance(32); // each single round expires (30 s + grace) and goes to the next driver
+      const live = await one(
+        t.db,
+        `SELECT o.id, r.user_id FROM task_offers o JOIN offer_recipients r ON r.offer_id = o.id
+          JOIN tasks k ON k.id = o.task_id
+         WHERE k.ticket_id = $1 AND o.status = 'active' AND o.mode = 'single'`,
+        [k.ticketId],
+      );
+      order.push(byId.get(live.user_id)!);
+      // before the last expiry (which opens the broadcast in its transaction) the first driver's service fails
+      if (i === 2) t.push.respond(dev[order[0]!]!.endpoint, { statusCode: 400 }, { statusCode: 400 });
+      await t.advance(32); // the single round expires (30 s + grace): next driver, then the broadcast (S4)
     }
     await t.drain();
+    [failing, seen, acceptor] = order as [string, string, string];
+    expect(new Set(order).size).toBe(3);
     const task = await one(t.db, `SELECT id, status FROM tasks WHERE ticket_id = $1 AND type = 'retrieve'`, [
       k.ticketId,
     ]);
-    expect(task.status).toBe('queued'); // S2 keeps an exhausted request queued (DEC-PROPOSED-11 of S2)
+    expect(task.status).toBe('broadcast'); // every driver tried once → the engine opened a broadcast (10 §6)
     taskId = task.id;
-    for (const u of ['DRV1', 'DRV2', 'DRV3'])
-      expect(
-        jsonOf(t, dev[u]!).map((p) => p.kind),
-        u,
-      ).toEqual(['offer', 'closed']);
-
-    t.push.respond(dev.DRV3!.endpoint, { statusCode: 400 }, { statusCode: 400 });
-    broadcastId = await openBroadcastBySql(t.db, taskId);
+    const live = await one(
+      t.db,
+      `SELECT id, round_no FROM task_offers WHERE task_id = $1 AND status = 'active' AND mode = 'broadcast'`,
+      [taskId],
+    );
+    broadcastId = live.id;
+    expect(live.round_no).toBe(4);
     const recipients = await rows(
       t.db,
-      `SELECT user_id, eligible_as FROM offer_recipients WHERE offer_id = $1 ORDER BY user_id`,
+      `SELECT user_id FROM offer_recipients WHERE offer_id = $1 ORDER BY user_id`,
       [broadcastId],
     );
     expect(recipients.map((r) => r.user_id).sort()).toEqual([U.DRV1, U.DRV2, U.DRV3].sort());
-    await t.emit({
-      type: 'task.broadcast_opened',
-      orgId: ORG,
-      venueId: RMS,
-      dispatchPoolId: POOL_R,
-      aggregate: { type: 'task', id: taskId, version: 20 },
-      actor: system,
-      payload: { task_id: taskId, ticket_id: k.ticketId, offer_id: broadcastId, round_no: 4, recipients },
-    });
-    await t.drain();
-    for (const u of ['DRV1', 'DRV2']) {
+    // the first two saw their own request and its quiet end, then the broadcast; the third's expiry and the
+    // broadcast share one transaction and one tag, so only the broadcast reaches him (last request wins)
+    expect(jsonOf(t, dev[seen]!).map((p) => p.kind)).toEqual(['offer', 'closed', 'broadcast']);
+    expect(jsonOf(t, dev[acceptor]!).map((p) => p.kind)).toEqual(['offer', 'broadcast']);
+    // the broadcast was attempted on the failing device too (refused below)
+    expect(jsonOf(t, dev[failing]!).map((p) => p.kind)).toEqual(['offer', 'closed', 'broadcast']);
+    for (const u of [seen, acceptor]) {
       const last = jsonOf(t, dev[u]!).at(-1);
       expect(last).toMatchObject({
         kind: 'broadcast',
@@ -186,8 +199,8 @@ describe('Web Push — broadcast, reminder, claim and withdrawal', () => {
       });
       expect(t.sentTo(dev[u]!.endpoint).at(-1)).toMatchObject({ ttlSeconds: 60 });
     }
-    // DRV3's push service refused it (400): failed, nothing on his screen
-    expect((await pushRows(t, dev.DRV3!.deviceId)).at(-1)).toMatchObject({
+    // the first driver's push service refused it (400): failed, nothing on his screen
+    expect((await pushRows(t, dev[failing]!.deviceId)).at(-1)).toMatchObject({
       purpose: 'broadcast',
       status: 'failed',
       last_error_code: 'http_400',
@@ -197,7 +210,7 @@ describe('Web Push — broadcast, reminder, claim and withdrawal', () => {
   it('the reminder goes only to recipients who did not see the card (client.offer_seen)', async () => {
     await t.db.query(`UPDATE offer_recipients SET seen_at = now() WHERE offer_id = $1 AND user_id = $2`, [
       broadcastId,
-      U.DRV1,
+      (U as Record<string, string>)[seen],
     ]);
     await t.emit({
       type: 'offer.reminded',
@@ -212,34 +225,37 @@ describe('Web Push — broadcast, reminder, claim and withdrawal', () => {
         recipient_ids: [U.DRV1, U.DRV2, U.DRV3],
       },
     });
-    expect((await pushRows(t, dev.DRV1!.deviceId)).map((p) => p.purpose)).not.toContain('reminder');
+    // no reminder of the broadcast round (4) for the driver who saw it (the single rounds had their own, 10 §5.1)
+    expect((await pushRows(t, dev[seen]!.deviceId)).map((p) => p.dedupe_key)).not.toContain(
+      `push:reminder:${taskId}:4:${dev[seen]!.deviceId}`,
+    );
     await t.drain();
-    expect(jsonOf(t, dev.DRV2!).at(-1)).toMatchObject({
+    expect(jsonOf(t, dev[acceptor]!).at(-1)).toMatchObject({
       kind: 'reminder',
       body: `تذكرة ${ticketNo} ما زالت بانتظار القبول`,
       expires_at: null,
     });
-    expect((await pushRows(t, dev.DRV3!.deviceId)).at(-1)).toMatchObject({
+    expect((await pushRows(t, dev[failing]!.deviceId)).at(-1)).toMatchObject({
       purpose: 'reminder',
       status: 'failed',
     });
   });
 
-  it('a claim quietly replaces only what was shown: DRV3, whose pushes failed, gets nothing', async () => {
+  it('a claim quietly replaces only what was shown: the driver whose pushes failed gets nothing', async () => {
     t.clock.advanceSeconds(2);
-    ok(await accept(t, 'DRV2', broadcastId));
+    ok(await accept(t, acceptor, broadcastId));
     await t.drain();
-    expect(jsonOf(t, dev.DRV1!).at(-1)).toMatchObject({
+    expect(jsonOf(t, dev[seen]!).at(-1)).toMatchObject({
       kind: 'closed',
       body: 'تم قبول الطلب',
       silent: true,
     });
-    expect(jsonOf(t, dev.DRV2!).at(-1)).toMatchObject({ kind: 'closed', body: 'تم قبول الطلب' });
-    expect((await pushRows(t, dev.DRV3!.deviceId)).map((p) => p.dedupe_key)).not.toContain(
-      `push:closed:${taskId}:4:${dev.DRV3!.deviceId}`,
+    expect(jsonOf(t, dev[acceptor]!).at(-1)).toMatchObject({ kind: 'closed', body: 'تم قبول الطلب' });
+    expect((await pushRows(t, dev[failing]!.deviceId)).map((p) => p.dedupe_key)).not.toContain(
+      `push:closed:${taskId}:4:${dev[failing]!.deviceId}`,
     );
-    expect((await pushRows(t, dev.DRV1!.deviceId)).at(-1).dedupe_key).toBe(
-      `push:closed:${taskId}:4:${dev.DRV1!.deviceId}`,
+    expect((await pushRows(t, dev[seen]!.deviceId)).at(-1).dedupe_key).toBe(
+      `push:closed:${taskId}:4:${dev[seen]!.deviceId}`,
     );
   });
 
@@ -247,16 +263,16 @@ describe('Web Push — broadcast, reminder, claim and withdrawal', () => {
     await t.db.transaction((tx) =>
       releaseDriverWork(tx, {
         orgId: ORG,
-        driverId: U.DRV2,
+        driverId: (U as Record<string, string>)[acceptor]!,
         poolId: POOL_R,
         reason: 'forced',
         actorId: U['SUP-R'],
       }),
     );
-    const withdrawn = (await pushRows(t, dev.DRV2!.deviceId)).at(-1);
+    const withdrawn = (await pushRows(t, dev[acceptor]!.deviceId)).at(-1);
     expect(withdrawn).toMatchObject({ purpose: 'closed', task_id: taskId, status: 'pending' });
     await t.drain();
-    expect(jsonOf(t, dev.DRV2!).at(-1)).toMatchObject({
+    expect(jsonOf(t, dev[acceptor]!).at(-1)).toMatchObject({
       kind: 'closed',
       tag: `task:${taskId}`,
       body: `سُحبت مهمة تذكرة ${ticketNo} — لا تُحضر السيارة`,

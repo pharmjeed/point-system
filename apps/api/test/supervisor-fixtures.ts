@@ -29,6 +29,7 @@ import {
   submitIntake,
   U,
 } from './dispatch-fixtures.js';
+import { approveWaTemplates } from './wa-templates-fixture.js';
 
 /**
  * Shared fixtures of the S6 supervisor backend tests (PNT-074 … PNT-085): alerts raised through the core writer,
@@ -137,6 +138,7 @@ export async function whatsappTicket(
   driver: string,
   opts: { phone?: string; eventId?: string; park?: boolean } = {},
 ) {
+  await approveWaTemplates(t.db); // submit links W-01 directly and needs approved templates (PNT-043)
   const d = await newDraft(t, driver, opts.eventId);
   const p = ok(
     await patchIntake(t, driver, d.ticketId, {

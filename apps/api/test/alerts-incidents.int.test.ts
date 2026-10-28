@@ -618,9 +618,16 @@ describe('PNT-083 — incidents (GET/POST /v1/incidents, GET/PATCH /v1/incidents
     const audits = await auditRows(t, 'incident.create', i.id);
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ actor_id: U['SUP-R'], venue_id: RMS });
-    // no realtime from this module: the realtime planner relays the incident events (11 §8.8)
+    // the incidents module publishes nothing itself: the notifications realtime planner relays incident.opened
+    // once as incident.updated (11 §8.8, 07 §4)
     await rt.settle();
-    expect(rt.notes.filter((n) => n.message.event.startsWith('incident'))).toEqual([]);
+    const live = rt.notes.filter((n) => n.message.event.startsWith('incident'));
+    expect(live).toHaveLength(1);
+    expect(live[0]!.message).toMatchObject({
+      event: 'incident.updated',
+      aggregate: { type: 'incident', id: i.id },
+      data: { cause: 'incident.opened', id: i.id, status: 'open' },
+    });
     // the default severity is medium
     expect(
       ok(await create('SUP-R', { venue_id: RMS, type: 'other', description: 'ملاحظة عامة' }), 201),

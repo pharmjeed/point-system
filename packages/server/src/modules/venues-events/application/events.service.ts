@@ -12,6 +12,7 @@ import {
   assertCancelable,
   assertEventEditable,
   assertPoolChangeAllowed,
+  assertStartClosing,
   openTransition,
   requireReason,
 } from '../domain/event-lifecycle.js';
@@ -312,6 +313,40 @@ export class EventsService {
       reason,
       before: { status: ev.status },
       after: { status: 'canceled' },
+    });
+    return toVenueEvent(row);
+  }
+
+  /**
+   * POST /v1/events/{eventId}/start-closing (PNT-087; 11 §6.4) — open → closing: intake stops (EVENT_NOT_OPEN at
+   * L2 in StartIntake) while retrievals, handovers and the money commands go on. Emits `event.closing_started`.
+   */
+  async startClosing(tx: Tx, actor: ActorContext, meta: CommandMeta, eventId: string, body: VersionOnlyBody) {
+    const ev = await this.lockEvent(tx, actor, eventId);
+    assertVersion('event', ev, body.expected_version);
+    assertStartClosing(ev, meta.operation);
+    const row = await tx.one<VenueEventRow>(
+      `UPDATE events e SET status = 'closing', closing_started_at = $3, version = version + 1
+        WHERE e.id = $1 AND e.version = $2 RETURNING ${EVENT_COLUMNS}`,
+      [eventId, ev.version, tx.now],
+    );
+    await emitEvent(tx, {
+      type: 'event.closing_started',
+      orgId: actor.orgId,
+      venueId: row.venue_id,
+      dispatchPoolId: row.dispatch_pool_id,
+      eventId: row.id,
+      aggregate: { type: 'event', id: row.id, version: row.version },
+      actor: { type: 'user', id: actor.userId },
+      payload: { event_id: row.id, status: 'closing', by: actor.userId },
+    });
+    await auditCommand(tx, actor, meta, {
+      action: 'event.manage',
+      entityType: 'event',
+      entityId: eventId,
+      venueId: row.venue_id,
+      before: { status: 'open' },
+      after: { status: 'closing' },
     });
     return toVenueEvent(row);
   }
