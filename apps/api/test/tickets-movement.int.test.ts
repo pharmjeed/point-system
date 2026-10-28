@@ -13,7 +13,6 @@ import {
   newDraft,
   ok,
   one,
-  openBroadcastBySql,
   outboxEvents,
   parkedPaperTicket,
   requestRetrieval,
@@ -119,12 +118,12 @@ describe('PNT-033 — key-pickup, start-retrieval, ready', () => {
       subject: 'key',
       current_holder_type: 'key_slot',
     });
-    // DRV1 reserves another retrieval as his next task (S4 broadcast reached by SQL)
+    // DRV1 reserves another retrieval as his next task from the broadcast the pass opened (PNT-053)
     const p2 = await parkedPaperTicket(t, 'DRV2');
     ok(await t.command('post', '/v1/me/duty/break', { as: 'DRV2', body: { active: true } }));
     const r2 = ok(await requestRetrieval(t, 'SUP-R', p2.ticketId), 201);
-    expect(r2.task.status).toBe('queued');
-    const b = await openBroadcastBySql(t.db, r2.task.id);
+    expect(r2.task.status).toBe('broadcast');
+    const b = (await liveOffer(t.db, U.DRV1))!.id;
     expect(ok(await accept(t, 'DRV1', b)).result).toBe('assigned_waiting');
     expect(err(await keyPickup(t, 'DRV1', r2.task.id, p2.slotId), 'TASK_NOT_STARTABLE', 409)).toEqual({
       task_status: 'assigned_waiting',

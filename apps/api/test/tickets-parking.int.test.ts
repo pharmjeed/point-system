@@ -12,7 +12,6 @@ import {
   newDraft,
   ok,
   one,
-  openBroadcastBySql,
   outboxEvents,
   paperTicketInParking,
   parkedPaperTicket,
@@ -377,8 +376,8 @@ describe('PNT-030 — POST /v1/tasks/{taskId}/complete-parking', () => {
     ok(await brk(t, 'DRV2', true)); // nobody is idle
     const d = await paperTicketInParking(t, 'DRV1');
     const req = ok(await requestRetrieval(t, 'SUP-R', parkedByOther.ticketId), 201);
-    expect(req.task.status).toBe('queued');
-    const offerId = await openBroadcastBySql(t.db, req.task.id);
+    expect(req.task.status).toBe('broadcast'); // PNT-053: nobody idle → a broadcast DRV1 may reserve
+    const offerId = (await liveOffer(t.db, U.DRV1))!.id;
     const res = ok(await accept(t, 'DRV1', offerId));
     expect(res).toMatchObject({ result: 'assigned_waiting', driver_state: 'busy_with_next' });
     const r = ok(

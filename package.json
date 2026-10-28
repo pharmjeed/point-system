@@ -12,6 +12,7 @@
     "test": "vitest run --project unit --project web-unit",
     "test:int": "vitest run --project integration",
     "test:e2e": "pnpm --filter @point/web test:e2e",
+    "test:race": "node scripts/race-loop.mjs",
     "lint": "eslint . && prettier --check . && node scripts/check-brand.mjs",
     "format": "prettier --write .",
     "typecheck": "pnpm -r typecheck",
