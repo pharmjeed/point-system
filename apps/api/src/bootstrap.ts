@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import {
   CLOCK,
   DATABASE,
@@ -31,6 +32,16 @@ export async function createApp(opts: CoreModuleOptions): Promise<NestExpressApp
     bodyParser: true,
     logger: ['error', 'warn'],
   });
+  // 12 §6.2: the WhatsApp webhook is read as raw bytes (signature first, JSON parsed by the worker) up to 3 MB,
+  // since a delivery may batch up to 1000 updates; every other JSON body stays at 1 MB (DEC-130)
+  app.use(
+    '/webhooks/whatsapp',
+    express.raw({ type: () => true, limit: '3mb' }),
+    (req: Request & { rawBody?: Buffer }, _res: Response, next: NextFunction) => {
+      if (Buffer.isBuffer(req.body)) req.rawBody = req.body;
+      next();
+    },
+  );
   app.useBodyParser('json', { limit: '1mb' });
   app.disable('x-powered-by');
   app.set('trust proxy', 1);

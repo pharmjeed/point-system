@@ -84,12 +84,12 @@ describe('WhatsApp webhook endpoint', () => {
   });
 
   describe('POST — verify, store, acknowledge', () => {
-    it('a signed delivery is stored once and processed by job.wa_process_inbound; the answer is {"ok":true}', async () => {
+    it('a signed delivery is stored once and processed by job.wa_process_inbound; the answer is 200 with no body', async () => {
       const raw = body();
       const before = await stored();
       const r = await post(raw, sign(WA_TEST_SECRETS.WA_APP_SECRET, raw));
       expect(r.status).toBe(200);
-      expect(r.body).toEqual({ ok: true });
+      expect(r.text).toBe('');
       expect(await stored()).toBe(before + 1);
       const row = (
         await w.db.query(
@@ -140,11 +140,27 @@ describe('WhatsApp webhook endpoint', () => {
       expect(r.status).toBe(200);
     });
 
-    it('bodies over 1 MB → 413 PAYLOAD_TOO_LARGE', async () => {
-      const raw = JSON.stringify({ object: 'whatsapp_business_account', pad: 'x'.repeat(1_100_000) });
-      const r = await post(raw, sign(WA_TEST_SECRETS.WA_APP_SECRET, raw));
-      expect(r.status).toBe(413);
-      expect(r.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+    it('accepts a signed delivery up to 3 MB (a batch may carry 1000 updates) and refuses a bigger one (12 §6.2, DEC-130)', async () => {
+      const big = (bytes: number) => {
+        const b = JSON.parse(body());
+        b.entry[0].changes[0].value.messages[0].text.body = 'x'.repeat(bytes);
+        return JSON.stringify(b);
+      };
+      const two = big(2 * 1024 * 1024);
+      const ok = await post(two, sign(WA_TEST_SECRETS.WA_APP_SECRET, two));
+      expect(ok.status).toBe(200);
+      const four = big(4 * 1024 * 1024);
+      const tooBig = await post(four, sign(WA_TEST_SECRETS.WA_APP_SECRET, four));
+      expect(tooBig.status).toBe(413);
+      expect(tooBig.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+      // other routes keep the 1 MB JSON limit
+      const other = await w
+        .http()
+        .post('/v1/auth/login')
+        .set('Content-Type', 'application/json')
+        .set('X-Requested-With', 'point-web')
+        .send(JSON.stringify({ phone: '0500000000', secret: 'y'.repeat(2 * 1024 * 1024) }));
+      expect(other.status).toBe(413);
     });
 
     it('a database failure answers 5xx, never a false 200 (Meta will retry)', async () => {

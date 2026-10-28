@@ -6,7 +6,8 @@ import { WhatsappWebhookIntake } from '../application/webhook-intake.js';
 /**
  * Canon §9.8 — `/webhooks/whatsapp` (PNT-040). Public (Meta has no session) and CSRF-exempt by path; the
  * GET handshake compares the verify token in constant time, the POST verifies X-Hub-Signature-256 over
- * the raw body before anything is parsed, stores it and answers 200 `{"ok":true}` (duplicates included).
+ * the raw body before anything is parsed, stores it and answers 200 with no body (duplicates included, 12 §6.2,
+ * DEC-130).
  */
 @Controller('webhooks/whatsapp')
 export class WhatsappWebhookController {
@@ -25,6 +26,6 @@ export class WhatsappWebhookController {
   @HttpCode(200)
   async receive(@Req() req: Request & { rawBody?: Buffer }) {
     await this.intake.receive(req.rawBody, req.header('x-hub-signature-256'));
-    return new RawBody({ ok: true });
+    return new RawBody('');
   }
 }
