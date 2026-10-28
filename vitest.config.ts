@@ -1,8 +1,9 @@
 import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
+// No 'module' condition: it selects bundler-only builds (e.g. the AWS SDK's extensionless ESM) that Node cannot load.
 // unit: pure logic, no database. integration: real PostgreSQL 16 (Testcontainers, or TEST_DATABASE_URL).
-const conditions = ['@point/source', 'module', 'node', 'development|production'];
+const conditions = ['@point/source', 'node', 'development|production'];
 const shared = {
   resolve: { conditions },
   ssr: { resolve: { conditions, externalConditions: ['@point/source'] } },
