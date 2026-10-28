@@ -28,6 +28,8 @@ FEATURE_MODULES.push(NotificationsHttpModule);
 
 import { PaymentsReportsHttpModule } from '@point/server';
 FEATURE_MODULES.push(PaymentsReportsHttpModule);
+import { EventCloseHttpModule } from '@point/server';
+FEATURE_MODULES.push(EventCloseHttpModule);
 
 import { AuditMonitoringHttpModule } from '@point/server';
 FEATURE_MODULES.push(AuditMonitoringHttpModule);

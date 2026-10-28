@@ -13,5 +13,6 @@ export {
   listVenueEventsByStatus,
   type VenueOpenEvent,
 } from './application/read-api.js';
-// the reports read events with the module's own shapes (PNT-088)
+// the event close (CloseEvent use-case, PNT-087) and the reports read events with the module's own shapes
+export { assertClosable, FINAL_EVENT_STATUSES } from './domain/event-lifecycle.js';
 export { EVENT_COLUMNS, toVenueEvent, type VenueEventRow, type VenueEventDto } from './infra/rows.js';

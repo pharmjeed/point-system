@@ -12,6 +12,9 @@ export { TicketQueries, type ListTicketsQuery } from './queries.js';
 export { loadTaskCard, driverStateResult } from './views.js';
 // PNT-080: the handover collects through the InlinePaymentHook (registered when this module loads)
 export { handoverPaymentHook } from './inline-payment.js';
+// PNT-087: reconciliation + close (04 §4.4)
+export { EventCloseHttpModule } from './http/event-close.controller.js';
+export { CloseEventUseCase, EventCloseQueries, type CloseEventBody } from './close-event.js';
 export {
   registerCustomerLinkingHook,
   registerClaimCodeHook,

@@ -13,7 +13,10 @@ import {
 import type { CommandMeta } from '../application/support.js';
 import { CommandContext, input } from './support.js';
 
-/** Canon §9.5: events (`event.manage`; start-closing / close / reconciliation / operations are S6–S7). */
+/**
+ * Canon §9.5: events (`event.manage`). The close and the reconciliation are the CloseEvent use-case
+ * (use-cases/http, 04 §4.4); the operations board belongs to the supervisor screens.
+ */
 @Controller('v1')
 export class EventsController {
   constructor(private readonly events: EventsService) {}
@@ -71,6 +74,19 @@ export class EventsController {
     @Body(input(VersionOnlyBody)) body: VersionOnlyBody,
   ) {
     return this.events.open(tx, actor, meta, eventId, body);
+  }
+
+  @Post('events/:eventId/start-closing')
+  @RequirePermission('event.manage')
+  @Command('POST /v1/events/{eventId}/start-closing')
+  startClosing(
+    @CurrentTx() tx: Tx,
+    @CurrentActor() actor: ActorContext,
+    @CommandContext() meta: CommandMeta,
+    @Param('eventId') eventId: string,
+    @Body(input(VersionOnlyBody)) body: VersionOnlyBody,
+  ) {
+    return this.events.startClosing(tx, actor, meta, eventId, body);
   }
 
   @Post('events/:eventId/cancel')
