@@ -84,7 +84,8 @@ export class CommandInterceptor implements NestInterceptor {
       }
     };
     let run: Promise<CommandResponse>;
-    if (meta.idempotent || header) {
+    // keys are scoped per user (idempotency_keys.user_id): public commands (login, MFA verify) run without one
+    if ((meta.idempotent || header) && (req.actor?.userId || meta.idempotent)) {
       const key = validateIdempotencyKey(header);
       if (!req.actor?.userId) throw new AppError('AUTH_UNAUTHENTICATED');
       run = runCommand(
