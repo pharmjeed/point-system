@@ -14,6 +14,7 @@ const SCREENS: Array<{
   closing?: boolean;
 }> = [
   { path: '/ops', role: 'supervisor', heading: /لوحة التشغيل/, ready: '[data-ticket="47"]' },
+  { path: '/ops/tickets/t-47', role: 'supervisor', heading: /#47/, ready: '#ticket-panel-timeline' },
   { path: '/ops/alerts', role: 'supervisor', heading: /مركز التنبيهات/, ready: '[data-alert-id="al-47"]' },
 ];
 
@@ -32,6 +33,21 @@ for (const s of SCREENS) {
     await expectMobileLayout(page);
   });
 }
+
+test('S-03 action sheet and S-04 resolve dialog keep the mobile rules', async ({ page }) => {
+  const api = new MockApi(page, roleMe('supervisor'));
+  mockStaffApi(api);
+  await api.install();
+  await page.goto('/ops/tickets/t-47');
+  await page.getByRole('button', { name: 'الإجراءات' }).click();
+  await expect(page.getByRole('dialog', { name: 'الإجراءات' })).toBeVisible();
+  await expectMobileLayout(page);
+  await page.keyboard.press('Escape');
+  await page.goto('/ops/alerts');
+  await page.locator('li[data-alert-id="al-45"]').getByRole('button', { name: 'حل' }).click();
+  await expect(page.getByRole('alertdialog', { name: 'حل التنبيه' })).toBeVisible();
+  await expectMobileLayout(page);
+});
 
 test('S-02 from 1024 px: three columns, no tabs, no horizontal scroll', async ({ page }) => {
   test.skip(test.info().project.name !== 'mobile-390', 'one desktop check is enough');

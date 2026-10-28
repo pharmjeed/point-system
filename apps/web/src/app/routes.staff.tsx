@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router';
+import { routePatterns } from '@/features/supervisor/staffPaths';
 import { paths } from './paths';
 
 /**
@@ -13,6 +14,10 @@ export const staffRoutes: RouteObject[] = [
       {
         path: paths.ops,
         lazy: async () => ({ Component: (await import('@/features/supervisor/OpsBoardPage')).OpsBoardPage }),
+      },
+      {
+        path: routePatterns.ticket,
+        lazy: async () => ({ Component: (await import('@/features/supervisor/TicketPage')).TicketPage }),
       },
       {
         path: paths.opsAlerts,
