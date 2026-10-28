@@ -24,4 +24,4 @@ export * from './modules/audit-monitoring/index.js';
 
 export * from './modules/media/index.js';
 
-// export * from './use-cases/index.js';
+export * from './use-cases/index.js';

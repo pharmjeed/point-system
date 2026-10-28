@@ -11,11 +11,11 @@ FEATURE_MODULES.push(IdentityAccessHttpModule);
 import { VenuesEventsHttpModule } from '@point/server';
 FEATURE_MODULES.push(VenuesEventsHttpModule);
 
-// import { TicketsCustodyHttpModule } from '@point/server';
-// FEATURE_MODULES.push(TicketsCustodyHttpModule);
+import { TicketsCustodyHttpModule } from '@point/server';
+FEATURE_MODULES.push(TicketsCustodyHttpModule);
 
-// import { DispatchHttpModule } from '@point/server';
-// FEATURE_MODULES.push(DispatchHttpModule);
+import { DispatchHttpModule } from '@point/server';
+FEATURE_MODULES.push(DispatchHttpModule);
 
 import { WhatsappHttpModule } from '@point/server';
 FEATURE_MODULES.push(WhatsappHttpModule);
