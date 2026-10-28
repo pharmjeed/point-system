@@ -30,3 +30,6 @@ Thumbs.db
 
 # delivery archives are not part of the repository
 *.zip
+
+# agent worktrees
+.claude/worktrees/

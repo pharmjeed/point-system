@@ -14,7 +14,12 @@ export default defineConfig({
         ...shared,
         test: {
           name: 'unit',
-          include: ['packages/*/src/**/*.test.ts', 'packages/*/test/**/*.test.ts', 'apps/{api,worker}/{src,test}/**/*.test.ts', 'tools/*/{src,test}/**/*.test.ts'],
+          include: [
+            'packages/*/src/**/*.test.ts',
+            'packages/*/test/**/*.test.ts',
+            'apps/{api,worker}/{src,test}/**/*.test.ts',
+            'tools/*/{src,test}/**/*.test.ts',
+          ],
           exclude: ['**/*.int.test.ts', '**/node_modules/**'],
         },
       },
@@ -22,8 +27,12 @@ export default defineConfig({
         ...shared,
         test: {
           name: 'integration',
-          include: ['packages/*/{src,test}/**/*.int.test.ts', 'apps/{api,worker}/{src,test}/**/*.int.test.ts', 'tools/*/{src,test}/**/*.int.test.ts'],
-          globalSetup: ['packages/server/test/global-setup.ts'],
+          include: [
+            'packages/*/{src,test}/**/*.int.test.ts',
+            'apps/{api,worker}/{src,test}/**/*.int.test.ts',
+            'tools/*/{src,test}/**/*.int.test.ts',
+          ],
+          globalSetup: ['packages/db/test/global-setup.ts'],
           testTimeout: 60000,
           hookTimeout: 120000,
           fileParallelism: false,

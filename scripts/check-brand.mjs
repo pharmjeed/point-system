@@ -5,23 +5,36 @@ import { readFileSync } from 'node:fs';
 
 const NAMES = ['بوينت', 'مصاف'];
 const ALLOWED = [
-  /^docs\//, /^brand\//, /^README\.md$/, /^CLAUDE\.md$/, /^PROMPT_FOR_CLAUDE_CODE\.md$/, /^\.env\.example$/,
-  /^tools\/progress\//, /^scripts\/check-brand\.mjs$/,
+  /^docs\//,
+  /^brand\//,
+  /^README\.md$/,
+  /^CLAUDE\.md$/,
+  /^PROMPT_FOR_CLAUDE_CODE\.md$/,
+  /^\.env\.example$/,
+  /^tools\/progress\//,
+  /^scripts\/check-brand\.mjs$/,
   /^packages\/shared\/src\/canon\/brand-defaults\.ts$/,
   /^packages\/shared\/src\/canon\/wa-templates\.ts$/,
   /^packages\/server\/src\/modules\/whatsapp\/templates\//,
   /^tools\/wa-simulator\/fixtures\//,
   /^apps\/web\/public\/manifest\.webmanifest$/,
   /^apps\/web\/index\.html$/,
-  /\.test\.ts$/, /\.spec\.ts$/,
+  /\.test\.ts$/,
+  /\.spec\.ts$/,
 ];
-const files = execSync('git ls-files -co --exclude-standard', { encoding: 'utf8' }).split('\n').filter(Boolean);
+const files = execSync('git ls-files -co --exclude-standard', { encoding: 'utf8' })
+  .split('\n')
+  .filter(Boolean);
 const bad = [];
 for (const f of files) {
   if (ALLOWED.some((re) => re.test(f))) continue;
   if (/\.(png|jpg|jpeg|ico|pdf|woff2?|mp3|zip|lock|yaml)$/.test(f) && !f.endsWith('.yaml')) continue;
   let text;
-  try { text = readFileSync(f, 'utf8'); } catch { continue; }
+  try {
+    text = readFileSync(f, 'utf8');
+  } catch {
+    continue;
+  }
   for (const n of NAMES) if (text.includes(n)) bad.push(`${f}: contains «${n}»`);
 }
 if (bad.length) {
