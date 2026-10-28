@@ -88,7 +88,9 @@ export async function loadActor(q: Q, token: string | undefined, now: Date): Pro
     `SELECT id, venue_id, dispatch_pool_id, shift_id, status, version FROM duty_sessions WHERE user_id = $1 AND status <> 'ended'`,
     [s.user_id],
   );
-  const orgScope = s.role === 'owner' || scopes.rows.some((x) => x.scope_type === 'org');
+  // 09 §4 rule 1: the owner and the admin reach nothing without an active `org` scope row (revoking it freezes
+  // their access without deleting the account) — no role is exempt
+  const orgScope = scopes.rows.some((x) => x.scope_type === 'org');
   const venueIds = new Set<string>();
   if (orgScope) {
     const v = await q.query<{ id: string }>(`SELECT id FROM venues WHERE org_id = $1`, [s.org_id]);
