@@ -6,6 +6,8 @@ import { OperationsBoardQuery } from '../operations-board.js';
 import { OperationsBoardController } from './operations-board.controller.js';
 import { RevealPhoneUseCase } from '../reveal-phone.js';
 import { RevealPhoneController } from './reveal-phone.controller.js';
+import { ManualReconcileUseCase } from '../manual-reconcile.js';
+import { ManualReconcileController } from './manual-reconcile.controller.js';
 
 /**
  * HTTP surface of the S6 supervisor backend: reads and commands on events and tickets that compose
@@ -13,7 +15,18 @@ import { RevealPhoneController } from './reveal-phone.controller.js';
  * rule 2).
  */
 @Module({
-  controllers: [SupervisorActionsController, OperationsBoardController, RevealPhoneController],
-  providers: [InspectionExceptionUseCase, CustodyTransferUseCase, OperationsBoardQuery, RevealPhoneUseCase],
+  controllers: [
+    SupervisorActionsController,
+    OperationsBoardController,
+    RevealPhoneController,
+    ManualReconcileController,
+  ],
+  providers: [
+    InspectionExceptionUseCase,
+    CustodyTransferUseCase,
+    OperationsBoardQuery,
+    RevealPhoneUseCase,
+    ManualReconcileUseCase,
+  ],
 })
 export class SupervisorHttpModule {}

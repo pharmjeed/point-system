@@ -25,3 +25,8 @@ export { InspectionExceptionUseCase } from './inspection-exception.js';
 export { CustodyTransferUseCase, type CustodyTransferBody } from './custody-transfer.js';
 export { OperationsBoardQuery, type BoardBadge } from './operations-board.js';
 export { RevealPhoneUseCase } from './reveal-phone.js';
+export {
+  ManualReconcileUseCase,
+  normalizePosReference,
+  type ManualReconcileBody,
+} from './manual-reconcile.js';

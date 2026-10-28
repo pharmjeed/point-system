@@ -18,3 +18,25 @@ export const CustodyTransferBody = z.strictObject({
 });
 
 export const RevealPhoneBody = z.strictObject({ reason });
+
+export const PaymentInputAttributed = z.strictObject({
+  method: z.enum(['cash', 'pos']),
+  amount_halalas: z.number().int().min(0),
+  pos_reference: z.string().max(40).nullable().optional(),
+  collected_by: uuid,
+});
+
+export const ManualReconcileBody = z.strictObject({
+  target_status: z.enum(['parked', 'delivered', 'voided']),
+  reason,
+  evidence: z.strictObject({
+    paper_log_ref: z.string().trim().min(1).max(60),
+    note: z.string().max(500).optional(),
+  }),
+  parking_spot_id: uuid.nullable().optional(),
+  spot_note: z.string().max(120).nullable().optional(),
+  key_slot_id: uuid.nullable().optional(),
+  incident_id: uuid.nullable().optional(),
+  payment: PaymentInputAttributed.nullable().optional(),
+  expected_version: z.number().int().min(1).optional(),
+});
