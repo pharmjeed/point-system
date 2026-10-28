@@ -1,11 +1,18 @@
 import { autoResolveAlerts, raiseAlert } from '../../../core/alerts/alerts.js';
 import { lockOffers, lockTasks } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
+import { metrics } from '../../../core/metrics/metrics.js';
 import type { EventActor } from '../../tickets-custody/index.js';
 import { idleCandidates, pickCandidate } from '../domain/driver-state.js';
 import { ensurePoolLocked, loadPoolDrivers, loadTriedSet, lockOpenDemand } from '../infra/dispatch-repo.js';
 import type { PoolDriverRow, PoolRow, QueueTask } from '../infra/rows.js';
-import { createSingleRound, expireSingleRound, revokeRound } from './offers.js';
+import {
+  createSingleRound,
+  expireSingleRound,
+  extendBroadcast,
+  openBroadcast,
+  revokeRound,
+} from './offers.js';
 import { addMs, dispatchSettings, type DispatchSettings } from './settings.js';
 
 export type PassReason =
@@ -24,13 +31,16 @@ export interface PassResult {
   demand: number;
   onDuty: number;
   offersCreated: number;
+  broadcastsOpened: number;
   expired: number;
+  /** the pass gate (test seam) skipped this pass */
+  skipped?: boolean;
 }
 
 /**
- * Extension point for S4 (PNT-052/053): what happens to a task that has no untried idle candidate. The S2
- * default keeps it `queued` (no broadcast rounds yet); S4 registers a policy that opens/extends a broadcast
- * (10 §4.4) and returns 'broadcast' so the actionable drivers are blocked behind the older round (R-3).
+ * What happens to a task that has no untried idle candidate (10 §4.1 step D). The default is the broadcast
+ * mode of PNT-053 (10 §4.4, R-3, R-6); a policy returns 'broadcast' when the task's round is (now) a live
+ * broadcast, so the drivers who can act are held behind it for the newer tasks.
  */
 export interface BroadcastPolicy {
   onNoSingleCandidate(
@@ -45,29 +55,122 @@ export interface BroadcastPolicy {
   ): Promise<'broadcast' | 'queued'>;
 }
 
-const QUEUE_ONLY: BroadcastPolicy = {
-  async onNoSingleCandidate() {
-    return 'queued';
+/**
+ * PNT-053 / 10 §4.1 step D. A queued task opens a broadcast to every on-duty driver of the pool (break excluded,
+ * `busy_with_next` included as `view_only`, R-6), unless every driver who could act on it is held by an older
+ * live round (R-3: the priority guard would refuse them anyway, so the request stays queued and invisible until
+ * the older round is claimed). When nobody on duty can act at all (all `busy_with_next`) the broadcast still
+ * opens view-only, as in the third example of 10 §4.8 (DEC-PROPOSED in docs/progress/notes/s4-dispatch.md).
+ * A live broadcast is extended with the drivers who came on duty since it opened.
+ */
+export const BROADCAST_MODE: BroadcastPolicy = {
+  async onNoSingleCandidate(tx, { pool, task, onDuty, blocked, cfg }) {
+    if (task.status === 'queued') {
+      const canAct = onDuty.filter((d) => d.driver_state !== 'busy_with_next');
+      if (canAct.length > 0 && canAct.every((d) => blocked.has(d.user_id))) return 'queued';
+      await openBroadcast(tx, pool, task, onDuty, cfg);
+      return 'broadcast';
+    }
+    await extendBroadcast(tx, task, onDuty);
+    return 'broadcast';
   },
 };
 
-let broadcastPolicy: BroadcastPolicy = QUEUE_ONLY;
+let broadcastPolicy: BroadcastPolicy = BROADCAST_MODE;
 
+/** Replaces the broadcast policy (tests); `null` restores the PNT-053 broadcast mode. */
 export function registerBroadcastPolicy(p: BroadcastPolicy | null): void {
-  broadcastPolicy = p ?? QUEUE_ONLY;
+  broadcastPolicy = p ?? BROADCAST_MODE;
 }
 
 /**
- * Extension point for S4 (10 §4.7): advisory alerts at the end of a pass (`idle_driver_while_next_waiting`).
- * Never reassigns silently.
+ * Advisory alerts at the end of a pass (10 §4.7). Never reassigns silently: the supervisor decides (§9.1).
  */
 export type PassAdvisor = (
   tx: Tx,
   ctx: { pool: PoolRow; idle: PoolDriverRow[]; cfg: DispatchSettings },
 ) => Promise<void>;
-let advisor: PassAdvisor | null = null;
+
+const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
+
+/**
+ * 10 §4.7: with `dispatch.idle_driver_alert`, an available driver without a live single offer while a task of
+ * the pool is reserved as somebody's next task raises `idle_driver_while_next_waiting` (warning) for the oldest
+ * reserved task, `{ idle_driver_ids, reserved_by, waiting_since }`. The alert of a task that is no longer the
+ * oldest reserved one, or when no idle driver is left, is resolved automatically («اختفاء المتاح», 10 §8.4);
+ * promotion and withdrawal resolve it in their own transactions.
+ */
+export const IDLE_DRIVER_ADVISOR: PassAdvisor = async (tx, { pool, idle, cfg }) => {
+  let keep: string | null = null;
+  if (cfg.idleDriverAlert && idle.length) {
+    const oldest = await tx.maybeOne<{
+      id: string;
+      ticket_id: string;
+      event_id: string;
+      assignee_id: string | null;
+      assigned_waiting_at: Date | null;
+      display_number: number;
+    }>(
+      `SELECT k.id, k.ticket_id, k.event_id, k.assignee_id, k.assigned_waiting_at, t.display_number
+         FROM tasks k JOIN tickets t ON t.id = k.ticket_id
+        WHERE k.dispatch_pool_id = $1 AND k.status = 'assigned_waiting'
+        ORDER BY k.priority_at, k.seq
+        LIMIT 1`,
+      [pool.id],
+    );
+    if (oldest) {
+      keep = `idle_driver_while_next_waiting:${oldest.id}`;
+      await raiseAlert(tx, {
+        orgId: pool.org_id,
+        venueId: pool.venue_id,
+        type: 'idle_driver_while_next_waiting',
+        dedupeKey: keep,
+        poolId: pool.id,
+        eventId: oldest.event_id,
+        ticketId: oldest.ticket_id,
+        taskId: oldest.id,
+        userId: oldest.assignee_id,
+        details: {
+          display_number: oldest.display_number,
+          idle_driver_ids: idle.map((d) => d.user_id).sort(),
+          reserved_by: oldest.assignee_id,
+          waiting_since: iso(oldest.assigned_waiting_at),
+        },
+      });
+    }
+  }
+  const open = await tx.rows<{ dedupe_key: string }>(
+    `SELECT dedupe_key FROM alerts
+      WHERE venue_id = $1 AND dispatch_pool_id = $2 AND type = 'idle_driver_while_next_waiting'
+        AND status <> 'resolved' AND dedupe_key IS NOT NULL`,
+    [pool.venue_id, pool.id],
+  );
+  const stale = open.map((a) => a.dedupe_key).filter((k) => k !== keep);
+  if (stale.length)
+    await autoResolveAlerts(tx, {
+      orgId: pool.org_id,
+      venueId: pool.venue_id,
+      dedupeKeys: stale,
+      note: 'no_idle_driver',
+    });
+};
+
+let advisor: PassAdvisor = IDLE_DRIVER_ADVISOR;
+
+/** Replaces the end-of-pass advisor (tests); `null` restores the 10 §4.7 idle-driver alert. */
 export function registerPassAdvisor(a: PassAdvisor | null): void {
-  advisor = a;
+  advisor = a ?? IDLE_DRIVER_ADVISOR;
+}
+
+/**
+ * Test seam (PNT-062 AC1): a gate that can switch off the in-transaction passes to prove that the safety-net
+ * sweep (`job.dispatch_sweep`, reason `sweep`) still dispatches within 5 s. Returns false to skip a pass.
+ * Never registered in production code.
+ */
+export type PassGate = (reason: PassReason, poolId: string) => boolean;
+let gate: PassGate | null = null;
+export function registerPassGate(g: PassGate | null): void {
+  gate = g;
 }
 
 const SYSTEM: EventActor = { type: 'system', id: null };
@@ -83,6 +186,9 @@ export async function runDispatchPass(
   reason: PassReason,
   opts: { excludeUserIds?: readonly string[] } = {},
 ): Promise<PassResult> {
+  if (gate && !gate(reason, poolId))
+    return { reason, demand: 0, onDuty: 0, offersCreated: 0, broadcastsOpened: 0, expired: 0, skipped: true };
+  const started = process.hrtime.bigint();
   const pool = await ensurePoolLocked(tx, poolId);
   const cfg = await dispatchSettings(tx, pool.venue_id);
   const exclude = new Set(opts.excludeUserIds ?? []);
@@ -112,7 +218,7 @@ export async function runDispatchPass(
   const drivers = (await loadPoolDrivers(tx, poolId)).filter((d) => !exclude.has(d.user_id));
   const onDuty = drivers.filter((d) => d.duty_status === 'on_duty');
 
-  // C. nobody can serve this pool: alert, never route to another venue (10 §4.6)
+  // C. nobody can serve this pool: alert, never route to another venue (10 §4.6); a broadcast stays a broadcast
   if (demand.length > 0 && onDuty.length === 0) {
     await raiseAlert(tx, {
       orgId: pool.org_id,
@@ -125,7 +231,14 @@ export async function runDispatchPass(
         open_requests: demand.length,
       },
     });
-    return finish(tx, pool, { reason, demand: demand.length, onDuty: 0, offersCreated: 0, expired });
+    return finish(tx, pool, started, {
+      reason,
+      demand: demand.length,
+      onDuty: 0,
+      offersCreated: 0,
+      broadcastsOpened: 0,
+      expired,
+    });
   }
   if (onDuty.length > 0)
     await autoResolveAlerts(tx, {
@@ -139,6 +252,7 @@ export async function runDispatchPass(
   const idle = idleCandidates(onDuty, { offlineLast: cfg.offlineDriversLast });
   const blocked = new Set(onDuty.filter((d) => d.live_single_offer_id).map((d) => d.user_id));
   let offersCreated = 0;
+  let broadcastsOpened = 0;
   for (const task of demand) {
     if (task.status === 'offered') continue; // its single recipient is already blocked
     const tried = await loadTriedSet(tx, task.id);
@@ -146,29 +260,44 @@ export async function runDispatchPass(
     if (cand) {
       if (task.status === 'broadcast' && task.live_offer_id) {
         await lockOffers(tx, [task.live_offer_id]);
-        await revokeRound(tx, task.live_offer_id, pool.venue_id, 'converted_to_single', SYSTEM);
+        await revokeRound(tx, task.live_offer_id, pool.venue_id, 'converted_to_single', SYSTEM); // 10 §4.5
       }
       await createSingleRound(tx, pool, task, cand, cfg);
+      metrics.dispatchOffers.inc({ mode: 'single', outcome: 'created' });
       offersCreated++;
       idle.splice(idle.indexOf(cand), 1);
       blocked.add(cand.user_id);
       continue;
     }
+    const before = task.status;
     const outcome = await broadcastPolicy.onNoSingleCandidate(tx, { pool, task, onDuty, blocked, cfg });
-    if (outcome === 'broadcast')
+    if (outcome === 'broadcast') {
+      if (before === 'queued') {
+        broadcastsOpened++;
+        metrics.dispatchOffers.inc({ mode: 'broadcast', outcome: 'created' });
+      }
       for (const d of onDuty) if (d.driver_state !== 'busy_with_next') blocked.add(d.user_id);
+    }
   }
 
-  // E. advisory alerts (S4)
-  if (advisor) await advisor(tx, { pool, idle, cfg });
-  return finish(tx, pool, { reason, demand: demand.length, onDuty: onDuty.length, offersCreated, expired });
+  // E. advisory alerts (never reassign silently)
+  await advisor(tx, { pool, idle, cfg });
+  return finish(tx, pool, started, {
+    reason,
+    demand: demand.length,
+    onDuty: onDuty.length,
+    offersCreated,
+    broadcastsOpened,
+    expired,
+  });
 }
 
-async function finish(tx: Tx, pool: PoolRow, r: PassResult): Promise<PassResult> {
+async function finish(tx: Tx, pool: PoolRow, started: bigint, r: PassResult): Promise<PassResult> {
   // descriptive counters: no version bump (10 §2.7)
   await tx.query(`UPDATE dispatch_pools SET last_pass_at = $2, pass_count = pass_count + 1 WHERE id = $1`, [
     pool.id,
     tx.now,
   ]);
+  metrics.dispatchPassDuration.observe({ reason: r.reason }, Number(process.hrtime.bigint() - started) / 1e9);
   return r;
 }

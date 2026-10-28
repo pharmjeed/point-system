@@ -1,4 +1,4 @@
-import type { OfferCloseReason } from '@point/shared';
+import type { OfferCloseReason, OfferEligibility } from '@point/shared';
 import { newId } from '../../../core/crypto/ids.js';
 import { lockOffers, lockOpenDutyByUsers, lockTasks } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
@@ -46,9 +46,17 @@ export async function requestDispatchPass(
   });
 }
 
+/** `eligible_as` of a broadcast recipient from his derived state (10 §2.2); stored for display only. */
+export function eligibilityOf(state: string): OfferEligibility {
+  if (state === 'available') return 'accept';
+  if (state === 'intake_parking' || state === 'retrieving') return 'reserve_next';
+  return 'view_only';
+}
+
 /**
  * 10 §4.3: a single round for the longest-idle driver. The caller holds the pool lock and the task row.
- * Schedules `job.offer_expire` at `expires_at + dispatch.accept_grace_ms` (DEC-47).
+ * Schedules `job.offer_remind` at `reminder_at` and `job.offer_expire` at `expires_at + dispatch.accept_grace_ms`
+ * (DEC-47); both carry the round's version so a later change makes them no-ops.
  */
 export async function createSingleRound(
   tx: Tx,
@@ -102,16 +110,126 @@ export async function createSingleRound(
       reminder_at: offer.reminder_at ? new Date(offer.reminder_at).toISOString() : null,
     },
   );
+  const aggregate = { type: 'task_offer', id: offer.id, version: offer.version };
+  if (offer.reminder_at)
+    await schedule(tx, 'job.offer_remind', new Date(offer.reminder_at), {
+      orgId: pool.org_id,
+      venueId: pool.venue_id,
+      dedupeKey: `offer_remind:${offer.id}`,
+      aggregate,
+      payload: { offer_id: offer.id, task_id: task.id, pool_id: pool.id },
+    });
   await schedule(tx, 'job.offer_expire', addMs(new Date(offer.expires_at!), cfg.acceptGraceMs), {
     orgId: pool.org_id,
     venueId: pool.venue_id,
     dedupeKey: `offer_expire:${offer.id}`,
-    aggregate: { type: 'task_offer', id: offer.id, version: offer.version },
-    payload: { task_id: task.id, pool_id: pool.id },
+    aggregate,
+    payload: { offer_id: offer.id, task_id: task.id, pool_id: pool.id },
   });
-  // extension point (S4, PNT-053): job.offer_remind at reminder_at — no handler exists yet
   await ensureDispatchSweep(tx, pool.org_id);
   return offer;
+}
+
+/**
+ * 10 §4.4: a broadcast round for a queued task — recipients are every on-duty driver of the pool (break
+ * excluded, `busy_with_next` included as `view_only`, R-6), `reminder_at` from `dispatch.broadcast_reminder_s`,
+ * no `expires_at` (a broadcast ends by acceptance, conversion or cancellation). `task.broadcast_opened` and one
+ * `job.broadcast_remind`.
+ */
+export async function openBroadcast(
+  tx: Tx,
+  pool: PoolRow,
+  task: QueueTask,
+  onDuty: readonly PoolDriverRow[],
+  cfg: DispatchSettings,
+): Promise<OfferRow> {
+  const offer = await tx.one<OfferRow>(
+    `INSERT INTO task_offers (id, org_id, task_id, dispatch_pool_id, mode, round_no, status, created_at, reminder_at, expires_at)
+     VALUES ($1, $2, $3, $4, 'broadcast', COALESCE((SELECT max(round_no) FROM task_offers WHERE task_id = $3), 0) + 1,
+             'active', $5, $6, NULL)
+     RETURNING *`,
+    [newId(), pool.org_id, task.id, pool.id, tx.now, addMs(tx.now, cfg.broadcastReminderS * 1000)],
+  );
+  const recipients = await addBroadcastRecipients(tx, offer.id, onDuty);
+  const upd = await tx.query<{ version: number }>(
+    `UPDATE tasks SET status = 'broadcast', broadcast_at = COALESCE(broadcast_at, $3), version = version + 1
+      WHERE id = $1 AND status = 'queued' AND version = $2 RETURNING version`,
+    [task.id, task.version, tx.now],
+  );
+  if (upd.rowCount !== 1) throw new InvariantViolation(`task ${task.id} changed under the pool lock`);
+  task.version = upd.rows[0]!.version;
+  task.status = 'broadcast';
+  task.live_offer_id = offer.id;
+  task.live_offer_mode = 'broadcast';
+  task.expires_at = null;
+  await emitTaskEvent(
+    tx,
+    { id: task.id, ticket_id: task.ticket_id, version: task.version },
+    'task.broadcast_opened',
+    SYSTEM,
+    {
+      task_id: task.id,
+      ticket_id: task.ticket_id,
+      offer_id: offer.id,
+      round_no: offer.round_no,
+      recipients,
+      reminder_at: new Date(offer.reminder_at!).toISOString(),
+    },
+  );
+  await schedule(tx, 'job.broadcast_remind', new Date(offer.reminder_at!), {
+    orgId: pool.org_id,
+    venueId: pool.venue_id,
+    dedupeKey: `broadcast_remind:${offer.id}`,
+    aggregate: { type: 'task_offer', id: offer.id, version: offer.version },
+    payload: { offer_id: offer.id, task_id: task.id, pool_id: pool.id },
+  });
+  await ensureDispatchSweep(tx, pool.org_id);
+  return offer;
+}
+
+/**
+ * 10 §4.4: drivers who came on duty (or back from a break) since the broadcast opened become recipients;
+ * `task.broadcast_extended` lists only the newly added ones. Nobody is ever removed (history, 10 §9.6).
+ */
+export async function extendBroadcast(
+  tx: Tx,
+  task: QueueTask,
+  onDuty: readonly PoolDriverRow[],
+): Promise<{ user_id: string; eligible_as: OfferEligibility }[]> {
+  if (!task.live_offer_id) return [];
+  const added = await addBroadcastRecipients(tx, task.live_offer_id, onDuty);
+  if (added.length)
+    await emitTaskEvent(
+      tx,
+      { id: task.id, ticket_id: task.ticket_id, version: task.version },
+      'task.broadcast_extended',
+      SYSTEM,
+      { task_id: task.id, offer_id: task.live_offer_id, added },
+    );
+  return added;
+}
+
+async function addBroadcastRecipients(
+  tx: Tx,
+  offerId: string,
+  onDuty: readonly PoolDriverRow[],
+): Promise<{ user_id: string; eligible_as: OfferEligibility }[]> {
+  const eligible = onDuty.filter((d) => d.duty_status === 'on_duty');
+  if (!eligible.length) return [];
+  const r = await tx.query<{ user_id: string; eligible_as: OfferEligibility }>(
+    `INSERT INTO offer_recipients (offer_id, user_id, duty_session_id, eligible_as)
+     SELECT $1, x.user_id, x.duty_session_id, x.eligible_as
+       FROM unnest($2::uuid[], $3::uuid[], $4::text[]) AS x(user_id, duty_session_id, eligible_as)
+     ON CONFLICT (offer_id, user_id) DO NOTHING
+     RETURNING user_id, eligible_as`,
+    [
+      offerId,
+      eligible.map((d) => d.user_id),
+      eligible.map((d) => d.duty_session_id),
+      eligible.map((d) => eligibilityOf(d.driver_state)),
+    ],
+  );
+  return [...r.rows].sort((a, b) => (a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0));
 }
 
 /** Closes a live round for a reason other than acceptance (offer.revoked). Caller holds L4 task + L7 offer. */
@@ -227,4 +345,79 @@ export async function expireSingleRound(
     recipient_id: recipient?.user_id ?? null,
   });
   return true;
+}
+
+/**
+ * `job.offer_remind` / `job.broadcast_remind` (10 §8.2): one reminder per round, to the recipients who can act on
+ * it now — the single recipient while he is still available, or the broadcast recipients still on duty in the
+ * pool whose live state is `accept`/`reserve_next`. `reminded_at` is descriptive (no version bump, 10 §2.7).
+ * Caller holds L1, L4 (task) and L7 (round).
+ */
+export async function remindRound(tx: Tx, offer: OfferRow, venueId: string): Promise<string[]> {
+  const recipients = await tx.rows<{ user_id: string; driver_state: string | null }>(
+    `SELECT r.user_id, s.driver_state
+       FROM offer_recipients r
+       LEFT JOIN v_driver_state s ON s.user_id = r.user_id AND s.dispatch_pool_id = $2 AND s.duty_status = 'on_duty'
+      WHERE r.offer_id = $1
+      ORDER BY r.user_id`,
+    [offer.id, offer.dispatch_pool_id],
+  );
+  const can = recipients
+    .filter((r) => {
+      if (!r.driver_state) return false;
+      const e = eligibilityOf(r.driver_state);
+      return offer.mode === 'single' ? e === 'accept' : e !== 'view_only';
+    })
+    .map((r) => r.user_id);
+  await tx.query(`UPDATE task_offers SET reminded_at = $2 WHERE id = $1 AND reminded_at IS NULL`, [
+    offer.id,
+    tx.now,
+  ]);
+  await emitOfferEvent(tx, offer, venueId, 'offer.reminded', SYSTEM, {
+    offer_id: offer.id,
+    task_id: offer.task_id,
+    mode: offer.mode,
+    recipient_ids: can,
+  });
+  return can;
+}
+
+/**
+ * `job.escalate_unaccepted` for the current episode of a queued task (10 §7.2, §8.2): at
+ * `queued_at + dispatch.unaccepted_escalation_s`, dedupe `escalate_unaccepted:<task_id>:<queued_at>`.
+ */
+export async function scheduleEscalation(
+  tx: Tx,
+  task: { id: string; org_id: string; venue_id: string; cycle_id: string | null; queued_at: Date | null },
+  cfg: Pick<DispatchSettings, 'unacceptedEscalationS'>,
+): Promise<void> {
+  if (!task.queued_at) return;
+  const queuedAt = new Date(task.queued_at);
+  await schedule(tx, 'job.escalate_unaccepted', addMs(queuedAt, cfg.unacceptedEscalationS * 1000), {
+    orgId: task.org_id,
+    venueId: task.venue_id,
+    dedupeKey: `escalate_unaccepted:${task.id}:${queuedAt.getTime()}`,
+    aggregate: { type: 'task', id: task.id, version: null },
+    payload: { task_id: task.id, cycle_id: task.cycle_id, queued_at: queuedAt.toISOString() },
+  });
+}
+
+/**
+ * `job.next_task_wait_check` for a reserved next task (10 §5.3, §8.2): at
+ * `assigned_waiting_at + dispatch.next_task_wait_alert_s`, dedupe `next_task_wait:<task_id>:<assigned_waiting_at>`.
+ */
+export async function scheduleNextTaskWaitCheck(
+  tx: Tx,
+  task: { id: string; org_id: string; venue_id: string; assigned_waiting_at: Date | null },
+  cfg: Pick<DispatchSettings, 'nextTaskWaitAlertS'>,
+): Promise<void> {
+  if (!task.assigned_waiting_at) return;
+  const at = new Date(task.assigned_waiting_at);
+  await schedule(tx, 'job.next_task_wait_check', addMs(at, cfg.nextTaskWaitAlertS * 1000), {
+    orgId: task.org_id,
+    venueId: task.venue_id,
+    dedupeKey: `next_task_wait:${task.id}:${at.getTime()}`,
+    aggregate: { type: 'task', id: task.id, version: null },
+    payload: { task_id: task.id, assigned_waiting_at: at.toISOString() },
+  });
 }

@@ -7,11 +7,14 @@ import { lockAssignments, lockOpenDutyByUsers, lockPools, lockUsers } from '../.
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { emitEvent } from '../../../core/outbox/outbox-writer.js';
+import { blockingCustody } from '../../identity-access/index.js';
 import { invalidTransition, type EventActor, type TicketQueryable } from '../../tickets-custody/index.js';
 import { findDefaultDispatchPool, findOpenShiftForPool } from '../../venues-events/index.js';
 import { driverStateOf } from '../infra/dispatch-repo.js';
 import type { DutyRow } from '../infra/rows.js';
+import { releaseDriverWork } from './driver-release.js';
 import { emitAvailability } from './events.js';
+import { ensureHeartbeatSweep } from './heartbeat.js';
 import { revokeDriverSingleOffers } from './offers.js';
 import { runDispatchPass } from './pass.js';
 import { currentDriverState, dutySessionView } from './views.js';
@@ -151,6 +154,7 @@ export class DutyService {
     });
     await emitAvailability(tx, actor.userId, actorOf(actor));
     await runDispatchPass(tx, pool.id, 'driver_available');
+    await ensureHeartbeatSweep(tx, actor.orgId); // PNT-062: connection state from the heartbeats
     await audit(tx, {
       orgId: actor.orgId,
       actor: { type: 'user', id: actor.userId, role: actor.role },
@@ -287,6 +291,92 @@ export class DutyService {
       before: { status: duty.status },
       after: { status: 'ended', end_reason: 'self' },
       metadata: { operation: 'POST /v1/me/duty/end' },
+    });
+    return dutySessionView(ended);
+  }
+
+  /**
+   * `POST /v1/duty-sessions/{sessionId}/force-end` (PNT-084; 10 §9.5, DEC-32): the supervisor ends the duty of a
+   * driver who left or lost his connection. Refused without any change (no override) while the driver holds a
+   * vehicle or a key, or has a task in progress or an active park/repark (DUTY_END_BLOCKED_CUSTODY with the items,
+   * until they are transferred officially). Otherwise his live single offers are revoked, his reserved next task
+   * and an accepted retrieval whose key is not picked up go back to the queue with their priority
+   * (`task.withdrawn`, new episodes), then the session ends (`forced`), the driver's devices get `sync.required`
+   * and the pool gets a pass. Broadcast recipient rows stay; he can no longer accept (DUTY_REQUIRED).
+   * Locks: L1 pool → L3 user (serializes with transfer and disable) → the release (L4–L8) → L8 session.
+   */
+  async forceEnd(
+    tx: Tx,
+    actor: ActorContext,
+    sessionId: string,
+    body: { reason: string },
+    requestId: string,
+  ) {
+    const op = 'POST /v1/duty-sessions/{sessionId}/force-end';
+    const pre = await tx.maybeOne<DutyRow>(`SELECT * FROM duty_sessions WHERE id = $1 AND org_id = $2`, [
+      sessionId,
+      actor.orgId,
+    ]);
+    if (!pre || !actor.venueIds.has(pre.venue_id))
+      throw new AppError('RESOURCE_NOT_FOUND', { resource: 'duty_session' });
+    const entity = { id: pre.id, status: pre.status, version: pre.version };
+    if (pre.status === 'ended') throw invalidTransition('duty_session', entity, op, ['on_duty', 'on_break']);
+    await lockPools(tx, [pre.dispatch_pool_id]); // L1
+    await lockUsers(tx, [pre.user_id]); // L3
+    const items = await blockingCustody(tx, pre.user_id);
+    if (items.length)
+      throw new AppError('DUTY_END_BLOCKED_CUSTODY', {
+        items: items.map((i) => ({
+          type: i.type,
+          ticket_id: i.ticket_id,
+          display_number: i.display_number ?? null,
+          ...(i.task_id ? { task_id: i.task_id } : {}),
+        })),
+      });
+    const reason = body.reason.trim();
+    await releaseDriverWork(tx, {
+      orgId: actor.orgId,
+      driverId: pre.user_id,
+      poolId: pre.dispatch_pool_id,
+      reason: 'forced',
+      actorId: actor.userId,
+    });
+    const [duty] = await lockOpenDutyByUsers<DutyRow>(tx, [pre.user_id]); // L8
+    if (!duty || duty.id !== pre.id)
+      throw invalidTransition('duty_session', { ...entity, status: 'ended' }, op, ['on_duty', 'on_break']);
+    const ended = await tx.one<DutyRow>(
+      `UPDATE duty_sessions SET status = 'ended', ended_at = $2, ended_by = $3, end_reason = 'forced',
+              available_since = NULL, version = version + 1
+        WHERE id = $1 RETURNING *`,
+      [duty.id, tx.now, actor.userId],
+    );
+    await emitEvent(tx, {
+      type: 'driver.duty_ended',
+      orgId: actor.orgId,
+      venueId: ended.venue_id,
+      dispatchPoolId: ended.dispatch_pool_id,
+      aggregate: { type: 'duty_session', id: ended.id, version: ended.version },
+      actor: actorOf(actor),
+      payload: {
+        user_id: ended.user_id,
+        duty_session_id: ended.id,
+        end_reason: 'forced',
+        ended_by: actor.userId,
+      },
+    });
+    await emitAvailability(tx, ended.user_id, actorOf(actor), ended);
+    await audit(tx, {
+      orgId: actor.orgId,
+      actor: { type: 'user', id: actor.userId, role: actor.role },
+      action: 'duty.force_end',
+      entityType: 'duty_session',
+      entityId: ended.id,
+      venueId: ended.venue_id,
+      requestId,
+      reason,
+      before: { status: duty.status },
+      after: { status: 'ended', end_reason: 'forced' },
+      metadata: { operation: op, driver_id: ended.user_id },
     });
     return dutySessionView(ended);
   }
