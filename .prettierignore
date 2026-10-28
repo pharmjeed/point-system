@@ -1,0 +1,7 @@
+docs/
+brand/
+pnpm-lock.yaml
+dist/
+coverage/
+*.md
+apps/web/public/

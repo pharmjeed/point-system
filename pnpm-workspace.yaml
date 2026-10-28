@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+allowBuilds:
+  '@swc/core': true
+  argon2: true
+  esbuild: true
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
