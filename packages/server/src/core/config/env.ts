@@ -134,6 +134,13 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       'WA_MODE=live is only allowed in staging (with WA_TEST_RECIPIENT_ALLOWLIST) or production',
     ]);
   }
+  // Web Push (05 §8, 14 §6): both VAPID keys or none (none = the dev sender, or Push disabled outside local)
+  if (!!env.VAPID_PUBLIC_KEY !== !!env.VAPID_PRIVATE_KEY) {
+    throw new EnvError(['VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together']);
+  }
+  if (env.VAPID_PUBLIC_KEY && !/^(mailto:|https:)/.test(env.VAPID_SUBJECT)) {
+    throw new EnvError(['VAPID_SUBJECT must be a mailto: or https: URL']);
+  }
   return env;
 }
 

@@ -1005,7 +1005,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agent (push sending + realtime planners)"
+  "note": "backend done; SW/web pending"
  },
  {
   "ticket": "PNT-073",

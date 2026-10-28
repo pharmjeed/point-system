@@ -1,5 +1,6 @@
 import type { EventEnvelope, Tx } from '../../../core/db/tx.js';
 import { registerTxPlanner, unregisterTxPlanner, type TxPlanner } from '../../../core/db/tx-planners.js';
+import { newId } from '../../../core/crypto/ids.js';
 import { enqueue } from '../../../core/outbox/outbox-writer.js';
 
 /** One notification to create, with the job that delivers it (DEC-41). */
@@ -58,9 +59,9 @@ export function registeredNotificationRules(): readonly NotificationRule[] {
  */
 export async function insertNotification(tx: Tx, n: PlannedNotification): Promise<string | null> {
   const r = await tx.maybeOne<{ id: string }>(
-    `INSERT INTO notifications (org_id, channel, purpose, recipient_customer_id, recipient_user_id, recipient_device_id,
+    `INSERT INTO notifications (id, org_id, channel, purpose, recipient_customer_id, recipient_user_id, recipient_device_id,
             venue_id, ticket_id, task_id, source_outbox_id, dedupe_key, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12, $12)
+     VALUES ($13, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12, $12)
      ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`,
     [
       n.orgId,
@@ -75,6 +76,7 @@ export async function insertNotification(tx: Tx, n: PlannedNotification): Promis
       n.sourceEventId,
       n.dedupeKey,
       tx.now,
+      newId(), // UUIDv7 (05 §7.1): notifications of one instant keep their creation order
     ],
   );
   if (!r) return null;

@@ -1,36 +1,9 @@
-import { rooms, type WaHealthStatus } from '@point/shared';
+import { rooms } from '@point/shared';
 import type { Tx } from '../../../core/db/tx.js';
 import { newId } from '../../../core/crypto/ids.js';
 import { publishRealtime } from '../../../core/realtime/realtime-publisher.js';
 
-/** `channel.status` reaches every staff room of the organization (07 §4.3, 12 §5.14). */
-export async function publishChannelStatus(
-  tx: Tx,
-  orgId: string,
-  status: WaHealthStatus,
-  eventId: string,
-): Promise<void> {
-  const venues = await tx.rows<{ id: string }>(`SELECT id FROM venues WHERE org_id = $1 ORDER BY id`, [
-    orgId,
-  ]);
-  const pools = await tx.rows<{ id: string }>(`SELECT id FROM dispatch_pools WHERE org_id = $1 ORDER BY id`, [
-    orgId,
-  ]);
-  await publishRealtime(
-    tx,
-    orgId,
-    [
-      rooms.orgAdmins(orgId),
-      ...venues.map((v) => rooms.venueSupervisors(v.id)),
-      ...pools.map((p) => rooms.poolDrivers(p.id)),
-    ],
-    {
-      event: 'channel.status',
-      id: eventId,
-      data: { cause: 'wa.channel_health_changed', whatsapp: status, changed_at: tx.now.toISOString() },
-    },
-  );
-}
+// `channel.status` is published by the notifications realtime planner from `wa.channel_health_changed`.
 
 interface SummaryRow {
   id: string;
@@ -97,9 +70,10 @@ export type TicketUpdatePublisher = (
 ) => Promise<void>;
 
 /**
- * Default `ticket.updated` (07 §4.3): TicketSummary + cause to the venue supervisors, the ticket's
- * creator and the assignee of its open task. The tickets module may replace the projection with
- * {@link registerTicketUpdatePublisher} so there is a single TicketSummary builder.
+ * Fallback `ticket.updated` (07 §4.3) when the adapter runs without the use-cases wiring: TicketSummary +
+ * cause to the venue supervisors, the ticket's creator and the assignee of its open task. `@point/server`
+ * wires {@link registerTicketUpdatePublisher} to the notifications coalescer built on the tickets-custody
+ * TicketSummary (use-cases/realtime-projections.ts), so there is a single builder.
  */
 export const defaultTicketUpdatePublisher: TicketUpdatePublisher = async (tx, ticketId, cause, extra) => {
   const t = await tx.maybeOne<SummaryRow>(

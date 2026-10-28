@@ -62,3 +62,6 @@ export {
   type ManualReconcileBody,
 } from './manual-reconcile.js';
 export { TicketTimelineQuery } from './ticket-timeline.js';
+
+// realtime ticket.updated projection (PNT-064 planners)
+export { wireTicketRealtime } from './realtime-projections.js';

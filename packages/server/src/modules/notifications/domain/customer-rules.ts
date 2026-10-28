@@ -7,6 +7,12 @@ export interface PlannerEvent {
   org_id: string;
   venue_id: string | null;
   payload: Record<string, any>;
+  /** the envelope's aggregate (staff push keys use the task version) */
+  aggregate?: { type: string; id: string; version: number | null };
+  dispatch_pool_id?: string | null;
+  event_id?: string | null;
+  occurred_at?: string;
+  actor?: { type: 'user' | 'customer' | 'system'; id: string | null };
 }
 
 /** Refs carried by `job.wa_send` (WaSendJobPayloadSchema): ids and flags only, never phones or codes. */

@@ -4,7 +4,6 @@ import { audit } from '../../../core/audit/audit-writer.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { metrics } from '../../../core/metrics/metrics.js';
 import { emitEvent } from '../../../core/outbox/outbox-writer.js';
-import { publishChannelStatus } from '../infra/realtime.js';
 
 const GAUGE: Record<WaHealthStatus, number> = { healthy: 0, degraded: 1, down: 2 };
 
@@ -12,10 +11,10 @@ export const channelDownDedupeKey = (channelId: string) => `wa_channel_down:${ch
 
 /**
  * The only transitions of 12 §5.14: healthy → degraded, healthy/degraded → down, down/degraded → healthy.
- * A degradation never lifts a `down` channel. Each transition writes `wa.channel_health_changed`,
- * publishes `channel.status` to every staff room, raises `wa_channel_down` for every venue with an
- * open or closing event when it goes down (DEC-46) and auto-resolves those alerts when it is healthy
- * again. Never another number or channel (P-02).
+ * A degradation never lifts a `down` channel. Each transition writes `wa.channel_health_changed` (the
+ * notifications realtime planner turns it into `channel.status` for every staff room), raises
+ * `wa_channel_down` for every venue with an open or closing event when it goes down (DEC-46) and
+ * auto-resolves those alerts when it is healthy again. Never another number or channel (P-02).
  */
 export async function setChannelHealth(
   tx: Tx,
@@ -36,7 +35,7 @@ export async function setChannelHealth(
     to,
     tx.now,
   ]);
-  const ev = await emitEvent(tx, {
+  await emitEvent(tx, {
     type: 'wa.channel_health_changed',
     orgId: cur.org_id,
     aggregate: { type: 'whatsapp_channel', id: channelId, version: null },
@@ -57,7 +56,6 @@ export async function setChannelHealth(
       note: 'whatsapp channel healthy',
     });
   }
-  await publishChannelStatus(tx, cur.org_id, to, ev.id);
   await audit(tx, {
     orgId: cur.org_id,
     actor: { type: 'system', id: null },
