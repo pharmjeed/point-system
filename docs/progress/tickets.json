@@ -722,10 +722,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "job.offer_remind + job.offer_expire (expires_at + grace), version-checked; silent driver rotated, round 2"
  },
  {
   "ticket": "PNT-053",
@@ -736,10 +736,10 @@
   "epic": "EP-05",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "broadcast mode: eligible_as from the live state, one job.broadcast_remind, extension, conversion, R-3"
  },
  {
   "ticket": "PNT-054",
@@ -750,10 +750,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "next-task reservation (assigned_waiting), NEXT_TASK_ALREADY_RESERVED incl. the uq index mapping (AC-15)"
  },
  {
   "ticket": "PNT-055",
@@ -764,10 +764,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "promotion inside the ending transaction, no availability gap (concurrency test), W-04 at the real start"
  },
  {
   "ticket": "PNT-056",
@@ -778,10 +778,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "priority guard (10 §5.4) in accept and reassign, override_priority audited; AC-17 100-round race"
  },
  {
   "ticket": "PNT-057",
@@ -792,10 +792,10 @@
   "epic": "EP-09",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "escalation per episode (request_unaccepted), next_task_waiting_long, idle_driver alert, auto-resolution"
  },
  {
   "ticket": "PNT-058",
@@ -806,10 +806,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "reassign to the queue or a driver, release-custody, task.withdrawn/task.reassigned, audit with the reason"
  },
  {
   "ticket": "PNT-059",
@@ -820,10 +820,10 @@
   "epic": "EP-05",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "field cancel before the movement and after it (TT-20b repark, AC-11), W-07 only"
  },
  {
   "ticket": "PNT-060",
@@ -834,10 +834,10 @@
   "epic": "EP-05",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "requestRetrievalForCustomer (entry point for PNT-045): pending_retrieval_at once, original time (AC-05)"
  },
  {
   "ticket": "PNT-061",
@@ -848,10 +848,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "job.ready_uncollected_check + repark (TT-20): W-08, incident, times kept, cycle_no + 1"
  },
  {
   "ticket": "PNT-062",
@@ -862,10 +862,10 @@
   "epic": "EP-05",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "job.heartbeat_sweep (connection state only, lost-with-custody alert); 5 s sweep proven as the safety net"
  },
  {
   "ticket": "PNT-063",
@@ -876,10 +876,10 @@
   "epic": "EP-05",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "race suite (broadcast, intake/accept, accept/expiry, double handover, reassign/accept, AC-17); pnpm test:race"
  },
  {
   "ticket": "PNT-064",
@@ -1173,7 +1173,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "backend done: force-end (DEC-32), DriverLive.duty_session_id; S-05/S-06 screens with the web agent"
  },
  {
   "ticket": "PNT-085",
@@ -1201,7 +1201,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agent (S4 dispatch)"
+  "note": "backend done: transfers, job.transfer_activate, blocked + re-evaluation (AC-10/AC-16); S-07 screen with the web agent"
  },
  {
   "ticket": "PNT-087",

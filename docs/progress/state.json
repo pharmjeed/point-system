@@ -280,74 +280,74 @@
     "note": "parallel agent (S3 linking)"
   },
   "PNT-052": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "job.offer_remind + job.offer_expire (expires_at + grace), version-checked; silent driver rotated, round 2"
   },
   "PNT-053": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "broadcast mode: eligible_as from the live state, one job.broadcast_remind, extension, conversion, R-3"
   },
   "PNT-054": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "next-task reservation (assigned_waiting), NEXT_TASK_ALREADY_RESERVED incl. the uq index mapping (AC-15)"
   },
   "PNT-055": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "promotion inside the ending transaction, no availability gap (concurrency test), W-04 at the real start"
   },
   "PNT-056": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "priority guard (10 §5.4) in accept and reassign, override_priority audited; AC-17 100-round race"
   },
   "PNT-057": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "escalation per episode (request_unaccepted), next_task_waiting_long, idle_driver alert, auto-resolution"
   },
   "PNT-058": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "reassign to the queue or a driver, release-custody, task.withdrawn/task.reassigned, audit with the reason"
   },
   "PNT-059": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "field cancel before the movement and after it (TT-20b repark, AC-11), W-07 only"
   },
   "PNT-060": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "requestRetrievalForCustomer (entry point for PNT-045): pending_retrieval_at once, original time (AC-05)"
   },
   "PNT-061": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "job.ready_uncollected_check + repark (TT-20): W-08, incident, times kept, cycle_no + 1"
   },
   "PNT-062": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "job.heartbeat_sweep (connection state only, lost-with-custody alert); 5 s sweep proven as the safety net"
   },
   "PNT-063": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "race suite (broadcast, intake/accept, accept/expiry, double handover, reassign/accept, AC-17); pnpm test:race"
   },
   "PNT-084": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "backend done: force-end (DEC-32), DriverLive.duty_session_id; S-05/S-06 screens with the web agent"
   },
   "PNT-086": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agent (S4 dispatch)"
+    "note": "backend done: transfers, job.transfer_activate, blocked + re-evaluation (AC-10/AC-16); S-07 screen with the web agent"
   },
   "PNT-074": {
     "status": "in_progress",
