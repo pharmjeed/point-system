@@ -404,17 +404,18 @@ describe('PNT-034 — POST /v1/tickets/{ticketId}/handover (paper stub)', () => 
     err(await handover(t, 'DRV1', DUMMY, stub), 'TICKET_NOT_FOUND', 404);
   });
 
-  it('PAYMENT_PENDING for a due ticket (inline collection is PNT-080); a code or a payment that does not apply is VALIDATION_FAILED', async () => {
+  it('PAYMENT_PENDING for a due ticket (inline collection: PNT-080 tests); a code or a payment that does not apply is VALIDATION_FAILED', async () => {
     const due = await readyTicket(t, { eventId: EVT_R2 });
     const stub = { verification: { method: 'paper_stub', paper_serial: due.serial } };
     expect(err(await handover(t, 'DRV1', due.ticketId, stub), 'PAYMENT_PENDING', 409)).toEqual({
       amount_halalas: 2000,
       allowed_methods: ['cash', 'pos'],
     });
+    // PNT-080 collects inline; a wrong amount is refused by the payment gate, before the stub
     err(
-      await handover(t, 'DRV1', due.ticketId, { ...stub, payment: { method: 'cash', amount_halalas: 2000 } }),
-      'PAYMENT_PENDING',
-      409,
+      await handover(t, 'DRV1', due.ticketId, { ...stub, payment: { method: 'cash', amount_halalas: 1500 } }),
+      'PAYMENT_AMOUNT_MISMATCH',
+      422,
     );
     // no attempt was counted by the payment gate
     expect(

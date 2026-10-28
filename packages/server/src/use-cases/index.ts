@@ -10,6 +10,8 @@ export { MovementUseCase } from './movement.js';
 export { HandoverUseCase, type HandoverBody } from './handover.js';
 export { TicketQueries, type ListTicketsQuery } from './queries.js';
 export { loadTaskCard, driverStateResult } from './views.js';
+// PNT-080: the handover collects through the InlinePaymentHook (registered when this module loads)
+export { handoverPaymentHook } from './inline-payment.js';
 export {
   registerCustomerLinkingHook,
   registerClaimCodeHook,

@@ -43,6 +43,19 @@ export interface ClaimCodeHook {
  * (PAYMENT_PENDING) even when the body carries a payment.
  */
 export interface InlinePaymentHook {
+  /**
+   * 13 §5.3 step 5 (PNT-080): the money checks of the handover — after the custody checks, before the code or
+   * stub is verified, without any effect — so a wrong amount or method never consumes an attempt. Without it the
+   * handover keeps the S2 gate.
+   */
+  check?(
+    tx: Tx,
+    ctx: {
+      ticket: TicketRow;
+      payment: { method: 'cash' | 'pos'; amount_halalas: number; pos_reference?: string | null } | null;
+      actor: ActorContext;
+    },
+  ): Promise<void>;
   collect(
     tx: Tx,
     ctx: {
@@ -50,6 +63,7 @@ export interface InlinePaymentHook {
       cycle: CycleRow;
       payment: { method: 'cash' | 'pos'; amount_halalas: number; pos_reference?: string | null };
       actor: ActorContext;
+      requestId?: string;
     },
   ): Promise<Record<string, unknown>>;
 }

@@ -13,3 +13,5 @@ export {
   listVenueEventsByStatus,
   type VenueOpenEvent,
 } from './application/read-api.js';
+// the reports read events with the module's own shapes (PNT-088)
+export { EVENT_COLUMNS, toVenueEvent, type VenueEventRow, type VenueEventDto } from './infra/rows.js';
