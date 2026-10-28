@@ -1,6 +1,7 @@
 import type { Tx } from '../../../core/db/tx.js';
 import type { CustomerRow, WaSenderIdentity } from '../infra/customers.js';
 import { issueActionToken } from './action-tokens.js';
+import { receiveLinkCode } from './link-service.js';
 import { applyW01Outcome } from './ticket-link.js';
 
 /**
@@ -51,8 +52,9 @@ export interface ButtonPressResult {
 export type ButtonPressHandler = (tx: Tx, ctx: ButtonPressContext) => Promise<ButtonPressResult>;
 
 /**
- * Until PNT-045 registers the retrieval flow every press is answered like an unknown token: W-10
- * guidance without any ticket data (12 §6.5 rejection path).
+ * Without the retrieval flow (registered by the use-cases, PNT-045: the press goes through RequestRetrieval,
+ * which composes dispatch — 04 §4.3 rule 3) every press is answered like an unknown token: W-10 guidance
+ * without any ticket data (12 §6.5 rejection path).
  */
 export const defaultButtonPressHandler: ButtonPressHandler = async (_tx, ctx) => ({
   outcome: 'rejected',
@@ -91,8 +93,12 @@ export interface LinkCodeResult {
 
 export type LinkCodeHandler = (tx: Tx, ctx: LinkCodeContext) => Promise<LinkCodeResult>;
 
-/** No link codes can be issued before PNT-044, so every code is invalid (W-11 «غير صالح»). */
-export const defaultLinkCodeHandler: LinkCodeHandler = async () => ({ result: 'invalid', ticket_id: null });
+/**
+ * PNT-044 (12 §7.2 `handleLinkCode`): a live code moves to `pending_confirmation` and the ticket waits for
+ * the driver's «هل هذا العميل أمامك؟»; anything else is W-11 «غير صالح». It touches only whatsapp and
+ * tickets-custody rows, so the adapter's own implementation is the default.
+ */
+export const defaultLinkCodeHandler: LinkCodeHandler = receiveLinkCode;
 
 let linkCode: LinkCodeHandler = defaultLinkCodeHandler;
 

@@ -6,15 +6,17 @@ import type { Logger } from '../../core/logging/logger.js';
 import type { SecretResolver } from '../../core/secrets/secret-resolver.js';
 import { CLOCK, DATABASE, ENV, LOGGER, SECRETS } from '../../http/tokens.js';
 import { WhatsappChannelAdmin } from './application/channel-admin.js';
+import { WhatsappLinkCommands } from './application/link-commands.js';
 import { WhatsappTemplates } from './application/templates.js';
 import { WhatsappWebhookIntake } from './application/webhook-intake.js';
 import { TemplateSyncPrefetchGuard, WhatsappAdminController } from './http/admin.controller.js';
+import { WhatsappLinkController } from './http/link.controller.js';
 import { WhatsappWebhookController } from './http/webhook.controller.js';
 import { WhatsappRuntime } from './runtime.js';
 
-/** api process: the admin channel/template routes and the webhook (PNT-038 … PNT-040). */
+/** api process: the admin channel/template routes, the webhook (PNT-038 … PNT-040) and ticket linking (PNT-043/044). */
 @Module({
-  controllers: [WhatsappAdminController, WhatsappWebhookController],
+  controllers: [WhatsappAdminController, WhatsappWebhookController, WhatsappLinkController],
   providers: [
     {
       provide: WhatsappRuntime,
@@ -39,6 +41,7 @@ import { WhatsappRuntime } from './runtime.js';
         new WhatsappWebhookIntake(rt, db, clock),
     },
     TemplateSyncPrefetchGuard,
+    WhatsappLinkCommands,
   ],
   exports: [WhatsappRuntime, WhatsappChannelAdmin, WhatsappTemplates, WhatsappWebhookIntake],
 })

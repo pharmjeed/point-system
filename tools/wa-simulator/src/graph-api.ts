@@ -5,7 +5,7 @@ import { isRecord, sendJson, type Params } from './http-util.js';
 import { bsuidFor, digitsOnly, mask, newWamid, sha256Hex } from './ids.js';
 import type { SimulatorState } from './store.js';
 import type { OutboundMessage, SendAttempt, SentButton, TemplateInfo, TemplateStatus } from './types.js';
-import { deliver, scheduleAutoStatuses } from './webhook.js';
+import { deliver, isBsuidOnlyNumber, scheduleAutoStatuses } from './webhook.js';
 
 export interface GraphContext {
   req: IncomingMessage;
@@ -536,7 +536,8 @@ function accept(
   if (plannedFailure) attempt.cause = 'async_failure';
 
   const contact: Record<string, string> = { input: p.to ?? (p.recipient as string) };
-  if (p.waId) contact.wa_id = p.waId;
+  // a BSUID-only user (…2222, DEC-35) never reveals his number, in webhooks or send answers
+  if (p.waId && !isBsuidOnlyNumber(state, p.waId)) contact.wa_id = p.waId;
   if (p.recipient) contact.user_id = p.recipient;
   sendJson(ctx.res, 200, {
     messaging_product: 'whatsapp',

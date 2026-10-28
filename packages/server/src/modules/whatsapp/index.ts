@@ -38,7 +38,33 @@ export {
   type ActionTokenRow,
 } from './application/action-tokens.js';
 export { lockLiveLinkCode, newLinkCode, waMeLink, type LinkCodeRow } from './application/link-codes.js';
-export { applyW01Outcome, changeWaLinkStatus } from './application/ticket-link.js';
+export {
+  applyW01Outcome,
+  changeWaLinkStatus,
+  recordWaLinkChange,
+  type WaLinkMethod,
+  type WaLinkTicket,
+} from './application/ticket-link.js';
+// ticket ↔ conversation link (PNT-043, PNT-044, 12 §7)
+export {
+  assertTemplateApproved,
+  assertCodeMessageSendable,
+  assertChannelAvailable,
+  startDirectLink,
+  issueQrLinkCode,
+  linkCodeQr,
+  receiveLinkCode,
+  confirmQrLink,
+  resumeConsentByButton,
+  linkCodeExpireHandler,
+  type LinkCodeQr,
+} from './application/link-service.js';
+export {
+  WhatsappLinkCommands,
+  WhatsappLinkBody,
+  WhatsappLinkConfirmBody,
+  type WaLinkResult,
+} from './application/link-commands.js';
 export { optOutCustomer } from './application/opt-out.js';
 export { setChannelHealth, channelDownDedupeKey } from './application/channel-health.js';
 export { recordMessageStatusChange } from './application/message-status.js';

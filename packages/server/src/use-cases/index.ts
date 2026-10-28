@@ -18,3 +18,6 @@ export {
   type ClaimCodeHook,
   type InlinePaymentHook,
 } from './hooks.js';
+
+// S3 customer flows (PNT-043 … PNT-051, PNT-078): installed at load (button press, direct link at submit)
+export { installCustomerFlows } from './customer-flows/install.js';
