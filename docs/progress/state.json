@@ -55,14 +55,14 @@
     "note": "actor context, auth + permission guards, route audit, permission matrix test"
   },
   "PNT-021": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "React 19 + Vite PWA shell, RTL, 51 design-system components, both themes, API client with Idempotency-Key reuse; 196 unit + 170 e2e"
   },
   "PNT-022": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "D-01/D-02/S-01/D-15 sign-in flows, MFA setup, 08 texts, no secrets in browser storage"
   },
   "PNT-037": {
     "status": "done",
@@ -130,9 +130,9 @@
     "note": "parallel agent"
   },
   "PNT-027": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "private photos: presigned PUT, EXIF/GPS stripping, ≤300 s signed GET, S3/MinIO + in-memory storage; 22 API tests"
   },
   "PNT-028": {
     "status": "in_progress",
@@ -228,5 +228,15 @@
     "status": "in_progress",
     "date": "2026-10-28",
     "note": "parallel agent (audit-monitoring)"
+  },
+  "PNT-023": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (web)"
+  },
+  "PNT-035": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (web, mocked API until S2 lands)"
   }
 }

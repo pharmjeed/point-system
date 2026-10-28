@@ -288,10 +288,10 @@
   "epic": "EP-06",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "React 19 + Vite PWA shell, RTL, 51 design-system components, both themes, API client with Idempotency-Key reuse; 196 unit + 170 e2e"
  },
  {
   "ticket": "PNT-022",
@@ -302,10 +302,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "D-01/D-02/S-01/D-15 sign-in flows, MFA setup, 08 texts, no secrets in browser storage"
  },
  {
   "ticket": "PNT-023",
@@ -316,10 +316,10 @@
   "epic": "EP-03",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent (web)"
  },
  {
   "ticket": "PNT-024",
@@ -372,10 +372,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "private photos: presigned PUT, EXIF/GPS stripping, ≤300 s signed GET, S3/MinIO + in-memory storage; 22 API tests"
  },
  {
   "ticket": "PNT-028",
@@ -484,10 +484,10 @@
   "epic": "EP-06",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent (web, mocked API until S2 lands)"
  },
  {
   "ticket": "PNT-036",
