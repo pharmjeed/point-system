@@ -51,10 +51,14 @@ src/
                       contrastPairs.ts (token pairs checked by test/contrast.test.ts)
   components/         the design-system components (names from 03 §3)
   features/           auth (D-01, D-02, S-01), driver (shell, D-03/D-04/D-12/D-14), ops (staff shell + S-xx
-                      placeholders), session (logout, connection sheet), system (D-15 session ended, 404)
+                      placeholders), venues (S-08, S-09), drivers (S-05, S-06), common (FormSheet, QueryView,
+                      StateChip, form error placement), session (logout, connection sheet), system (D-15, 404)
   dev/Gallery.tsx     component gallery (VITE_ENABLE_GALLERY only)
 test/                 vitest unit tests
-e2e/                  Playwright specs + support/api.ts (in-browser API mock), support/checks.ts
+e2e/                  Playwright specs + support/api.ts (static in-browser mock), support/fake/ (stateful fake
+                      backend seeded from packages/db/src/seed: sessions, canon §10 permissions, scope,
+                      Idempotency-Key replay, 07/08 errors), support/actors.ts (one context per actor),
+                      support/checks.ts
 ```
 
 ## Tokens, fonts, themes
@@ -100,7 +104,13 @@ e2e/                  Playwright specs + support/api.ts (in-browser API mock), s
 | `/d/start` | D-03 | shell + «بدء الوردية» (`POST /v1/me/duty/start` with Idempotency-Key); checklist in PNT-066/070 |
 | `/d`, `/d/vehicles`, `/d/account` | D-04, D-12, D-14 | driver shell, three tabs |
 | `/ops`, `/drivers`, `/venues`, `/reports`, `/admin` | S-02, S-05, S-08, S-11, S-13 | staff shell, four destinations (+ admin by permission) |
+| `/drivers/:driverId` | S-06 | profile, assignment history, account actions by permission (PNT-023) |
+| `/venues/:venueId` | S-08 venue page | «الحفلات» (اليوم · القادمة · المغلقة) / «الورديات» (`?tab=shifts`) |
+| `/venues/:venueId/setup` | S-09 | six sections, `?section=` parking, keys, pools, timers, handover, inspection; edit with `venue.manage` |
 | `/change-secret`, `/s` | aliases | → `/account/secret`, → `/ops` |
+
+Buttons are shown only for the permissions in `GET /v1/me` `permissions` (`src/app/permissions.ts`); the server checks
+every call anyway.
 
 The driver sign-in and shell are in the main chunk; D-02, S-01 and the staff area are lazy chunks.
 

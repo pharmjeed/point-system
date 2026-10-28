@@ -69,7 +69,8 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
     min: TEXT,
     usage: 'ConnectionIndicator online, Timeline whatsapp',
   })),
-  { fg: 'info-text', bg: 'info-subtle', min: TEXT, usage: 'Banner info action' },
+  { fg: 'info-text', bg: 'info-subtle', min: TEXT, usage: 'Banner info action, StateChip info' },
+  { fg: 'text-muted', bg: 'surface-2', min: TEXT, usage: 'StateChip neutral, inactive setup item' },
   { fg: 'on-warning', bg: 'warning', min: TEXT, usage: 'warning fill' },
   // status and driver chips (StatusChip, DriverStateChip, SideNav count)
   ...TICKET_STATUSES.map((s) => ({

@@ -1,16 +1,21 @@
 import { expect, test } from '@playwright/test';
 import { driverMe, MockApi, staffMe } from './support/api';
 import { expectMobileLayout } from './support/checks';
+import { createFake, SEED_IDS, type SeedUserKey } from './support/fake';
 
 /**
  * PNT-021 acceptance 1 & 2 (17 TC-059, TC-060): every shell page and every sign-in screen at 360, 390 and
  * 430 px (one project each), in light and dark: no horizontal scroll, RTL, 16px base font, ≥44px targets.
+ * PNT-023 adds the setup screens (S-05, S-06, S-08, S-09) with data from the fake backend.
  */
+const RMS = SEED_IDS.venues.RMS;
 const PAGES: Array<{
   path: string;
   me: Record<string, unknown> | null;
   area: 'driver' | 'staff';
   heading?: RegExp;
+  /** Served by the fake backend as this seeded user instead of the static mock. */
+  as?: SeedUserKey;
 }> = [
   { path: '/login', me: null, area: 'driver', heading: /تسجيل الدخول/ },
   { path: '/staff/login', me: null, area: 'staff', heading: /دخول المشرفين والإدارة/ },
@@ -31,8 +36,18 @@ const PAGES: Array<{
   },
   { path: '/d/account', me: driverMe({ onDuty: true }), area: 'driver', heading: /حسابي/ },
   { path: '/ops', me: staffMe(), area: 'staff', heading: /التشغيل/ },
-  { path: '/drivers', me: staffMe(), area: 'staff', heading: /السائقون/ },
-  { path: '/venues', me: staffMe(), area: 'staff', heading: /المواقع والحفلات/ },
+  { path: '/drivers', me: null, as: 'ADM1', area: 'staff', heading: /السائقون/ },
+  { path: `/drivers/${SEED_IDS.users.DRV1}`, me: null, as: 'ADM1', area: 'staff', heading: /سائق 1/ },
+  { path: '/venues', me: null, as: 'ADM1', area: 'staff', heading: /المواقع والحفلات/ },
+  { path: `/venues/${RMS}`, me: null, as: 'SUP-R', area: 'staff', heading: /قاعة ريماس/ },
+  { path: `/venues/${RMS}?tab=shifts`, me: null, as: 'SUP-R', area: 'staff', heading: /قاعة ريماس/ },
+  { path: `/venues/${RMS}/setup`, me: null, as: 'ADM1', area: 'staff', heading: /إعداد الموقع/ },
+  ...(['parking', 'keys', 'pools', 'timers', 'handover', 'inspection'] as const).map((section) => ({
+    path: `/venues/${RMS}/setup?section=${section}`,
+    me: null,
+    as: 'ADM1' as const,
+    area: 'staff' as const,
+  })),
   { path: '/reports', me: staffMe(), area: 'staff', heading: /التقارير/ },
   { path: '/admin', me: staffMe(), area: 'staff', heading: /الإدارة/ },
 ];
@@ -46,10 +61,12 @@ for (const theme of ['light', 'dark'] as const) {
         if (p.area === 'staff')
           await page.addInitScript(() => localStorage.setItem('point.theme.staff', 'dark'));
       }
-      await new MockApi(page, p.me).install();
+      if (p.as) await createFake().attach(page, p.as);
+      else await new MockApi(page, p.me).install();
       await page.goto(p.path);
       await expect(page.locator('main')).toBeVisible();
       if (p.heading) await expect(page.getByRole('heading', { level: 1 })).toHaveText(p.heading);
+      if (p.as) await expect(page.locator('.pt-skel-card')).toHaveCount(0); // data loaded, not skeletons
       await page.evaluate(() => document.fonts.ready);
       await expectMobileLayout(page);
       const dark = await page.evaluate(() => {

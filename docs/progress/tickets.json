@@ -316,10 +316,10 @@
   "epic": "EP-03",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (web)"
+  "note": "S-08 venues/events/shifts, S-09 layout + settings, S-05/S-06 basics; buttons by /v1/me permissions; e2e on a stateful fake API (07/08) seeded from 17 §4"
  },
  {
   "ticket": "PNT-024",

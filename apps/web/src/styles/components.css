@@ -2931,6 +2931,96 @@ a.pt-listitem:active,
   max-inline-size: 100%;
 }
 
+/* ---------- feature screens (setup S-05…S-09, driver D-03…D-11) ---------- */
+/* status chips for records without dedicated tokens: semantic feedback roles (pairs in contrastPairs.ts) */
+.pt-chip--tone-success {
+  background: var(--pt-success-subtle);
+  color: var(--pt-success-text);
+}
+.pt-chip--tone-warning {
+  background: var(--pt-warning-subtle);
+  color: var(--pt-warning-text);
+}
+.pt-chip--tone-danger {
+  background: var(--pt-danger-subtle);
+  color: var(--pt-danger-text);
+}
+.pt-chip--tone-info {
+  background: var(--pt-info-subtle);
+  color: var(--pt-info-text);
+}
+.pt-chip--tone-neutral {
+  background: var(--pt-surface-2);
+  color: var(--pt-text-muted);
+  box-shadow: inset 0 0 0 1px var(--pt-border);
+}
+.pt-pagehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--pt-space-2);
+}
+.pt-pagehead > .pt-page-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.pt-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-2);
+}
+.pt-record__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pt-space-2);
+}
+.pt-record__title {
+  margin: 0;
+  min-inline-size: 0;
+  font-size: var(--pt-text-lg);
+  line-height: var(--pt-leading-lg);
+  font-weight: var(--pt-weight-bold);
+  overflow-wrap: anywhere;
+}
+.pt-record__meta {
+  margin: 0;
+  color: var(--pt-text-muted);
+  font-size: var(--pt-text-sm);
+  line-height: var(--pt-leading-sm);
+  overflow-wrap: anywhere;
+}
+.pt-record__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-2);
+}
+.pt-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--pt-space-1) var(--pt-space-3);
+}
+.pt-kv dt {
+  color: var(--pt-text-muted);
+}
+.pt-kv dd {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+/* S-09 spot / slot grid: an inactive item stays tappable for whoever may re-enable it */
+.pt-spot.is-inactive {
+  background: var(--pt-surface-2);
+  color: var(--pt-text-muted);
+  border-style: dashed;
+  text-decoration: line-through;
+}
+div.pt-spot {
+  cursor: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pt-icon--spin,
   .pt-skel,

@@ -62,11 +62,27 @@ export const routes: RouteObject[] = [
           },
           {
             path: paths.drivers,
-            lazy: async () => ({ Component: (await import('@/features/ops/StaffPages')).DriversPage }),
+            lazy: async () => ({ Component: (await import('@/features/drivers/DriversPage')).DriversPage }),
+          },
+          {
+            path: `${paths.drivers}/:driverId`,
+            lazy: async () => ({
+              Component: (await import('@/features/drivers/DriverProfilePage')).DriverProfilePage,
+            }),
           },
           {
             path: paths.venues,
-            lazy: async () => ({ Component: (await import('@/features/ops/StaffPages')).VenuesPage }),
+            lazy: async () => ({ Component: (await import('@/features/venues/VenuesPage')).VenuesPage }),
+          },
+          {
+            path: `${paths.venues}/:venueId`,
+            lazy: async () => ({ Component: (await import('@/features/venues/VenuePage')).VenuePage }),
+          },
+          {
+            path: `${paths.venues}/:venueId/setup`,
+            lazy: async () => ({
+              Component: (await import('@/features/venues/VenueSetupPage')).VenueSetupPage,
+            }),
           },
           {
             path: paths.reports,
