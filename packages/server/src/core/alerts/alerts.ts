@@ -97,7 +97,7 @@ export interface RaiseAlertInput {
 }
 
 function alertRooms(a: AlertRow): string[] {
-  const r = [rooms.venueSupervisors(a.venue_id)];
+  const r: string[] = [rooms.venueSupervisors(a.venue_id)];
   if (MULTI_VENUE_ALERTS.has(a.type)) r.push(rooms.orgAdmins(a.org_id));
   return r;
 }
