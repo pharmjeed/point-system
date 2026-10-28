@@ -40,9 +40,9 @@ handlers.push(...whatsappJobs());
 import { notificationsJobs } from '@point/server';
 handlers.push(...notificationsJobs());
 
-// import { incidentsJobs, incidentsProjectors } from '@point/server';
-// handlers.push(...incidentsJobs());
-// projectors.push(...incidentsProjectors());
+import { incidentsJobs, incidentsProjectors } from '@point/server';
+handlers.push(...incidentsJobs());
+projectors.push(...incidentsProjectors());
 
 // import { paymentsReportsJobs } from '@point/server';
 // handlers.push(...paymentsReportsJobs());

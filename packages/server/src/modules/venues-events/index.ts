@@ -13,3 +13,6 @@ export {
   listVenueEventsByStatus,
   type VenueOpenEvent,
 } from './application/read-api.js';
+// signed keyset cursors and the VenueEvent view, shared with the S6 supervisor reads (incidents, operations board)
+export { ListCursorCodec, pageOf, type CursorValue } from './infra/cursor.js';
+export { EVENT_COLUMNS, toVenueEvent, type VenueEventRow, type VenueEventDto } from './infra/rows.js';

@@ -16,7 +16,7 @@ export * from './modules/whatsapp/index.js';
 
 export * from './modules/notifications/index.js';
 
-// export * from './modules/incidents/index.js';
+export * from './modules/incidents/index.js';
 
 // export * from './modules/payments-reports/index.js';
 

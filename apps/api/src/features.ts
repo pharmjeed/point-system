@@ -23,8 +23,8 @@ FEATURE_MODULES.push(WhatsappHttpModule);
 import { NotificationsHttpModule } from '@point/server';
 FEATURE_MODULES.push(NotificationsHttpModule);
 
-// import { IncidentsHttpModule } from '@point/server';
-// FEATURE_MODULES.push(IncidentsHttpModule);
+import { IncidentsHttpModule } from '@point/server';
+FEATURE_MODULES.push(IncidentsHttpModule);
 
 // import { PaymentsReportsHttpModule } from '@point/server';
 // FEATURE_MODULES.push(PaymentsReportsHttpModule);
