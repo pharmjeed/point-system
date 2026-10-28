@@ -13,6 +13,8 @@ const ALLOWED = [
   /^\.env\.example$/,
   /^tools\/progress\//,
   /^scripts\/check-brand\.mjs$/,
+  /^packages\/db\/migrations\//, // docs/06_schema.sql verbatim (comments)
+  /^packages\/db\/src\/schema\/schema\.ts$/, // generated from the migrated database
   /^packages\/shared\/src\/canon\/brand-defaults\.ts$/,
   /^packages\/shared\/src\/canon\/wa-templates\.ts$/,
   /^packages\/server\/src\/modules\/whatsapp\/templates\//,
