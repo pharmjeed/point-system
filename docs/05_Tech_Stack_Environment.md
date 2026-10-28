@@ -262,6 +262,7 @@ SESSION_SECRET=                      # 32+ random bytes (base64); rotating logs 
 SESSION_COOKIE_NAME=__Host-point_sid # use point_sid when SESSION_COOKIE_SECURE=false (local http)
 SESSION_COOKIE_SECURE=false          # true everywhere except local http
 CODE_PEPPER=                         # HMAC key for claim codes (DEC-15); rotate only between events
+AUTH_SECRET_PEPPER=                  # base64 32 bytes, argon2id pepper for PINs/passwords (09 §9.1, DEC-58); rotating it invalidates every secret
 DATA_ENCRYPTION_KEY=                 # base64 32 bytes, AES-256-GCM (TOTP secrets, claim code ciphertext)
 DATA_ENCRYPTION_KEY_ID=k1            # key id stored with ciphertext to allow rotation
 # Action-token TTL is NOT an env var: org setting wa.action_token_ttl_h (72 h from creation, Canon §12)
@@ -431,6 +432,7 @@ volumes:
 | `WA_VERIFY_TOKEN` | تحقق إعداد Webhook | مدير الأسرار | عند إعادة إعداد الاشتراك |
 | `SESSION_SECRET` | توقيع الكوكي | مدير الأسرار | التدوير يخرج الجميع؛ يُجدول خارج أوقات الحفلات |
 | `CODE_PEPPER` | HMAC لرموز التسليم | مدير الأسرار | التدوير يبطل الرموز النشطة؛ بين الحفلات فقط |
+| `AUTH_SECRET_PEPPER` | pepper اشتقاق argon2id للأرقام السرية وكلمات المرور (09 §9.1، DEC-58)؛ إلزامي في كل البيئات | مدير الأسرار | التدوير يبطل كل الأرقام السرية وكلمات المرور؛ لا يُدوَّر إلا مع إعادة تعيين شاملة |
 | `DATA_ENCRYPTION_KEY` (+ المعرف) | تشفير أسرار TOTP والنسخ المؤقتة للرموز | مدير الأسرار | مفتاح جديد بمعرف جديد؛ القديم للقراءة حتى إعادة التشفير |
 | `VAPID_PRIVATE_KEY` | توقيع Web Push | مدير الأسرار | **التدوير يبطل كل اشتراكات Push**؛ يتطلب إعادة اشتراك الأجهزة |
 | مفاتيح S3 | التخزين | مدير الأسرار أو هوية الخدمة | تدوير دوري |
@@ -537,7 +539,7 @@ volumes:
 |---|---|
 | النسخ | نسخ يومية مشفرة لـPostgreSQL من المزود المُدار، مع استعادة زمنية (PITR) إن دعمها المزود |
 | الاحتفاظ بالنسخ | 30 يومًا على الأقل، ونسخة شهرية لمدة 12 شهرًا (تُراجع مع سياسة الاحتفاظ Q-06) |
-| تخزين الكائنات | تفعيل الإصدارات (versioning) وقواعد دورة حياة تطابق `retention.photos_days` |
+| تخزين الكائنات | بلا إصدارات (versioning) على دلوي الوسائط والتصديرات (DEC-128): الحذف حذف فعلي، فلا تبقى أصول غير منقّاة (09 §6.2، DEC-36) ولا صور حُذفت بالاحتفاظ نسخًا غير حالية؛ المتانة من تكرار التخزين لدى المزود وخطة النسخ الاحتياطي (PNT-095). قاعدة دورة حياة الوسائط `incoming/` بعد يوم (DEC-97)، وحذف الصور بالاحتفاظ تجريه `job.retention_purge` (06 ERD §8) فيحترم الحجز القانوني |
 | هدف نقطة الاستعادة RPO | 5 دقائق مع PITR، وإلا 24 ساعة (يُوثق حسب المزود) |
 | هدف زمن الاستعادة RTO | ساعة واحدة للخدمة الكاملة؛ وأثناءها الإجراء الورقي (`04` §8.13) |
 | تمرين الاستعادة | قبل الإطلاق (معيار القبول AC-12) ثم كل ربع سنة: استعادة إلى بيئة معزولة + تشغيل فحص الثوابت + مطابقة عينة من التذاكر |
@@ -653,7 +655,7 @@ volumes:
 corepack enable                     # pnpm عبر corepack
 pnpm install
 cp .env.example .env                # ثم املأ الأسرار المحلية
-openssl rand -base64 32             # لكل من SESSION_SECRET و CODE_PEPPER و DATA_ENCRYPTION_KEY
+openssl rand -base64 32             # لكل من SESSION_SECRET و CODE_PEPPER و AUTH_SECRET_PEPPER و DATA_ENCRYPTION_KEY
 npx web-push generate-vapid-keys    # VAPID_PUBLIC_KEY و VAPID_PRIVATE_KEY
 docker compose -f infra/compose/docker-compose.yml up -d
 pnpm db:migrate                     # ترحيلات packages/db

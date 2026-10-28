@@ -116,7 +116,7 @@ COMMIT
 }
 ```
 
-`entity_type` ∈ `ticket`، `task`، `task_offer`، `retrieval_cycle`، `event`، `shift`، `duty_session`، `driver_transfer`، `claim_code`، `link_code`، `incident`، `alert`. الواجهة تعرض `message_ar` ثم تعيد جلب الشاشة.
+`entity_type` ∈ `ticket`، `task`، `task_offer`، `retrieval_cycle`، `event`، `shift`، `duty_session`، `driver_transfer`، `claim_code`، `link_code`، `incident`، `alert`، `dispatch_pool`، `user`. الشكل ملزم في كل الوحدات (DEC-106، DEC-111): `current_version` حين يكون للكيان إصدار، و`reason` حين لا تكفي الحالة لتفسير الرفض (`dispatch_pool_inactive`، `dispatch_pool_fixed_after_open`، `open_shift`، `open_tasks`، `max_extra_photos`). الواجهة تعرض `message_ar` ثم تعيد جلب الشاشة.
 
 ### 1.6 الحمولة الدنيا والقراءة الطازجة
 
@@ -705,18 +705,20 @@ stateDiagram-v2
 | من ← إلى | الأمر | الحراس والآثار |
 |---|---|---|
 | بداية ← `draft` | `POST /v1/venues/{venueId}/events` | — |
-| `draft` ← `open` | `POST /v1/events/{eventId}/open` | مجموعة التوزيع نشطة؛ `opened_at`، `event.opened` |
+| `draft` ← `open` | `POST /v1/events/{eventId}/open` | مجموعة التوزيع نشطة، وإلا `INVALID_STATE_TRANSITION` (`reason = dispatch_pool_inactive`، DEC-117)؛ `opened_at`، `event.opened` |
 | `open` ← `closing` | `POST /v1/events/{eventId}/start-closing` | يمنع استلامًا جديدًا (`EVENT_NOT_OPEN`) ويسمح بالطلبات والتسليم؛ `event.closing_started` |
-| `closing` ← `open` | `POST /v1/events/{eventId}/open` | إعادة فتح عند البدء الخاطئ في الإغلاق |
+| `closing` ← `open` | `POST /v1/events/{eventId}/open` | إعادة فتح عند البدء الخاطئ في الإغلاق، بحارس المجموعة النشطة نفسه؛ `event.opened` بـ`reopened: true` |
 | `closing` ← `closed` | `POST /v1/events/{eventId}/close` | شروط المطابقة (13): لا تذاكر مفتوحة ولا عهدة ولا دورات ولا تحصيل معلّق غير موثق، وإلا `EVENT_CLOSE_BLOCKED`؛ `close_summary`، `event.closed` |
-| `draft` ← `canceled` | `POST /v1/events/{eventId}/cancel` | سبب |
-| `open` ← `canceled` | الأمر نفسه | فقط إن لم تكن له تذاكر غير ملغاة (`voided`)؛ وإلا يُغلق |
+| `draft` ← `canceled` | `POST /v1/events/{eventId}/cancel` | سبب من 3 أحرف فأكثر بعد القص يُفحص مع المدخلات قبل تحميل الحفل (`REASON_REQUIRED`)؛ تدقيق فقط بلا حدث نطاقي (DEC-120) |
+| `open` ← `canceled` | الأمر نفسه | فقط إن لم تكن له تذاكر غير ملغاة (`voided`)، وإلا `EVENT_CLOSE_BLOCKED` (`reason = non_voided_tickets`، DEC-120) ويُغلق بالمسار العادي |
 
-`closed` و`canceled` نهائيتان؛ أي أمر عليهما يعيد `EVENT_ALREADY_CLOSED`.
+`closed` و`canceled` نهائيتان؛ أي أمر عليهما يعيد `EVENT_ALREADY_CLOSED` بالتفاصيل `event_id` و`current_status`، و`closing` في `PATCH` و`cancel` يعيد `INVALID_STATE_TRANSITION` (DEC-110). `PATCH /v1/events/{eventId}` مسموح في `draft` و`open`، والتسعير يُعدَّل فيه ولو بعد أول تذكرة ويسري على التذاكر الجديدة فقط (DEC-109)، أما `dispatch_pool_id` ففي `draft` وحده (`reason = dispatch_pool_fixed_after_open`، DEC-118).
 
 ### 6.5 حالة الوردية `shifts.status`
 
-`scheduled` ← `open` عبر `POST /v1/shifts/{shiftId}/open` (وردية مفتوحة واحدة للمجموعة، `uq_shifts_open_per_pool`) ← `closed` عبر `POST /v1/shifts/{shiftId}/close`. الإغلاق يُرفض بـ`SHIFT_CLOSE_BLOCKED` (`details.blocking_drivers`) فقط إن كان لسائق في مناوبته عهدة أو مهمة مفتوحة؛ وإلا تُنهى المناوبات المفتوحة الباقية آليًا بـ`end_reason = shift_closed` (`driver.duty_ended` لكل منها) ثم `shift.closed`.
+`scheduled` ← `open` عبر `POST /v1/shifts/{shiftId}/open` (وردية مفتوحة واحدة للمجموعة، `uq_shifts_open_per_pool`؛ ومجموعة التوزيع نشطة كحارس الحفل في §6.4، وإلا `INVALID_STATE_TRANSITION` بـ`reason = dispatch_pool_inactive`، DEC-117؛ ولا يقيد الفتحَ وقتُ `starts_at`، DEC-127) ← `closed` عبر `POST /v1/shifts/{shiftId}/close`. الإغلاق يُرفض بـ`SHIFT_CLOSE_BLOCKED` (`details.blocking_drivers`) فقط إن كان لسائق في مناوبته عهدة أو مهمة مفتوحة؛ وإلا تُنهى المناوبات المفتوحة الباقية آليًا بـ`end_reason = shift_closed` (`driver.duty_ended` لكل منها) ثم `shift.closed`.
+
+تفصيل الإغلاق (DEC-122): الأقفال L1 للمجموعة ← صف الوردية ← L8 لمناوباتها المفتوحة. المانع لكل سائق عهدة مركبة أو مفتاح (`tickets.*_holder_type = 'driver'`) أو أي مهمة ليست `completed`/`canceled`، وعناصره من النوع `vehicle` و`key` و`draft` (مهمة صف لتذكرة `received`) و`task` و`next_task` (`assigned_waiting`) مع `ticket_id` و`display_number` و`task_id` للمهام، والسائقون مرتبون برمز الموظف. بلا مانع: تصير الوردية `closed` أولًا، ثم لكل مناوبة بترتيب معرّفها تصاعديًا `releaseDriverWork` (DEC-32) ثم إنهاؤها (`end_reason = shift_closed`، `available_since = NULL`) مع `driver.duty_ended` و`driver.availability_changed` (`driver_state = off_duty`، DEC-123)، وأخيرًا `shift.closed` بـ`ended_duty_session_ids`.
 
 ### 6.6 مناوبة السائق `duty_sessions.status`
 

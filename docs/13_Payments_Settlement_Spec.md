@@ -52,15 +52,15 @@
 | `events.fee_halalas` | `included` ⇒ 0 · `per_vehicle` ⇒ أكبر من 0 | `CHECK (pricing_mode = 'per_vehicle' OR fee_halalas = 0)` و`CHECK (pricing_mode = 'included' OR fee_halalas > 0)` |
 | `events.allowed_payment_methods` | مجموعة جزئية من `cash` و`pos` (الافتراضي الاثنتان) | `CHECK (allowed_payment_methods <@ ARRAY['cash','pos'])` |
 
-القيم الافتراضية للحفل الجديد تأتي من إعدادات الموقع (القاموس §12): `pricing.default_mode`، `pricing.default_fee_halalas`، `pricing.allowed_methods`.
+القيم الافتراضية للحفل الجديد تأتي من إعدادات الموقع (القاموس §12، DEC-119): `pricing_mode` إلزامي في جسم الإنشاء (07)؛ و`fee_halalas` الافتراضي `pricing.default_fee_halalas` لـ`per_vehicle` و0 لـ`included`؛ و`allowed_payment_methods` الافتراضي `pricing.allowed_methods`؛ أما `pricing.default_mode` فلتعبئة نموذج الواجهة فقط. حفل `per_vehicle` دون `fee_halalas` في موقع رسومه الافتراضية 0 يُرفض بـ`VALIDATION_FAILED` (`fee_halalas: positive_required_when_per_vehicle`).
 
 قواعد التعديل عبر `PATCH /v1/events/{eventId}` (صلاحية `event.manage`):
 
-- يُسمح بتعديل حقول التسعير والحفل في `draft` أو `open`. في `closing` أو `closed` أو `canceled` يُرفض الطلب بـ`INVALID_STATE_TRANSITION`.
+- يُسمح بتعديل حقول التسعير والحفل في `draft` أو `open`، والتسعير ولو بعد أول تذكرة (DEC-109)، عدا مجموعة التوزيع ففي `draft` وحده (DEC-118). في `closing` يُرفض الطلب بـ`INVALID_STATE_TRANSITION`، وفي `closed` أو `canceled` بـ`EVENT_ALREADY_CLOSED` (DEC-110).
 - في `per_vehicle` لا تكون `allowed_payment_methods` فارغة؛ وإلا `VALIDATION_FAILED` بالحقل `allowed_payment_methods`.
 - التعديل يسري على **التذاكر الجديدة فقط**؛ التذاكر القائمة تحتفظ بلقطتها (§4).
 - تقليص `allowed_payment_methods` أثناء الحفل مسموح (مثال: تعطل الشبكة فيقتصر الحفل على النقد) ويسري فورًا على كل تحصيل لاحق، لأن الوسيلة سياسة تشغيلية تُقرأ وقت التحصيل وليست جزءًا من لقطة التذكرة.
-- كل تعديل يُسجل في `audit_log` بالإجراء `event.manage` مع before/after لحقول التسعير فقط.
+- كل تعديل يُسجل في `audit_log` بالإجراء `event.manage` و`metadata.command` مع before/after للحقول المتغيرة فقط، و`PATCH` الذي لا يغيّر شيئًا لا يرفع `version` ويُسجَّل بـ`metadata.noop = true` (DEC-125).
 
 مثال عرض في الواجهة: «رسوم الخدمة: 20.00 ر.س — نقدًا أو شبكة».
 

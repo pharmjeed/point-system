@@ -4025,7 +4025,10 @@ paths:
       operationId: putVenueSettings
       summary: استبدال إعدادات الموقع
       tags: [Venues & Setup]
-      description: يُتحقق بـzod ويُكمَّل الناقص بالافتراضي؛ التغيير يسري على العروض والمؤقتات الجديدة فقط.
+      description: |-
+        يُتحقق بـzod ويُكمَّل الناقص بالافتراضي؛ التغيير يسري على العروض والمؤقتات الجديدة فقط.
+
+        استبدال كامل (DEC-115): الناقص يأخذ الافتراضي لا القيمة السابقة، ويُخزَّن الكائن المكتمل؛ version هو venues.version المشترك مع PATCH /v1/venues/{venueId}، فتعديل أحدهما يجعل expected_version الآخر قديمًا (VERSION_CONFLICT).
       parameters:
       - $ref: '#/components/parameters/venueId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -4202,7 +4205,10 @@ paths:
       operationId: updateDispatchPool
       summary: تعديل مجموعة توزيع
       tags: [Venues & Setup]
-      description: 'الشروط: لا تعطيل لمجموعة عليها مهام مفتوحة أو وردية مفتوحة'
+      description: |-
+        الشروط: لا تعطيل لمجموعة عليها مهام مفتوحة أو وردية مفتوحة (INVALID_STATE_TRANSITION بـreason=open_tasks أو open_shift)
+
+        is_default=true ينقل الافتراضية تحت L1 لكل مجموعات الموقع فتبقى واحدة؛ is_default=false على الافتراضية ← VALIDATION_FAILED (is_default: default_required) (DEC-116)
       parameters:
       - $ref: '#/components/parameters/poolId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -4270,6 +4276,13 @@ paths:
       description: 'السائق: موقع تعيينه النشط فقط (لإتمام الصف D-08).'
       parameters:
       - $ref: '#/components/parameters/venueId'
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          description: 'قائمة اختيار (D-08): المناطق النشطة فقط؛ مفروض للسائق دائمًا (DEC-113)'
       responses:
         '200':
           description: OK
@@ -4447,6 +4460,14 @@ paths:
         schema:
           type: boolean
           default: false
+          description: المواقف النشطة غير المشغولة فقط؛ يتضمن active_only (DEC-113)
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          description: 'قائمة اختيار (D-08): المواقف النشطة في مناطق نشطة فقط؛ مفروض للسائق دائمًا (DEC-113)'
       - name: limit
         in: query
         required: false
@@ -4497,7 +4518,10 @@ paths:
       operationId: createParkingSpots
       summary: إنشاء مواقف (جماعي)
       tags: [Venues & Setup]
-      description: إنشاء مواقف (جماعي)
+      description: |-
+        إنشاء مواقف (جماعي)
+
+        القواعد (DEC-114): labels أو range واحد بالضبط، وإلا VALIDATION_FAILED بالمشكلة labels_or_range؛ حتى 500 تسمية، والتسمية تُقص وحدها 20 حرفًا؛ range.prefix يُقص، ومع بادئة غير فارغة يُكمَّل الرقم بأصفار إلى عدد خانات to (A-01…A-30) ودونها أرقام مجردة؛ التكرار داخل الطلب أو مع الموجود في المنطقة يرفض الطلب كله في VALIDATION_FAILED واحد بحقول labels.<i> أو range مع index وlabel (وduplicate_of للتكرار داخل الطلب).
       parameters:
       - $ref: '#/components/parameters/venueId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -4646,6 +4670,13 @@ paths:
       description: 'السائق: موقع تعيينه النشط فقط (D-08).'
       parameters:
       - $ref: '#/components/parameters/venueId'
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          description: 'قائمة اختيار (D-08): اللوحات النشطة وخاناتها النشطة فقط؛ مفروض للسائق دائمًا (DEC-113)'
       responses:
         '200':
           description: OK
@@ -4757,7 +4788,10 @@ paths:
       operationId: createKeySlots
       summary: إنشاء خانات مفاتيح (جماعي)
       tags: [Venues & Setup]
-      description: إنشاء خانات مفاتيح (جماعي)
+      description: |-
+        إنشاء خانات مفاتيح (جماعي)
+
+        القواعد كما في إنشاء المواقف (DEC-114)، والتكرار يُقارن بخانات اللوحة نفسها.
       parameters:
       - $ref: '#/components/parameters/boardId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -4971,7 +5005,7 @@ paths:
       summary: إنشاء حفل
       tags: [Events & Shifts]
       description: |-
-        الشروط: included ⇒ fee_halalas=0؛ per_vehicle ⇒ fee_halalas>0 · dispatch_pool_id افتراضيًا مجموعة الموقع الافتراضية
+        الشروط: included ⇒ fee_halalas=0؛ per_vehicle ⇒ fee_halalas>0 · dispatch_pool_id افتراضيًا مجموعة الموقع الافتراضية · fee_halalas افتراضيًا pricing.default_fee_halalas لـper_vehicle و0 لـincluded، وallowed_payment_methods افتراضيًا pricing.allowed_methods؛ per_vehicle دون fee_halalas وافتراضي الموقع 0 ← VALIDATION_FAILED (fee_halalas: positive_required_when_per_vehicle) (DEC-119)
 
         الأثر: events(draft)
       parameters:
@@ -5101,12 +5135,13 @@ paths:
       x-permission: event.manage
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: []
     patch:
       operationId: updateEvent
       summary: تعديل حفل
       tags: [Events & Shifts]
-      description: 'الشروط: التسعير لا يتغير بعد أول تذكرة'
+      description: |-
+        الشروط: status ∈ {draft, open}؛ التسعير يُعدَّل ولو بعد أول تذكرة ويسري على التذاكر الجديدة فقط (DEC-109)؛ dispatch_pool_id في draft فقط، وبعد الفتح INVALID_STATE_TRANSITION بـreason=dispatch_pool_fixed_after_open (DEC-118)
       parameters:
       - $ref: '#/components/parameters/eventId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5200,9 +5235,9 @@ paths:
       summary: فتح الحفل
       tags: [Events & Shifts]
       description: |-
-        الشروط: status=draft
+        الشروط: status ∈ {draft, closing} (closing ← open إعادة فتح، 11 §6.4)؛ مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117)
 
-        الأثر: status=open؛ يسمح بالاستلام
+        الأثر: status=open؛ يسمح بالاستلام؛ event.opened بـreopened=true عند إعادة الفتح
       parameters:
       - $ref: '#/components/parameters/eventId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5362,7 +5397,7 @@ paths:
       x-permission: event.manage
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: []
   /v1/events/{eventId}/close:
     post:
       operationId: closeEvent
@@ -5440,9 +5475,9 @@ paths:
       summary: إلغاء حفل
       tags: [Events & Shifts]
       description: |-
-        الشروط: status ∈ {draft, open} ولا تذاكر غير ملغاة
+        الشروط: status ∈ {draft, open} ولا تذاكر غير ملغاة، وإلا EVENT_CLOSE_BLOCKED بـreason=non_voided_tickets وticket_count وblockers.non_voided_tickets (حتى 50 تذكرة، DEC-120)
 
-        الأثر: status=canceled
+        الأثر: status=canceled؛ تدقيق فقط بلا حدث نطاقي (DEC-120)
       parameters:
       - $ref: '#/components/parameters/eventId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5541,7 +5576,7 @@ paths:
       x-permission: alert.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: []
   /v1/venues/{venueId}/shifts:
     get:
       operationId: listShifts
@@ -5605,7 +5640,10 @@ paths:
       operationId: createShift
       summary: إنشاء وردية
       tags: [Events & Shifts]
-      description: إنشاء وردية
+      description: |-
+        إنشاء وردية
+
+        الشروط (DEC-127): starts_at إلزامي وends_at لا يسبقه؛ dispatch_pool_id افتراضيًا مجموعة الموقع الافتراضية.
       parameters:
       - $ref: '#/components/parameters/venueId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5676,7 +5714,7 @@ paths:
       operationId: openShift
       summary: فتح الوردية
       tags: [Events & Shifts]
-      description: 'الشروط: status=scheduled · لا وردية مفتوحة أخرى لنفس المجموعة'
+      description: 'الشروط: status=scheduled · لا وردية مفتوحة أخرى لنفس المجموعة · مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117) · لا يقيده وقت starts_at (DEC-127)'
       parameters:
       - $ref: '#/components/parameters/shiftId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5740,7 +5778,7 @@ paths:
       summary: إغلاق الوردية
       tags: [Events & Shifts]
       description: 'الشروط: المناوبات المفتوحة التي لا عهدة لأصحابها ولا مهام مفتوحة لهم تُنهى آليًا (end_reason=shift_closed)؛ وجود سائق بعهدة أو بمهمة مفتوحة ←
-        SHIFT_CLOSE_BLOCKED مع details.blocking_drivers'
+        SHIFT_CLOSE_BLOCKED مع details.blocking_drivers (الترتيب والعناصر في 11 §6.5، DEC-122)؛ كل مناوبة تُنهى تصدر driver.duty_ended وdriver.availability_changed (DEC-123)'
       parameters:
       - $ref: '#/components/parameters/shiftId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5797,7 +5835,7 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [INVALID_STATE_TRANSITION, SHIFT_CLOSE_BLOCKED, VERSION_CONFLICT]
-      x-domain-events: [shift.closed, driver.duty_ended]
+      x-domain-events: [shift.closed, driver.duty_ended, driver.availability_changed]
       x-ws-events: [driver.state_changed]
   /v1/drivers:
     get:

@@ -224,7 +224,7 @@ interface ActorContext {
 | `POST /v1/venues/{venueId}/events` | `event.manage` | الموقع ضمن النطاق | `SCOPE_VENUE_DENIED` |
 | `GET /v1/events/{eventId}` | `event.manage` | النطاق | `RESOURCE_NOT_FOUND` |
 | `PATCH /v1/events/{eventId}` | `event.manage` | `expected_version`؛ غير مغلق | `EVENT_ALREADY_CLOSED` |
-| `POST /v1/events/{eventId}/open` | `event.manage` | الحالة `draft` | `INVALID_STATE_TRANSITION` |
+| `POST /v1/events/{eventId}/open` | `event.manage` | الحالة `draft`، أو `closing` لإعادة الفتح؛ مجموعة التوزيع نشطة (DEC-117) | `INVALID_STATE_TRANSITION` |
 | `POST /v1/events/{eventId}/start-closing` | `event.manage` | الحالة `open` | `INVALID_STATE_TRANSITION` |
 | `GET /v1/events/{eventId}/reconciliation` | `event.manage` | النطاق | — |
 | `POST /v1/events/{eventId}/close` | `event.manage` | لا عناصر مفتوحة | `EVENT_CLOSE_BLOCKED` |
@@ -557,6 +557,7 @@ function requireDuty(a: ActorContext, poolId: string) {
 | `ticket.inspection_exception` | `reason`، الصور الناقصة، `self_approved` | — |
 | `duty.force_end` | `reason`، المناوبة | — |
 | `driver.manage` / `staff.manage` | الهدف، التغيير (دور، نطاق، حالة)، `reason` للتعطيل | الأسرار المؤقتة وكلمات المرور |
+| `venue.manage` / `event.manage` / `shift.manage` | `metadata.command` (عملية Canon §9.5)، before/after للحقول المتغيرة فقط، `metadata.noop = true` لـ`PATCH` لا يغيّر شيئًا (ولا يرتفع `version`)، رمز الموقع باسم `venue_code` لأن منقّح التدقيق يحجب كل مفتاح يحوي `code`، و`reason` لإلغاء الحفل (DEC-125) | — |
 | أحداث الدخول | النجاح/الفشل، القفل، إعداد MFA أو إعادة ضبطه، تغيير السر — الجوال مجزّأ للحساب غير المعروف | الأسرار والرموز |
 | `wa.channel_manage` / `wa.templates_manage` / `retention.manage` / `org.settings_manage` / `outbox.manage` | الإعداد قبل/بعد (مراجع الأسرار فقط) | الرموز والأسرار |
 
