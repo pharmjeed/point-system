@@ -30,3 +30,4 @@ export {
   normalizePosReference,
   type ManualReconcileBody,
 } from './manual-reconcile.js';
+export { TicketTimelineQuery } from './ticket-timeline.js';
