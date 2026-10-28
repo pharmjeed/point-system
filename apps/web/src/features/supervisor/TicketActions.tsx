@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { IncidentSeverity, IncidentType, Me, Payment, PaymentMethod, TicketDetail } from '@/api/types';
+import type {
+  CustodyHolderType,
+  CustodySubject,
+  IncidentSeverity,
+  IncidentType,
+  Me,
+  Payment,
+  PaymentMethod,
+  TicketDetail,
+} from '@/api/types';
 import {
   Banner,
   Button,
@@ -15,6 +24,7 @@ import {
 import {
   buttons,
   components,
+  custodySubject,
   incidentSeverity,
   incidentType,
   onBehalfReason,
@@ -27,7 +37,7 @@ import { fmt } from '@/i18n/fmt';
 import { onlyDigits } from '@/lib/digits';
 import { formatHalalas } from '@/lib/format';
 import type { TicketAction } from './permissions';
-import { commands, fetchDrivers, fetchKeyBoards, staffKeys } from './staffApi';
+import { commands, fetchDrivers, fetchKeyBoards, fetchParkingSpots, staffKeys } from './staffApi';
 import { REASON_MIN, ReasonDialog, reasonOk } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 
@@ -63,10 +73,14 @@ export function TicketActionDialog({ action, ...props }: ActionProps & { action:
       return <HandoverExceptionSheet {...props} />;
     case 'resendCode':
       return <ResendCodeDialog {...props} />;
+    case 'custodyTransfer':
+      return <CustodyTransferSheet {...props} />;
     case 'onBehalf':
       return <OnBehalfDialog {...props} />;
     case 'voidTicket':
       return <VoidDialog {...props} />;
+    case 'inspectionException':
+      return <SimpleReasonDialog {...props} action="inspectionException" />;
     case 'waiver':
       return <SimpleReasonDialog {...props} action="waiver" />;
     case 'reverse':
@@ -548,6 +562,129 @@ function HandoverExceptionSheet({ me, ticket, onClose }: ActionProps) {
         {cmd.message && !cmd.fields.reason ? <FieldError role="alert">{cmd.message}</FieldError> : null}
         <Button variant="success" fullWidth loading={cmd.pending} disabled={!ready} onClick={submit}>
           {s03.exception.confirm}
+        </Button>
+      </div>
+    </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------- official custody transfer
+
+function CustodyTransferSheet({ me, ticket, onClose }: ActionProps) {
+  const [subject, setSubject] = useState<CustodySubject>('key');
+  const [holderType, setHolderType] = useState<CustodyHolderType | ''>('');
+  const [holderId, setHolderId] = useState('');
+  const [reason, setReason] = useState('');
+  const drivers = useQuery({
+    queryKey: staffKeys.venueDrivers(ticket.venue_id),
+    queryFn: ({ signal }) => fetchDrivers({ venue_id: ticket.venue_id }, signal),
+    enabled: holderType === 'driver',
+  });
+  const keyBoards = useQuery({
+    queryKey: staffKeys.keyBoards(ticket.venue_id),
+    queryFn: ({ signal }) => fetchKeyBoards(ticket.venue_id, signal),
+    enabled: holderType === 'key_slot',
+  });
+  const spots = useQuery({
+    queryKey: staffKeys.parkingSpots(ticket.venue_id),
+    queryFn: ({ signal }) => fetchParkingSpots(ticket.venue_id, signal),
+    enabled: holderType === 'spot',
+  });
+  const holderTypes: CustodyHolderType[] =
+    subject === 'key' ? ['driver', 'supervisor', 'key_slot'] : ['driver', 'supervisor', 'spot'];
+  const targetOptions: Array<readonly [string, string]> =
+    holderType === 'driver'
+      ? (drivers.data?.items ?? [])
+          .filter((d) => d.live && d.live.driver_state !== 'off_duty')
+          .map((d) => [d.user.id, `${d.user.full_name} · ${d.user.employee_code}`] as const)
+      : holderType === 'key_slot'
+        ? (keyBoards.data ?? []).flatMap((b) =>
+            b.slots
+              .filter((s) => s.status === 'active' && !s.occupied)
+              .map((s) => [s.id, `${b.board.name} · ${s.label}`] as const),
+          )
+        : holderType === 'spot'
+          ? (spots.data?.items ?? []).map(
+              (s) => [s.id, s.zone_name ? `${s.zone_name} · ${s.label}` : s.label] as const,
+            )
+          : [];
+  const resolvedHolderId = holderType === 'supervisor' ? me.user.id : holderId;
+  const ready = !!holderType && !!resolvedHolderId && reasonOk(reason);
+  const cmd = useStaffCommand(
+    (
+      body: {
+        subject: CustodySubject;
+        to_holder_type: CustodyHolderType;
+        to_holder_id: string | null;
+        reason: string;
+      },
+      key: string,
+    ) => commands.custodyTransfer(ticket.id, body, key),
+    { invalidate: invalidateFor(ticket), onSuccess: onClose, onPermissionDenied: onClose },
+  );
+  return (
+    <Sheet open onOpenChange={(o) => (o ? undefined : onClose())} title={s03.action.custodyTransfer}>
+      <div className="st-form">
+        <Radio
+          name="act-custody-subject"
+          legend={s03.transfer.subject}
+          options={[
+            ['key', custodySubject.key],
+            ['vehicle', custodySubject.vehicle],
+          ]}
+          value={subject}
+          onChange={(v) => {
+            setSubject(v as CustodySubject);
+            setHolderType('');
+            setHolderId('');
+          }}
+        />
+        <Radio
+          name="act-custody-holder"
+          legend={s03.transfer.holder}
+          options={holderTypes.map(
+            (h) => [h, s03.transfer.holderType[h as keyof typeof s03.transfer.holderType]] as const,
+          )}
+          value={holderType}
+          onChange={(v) => {
+            setHolderType(v as CustodyHolderType);
+            setHolderId('');
+          }}
+        />
+        {holderType && holderType !== 'supervisor' ? (
+          <Select
+            id="act-custody-target"
+            label={s03.transfer.target}
+            placeholder="—"
+            value={holderId}
+            options={targetOptions}
+            error={cmd.fields.to_holder_id}
+            onChange={(e) => setHolderId(e.target.value)}
+          />
+        ) : null}
+        <TextArea
+          id="act-custody-reason"
+          label={components.dialog.reason}
+          rows={2}
+          value={reason}
+          error={cmd.fields.reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+        {cmd.message && !cmd.fields.reason ? <FieldError role="alert">{cmd.message}</FieldError> : null}
+        <Button
+          fullWidth
+          loading={cmd.pending}
+          disabled={!ready}
+          onClick={() =>
+            cmd.run({
+              subject,
+              to_holder_type: holderType as CustodyHolderType,
+              to_holder_id: resolvedHolderId,
+              reason: reason.trim(),
+            })
+          }
+        >
+          {buttons.confirm}
         </Button>
       </div>
     </Sheet>

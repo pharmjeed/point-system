@@ -56,7 +56,9 @@ const ACTION_ORDER: TicketAction[] = [
   'recordPayment',
   'waiver',
   'reverse',
+  'custodyTransfer',
   'onBehalf',
+  'inspectionException',
   'voidTicket',
   'openIncident',
 ];
