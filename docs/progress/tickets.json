@@ -890,10 +890,10 @@
   "epic": "EP-06",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "Socket.IO /ws: cookie+Origin handshake, server-decided rooms, NOTIFY relay, targeted session.revoked, 60 s revalidation, WS heartbeat, offer_seen"
  },
  {
   "ticket": "PNT-065",

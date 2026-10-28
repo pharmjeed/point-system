@@ -203,5 +203,10 @@
     "status": "in_progress",
     "date": "2026-10-28",
     "note": "parallel agent"
+  },
+  "PNT-064": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "Socket.IO /ws: cookie+Origin handshake, server-decided rooms, NOTIFY relay, targeted session.revoked, 60 s revalidation, WS heartbeat, offer_seen"
   }
 }

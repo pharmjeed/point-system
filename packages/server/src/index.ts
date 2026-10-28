@@ -1,5 +1,6 @@
 export * from './core/index.js';
 export * from './http/index.js';
+export * from './realtime/index.js';
 
 // Domain modules — one line each, separated by blank lines so parallel work merges cleanly.
 

@@ -9,7 +9,13 @@ export interface RealtimeMessage {
   event: string;
   id: string;
   aggregate?: { type: string; id: string; version: number | null };
+  /** becomes `payload` of the canon §7 envelope; `cause` = the domain event that produced it (07 §4.2) */
   data: Record<string, unknown>;
+  occurred_at?: string;
+  venue_id?: string | null;
+  dispatch_pool_id?: string | null;
+  event_id?: string | null;
+  actor?: { type: 'user' | 'customer' | 'system'; id: string | null };
 }
 
 /**
@@ -24,7 +30,11 @@ export async function publishRealtime(
   msg: RealtimeMessage,
 ): Promise<void> {
   if (rooms.length === 0) return;
-  const json = JSON.stringify({ rooms, message: msg });
+  const json = JSON.stringify({
+    org_id: orgId,
+    rooms,
+    message: { ...msg, occurred_at: msg.occurred_at ?? tx.now.toISOString() },
+  });
   if (Buffer.byteLength(json) <= NOTIFY_MAX_BYTES) {
     await tx.query(`SELECT pg_notify($1, $2)`, [REALTIME_NOTIFY_CHANNEL, json]);
     return;
