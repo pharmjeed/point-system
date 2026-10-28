@@ -2,7 +2,6 @@
 import { migrate, reset } from './migrate.js';
 import { checkDrift, runInvariants } from './tools.js';
 
-const SEED_MODULE = './seed/index.js';
 const cmd = process.argv[2];
 const url = process.env.DATABASE_URL;
 // drift/invariants build throwaway databases, so they need a URL with CREATE DATABASE rights.
@@ -45,15 +44,8 @@ async function main() {
       break;
     }
     case 'seed': {
-      const { seed } = await import(SEED_MODULE);
-      const pg = (await import('pg')).default;
-      const pool = new pg.Pool({ connectionString: need(url, 'DATABASE_URL') });
-      try {
-        await seed(pool);
-        console.log('seed applied');
-      } finally {
-        await pool.end();
-      }
+      // same as `node dist/seed/cli.js` (per-table summary, exit 3 when refused)
+      await import('./seed/cli.js');
       break;
     }
     default:

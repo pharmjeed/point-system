@@ -1,0 +1,88 @@
+# PNT-004: lint · typecheck · unit · db drift · db invariants · integration (Testcontainers, PostgreSQL 16) · build · e2e.
+# Private repository with limited minutes: runs on pull requests and on main only; superseded runs are cancelled.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_ENV: test
+  TZ: UTC
+
+jobs:
+  checks:
+    name: lint · typecheck · unit · db · integration · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Enable pnpm (corepack, version from package.json)
+        run: corepack enable && pnpm --version
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint (ESLint, Prettier, brand names)
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Unit tests
+        run: pnpm test
+      - name: DB drift (migrations vs docs/06_schema.sql)
+        run: pnpm db:drift
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: DB invariants (docs/06_schema_invariants_test.sql)
+        run: pnpm db:invariants | tee invariants.log && grep -q "ALL INVARIANT TESTS PASSED" invariants.log
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: Integration tests (Testcontainers postgres:16)
+        run: pnpm test:int
+
+  e2e:
+    name: e2e (Playwright 360/390/430, RTL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @point/web exec playwright install --with-deps chromium
+      - name: Build shared packages
+        run: pnpm --filter @point/shared build
+      - name: Playwright
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

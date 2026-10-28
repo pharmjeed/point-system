@@ -14,6 +14,16 @@
       "@point/source": "./src/testing.ts",
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
+    },
+    "./seed": {
+      "@point/source": "./src/seed/index.ts",
+      "types": "./dist/seed/index.d.ts",
+      "default": "./dist/seed/index.js"
+    },
+    "./seed/ids": {
+      "@point/source": "./src/seed/ids.ts",
+      "types": "./dist/seed/ids.d.ts",
+      "default": "./dist/seed/ids.js"
     }
   },
   "scripts": {
