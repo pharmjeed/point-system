@@ -175,6 +175,11 @@ export async function buildMe(q: Q, env: Env, sessionId: string, userId: string)
       expires_at: iso(session?.expires_at),
       mfa_verified: session?.mfa_verified ?? false,
       restricted: u.must_change_secret || (mfaRequired && !u.mfa_enabled),
+      // DEC-82: what the restricted session must do, in order
+      pending: [
+        ...(u.must_change_secret ? (['secret_change'] as const) : []),
+        ...(mfaRequired && !u.mfa_enabled ? (['mfa_setup'] as const) : []),
+      ],
     },
     brand: {
       staff_name_ar: env.BRAND_STAFF_NAME_AR,

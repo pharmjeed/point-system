@@ -62,6 +62,10 @@ export const canAdmin = (me: Me) => me.permissions.some((p) => ADMIN_PERMISSIONS
 /** The S-01 step a restricted staff session must finish: secret change first, then MFA setup (PNT-012). */
 export function restrictedStaffStep(me: Me): Exclude<StaffStep, 'credentials' | 'mfa'> | null {
   if (me.user.role === 'driver') return null;
+  const pending = me.session.pending;
+  if (pending)
+    return pending[0] === 'secret_change' ? 'password' : pending[0] === 'mfa_setup' ? 'mfa-setup' : null;
+  // servers before DEC-82 do not send `pending`
   if (me.user.must_change_secret) return 'password';
   if (me.session.restricted) return 'mfa-setup';
   return null;

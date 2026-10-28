@@ -262,6 +262,10 @@ describe('auth: login, lockout, secret change, logout, MFA', () => {
         must_change_secret: true,
       });
       let cookie = cookieOf(r)!;
+      const pending = async () =>
+        (await t.http().get('/v1/me').set('Cookie', cookie)).body.data.session.pending;
+      // DEC-82: the restricted session says what is still due, in order
+      expect(await pending()).toEqual(['secret_change', 'mfa_setup']);
       expect((await t.http().get('/v1/drivers').set('Cookie', cookie)).body.error.code).toBe(
         'AUTH_SECRET_CHANGE_REQUIRED',
       );
@@ -272,6 +276,7 @@ describe('auth: login, lockout, secret change, logout, MFA', () => {
         .set('Cookie', cookie)
         .send({ current_secret: c.secret, new_secret: 'supervisor-new-pass-1' });
       cookie = cookieOf(changed)!;
+      expect(await pending()).toEqual(['mfa_setup']);
       const blocked = await t.http().get('/v1/drivers').set('Cookie', cookie);
       expect(blocked.body.error.code).toBe('AUTH_MFA_SETUP_REQUIRED');
       expect(blocked.body.error.details.allowed_paths).toContain('POST /v1/auth/mfa/setup');
@@ -295,6 +300,7 @@ describe('auth: login, lockout, secret change, logout, MFA', () => {
       expect(confirm.body.data.user.mfa_enabled).toBe(true);
       expect(confirm.body.data.session.mfa_verified).toBe(true);
       expect((await t.http().get('/v1/drivers').set('Cookie', cookie)).status).toBe(200);
+      expect(await pending()).toEqual([]);
       const again = await t.http().post('/v1/auth/mfa/setup').set(CSRF).set('Cookie', cookie);
       expect(again.body.error.code).toBe('INVALID_STATE_TRANSITION');
     } finally {

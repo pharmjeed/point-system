@@ -112,6 +112,8 @@ export interface Me {
     mfa_verified?: boolean;
     /** true while the session is limited to `auth.self` (secret change and/or MFA setup pending). */
     restricted?: boolean;
+    /** What the restricted session must still do, in order (DEC-82); empty when not restricted. */
+    pending?: ('secret_change' | 'mfa_setup')[];
   };
   brand: {
     staff_name_ar?: string;

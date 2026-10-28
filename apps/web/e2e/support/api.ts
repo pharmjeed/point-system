@@ -206,7 +206,12 @@ export function staffMe(
     active_assignment: null,
     duty_session: null,
     driver_state: null,
-    session: { restricted: !!(opts.restricted || opts.mustChange), mfa_verified: !opts.restricted },
+    session: {
+      restricted: !!(opts.restricted || opts.mustChange),
+      mfa_verified: !opts.restricted,
+      // as the server sends it (DEC-82)
+      pending: [...(opts.mustChange ? ['secret_change'] : []), ...(opts.restricted ? ['mfa_setup'] : [])],
+    },
     brand: {},
   };
 }
