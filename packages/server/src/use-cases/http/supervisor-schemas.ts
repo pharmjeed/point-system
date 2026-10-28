@@ -16,3 +16,5 @@ export const CustodyTransferBody = z.strictObject({
   to_holder_id: uuid.nullable().optional(),
   reason,
 });
+
+export const RevealPhoneBody = z.strictObject({ reason });

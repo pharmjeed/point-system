@@ -24,3 +24,4 @@ export { maskCustomerText, waMessageView, custodyEventView, paymentView } from '
 export { InspectionExceptionUseCase } from './inspection-exception.js';
 export { CustodyTransferUseCase, type CustodyTransferBody } from './custody-transfer.js';
 export { OperationsBoardQuery, type BoardBadge } from './operations-board.js';
+export { RevealPhoneUseCase } from './reveal-phone.js';
