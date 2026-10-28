@@ -30,6 +30,7 @@ const SCREENS: Array<{
     ready: '[data-testid="close-summary"]',
     closing: true,
   },
+  { path: '/reports', role: 'supervisor', heading: /التقارير والتصدير/, ready: '.pt-kpistrip, .pt-empty' },
 ];
 
 for (const s of SCREENS) {
