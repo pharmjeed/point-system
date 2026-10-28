@@ -1,0 +1,17 @@
+<!-- @dsCard group="المشرف" height=480 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>DriverRow</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, {stack:true}, h('div', {style:{display:'grid', gap:8, containerType:'inline-size'}},
+  h(P.DriverRow, {name:'سالم العتيبي', state:'retrieving', connection:'online', current:125, next:131, custody:2}),
+  h(P.DriverRow, {name:'فهد القحطاني', state:'available', connection:'uncertain', lastSync:'40s', custody:0}),
+  h(P.DriverRow, {name:'ماجد الحربي', state:'off_duty', connection:'offline', lastSync:'22:41', custody:1}))));
+</script>
+</body>
+</html>

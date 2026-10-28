@@ -1,0 +1,17 @@
+<!-- @dsCard group="المشرف" height=320 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>TaskRow</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, {stack:true}, h('div', {style:{overflowX:'auto', border:'1px solid var(--pt-border)', borderRadius:16}},
+  h(P.TaskRow, {ticketNumber:125, status:'retrieving', driver:'سالم', stage:'الموقف B-07', elapsed:'03:12'}),
+  h(P.TaskRow, {ticketNumber:126, status:'ready', driver:'فهد', stage:'نقطة التسليم', elapsed:'05:40', pressed:true}),
+  h(P.TaskRow, {ticketNumber:127, status:'voided', driver:null, stage:'أُبطلت: تذكرة مكررة', elapsed:'—'}))));
+</script>
+</body>
+</html>

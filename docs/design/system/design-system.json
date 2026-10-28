@@ -1,0 +1,154 @@
+{
+ "v": 3,
+ "layout": "files",
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-27T20:41:58Z"
+ },
+ "title": "بوينت · POINT",
+ "namespace": "Point",
+ "libraries": [
+  {
+   "name": "react",
+   "version": "18"
+  },
+  {
+   "name": "react-dom",
+   "version": "18"
+  }
+ ],
+ "sections": {},
+ "groups": [
+  "Point",
+  "Masaf",
+  "Reference"
+ ],
+ "assetGroups": {
+  "Point": {
+   "name": "Point",
+   "tile": "l",
+   "order": [
+    "point-mark.svg",
+    "point-mark-white.svg",
+    "point-lockup-horizontal-rtl.svg",
+    "point-lockup-horizontal-rtl-on-dark.svg",
+    "point-logo-stacked.svg",
+    "point-logo-stacked-on-dark.svg"
+   ],
+   "files": {
+    "point-mark.svg": {
+     "name": "point-mark.svg",
+     "blob": "350dfa2527e9f4184911505e5bca19f1",
+     "size": 477,
+     "type": "image/svg+xml"
+    },
+    "point-mark-white.svg": {
+     "name": "point-mark-white.svg",
+     "blob": "22cb7fc66028c8c3d74e64e92e1520c5",
+     "size": 477,
+     "type": "image/svg+xml"
+    },
+    "point-lockup-horizontal-rtl.svg": {
+     "name": "point-lockup-horizontal-rtl.svg",
+     "blob": "63004b6471baafdb83db29915ecd91ec",
+     "size": 16109,
+     "type": "image/svg+xml"
+    },
+    "point-lockup-horizontal-rtl-on-dark.svg": {
+     "name": "point-lockup-horizontal-rtl-on-dark.svg",
+     "blob": "7d33945c574178dc3e042dfc43c1da77",
+     "size": 16203,
+     "type": "image/svg+xml"
+    },
+    "point-logo-stacked.svg": {
+     "name": "point-logo-stacked.svg",
+     "blob": "e2f219e0d1ab31fed0126c7e31315b6b",
+     "size": 21209,
+     "type": "image/svg+xml"
+    },
+    "point-logo-stacked-on-dark.svg": {
+     "name": "point-logo-stacked-on-dark.svg",
+     "blob": "667eee5fc132546d2701410c7e97004f",
+     "size": 21323,
+     "type": "image/svg+xml"
+    }
+   }
+  },
+  "Masaf": {
+   "name": "Masaf",
+   "tile": "l",
+   "order": [
+    "masaf-wordmark.svg",
+    "masaf-wordmark-on-dark.svg",
+    "masaf-avatar.svg"
+   ],
+   "files": {
+    "masaf-wordmark.svg": {
+     "name": "masaf-wordmark.svg",
+     "blob": "3fb7c72eb6738ed01c980118cf3f1da9",
+     "size": 4253,
+     "type": "image/svg+xml"
+    },
+    "masaf-wordmark-on-dark.svg": {
+     "name": "masaf-wordmark-on-dark.svg",
+     "blob": "b4fc14e571c2b2f355f106540e9482a9",
+     "size": 4253,
+     "type": "image/svg+xml"
+    },
+    "masaf-avatar.svg": {
+     "name": "masaf-avatar.svg",
+     "blob": "74aeb961e70c2090919492f654a4acec",
+     "size": 8423,
+     "type": "image/svg+xml"
+    }
+   }
+  },
+  "Reference": {
+   "name": "Reference",
+   "tile": "l",
+   "order": [
+    "brand-preview-1.png",
+    "brand-preview-2.png",
+    "brand-preview-3.png",
+    "brand-preview-4.png"
+   ],
+   "files": {
+    "brand-preview-1.png": {
+     "name": "brand-preview-1.png",
+     "blob": "edde53ccdfe532a17f24ff618dd8843a",
+     "size": 161759,
+     "type": "image/png"
+    },
+    "brand-preview-2.png": {
+     "name": "brand-preview-2.png",
+     "blob": "2acc33a98fb0687a659642f046cb5a8e",
+     "size": 175426,
+     "type": "image/png"
+    },
+    "brand-preview-3.png": {
+     "name": "brand-preview-3.png",
+     "blob": "11bf40a5b8d2ac60ccc14e698945da0a",
+     "size": 132378,
+     "type": "image/png"
+    },
+    "brand-preview-4.png": {
+     "name": "brand-preview-4.png",
+     "blob": "cac30e5989fde1d8ea6bded03dca72a9",
+     "size": 108439,
+     "type": "image/png"
+    }
+   }
+  }
+ },
+ "blobs": {},
+ "docs": {
+  "readme": "project/README.md",
+  "sections": []
+ },
+ "lastChange": {
+  "by": "Abdulmajeed",
+  "at": "2026-10-27T20:41:58Z",
+  "via": "Claude (Cowork)",
+  "note": "النظام الأول من point-design-system.zip"
+ }
+}

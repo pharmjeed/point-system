@@ -1,0 +1,17 @@
+<!-- @dsCard group="الهيكل والتنقل" height=360 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>TopBar</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, {stack:false}, h(React.Fragment, null,
+  h(S, {label:'متصل', wide:true}, h('div', {style:{width:'100%'}}, h(P.TopBar, {driverState:'available', connection:'online'}))),
+  h(S, {label:'غير مؤكد + آخر مزامنة', wide:true}, h('div', {style:{width:'100%'}}, h(P.TopBar, {driverState:'retrieving', connection:'uncertain', lastSync:'23:04'}))),
+  h(S, {label:'خطأ: غير متصل', wide:true}, h('div', {style:{width:'100%'}}, h(P.TopBar, {title:'قاعة ريماس', connection:'offline', lastSync:'22:58'}))))));
+</script>
+</body>
+</html>

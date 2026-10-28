@@ -1,0 +1,19 @@
+<!-- @dsCard group="الطلبات والإحضار" height=1040 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>OfferCard</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(React.Fragment, null,
+  h(S, {label:'فردي · accept', wide:true}, h('div', {style:{width:'100%'}}, h(P.OfferCard, {mode:'single', ticketNumber:125, vehicleSummary:'تويوتا كامري · أبيض', plate:{digits:'1234', letters:['ب','ح','د']}, venue:'حفل آل فلان', waiting:'1:12', secondsLeft:21}))),
+  h(S, {label:'«جارٍ…» · تحت 10 ثوانٍ', wide:true}, h('div', {style:{width:'100%'}}, h(P.OfferCard, {mode:'single', ticketNumber:126, vehicleSummary:'نيسان باترول · فضي', waiting:'0:48', secondsLeft:7, loading:true}))),
+  h(S, {label:'بث · reserve_next', wide:true}, h('div', {style:{width:'100%'}}, h(P.OfferCard, {mode:'broadcast', ticketNumber:131, vehicleSummary:'هيونداي سوناتا · أسود', waiting:'2:05', canAcceptAs:'reserve_next'}))),
+  h(S, {label:'خطأ 409', wide:true}, h('div', {style:{width:'100%'}}, h(P.OfferCard, {mode:'broadcast', ticketNumber:132, vehicleSummary:'كيا K5 · رمادي', waiting:'0:31', error:'قبل الطلب سائق آخر'}))),
+  h(S, {label:'view_only · تعطيل (بلا اتصال)', wide:true}, h('div', {style:{width:'100%', display:'grid', gap:12}}, h(P.OfferCard, {mode:'broadcast', ticketNumber:133, vehicleSummary:'لكزس ES · أبيض', waiting:'0:12', canAcceptAs:'none'}), h(P.OfferCard, {mode:'single', ticketNumber:134, vehicleSummary:'جيب رانجلر · أخضر', waiting:'0:05', secondsLeft:25, offline:true}))))));
+</script>
+</body>
+</html>

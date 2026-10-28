@@ -1,0 +1,21 @@
+<!-- @dsCard group="المشرف" height=900 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>DataTable</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, {stack:true}, function(){
+  var cols=[{key:'n', label:'التذكرة', sortable:true, render:function(r){ return h(P._TicketNo, {n:r.n}); }},{key:'s', label:'الحالة', render:function(r){ return h(P.StatusChip, {status:r.s, size:'sm'}); }},{key:'v', label:'المركبة'},{key:'d', label:'السائق'},{key:'w', label:'الانتظار', sortable:true, render:function(r){ return h('bdi', {dir:'ltr', className:'pt-num'}, r.w); }}];
+  var rows=[{n:118, s:'requested', v:'جي إم سي يوكن · أسود', d:'—', w:'6:40'},{n:125, s:'retrieving', v:'تويوتا كامري · أبيض', d:'سالم', w:'1:12', _changed:true},{n:131, s:'assigned_waiting', v:'هيونداي سوناتا · أسود', d:'فهد', w:'0:20'}];
+  return h(React.Fragment, null,
+    h(S, {label:'≥1024px: جدول برأس ثابت وترتيب', wide:true}, h('div', {style:{width:'100%'}}, h(P.DataTable, {layout:'table', columns:cols, rows:rows, sort:{key:'w', dir:'desc'}, hasNext:true, toolbar:h(P.FilterChips, {value:['open'], options:[{value:'open', label:'مفتوحة', count:7},{value:'done', label:'مُسلّمة', count:183}]})}))),
+    h(S, {label:'تحت 1024px: بطاقات', wide:true}, h('div', {style:{width:'100%', maxWidth:420}}, h(P.DataTable, {layout:'cards', columns:cols, rows:rows.slice(0,2), hasPrev:true, loadingMore:true}))),
+    h(S, {label:'«جارٍ…» وخطأ', wide:true}, h('div', {style:{width:'100%'}}, h(P.DataTable, {layout:'table', columns:cols, loading:true, error:'تعذّر تحميل الصفحة التالية'}))));
+}));
+</script>
+</body>
+</html>

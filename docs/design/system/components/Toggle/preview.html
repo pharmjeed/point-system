@@ -1,0 +1,17 @@
+<!-- @dsCard group="الإدخال" height=300 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>Toggle</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(React.Fragment, null,
+  h(P.Toggle, {id:'tg1', label:'الوضع الداكن', hint:'يتبع إعداد الجهاز افتراضيًا', checked:true}),
+  h(P.Toggle, {id:'tg2', label:'اهتزاز الطلبات'}),
+  h(P.Toggle, {id:'tg3', label:'الصوت (يتطلب التفعيل أولًا)', disabled:true}))));
+</script>
+</body>
+</html>

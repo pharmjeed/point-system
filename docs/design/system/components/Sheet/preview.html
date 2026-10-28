@@ -1,0 +1,18 @@
+<!-- @dsCard group="التغذية الراجعة" height=560 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>Sheet</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h('div', {style:{height:440}}, h(P.Sheet, {inline:true, title:'اختر الحفل'},
+  h('div', {style:{border:'1px solid var(--pt-border)', borderRadius:12, overflow:'hidden'}},
+    h(P.ListItem, {icon:'calendar-days', title:'حفل آل فلان', meta:'قاعة ريماس · 21:00', onClick:function(){}}),
+    h(P.ListItem, {icon:'calendar-days', title:'حفل آل علان', meta:'قاعة الماسة · 21:30', onClick:function(){}, pressed:true}),
+    h(P.ListItem, {icon:'calendar-days', title:'حفل مغلق', meta:'انتهى', onClick:function(){}, disabled:true}))))));
+</script>
+</body>
+</html>

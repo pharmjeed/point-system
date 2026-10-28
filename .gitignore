@@ -1,0 +1,32 @@
+# dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
+
+# environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# logs and local data
+*.log
+tmp/
+.cache/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# delivery archives are not part of the repository
+*.zip

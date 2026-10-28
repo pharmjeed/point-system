@@ -1,0 +1,18 @@
+<!-- @dsCard group="الإدخال" height=520 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>PhoneInput</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(R, null,
+  h(S, {label:'عادي', wide:true}, h('div', {style:{width:'100%'}}, h(P.PhoneInput, {id:'ph1'}))),
+  h(S, {label:'تركيز + قيمة', wide:true}, h('div', {style:{width:'100%'}}, h(P.PhoneInput, {id:'ph2', value:'0551234123', pressed:true}))),
+  h(S, {label:'خطأ PHONE_INVALID', wide:true}, h('div', {style:{width:'100%'}}, h(P.PhoneInput, {id:'ph3', value:'05512', error:'رقم الجوال غير صحيح'}))),
+  h(S, {label:'تعطيل', wide:true}, h('div', {style:{width:'100%'}}, h(P.PhoneInput, {id:'ph4', value:'0551234123', disabled:true}))))));
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!-- @dsCard group="الأفعال" height=520 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>Button</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, function(){ return h(React.Fragment, null,
+  h(R, null,
+    h(S, {label:'عادي'}, h(P.Button, {variant:'primary'}, 'قبول الطلب')),
+    h(S, {label:'ضغط'}, h(P.Button, {variant:'primary', pressed:true}, 'قبول الطلب')),
+    h(S, {label:'تعطيل'}, h(P.Button, {variant:'primary', disabled:true}, 'قبول الطلب')),
+    h(S, {label:'«جارٍ…»'}, h(P.Button, {variant:'primary', loading:true}, 'قبول الطلب')),
+    h(S, {label:'نجاح لحظي'}, h(P.Button, {variant:'success', done:true}, 'تم'))),
+  h(S, {label:'خطأ (يبقى الزر متاحًا لإعادة المحاولة بالمفتاح نفسه)', wide:true}, h(P.Button, {id:'b-err', variant:'secondary', error:'تعذر الاتصال. أعد المحاولة.'}, 'إعادة المحاولة')),
+  h(S, {label:'المتغيرات: primary · secondary · ghost · danger · success', wide:true},
+    h(P.Button, {variant:'primary', iconStart:'plus'}, 'استلام مركبة'),
+    h(P.Button, {variant:'secondary'}, 'تفاصيل'),
+    h(P.Button, {variant:'ghost'}, 'إلغاء'),
+    h(P.Button, {variant:'danger'}, 'إبطال التذكرة'),
+    h(P.Button, {variant:'success'}, 'تأكيد التسليم')),
+  h(S, {label:'lg ‏56px بعرض كامل — أفعال السائق التشغيلية', wide:true}, h(P.Button, {variant:'primary', size:'lg'}, 'بدء الإحضار')));
+}));
+</script>
+</body>
+</html>

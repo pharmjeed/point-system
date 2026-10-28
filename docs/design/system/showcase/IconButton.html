@@ -1,0 +1,19 @@
+<!-- @dsCard group="الأفعال" height=240 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>IconButton</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(R, null,
+  h(S, {label:'عادي'}, h(P.IconButton, {icon:'search', label:'بحث'}), h(P.IconButton, {icon:'x', label:'إغلاق', variant:'secondary'})),
+  h(S, {label:'ضغط'}, h(P.IconButton, {icon:'search', label:'بحث', pressed:true})),
+  h(S, {label:'تعطيل'}, h(P.IconButton, {icon:'camera', label:'تصوير', disabled:true})),
+  h(S, {label:'«جارٍ…»'}, h(P.IconButton, {icon:'refresh-cw', label:'تحديث', loading:true})),
+  h(S, {label:'مع عدّاد'}, h(P.IconButton, {icon:'bell-ring', label:'التنبيهات، 3 جديدة', badge:'3'})))));
+</script>
+</body>
+</html>
