@@ -31,8 +31,8 @@ const services: ((deps: WorkerDeps) => WorkerService | null)[] = [];
 import { ticketsCustodyJobs } from '@point/server';
 handlers.push(...ticketsCustodyJobs());
 
-// import { dispatchJobs } from '@point/server';
-// handlers.push(...dispatchJobs());
+import { dispatchJobs } from '@point/server';
+handlers.push(...dispatchJobs());
 
 import { whatsappJobs } from '@point/server';
 handlers.push(...whatsappJobs());
