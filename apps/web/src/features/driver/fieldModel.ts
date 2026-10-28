@@ -213,6 +213,14 @@ export function intakeBlockedReason(state: DriverState): string | null {
   return d04.disabled[state];
 }
 
+/**
+ * The events a car can be taken in for: `GET /v1/me/home` lists `open` and `closing` events (retrievals
+ * continue while an event closes), and only an `open` one accepts an intake (10 §7.1, EVENT_NOT_OPEN).
+ */
+export function intakeEvents(home: Pick<DriverHome, 'open_events'>): DriverHome['open_events'] {
+  return home.open_events.filter((e) => e.status === 'open');
+}
+
 /** The row of the D-04 TaskCard table (also picks the stage icon). */
 export type TaskStage = 'intake' | 'park' | 'repark' | 'key' | 'start' | 'retrieving' | 'ready';
 

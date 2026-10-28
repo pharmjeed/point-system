@@ -211,8 +211,13 @@ function HandoverForm({
 
   const error = submit.error instanceof ApiError ? submit.error : null;
   const errorText = submit.error ? displayMessage(submit.error) : null;
+  // paper stub attempts count against `handover.max_attempts` too; the lock then shows under the stub field
   const stubError =
-    localError?.field === 'stub' ? localError.message : error?.is('PAPER_STUB_MISMATCH') ? errorText : null;
+    localError?.field === 'stub'
+      ? localError.message
+      : error?.is('PAPER_STUB_MISMATCH') || (paper && error?.is('HANDOVER_CODE_LOCKED'))
+        ? errorText
+        : null;
   const codeError =
     localError?.field === 'code'
       ? localError.message
@@ -250,11 +255,12 @@ function HandoverForm({
             maxLength={20}
             autoComplete="off"
             dir="ltr"
+            disabled={locked}
             error={stubError ?? undefined}
             onChange={(e) => {
               setStub(e.target.value);
               setLocalError(null);
-              if (submit.error) submit.reset();
+              if (submit.error && !error?.is('HANDOVER_CODE_LOCKED')) submit.reset();
             }}
           />
         </section>

@@ -39,6 +39,7 @@ const TEXT = {
   PARKING_SPOT_OCCUPIED: 'الموقف مشغول. اختر موقفًا آخر أو اكتب ملاحظة.',
   CUSTODY_HOLDER_MISMATCH: 'هذه العهدة ليست لديك.',
   PAPER_STUB_MISMATCH: 'رقم كعب التذكرة لا يطابق.',
+  HANDOVER_CODE_LOCKED: 'قُفل التحقق بعد محاولات خاطئة. اتصل بالمشرف.',
   PAYMENT_PENDING: 'سجّل التحصيل قبل التسليم.',
 } as const;
 
@@ -337,4 +338,30 @@ test('D-11: the collection is checked first, a wrong stub shows inline, then cas
       collected_by: SEED_IDS.users.DRV1,
     }),
   ]);
+});
+
+test('D-11: wrong stubs count against handover.max_attempts; the lock stops the handover', async ({
+  page,
+}) => {
+  const fake = createFake();
+  const rms = fake.world.venues.find((v) => v.id === RMS);
+  if (rms) rms.settings = { handover: { max_attempts: 2 } };
+  startDuty(fake, 'DRV1');
+  const r = arrangeRetrieval(fake, 'DRV1', 'ready', { serial: '007101' });
+  await fake.attach(page, 'DRV1');
+  await page.goto(`/d/tickets/${r.ticketId}/handover`);
+  const stub = page.getByLabel('رقم الكعب');
+  await stub.fill('007100');
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/handover', page.locator('#handover-submit'), {
+    expectStatus: 422,
+  });
+  await expect(page.getByText(TEXT.PAPER_STUB_MISMATCH)).toBeVisible();
+  await stub.fill('007102');
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/handover', page.locator('#handover-submit'), {
+    expectStatus: 423,
+  });
+  await expect(page.getByText(TEXT.HANDOVER_CODE_LOCKED)).toBeVisible();
+  await expect(stub).toBeDisabled();
+  await expect(page.locator('#handover-submit')).toBeDisabled();
+  expect(fake.world.tickets.find((t) => t.id === r.ticketId)?.status).toBe('ready');
 });

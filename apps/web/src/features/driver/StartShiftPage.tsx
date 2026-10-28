@@ -42,6 +42,7 @@ import {
 import { formatTime } from '@/lib/format';
 import { useFieldStore, type AudioCheck } from '@/stores/field';
 import { DriverFrame } from './DriverLayout';
+import { intakeEvents } from './fieldModel';
 import { InstallGuideSheet } from './InstallGuideSheet';
 import { useDriverHome } from './useDriverHome';
 
@@ -345,9 +346,13 @@ function AssignmentCard({
             </Button>
           </>
         )}
-        {home.open_events.length > 0 ? (
+        {intakeEvents(home).length > 0 ? (
           <p className="m-0 text-sm text-text-muted">
-            {fmt(d03.openEvents, { events: home.open_events.map((e) => e.name_ar).join('، ') })}
+            {fmt(d03.openEvents, {
+              events: intakeEvents(home)
+                .map((e) => e.name_ar)
+                .join('، '),
+            })}
           </p>
         ) : null}
       </div>

@@ -36,6 +36,13 @@ const MEDIA_TYPES = ['image/jpeg', 'image/webp', 'image/heic', 'image/png'];
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 
 const isOpen = (t: FTicket) => t.status !== 'delivered' && t.status !== 'voided';
+/** Paper serials and key tags as the API stores them: trimmed, Latin digits, upper case, spaces collapsed. */
+const normalizeTag = (s: string) =>
+  s
+    .trim()
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
 const byPriority = (a: FTask, b: FTask) => a.priority_at.localeCompare(b.priority_at) || a.seq - b.seq;
 
 export function registerDriverRoutes(s: FakeServer): void {
@@ -208,6 +215,11 @@ export function registerDriverRoutes(s: FakeServer): void {
     const spot = w().spots.find((x) => x.id === t.spot_id);
     const slot = w().slots.find((x) => x.id === t.key_slot_id);
     const task = openTask(t);
+    // the 09 §5.1 allow-list of the S2 views: the retrieval assignee never sees the stub number (the server
+    // matches it at handover); the fee is for staff and the retrieval assignee only
+    const staff = viewer?.role !== 'driver';
+    const creatorIntake = t.created_by === viewer?.id && (t.status === 'received' || t.status === 'parking');
+    const retrieveAssignee = task?.type === 'retrieve' && task.assignee_id === viewer?.id;
     return {
       ...base,
       projection: 'full',
@@ -216,7 +228,7 @@ export function registerDriverRoutes(s: FakeServer): void {
         ? { phone_masked: `05•••••${t.customer_phone.slice(-3)}`, consent: null, opted_out: false }
         : null,
       wa_link_pending: null,
-      paper_serial: t.paper_serial,
+      ...(staff || creatorIntake ? { paper_serial: t.paper_serial } : {}),
       key_tag: t.key_tag,
       inspection_status: t.inspection_status,
       damage_marks: [],
@@ -241,7 +253,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       pending_retrieval_at: t.pending_retrieval_at,
       active_cycle: cycleView(openCycle(t)),
       open_task: task ? taskView(task) : null,
-      fee_halalas: t.fee_halalas,
+      ...(staff || retrieveAssignee ? { fee_halalas: t.fee_halalas } : {}),
       payment: paymentView(t),
       payment_waiver_reason: null,
       claim_code: claimView(t),
@@ -481,7 +493,10 @@ export function registerDriverRoutes(s: FakeServer): void {
     const current = mine.find((k) => k.status === 'accepted' || k.status === 'in_progress');
     const next = mine.find((k) => k.status === 'assigned_waiting');
     const draft = w().tickets.find((t) => t.created_by === u.id && t.status === 'received');
-    const openEvents = w().events.filter((e) => e.venue_id === venue.id && e.status === 'open');
+    // as the API: open and closing events (retrievals go on while an event closes; intakes need `open`)
+    const openEvents = w().events.filter(
+      (e) => e.venue_id === venue.id && (e.status === 'open' || e.status === 'closing'),
+    );
     const cash = w()
       .payments.filter((p) => p.collected_by === u.id && p.method === 'cash')
       .reduce((sum, p) => sum + p.amount_halalas, 0);
@@ -752,8 +767,13 @@ export function registerDriverRoutes(s: FakeServer): void {
       const letters = String(plate?.letters_ar ?? '')
         .split(/\s+/)
         .filter(Boolean);
-      if (!/^[0-9]{1,4}$/.test(digits) || letters.length !== 3 || letters.some((l) => !(l in PLATE_EN)))
-        fail('PLATE_INVALID');
+      // details as the API's normalizePlate (08: field + reason)
+      if (!/^[0-9]{1,4}$/.test(digits)) fail('PLATE_INVALID', { field: 'plate.digits', reason: 'digits' });
+      if (letters.length !== 3 || letters.some((l) => !(l in PLATE_EN)))
+        fail('PLATE_INVALID', { field: 'plate.letters_ar', reason: 'letters' });
+      const derived = letters.map((l) => PLATE_EN[l]).join('');
+      if (plate?.letters_en != null && String(plate.letters_en).replace(/\s+/g, '').toUpperCase() !== derived)
+        fail('PLATE_INVALID', { field: 'plate.letters_en', reason: 'mapping' });
       t.plate_country = 'SA';
       t.plate_digits = digits;
       t.plate_letters_ar = letters.join(' ');
@@ -761,7 +781,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       t.plate_raw = null;
     } else {
       const raw = String(plate?.raw ?? '').trim();
-      if (!raw || raw.length > 12) fail('PLATE_INVALID');
+      if (!raw || raw.length > 20) fail('PLATE_INVALID', { field: 'plate.raw', reason: 'raw' });
       t.plate_country = country;
       t.plate_raw = raw;
       t.plate_digits = null;
@@ -800,7 +820,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       next.customer_phone = b.customer_phone ? normalizePhone(b.customer_phone) : null;
     if ('consent' in b) next.consent = !!b.consent?.confirmed;
     if ('paper_serial' in b) {
-      const serial = b.paper_serial ? String(b.paper_serial).trim() : null;
+      const serial = b.paper_serial ? normalizeTag(String(b.paper_serial)) : null;
       if (
         serial &&
         w().tickets.some(
@@ -812,7 +832,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       next.paper_serial = serial;
     }
     if ('key_tag' in b) {
-      const tag = b.key_tag ? String(b.key_tag).trim() : null;
+      const tag = b.key_tag ? normalizeTag(String(b.key_tag)) : null;
       const other = tag
         ? w().tickets.find(
             (x) => x.id !== t.id && x.venue_id === t.venue_id && isOpen(x) && x.key_tag === tag,
@@ -1272,6 +1292,9 @@ export function registerDriverRoutes(s: FakeServer): void {
     };
   };
 
+  /** Wrong paper stubs per retrieval cycle (the API counts them from `ticket_events`, DEC-PROPOSED-8). */
+  const stubTries = new Map<string, { n: number; locked_at: string | null }>();
+
   s.on('POST /v1/tickets/:ticketId/handover', (ctx) => {
     const u = s.need(ctx, 'handover.verify');
     onDuty(u);
@@ -1283,10 +1306,40 @@ export function registerDriverRoutes(s: FakeServer): void {
     );
     if (!task || task.assignee_id !== u.id) fail('NOT_TASK_ASSIGNEE');
     s.checkVersion('ticket', t, ctx.body?.expected_version);
+    // the API's order (s2-backend notes, DEC-PROPOSED-9): the payment gate before the verification, so a kept
+    // wrong attempt never coexists with a payment effect. The fake takes the inline collection of PNT-080.
+    const event = eventOf(t.event_id);
+    const pay = ctx.body?.payment;
+    if (t.payment_status === 'due') {
+      if (!pay)
+        fail('PAYMENT_PENDING', {
+          amount_halalas: t.fee_halalas,
+          allowed_methods: event?.allowed_payment_methods,
+        });
+      if (pay.amount_halalas !== t.fee_halalas)
+        fail('PAYMENT_AMOUNT_MISMATCH', { amount_halalas: t.fee_halalas });
+      if (!(event?.allowed_payment_methods ?? []).includes(pay.method)) fail('PAYMENT_METHOD_NOT_ALLOWED');
+    } else if (pay) {
+      if (t.payment_status === 'not_required') validation([{ field: 'payment', issue: 'not_applicable' }]);
+      fail('PAYMENT_ALREADY_RECORDED');
+    }
     const v = ctx.body?.verification ?? {};
     if (v.method === 'paper_stub') {
-      if (t.channel !== 'paper' || String(v.paper_serial ?? '').trim() !== t.paper_serial)
-        fail('PAPER_STUB_MISMATCH');
+      if (t.channel !== 'paper') validation([{ field: 'verification.method', issue: 'not_applicable' }]);
+      // stub attempts count against handover.max_attempts per cycle, kept although the reply is an error
+      const cycleId = openCycle(t)?.id ?? t.id;
+      const tries = stubTries.get(cycleId) ?? { n: 0, locked_at: null as string | null };
+      stubTries.set(cycleId, tries);
+      if (tries.locked_at) fail('HANDOVER_CODE_LOCKED', { locked_at: tries.locked_at });
+      if (normalizeTag(String(v.paper_serial ?? '')) !== t.paper_serial) {
+        tries.n += 1;
+        const max = Number(settingsOf(t.venue_id).handover?.max_attempts ?? 5);
+        if (tries.n >= max) {
+          tries.locked_at = now();
+          fail('HANDOVER_CODE_LOCKED', { locked_at: tries.locked_at });
+        }
+        fail('PAPER_STUB_MISMATCH', { attempts_left: max - tries.n });
+      }
     } else if (v.method === 'code') {
       const c = t.claim;
       if (!c) fail('HANDOVER_CODE_EXPIRED');
@@ -1303,18 +1356,6 @@ export function registerDriverRoutes(s: FakeServer): void {
         fail('HANDOVER_CODE_INVALID', { attempts_left: c.max_attempts - c.attempts });
       }
     } else validation([{ field: 'verification', issue: 'required' }]);
-    const event = eventOf(t.event_id);
-    const pay = ctx.body?.payment;
-    if (t.payment_status === 'due') {
-      if (!pay)
-        fail('PAYMENT_PENDING', {
-          amount_halalas: t.fee_halalas,
-          allowed_methods: event?.allowed_payment_methods,
-        });
-      if (pay.amount_halalas !== t.fee_halalas)
-        fail('PAYMENT_AMOUNT_MISMATCH', { amount_halalas: t.fee_halalas });
-      if (!(event?.allowed_payment_methods ?? []).includes(pay.method)) fail('PAYMENT_METHOD_NOT_ALLOWED');
-    } else if (pay) fail('PAYMENT_ALREADY_RECORDED');
     let payment = null;
     if (pay) {
       const p = {

@@ -44,6 +44,7 @@ import {
   driverPaths,
   fieldSettings,
   intakeBlockedReason,
+  intakeEvents,
   offerAction,
   plateValue,
   promotedTask,
@@ -173,7 +174,7 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
   };
 
   const onIntake = () => {
-    const events = home.open_events;
+    const events = intakeEvents(home);
     if (events.length > 1) {
       create.reset();
       setEventsOpen(true);
@@ -206,10 +207,10 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
 
   const state = home.driver_state;
   const blocked = intakeBlockedReason(state);
-  const noEvent = state === 'available' && home.open_events.length === 0;
+  const noEvent = state === 'available' && intakeEvents(home).length === 0;
   const settings = fieldSettings(home);
   const offer = home.offer ?? null;
-  const events = [...home.open_events].sort(
+  const events = [...intakeEvents(home)].sort(
     (a, b) => Number(b.id === lastEventId) - Number(a.id === lastEventId),
   );
 

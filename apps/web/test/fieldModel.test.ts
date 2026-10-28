@@ -8,6 +8,7 @@ import {
   fieldSettings,
   findTask,
   intakeBlockedReason,
+  intakeEvents,
   missingGroups,
   offerAction,
   plateBody,
@@ -145,6 +146,16 @@ describe('INTAKE_INCOMPLETE → the step that holds the field (02 D-06)', () => 
 });
 
 describe('D-04', () => {
+  it('only an open event takes an intake (the home also lists closing ones)', () => {
+    const home = {
+      open_events: [
+        { id: 'e1', name_ar: 'أ', status: 'open' },
+        { id: 'e2', name_ar: 'ب', status: 'closing' },
+      ],
+    } as Pick<DriverHome, 'open_events'>;
+    expect(intakeEvents(home).map((e) => e.id)).toEqual(['e1']);
+  });
+
   it('«استلام مركبة» is enabled only when available, with the 02 reason otherwise', () => {
     expect(intakeBlockedReason('available')).toBeNull();
     expect(intakeBlockedReason('intake_parking')).toBe(d04.disabled.intake_parking);
