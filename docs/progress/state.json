@@ -115,19 +115,19 @@
     "note": "shifts: one open per pool, close auto-ends free duties via DriverReleaseHook, SHIFT_CLOSE_BLOCKED details; 9 int tests"
   },
   "PNT-024": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "duty start/break/end with pool lock, open shift check, release hook"
   },
   "PNT-025": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "POST /v1/tickets: L1→L2 locks, ticket numbers on the event row (50-way race: consecutive), fee snapshot"
   },
   "PNT-026": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "PATCH intake: plate rules, customer + consent at PATCH (DEC-170)"
   },
   "PNT-027": {
     "status": "done",
@@ -135,39 +135,39 @@
     "note": "private photos: presigned PUT, EXIF/GPS stripping, ≤300 s signed GET, S3/MinIO + in-memory storage; 22 API tests"
   },
   "PNT-028": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "submit-intake: INTAKE_INCOMPLETE.missing, inspection, W-01 hook point"
   },
   "PNT-029": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "discard draft / void with custody rules (DRAFT_HAS_DATA, CUSTODY_OPEN)"
   },
   "PNT-030": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "complete-parking: spot + key slot FOR SHARE and active, custody events, early request conversion"
   },
   "PNT-031": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "retrieval on behalf of the customer with reason"
   },
   "PNT-032": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "dispatch pass v1, single offers, atomic accept (10 §5.2), expiry, sweep, release hook"
   },
   "PNT-033": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "key pickup, start retrieval, ready"
   },
   "PNT-034": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent"
+    "note": "paper-stub handover: attempts from ticket_events, payment gate before verification"
   },
   "PNT-038": {
     "status": "done",
@@ -238,5 +238,200 @@
     "status": "in_progress",
     "date": "2026-10-28",
     "note": "parallel agent (web, mocked API until S2 lands)"
+  },
+  "PNT-043": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-044": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-045": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-047": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-049": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-050": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-051": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-078": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S3 linking)"
+  },
+  "PNT-052": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-053": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-054": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-055": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-056": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-057": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-058": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-059": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-060": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-061": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-062": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-063": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-084": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-086": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (S4 dispatch)"
+  },
+  "PNT-074": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-075": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-076": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-077": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-079": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-083": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-085": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (backend + screens)"
+  },
+  "PNT-080": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (payments-reports + screens)"
+  },
+  "PNT-081": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (payments-reports + screens)"
+  },
+  "PNT-082": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (payments-reports + screens)"
+  },
+  "PNT-087": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (payments-reports + screens)"
+  },
+  "PNT-088": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (payments-reports + screens)"
+  },
+  "PNT-089": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agents (payments-reports + screens)"
+  },
+  "PNT-072": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (push sending + realtime planners)"
+  },
+  "PNT-095": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (deployment, backups, hardening)"
+  },
+  "PNT-096": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent (deployment, backups, hardening)"
+  },
+  "PNT-036": {
+    "status": "todo",
+    "date": "2026-10-28",
+    "note": "next for the web agent after PNT-023/035 (real-API Playwright run)"
   }
 }
