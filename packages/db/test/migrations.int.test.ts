@@ -9,6 +9,17 @@ import { runInvariants, runSqlScript } from '../src/tools.js';
 import * as tables from '../src/schema/schema.js';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 
+/**
+ * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
+ * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
+ */
+const SCHEMA_CORRECTIONS: [string, string][] = [
+  [
+    "CHECK (name ~ '^[a-z0-9_]{1,512}$'),   -- e.g. masaf_ticket_issued_v1",
+    "CHECK (name ~ '^[a-z0-9_]+$' AND char_length(name) <= 512),   -- e.g. masaf_ticket_issued_v1 (DEC-129)",
+  ],
+];
+
 // PNT-003 / PNT-004 acceptance.
 describe('migrations', () => {
   let db: TestDatabase;
@@ -39,9 +50,35 @@ describe('migrations', () => {
     expect(r.rows[0].n).toBe(47);
   });
 
-  it('the first migration is docs/06_schema.sql verbatim', () => {
+  it('the first migration is docs/06_schema.sql v1.1 verbatim; later corrections ship as migrations', () => {
     const first = readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8');
-    expect(first).toBe(readFileSync(SCHEMA_SQL, 'utf8'));
+    let corrected = first;
+    for (const [from, to] of SCHEMA_CORRECTIONS) {
+      expect(corrected.split(from).length - 1, from).toBe(1);
+      corrected = corrected.replace(from, () => to); // a function: `to` contains `$'`
+    }
+    expect(corrected).toBe(readFileSync(SCHEMA_SQL, 'utf8'));
+  });
+
+  it('whatsapp_templates accepts a valid name and still rejects an invalid one (DEC-129)', async () => {
+    await client.query('BEGIN');
+    try {
+      const org = await client.query<{ id: string }>(
+        `INSERT INTO organizations (name_ar) VALUES ('مؤسسة') RETURNING id`,
+      );
+      const insert = (name: string) =>
+        client.query(
+          `INSERT INTO whatsapp_templates (org_id, name, category, components) VALUES ($1, $2, 'UTILITY', '[]')`,
+          [org.rows[0]!.id, name],
+        );
+      await insert('masaf_ticket_issued_v1');
+      await client.query('SAVEPOINT bad');
+      await expect(insert('Bad-Name')).rejects.toMatchObject({ code: '23514' });
+      await client.query('ROLLBACK TO SAVEPOINT bad');
+      await expect(insert('x'.repeat(513))).rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await client.query('ROLLBACK');
+    }
   });
 
   it('has no drift against docs/06_schema.sql (same indexes, checks, views, triggers)', async () => {

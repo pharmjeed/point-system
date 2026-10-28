@@ -730,7 +730,7 @@ CREATE UNIQUE INDEX uq_whatsapp_channel_active ON whatsapp_channel(org_id) WHERE
 CREATE TABLE whatsapp_templates (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id            uuid NOT NULL REFERENCES organizations(id),
-  name              text NOT NULL CHECK (name ~ '^[a-z0-9_]{1,512}$'),   -- e.g. masaf_ticket_issued_v1
+  name              text NOT NULL CHECK (name ~ '^[a-z0-9_]+$' AND char_length(name) <= 512),   -- e.g. masaf_ticket_issued_v1 (DEC-129)
   language          text NOT NULL DEFAULT 'ar',
   category          text NOT NULL CHECK (category IN ('UTILITY','MARKETING','AUTHENTICATION')),
   status            text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','pending','approved','rejected','paused','disabled')),
