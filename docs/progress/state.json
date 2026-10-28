@@ -1,16 +1,207 @@
 {
-  "PNT-001": { "status": "done", "date": "2026-10-28", "note": "pnpm monorepo, strict TS 7, ESLint/Prettier, brand check" },
-  "PNT-002": { "status": "in_progress", "date": "2026-10-28", "note": "compose + .env.example + env validation written" },
-  "PNT-003": { "status": "done", "date": "2026-10-28", "note": "06_schema.sql verbatim as 0001, Drizzle schema, drift check, 10 integration tests" },
-  "PNT-004": { "status": "in_progress", "date": "2026-10-28", "note": "CI workflow written" },
-  "PNT-005": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" },
-  "PNT-006": { "status": "in_progress", "date": "2026-10-28", "note": "API skeleton written" },
-  "PNT-007": { "status": "in_progress", "date": "2026-10-28", "note": "outbox dispatcher written" },
-  "PNT-008": { "status": "in_progress", "date": "2026-10-28", "note": "idempotency protocol written" },
-  "PNT-009": { "status": "in_progress", "date": "2026-10-28", "note": "audit + ticket events written" },
-  "PNT-010": { "status": "done", "date": "2026-10-28", "note": "seed matches 17 §4, idempotent, refuses production (16 tests)" },
-  "PNT-013": { "status": "in_progress", "date": "2026-10-28", "note": "actor context + auth/permission guard written" },
-  "PNT-021": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" },
-  "PNT-022": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" },
-  "PNT-037": { "status": "in_progress", "date": "2026-10-28", "note": "parallel agent" }
+  "PNT-001": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "pnpm monorepo, strict TS 7, ESLint/Prettier, brand check"
+  },
+  "PNT-002": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "compose, .env.example, env validation (boot stops with the missing variables)"
+  },
+  "PNT-003": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "06_schema.sql verbatim as 0001, Drizzle schema, drift check, 10 integration tests"
+  },
+  "PNT-004": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "CI workflow (lint, typecheck, unit, drift, invariants, Testcontainers, e2e); runners blocked by the GitHub account — checks run locally"
+  },
+  "PNT-005": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "canon as types: 96 error codes, 131 routes, settings defaults; 528 tests"
+  },
+  "PNT-006": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "Nest skeleton: envelopes, filter, CSRF, health, metrics, request ids"
+  },
+  "PNT-007": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "outbox dispatcher: SKIP LOCKED, ordering keys, retries, dead letters, lease recovery"
+  },
+  "PNT-008": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "idempotency protocol incl. concurrent duplicates and replays"
+  },
+  "PNT-009": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "audit/ticket/custody writers, append-only privileges"
+  },
+  "PNT-010": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "seed matches 17 §4, idempotent, refuses production (16 tests)"
+  },
+  "PNT-013": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "actor context, auth + permission guards, route audit, permission matrix test"
+  },
+  "PNT-021": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-022": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-037": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "simulator: fake Graph API, signed webhooks, faults, scenarios; 90 tests"
+  },
+  "PNT-011": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "login, lockout, secret change, logout; argon2id + pepper"
+  },
+  "PNT-012": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "TOTP setup/confirm/verify with replay protection"
+  },
+  "PNT-014": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "/v1/me, devices, push subscription triplet, audio test, heartbeat"
+  },
+  "PNT-015": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "drivers: create/patch/disable/enable/reset-secret (DEC-32 via DriverReleaseHook)"
+  },
+  "PNT-016": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "assignments with ASSIGNMENT_CONFLICT and scope"
+  },
+  "PNT-017": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "staff, scopes, owner-only MFA reset"
+  },
+  "PNT-018": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-019": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-020": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-024": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-025": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-026": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-027": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-028": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-029": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-030": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-031": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-032": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-033": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-034": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-038": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-039": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-040": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-041": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-042": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-046": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  },
+  "PNT-048": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "parallel agent"
+  }
 }

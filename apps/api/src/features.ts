@@ -5,8 +5,8 @@ import type { Type } from '@nestjs/common';
 
 export const FEATURE_MODULES: Type[] = [];
 
-// import { IdentityAccessHttpModule } from '@point/server';
-// FEATURE_MODULES.push(IdentityAccessHttpModule);
+import { IdentityAccessHttpModule } from '@point/server';
+FEATURE_MODULES.push(IdentityAccessHttpModule);
 
 // import { VenuesEventsHttpModule } from '@point/server';
 // FEATURE_MODULES.push(VenuesEventsHttpModule);

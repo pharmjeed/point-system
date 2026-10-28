@@ -68,27 +68,26 @@ export async function loadActor(q: Q, token: string | undefined, now: Date): Pro
   // a session of an MFA-enabled account is only issued after /v1/auth/mfa/verify (mfa_verified = true)
   if (s.mfa_enabled && !s.mfa_verified) throw new AppError('AUTH_UNAUTHENTICATED');
 
-  const [scopes, assignment, duty] = await Promise.all([
-    q.query<{ scope_type: 'org' | 'venue'; venue_id: string | null }>(
-      `SELECT scope_type, venue_id FROM role_scopes WHERE user_id = $1 AND revoked_at IS NULL`,
-      [s.user_id],
-    ),
-    q.query<{ id: string; venue_id: string }>(
-      `SELECT id, venue_id FROM driver_assignments WHERE driver_id = $1 AND status = 'active'`,
-      [s.user_id],
-    ),
-    q.query<{
-      id: string;
-      venue_id: string;
-      dispatch_pool_id: string;
-      shift_id: string;
-      status: 'on_duty' | 'on_break';
-      version: number;
-    }>(
-      `SELECT id, venue_id, dispatch_pool_id, shift_id, status, version FROM duty_sessions WHERE user_id = $1 AND status <> 'ended'`,
-      [s.user_id],
-    ),
-  ]);
+  // sequential on purpose: `q` may be a transaction client (no concurrent queries on one client)
+  const scopes = await q.query<{ scope_type: 'org' | 'venue'; venue_id: string | null }>(
+    `SELECT scope_type, venue_id FROM role_scopes WHERE user_id = $1 AND revoked_at IS NULL`,
+    [s.user_id],
+  );
+  const assignment = await q.query<{ id: string; venue_id: string }>(
+    `SELECT id, venue_id FROM driver_assignments WHERE driver_id = $1 AND status = 'active'`,
+    [s.user_id],
+  );
+  const duty = await q.query<{
+    id: string;
+    venue_id: string;
+    dispatch_pool_id: string;
+    shift_id: string;
+    status: 'on_duty' | 'on_break';
+    version: number;
+  }>(
+    `SELECT id, venue_id, dispatch_pool_id, shift_id, status, version FROM duty_sessions WHERE user_id = $1 AND status <> 'ended'`,
+    [s.user_id],
+  );
   const orgScope = s.role === 'owner' || scopes.rows.some((x) => x.scope_type === 'org');
   const venueIds = new Set<string>();
   if (orgScope) {

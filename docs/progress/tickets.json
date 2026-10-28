@@ -22,10 +22,10 @@
   "epic": "EP-01",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "compose + .env.example + env validation written"
+  "note": "compose, .env.example, env validation (boot stops with the missing variables)"
  },
  {
   "ticket": "PNT-003",
@@ -50,10 +50,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "CI workflow written"
+  "note": "CI workflow (lint, typecheck, unit, drift, invariants, Testcontainers, e2e); runners blocked by the GitHub account — checks run locally"
  },
  {
   "ticket": "PNT-005",
@@ -64,10 +64,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "canon as types: 96 error codes, 131 routes, settings defaults; 528 tests"
  },
  {
   "ticket": "PNT-006",
@@ -78,10 +78,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "API skeleton written"
+  "note": "Nest skeleton: envelopes, filter, CSRF, health, metrics, request ids"
  },
  {
   "ticket": "PNT-007",
@@ -92,10 +92,10 @@
   "epic": "EP-01",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "outbox dispatcher written"
+  "note": "outbox dispatcher: SKIP LOCKED, ordering keys, retries, dead letters, lease recovery"
  },
  {
   "ticket": "PNT-008",
@@ -106,10 +106,10 @@
   "epic": "EP-01",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "idempotency protocol written"
+  "note": "idempotency protocol incl. concurrent duplicates and replays"
  },
  {
   "ticket": "PNT-009",
@@ -120,10 +120,10 @@
   "epic": "EP-01",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "audit + ticket events written"
+  "note": "audit/ticket/custody writers, append-only privileges"
  },
  {
   "ticket": "PNT-010",
@@ -148,10 +148,10 @@
   "epic": "EP-02",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "login, lockout, secret change, logout; argon2id + pepper"
  },
  {
   "ticket": "PNT-012",
@@ -162,10 +162,10 @@
   "epic": "EP-02",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "TOTP setup/confirm/verify with replay protection"
  },
  {
   "ticket": "PNT-013",
@@ -176,10 +176,10 @@
   "epic": "EP-02",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "actor context + auth/permission guard written"
+  "note": "actor context, auth + permission guards, route audit, permission matrix test"
  },
  {
   "ticket": "PNT-014",
@@ -190,10 +190,10 @@
   "epic": "EP-02",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "/v1/me, devices, push subscription triplet, audio test, heartbeat"
  },
  {
   "ticket": "PNT-015",
@@ -204,10 +204,10 @@
   "epic": "EP-02",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "drivers: create/patch/disable/enable/reset-secret (DEC-32 via DriverReleaseHook)"
  },
  {
   "ticket": "PNT-016",
@@ -218,10 +218,10 @@
   "epic": "EP-02",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "assignments with ASSIGNMENT_CONFLICT and scope"
  },
  {
   "ticket": "PNT-017",
@@ -232,10 +232,10 @@
   "epic": "EP-02",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-28",
+  "note": "staff, scopes, owner-only MFA reset"
  },
  {
   "ticket": "PNT-018",
@@ -246,10 +246,10 @@
   "epic": "EP-03",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-019",
@@ -260,10 +260,10 @@
   "epic": "EP-03",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-020",
@@ -274,10 +274,10 @@
   "epic": "EP-03",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-021",
@@ -330,10 +330,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-025",
@@ -344,10 +344,10 @@
   "epic": "EP-04",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-026",
@@ -358,10 +358,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-027",
@@ -372,10 +372,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-028",
@@ -386,10 +386,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-029",
@@ -400,10 +400,10 @@
   "epic": "EP-04",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-030",
@@ -414,10 +414,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-031",
@@ -428,10 +428,10 @@
   "epic": "EP-05",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-032",
@@ -442,10 +442,10 @@
   "epic": "EP-05",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-033",
@@ -456,10 +456,10 @@
   "epic": "EP-04",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-034",
@@ -470,10 +470,10 @@
   "epic": "EP-08",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-035",
@@ -512,10 +512,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent"
+  "note": "simulator: fake Graph API, signed webhooks, faults, scenarios; 90 tests"
  },
  {
   "ticket": "PNT-038",
@@ -526,10 +526,10 @@
   "epic": "EP-07",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-039",
@@ -540,10 +540,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-040",
@@ -554,10 +554,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-041",
@@ -568,10 +568,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-042",
@@ -582,10 +582,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-043",
@@ -638,10 +638,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-047",
@@ -666,10 +666,10 @@
   "epic": "EP-07",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-28",
+  "note": "parallel agent"
  },
  {
   "ticket": "PNT-049",

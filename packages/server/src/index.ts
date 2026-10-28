@@ -3,7 +3,7 @@ export * from './http/index.js';
 
 // Domain modules — one line each, separated by blank lines so parallel work merges cleanly.
 
-// export * from './modules/identity-access/index.js';
+export * from './modules/identity-access/index.js';
 
 // export * from './modules/venues-events/index.js';
 

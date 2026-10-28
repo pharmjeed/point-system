@@ -269,6 +269,9 @@ importers:
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1
+      otplib:
+        specifier: ^13.5.0
+        version: 13.5.0
       pg:
         specifier: ^8.23.1
         version: 8.23.1
