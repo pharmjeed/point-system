@@ -104,7 +104,7 @@ function alertRooms(a: AlertRow): string[] {
 
 /**
  * Raises (or refreshes) the live alert for (venue, dedupe_key) — uq_alerts_live_dedupe never errors: a
- * repeated condition updates `details` (08 §5.1, 14 §8). Writes `alert.raised` + realtime only when created.
+ * repeated condition replaces `details` of the live alert (06 §alerts, 08 §5.1, 14 §8). Writes `alert.raised` + realtime only when created.
  * Payloads carry ids and numbers only (no phones, plates or codes).
  */
 export async function raiseAlert(tx: Tx, a: RaiseAlertInput): Promise<{ alert: AlertRow; created: boolean }> {
@@ -113,7 +113,7 @@ export async function raiseAlert(tx: Tx, a: RaiseAlertInput): Promise<{ alert: A
     `INSERT INTO alerts (id, org_id, venue_id, dispatch_pool_id, event_id, ticket_id, task_id, user_id, type, severity, dedupe_key, details, raised_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (venue_id, dedupe_key) WHERE status <> 'resolved' AND dedupe_key IS NOT NULL
-     DO UPDATE SET details = alerts.details || EXCLUDED.details
+     DO UPDATE SET details = EXCLUDED.details
      RETURNING *, (xmax = 0) AS inserted`,
     [
       newId(),

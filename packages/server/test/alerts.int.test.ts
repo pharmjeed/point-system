@@ -47,7 +47,7 @@ describe('core alerts', () => {
       )
     ).rows;
 
-  it('raises once per (venue, dedupe_key): a repeat merges details and emits nothing new', async () => {
+  it('raises once per (venue, dedupe_key): a repeat replaces details and emits nothing new', async () => {
     const first = await t.db.transaction((tx) =>
       raiseAlert(tx, {
         orgId: ORG,
