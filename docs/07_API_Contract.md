@@ -68,7 +68,7 @@ sequenceDiagram
   end
 ```
 
-`mfa_token` صالح 5 دقائق ولاستخدام واحد؛ انتهاؤه يعيد `401 AUTH_SESSION_EXPIRED`.
+`mfa_token` صالح 5 دقائق ولاستخدام واحد؛ انتهاؤه أو استخدامه مرة ثانية يعيد `401 AUTH_MFA_REQUIRED` (DEC-64).
 
 ### 1.3 الحماية من CSRF وCORS
 
