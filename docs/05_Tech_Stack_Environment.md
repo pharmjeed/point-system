@@ -143,7 +143,7 @@ packages/server/src/
 | `qrcode` | توليد QR للوحة الربط D-07 | يُولد محليًا من رابط `wa.me` الذي يعيده الخادم |
 | `@fontsource/ibm-plex-sans-arabic` + `@fontsource/ibm-plex-mono` (woff2 مستضافة ذاتيًا عبر الحزمة) | الطباعة (DEC-18) | `font-display: swap`؛ لا خطوط من نطاقات خارجية |
 
-التصوير: `<input type="file" accept="image/*" capture="environment">` ثم ضغط الصورة في المتصفح (Canvas) إلى عرض أقصى 1600 بكسل بصيغة JPEG أو WebP قبل الرفع المباشر إلى S3 برابط موقع؛ يقبل الخادم الأنواع في `media_assets.content_type`. عند `POST /v1/media/{mediaId}/complete` يتحقق الخادم من الحجم و`sha256` المعلنين مقابل الكائن المرفوع، ثم يزيل بيانات EXIF والموقع ويحفظ النسخة المنقّاة بحجمها وهاشها الجديدين (DEC-36).
+التصوير: `<input type="file" accept="image/*" capture="environment">` ثم ضغط الصورة في المتصفح (Canvas) إلى عرض أقصى 1600 بكسل بصيغة JPEG أو WebP دائمًا قبل الرفع المباشر إلى S3 برابط موقع؛ يقبل الخادم الأنواع في `media_assets.content_type`، لكن HEIC لا يُفك على الخادم (libvips المبني مسبقًا في `sharp` بلا HEVC) فينتهي رفعه بـ`MEDIA_TYPE_UNSUPPORTED` عند `complete` (القرار DEC-98). عند `POST /v1/media/{mediaId}/complete` يتحقق الخادم من الحجم و`sha256` المعلنين مقابل الكائن المرفوع، ثم يزيل بيانات EXIF والموقع ويحفظ النسخة المنقّاة بصيغتها المعلنة (JPEG أو PNG أو WebP بجودة 85) وبحجمها وهاشها الجديدين (DEC-36).
 
 ---
 
@@ -337,10 +337,14 @@ VITE_WS_PATH=/ws
 VITE_VAPID_PUBLIC_KEY=
 VITE_BRAND_STAFF_NAME_AR=بوينت
 VITE_BRAND_STAFF_NAME_EN=POINT
+VITE_BRAND_CUSTOMER_NAME_AR=مصاف     # only on the allowed staff surfaces: D-07, S-03, S-13 (canon §1, DEC-83)
 VITE_APP_VERSION=dev
 ```
 
 القيم التشغيلية (المؤقتات، الحدود، الاحتفاظ) **ليست** متغيرات بيئة؛ هي في `venues.settings` و`organizations.settings` بالقيم الافتراضية في Canon §12.
+
+- **متغيرات الويب (القرار DEC-83):** يقرأ Vite ملف `.env` الواحد في جذر المستودع (`envDir`). إن لم يُضبط `VITE_BRAND_STAFF_NAME_AR` إطلاقًا (نسخة جديدة، CI) يؤخذ `short_name` من `manifest.webmanifest` لا نص صلب، و`brand` في `GET /v1/me` (إعدادات المؤسسة) يتقدم وقت التشغيل.
+- **مشغّل التخزين (القرار DEC-108):** S3 عند ضبط `S3_ENDPOINT` أو المفتاحين الثابتين معًا (`S3_ACCESS_KEY_ID` و`S3_SECRET_ACCESS_KEY`)، ودائمًا في `staging` و`production` (دور المثيل أو المهمة عبر سلسلة اعتماد AWS الافتراضية حين لا تُضبط مفاتيح ثابتة)؛ والحاوية في الذاكرة فقط في `local` و`test` دون أي إعداد S3، مع تحذير في `local` لأن الصور تضيع عند إعادة التشغيل.
 
 ---
 
@@ -358,6 +362,7 @@ VITE_APP_VERSION=dev
 1. كل بيئة لها قاعدة بيانات ودلاء تخزين ومفاتيح VAPID وأسرار مستقلة.
 2. بيئة `staging` ترفض الإرسال لأي رقم خارج القائمة المسموحة حتى لو وُجد خطأ في البيانات.
 3. رقم الإنتاج لا يُستخدم في أي بيئة أخرى، ولا يوجد إلا صف `whatsapp_channel` فعال واحد في كل بيئة (`uq_whatsapp_channel_active`).
+4. دلو الوسائط في كل بيئة له قاعدة دورة حياة تحذف البادئة `incoming/` بعد يوم واحد (القرار DEC-97): رابط PUT الموقّع يكتب في `incoming/{org}/{ticket}/{media}-{nonce}`، والنسخة المنقّاة تُحفظ بمفتاح 09 §6.1 ويُحذف الأصل قبل `uploaded`، فتكنس القاعدة الأيتام (رفع لم يكتمل، إعادة PUT برابط ما زال صالحًا بعد الإتمام، توقف بين الكتابة والحذف). محليًا تضيفها خدمة `minio-init` (§9.1).
 
 ### 9.1 التطوير المحلي (`infra/compose/docker-compose.yml`)
 
@@ -390,7 +395,9 @@ services:
       /bin/sh -c "mc alias set local http://minio:9000 minio minio-secret &&
                   mc mb -p local/point-media local/point-exports &&
                   mc anonymous set none local/point-media &&
-                  mc anonymous set none local/point-exports"
+                  mc anonymous set none local/point-exports &&
+                  { mc ilm rule rm --all --force local/point-media >/dev/null 2>&1 || true; } &&
+                  mc ilm rule add --expire-days 1 --prefix incoming/ local/point-media"
   wa-simulator:
     build: ../../tools/wa-simulator
     environment:

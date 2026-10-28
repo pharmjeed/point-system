@@ -45,7 +45,7 @@
 5. ترويسة `Retry-After` (بالثواني) إلزامية مع 429 و503 و`IDEMPOTENCY_IN_PROGRESS`، وترويسات `RateLimit-*` على كل رد (07 §1.9).
 6. الأمر المرفوض لا يترك أثرًا تشغيليًا: بعد حجز مفتاح التكرار (L0) يتراجع المعالج إلى نقطة الحفظ عند خطأ أعمال حتمي (4xx) ثم يحفظ رد الخطأ مع المفتاح فتعيده الإعادة حرفيًا مع الترويسة `Idempotent-Replayed: true`؛ وأخطاء 5xx تتراجع كليًا ولا يبقى صف للمفتاح (07 §1.4). يُستثنى ما يجب أن يبقى رغم الرفض: (أ) عدّاد محاولات التحقق عند التسليم (`claim_codes.attempts`) وقفله وتنبيهه — يلتزم في المعاملة نفسها مع رد الخطأ دون تراجع إلى نقطة الحفظ؛ (ب) سجلات الأمان لفشل الدخول وعدّاد `users.failed_login_count` والقفل؛ (ج) رفع أو تحديث تنبيه المشرف المرتبط بالرفض (`draft_abandoned`).
 7. أخطاء التحقق تجمع كل الحقول الخاطئة مرة واحدة في `details.fields`.
-8. الواجهة تملك خريطة نصوص خاصة بها لكل رمز (مفضّلة لثبات الصياغة)، وتعود إلى `message_ar` القادم من الخادم إن لم تجد الرمز.
+8. الواجهة تعرض `message_ar` القادم من الخادم (وهو نص §4 نفسه)، وتعود إلى خريطة نصوص §4 المحلية (`apps/web/src/i18n/errors.ts`) حين يصل رد بلا غلاف خطأ؛ والنصوص الخاصة بالشاشات في 02 لرموز الخادم لا تُعرض لردود الخادم (DEC-80).
 9. ردود 5xx لا تحمل تفاصيل داخلية؛ التفاصيل في السجل مربوطة بـ`request_id`، وتظهر للمستخدم تحت «تفاصيل» للدعم.
 10. نقاط Webhook لها سلوك خاص (§7)، ومسارات الصحة لا تحمل بيانات.
 
@@ -94,7 +94,7 @@
 | `dialog` | نافذة حاجبة تتطلب إقرارًا أو اختيار إجراء بديل |
 | `refetch` | إبطال الذاكرة وإعادة جلب الحالة من الخادم (`GET /v1/me/home` للسائق أو الكيان المعني) |
 | `remove-card` | إزالة بطاقة العرض فورًا وإيقاف صوتها وأي تذكير محلي |
-| `relogin` | إيقاف كل الأصوات، إغلاق `/ws`، مسح الحالة في الذاكرة، والانتقال إلى D-01 أو S-01 |
+| `relogin` | إيقاف كل الأصوات، إغلاق `/ws`، مسح الحالة في الذاكرة، والانتقال إلى D-01 أو S-01؛ السائق عند `AUTH_SESSION_EXPIRED` أو `AUTH_SESSION_REVOKED` يمر بـD-15 الحالة ج بنص السبب، والموظف يعود إلى S-01 بسطر السبب (DEC-88) |
 | `auto-retry` | إعادة تلقائية بنفس `Idempotency-Key` بعد `Retry-After` أو بتباعد 1 ثم 3 ثم 7 ثوانٍ |
 | `banner` | شريط حالة دائم في أعلى الشاشة حتى يزول السبب (D-15) |
 
@@ -194,7 +194,7 @@
 | `IDEMPOTENCY_KEY_REQUIRED` | أي مسار معلّم ✓ في القاموس §9 دون الترويسة | — | خطأ برمجي: `toast` عام وتسجيل قياس عميل | warn · — |
 | `IDEMPOTENCY_KEY_REUSED` | نفس المفتاح لنفس المستخدم بمسار أو جسم مختلف (`request_hash` مختلف) خلال 24 ساعة | `operation` | توليد مفتاح جديد لكل فعل مستخدم؛ `toast` | warn · — |
 | `IDEMPOTENCY_IN_PROGRESS` | طلب مكرر بنفس المفتاح والأول ما زال داخل معاملته ولم يتحرر خلال مهلة الانتظار (تجاوز `lock_timeout` 3s عند L0 على صف `idempotency_keys`، `55P03`)؛ دون ذلك ينتظر المكرر ثم يُعاد له الرد المحفوظ | — | `auto-retry` بنفس المفتاح بعد `Retry-After` (حتى 3 مرات) | info · — |
-| `INVALID_STATE_TRANSITION` | أي أمر غير مسموح من الحالة الحالية وفق الملف 11 (مثل `ready` لمهمة ليست `in_progress`، `repark` لتذكرة ليست `ready`، تحصيل لتذكرة `not_required`، إلغاء السائق طلبًا بعد إسناده) | `current_status`، `allowed`، و`entity` و`reason` عند الحاجة | `refetch` و`toast` | info · — |
+| `INVALID_STATE_TRANSITION` | أي أمر غير مسموح من الحالة الحالية وفق الملف 11 (مثل `ready` لمهمة ليست `in_progress`، `repark` لتذكرة ليست `ready`، تحصيل لتذكرة `not_required`، إلغاء السائق طلبًا بعد إسناده)؛ وطلب رابط صورة إضافية فوق `inspection.max_extra_photos` (`reason: max_extra_photos`، DEC-102) | شكل 11 §1.5 في كل الوحدات (DEC-106): `entity_type`، `entity_id`، `current_status`، `current_version`، `command`، `allowed_from`، و`reason` عند الحاجة (مثل `max_extra_photos` ومعه الحد `max_extra_photos`) | `refetch` و`toast` | info · — |
 
 ### 4.5 المناوبة والتوفر
 
@@ -396,9 +396,9 @@
 
 | الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
 |---|---|---|---|---|
-| `MEDIA_TOO_LARGE` | `POST /v1/tickets/{ticketId}/media` بحجم مُعلن فوق الحد؛ `POST /v1/media/{mediaId}/complete` إذا كان الحجم الفعلي فوق الحد (`MEDIA_MAX_BYTES` في الملف 05، افتراضي 10485760) | `max_bytes` | الواجهة تضغط تلقائيًا (أطول ضلع 1600 بكسل، JPEG) وتعيد الرفع | info · — |
-| `MEDIA_TYPE_UNSUPPORTED` | `media` بنوع خارج `image/jpeg` و`image/webp` و`image/heic` و`image/png` | `allowed_types` | `inline` على خانة الصورة | info · — |
-| `MEDIA_UPLOAD_INCOMPLETE` | `complete` والكائن غير موجود في التخزين أو الحجم/البصمة لا تطابق؛ `GET /v1/media/{mediaId}/url` لوسائط ليست `uploaded` | `media_id`، `upload_status` | إعادة رفع تلقائية مرة واحدة ثم `inline` | info · — |
+| `MEDIA_TOO_LARGE` | `POST /v1/tickets/{ticketId}/media` بحجم مُعلن فوق الحد؛ `POST /v1/media/{mediaId}/complete` إذا كان الحجم الفعلي فوق الحد (`MEDIA_MAX_BYTES` في الملف 05، افتراضي 10485760)، أو تجاوزت الصورة حد الفك 50 ميغابكسل أو حد المعالجة 15 ثانية (DEC-99) | `max_bytes` | الواجهة تضغط تلقائيًا (أطول ضلع 1600 بكسل، JPEG) وتعيد الرفع | info · — |
+| `MEDIA_TYPE_UNSUPPORTED` | `media` بنوع خارج `image/jpeg` و`image/webp` و`image/heic` و`image/png`؛ و`complete` حين لا تُفك بايتات الكائن بالنوع المعلن نفسه (نص، GIF، SVG، AVIF، PNG معلن JPEG، ملف مقطوع)، ومنه HEIC لأن الخادم بلا فك HEVC (DEC-98، DEC-99) | `allowed_types` | `inline` على خانة الصورة | info · — |
+| `MEDIA_UPLOAD_INCOMPLETE` | `complete` والكائن غير موجود في التخزين أو الحجم/البصمة لا تطابق؛ `GET /v1/media/{mediaId}/url` لوسائط ليست `uploaded` بعد فحص الوصول (DEC-105) | `media_id`، `upload_status` | إعادة رفع تلقائية مرة واحدة ثم `inline` | info · — |
 
 ### 4.15 المنصة
 
@@ -414,9 +414,9 @@
 |---|---|---|---|---|
 | `PAYLOAD_TOO_LARGE` | جسم غير الوسائط أكبر من الحد: JSON فوق 256 KB، أو Webhook فوق 1 MB (يُرفض قبل التوقيع ولا يُخزن) | `max_bytes` | `toast` عام؛ لا يحدث في الاستخدام الطبيعي | warn · — |
 | `RATE_LIMITED` | أي مسار عند تجاوز حد فئته في 07 §1.9 (`auth` لكل IP قبل الدخول، و`command`/`write`/`read`/`device`/`export` لكل مستخدم أو جهاز بعده) | `retry_after_s` | `auto-retry` للقراءات؛ `toast` للأوامر | warn · — |
-| `INTERNAL_ERROR` | استثناء غير مصنف؛ انتهاك قيد CHECK أو مرجع غير متوقع (§5) | — | `auto-retry` مرة واحدة بنفس المفتاح للأوامر، ثم `toast` مع `request_id` | error · تقني عند تجاوز العتبة |
+| `INTERNAL_ERROR` | استثناء غير مصنف؛ انتهاك قيد CHECK أو مرجع غير متوقع (§5)؛ خطأ إعداد في التخزين الكائني (الاعتماد أو الحاوية، DEC-107) | — | `auto-retry` مرة واحدة بنفس المفتاح للأوامر، ثم `toast` مع `request_id` | error · تقني عند تجاوز العتبة |
 | `SERVICE_UNAVAILABLE` | صيانة أو قاعدة بيانات غير متاحة؛ استنفاد إعادة المعاملة بعد deadlock أو serialization (حتى 3 مرات، القاموس §14ب)؛ تجاوز مهلة القفل `lock_timeout` (`55P03`) على أي صف غير مفتاح التكرار (L0) — لا يُعاد على الخادم؛ تجاوز `statement_timeout` | — | `auto-retry` بتباعد، ثم `banner` إن استمر | error · تقني |
-| `DEPENDENCY_TIMEOUT` | استدعاء متزامن لمزود خارجي تجاوز مهلته (التخزين الكائني عند `complete`، Graph API في المسارات الإدارية) | `dependency` (`object_storage` / `whatsapp`) | `auto-retry` مرة ثم `toast` | warn · تقني عند التكرار |
+| `DEPENDENCY_TIMEOUT` | استدعاء متزامن لمزود خارجي تجاوز مهلته أو تعذّر (التخزين الكائني عند `complete`: المهلة وخطأ الشبكة ورد 5xx من التخزين، DEC-107؛ وGraph API في المسارات الإدارية) | `dependency` (`object_storage` / `whatsapp`) | `auto-retry` مرة ثم `toast` | warn · تقني عند التكرار |
 
 ### 4.16 الأوامر التي تتطلب سببًا (`REASON_REQUIRED`)
 

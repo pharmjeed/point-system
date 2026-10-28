@@ -29,6 +29,8 @@ services:
       retries: 10
 
   # Buckets are private: an anonymous GET on any object returns 403 (PNT-002 AC2).
+  # Presigned uploads land in incoming/ and expire after 1 day (DEC-97); the lifecycle rules of
+  # point-media are reset first so that every run leaves exactly this one rule.
   minio-init:
     image: minio/mc
     depends_on:
@@ -38,7 +40,9 @@ services:
       /bin/sh -c "mc alias set local http://minio:9000 minio minio-secret &&
                   mc mb -p local/point-media local/point-exports &&
                   mc anonymous set none local/point-media &&
-                  mc anonymous set none local/point-exports"
+                  mc anonymous set none local/point-exports &&
+                  { mc ilm rule rm --all --force local/point-media >/dev/null 2>&1 || true; } &&
+                  mc ilm rule add --expire-days 1 --prefix incoming/ local/point-media"
 
   wa-simulator:
     build: ../../tools/wa-simulator

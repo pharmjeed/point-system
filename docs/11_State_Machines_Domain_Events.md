@@ -122,7 +122,7 @@ COMMIT
 
 - حمولة الحدث تحمل معرّفات وإصدارات وأعلامًا فقط. كل مستهلك (مرسل واتساب، Push، جسر WS) يقرأ الحالة الطازجة من قاعدة البيانات وقت المعالجة ويعيد التحقق قبل أي أثر خارجي (مثال: لا تُرسل W-03 إن صارت التذكرة `retrieving`).
 - ممنوع في أي حمولة حدث أو مهمة: رقم الجوال، اسم العميل، رمز التسليم، رمز الربط الخام، رمز الإجراء الخام، موضع المفتاح، صور. لا استثناء: مهمة W-05 تحمل `notification_id` فقط، والمرسل يقرأ الرمز من `claim_codes.code_ciphertext` الذي يُمسح بعد قبول المزود أو انتهاء الرمز (DEC-15، DEC-38).
-- `ticket_events.type` يقبل أي نوع حدث نطاقي يخص التذكرة: `ticket.*`، وأحداث `task.*` لمهامها، و`custody.changed`، و`handover.*`، و`payment.*`، و`wa.message_status_changed` لرسائلها. `ticket_events.ticket_version` = إصدار التذكرة بعد التغيير.
+- `ticket_events.type` يقبل أي نوع حدث نطاقي يخص التذكرة: `ticket.*`، وأحداث `task.*` لمهامها، و`custody.changed`، و`handover.*`، و`payment.*`، و`wa.message_status_changed` لرسائلها. `ticket_events.ticket_version` = إصدار التذكرة بعد التغيير. ويُضاف نوع الخط الزمني `ticket.photo_uploaded` عند اكتمال رفع صورة (`data`: `media_id`، `kind`، `content_type`، `byte_size`؛ و`ticket_version` = الإصدار الحالي لأن الصورة لا تغيّره)، وهو ليس حدثًا نطاقيًا: لا صف في `outbox_events` ولا نشر فوري (DEC-95).
 
 ### 1.7 ثوابت الاتساق بين التذكرة ومهامها
 
@@ -366,7 +366,7 @@ stateDiagram-v2
 | الأمر | الصلاحية | مسموح في | الأثر |
 |---|---|---|---|
 | `PATCH /v1/tickets/{ticketId}/intake` | `ticket.intake` (منشئ التذكرة) | `received` (كل حقول المسودة)؛ أو `parking` للحقلين `channel = paper` و`paper_serial` فقط ما دامت التذكرة غير مربوطة (DEC-40، §2.6) | تحديث حقول المسودة؛ `expected_version` إلزامي؛ التحويل للورقي: `wa_link_status = none`، `link_version + 1`، إبطال رمز الربط الحي (`channel_paper`)، `ticket.wa_link_changed` |
-| `POST /v1/tickets/{ticketId}/media` و`POST /v1/media/{mediaId}/complete` | `ticket.intake` (منشئ التذكرة) | `received` أو `parking` (في `parking` لإكمال رفع صور التُقطت أثناء الاستلام) | `media_assets`؛ قد ينقل `inspection_status` من `incomplete` إلى `complete` مع `ticket.inspection_completed` (§6.3) |
+| `POST /v1/tickets/{ticketId}/media` و`POST /v1/media/{mediaId}/complete` | `ticket.intake` (منشئ التذكرة، والإتمام لرافع الصورة) | الطلب: `received` أو `parking` (في `parking` لإكمال رفع صور التُقطت أثناء الاستلام)؛ الإتمام: أي حالة، فالرفع أُذن به عند إصدار الرابط ومدته تحد النافذة (DEC-104) | `media_assets`، وعند الإتمام سطر `ticket_events` من النوع `ticket.photo_uploaded` بلا حدث نطاقي (DEC-95)؛ قد ينقل `inspection_status` من `incomplete` إلى `complete` مع `ticket.inspection_completed` (§6.3) |
 | `POST /v1/tickets/{ticketId}/whatsapp-link` (مباشر) | `wa.link` | أي حالة مفتوحة | موافقة `verbal_staff_confirmed`، `link_version + 1` (الإرسال اليدوي أو إعادة الربط تبطل أزرار W-01 السابقة)، `wa_link_status = pending_send`، W-01 |
 | `POST /v1/tickets/{ticketId}/whatsapp-link` (QR) | `wa.link` | `received` أو `parking` أو `parked` | إبطال أي رمز ربط حي سابق ثم `link_codes` جديد `active` |
 | `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` | `wa.link` | رمز ربط `pending_confirmation` | تطابق: موافقة `customer_initiated` + `linked` (+ `link_version + 1` عند إعادة الربط) + W-01؛ عدم تطابق: إبطال الرمز وعودة `none` (§6.2) |
@@ -695,7 +695,7 @@ stateDiagram-v2
 | بداية ← `pending` | TT-01 |
 | `pending` ← `complete` | TT-03 والصور الإلزامية مرفوعة |
 | `pending` ← `incomplete` | TT-03 بتأكيد صريح من السائق؛ تنبيه `inspection_incomplete` |
-| `incomplete` ← `complete` | اكتمال رفع صور ملتقطة أثناء الاستلام (`captured_at <= submitted_at`) عبر إعادة المحاولة في الخلفية أثناء `parking`؛ الحدث `ticket.inspection_completed` (لا رسالة للعميل)؛ حل التنبيه |
+| `incomplete` ← `complete` | اكتمال رفع صور ملتقطة أثناء الاستلام (`captured_at <= submitted_at`) عبر إعادة المحاولة في الخلفية، في أي حالة مفتوحة للتذكرة لا في `parking` وحدها (DEC-104)؛ الحدث `ticket.inspection_completed` (لا رسالة للعميل)؛ حل التنبيه |
 | `incomplete` ← `exception_approved` | `POST /v1/tickets/{ticketId}/inspection-exception`؛ حل التنبيه |
 
 صور تُلتقط بعد الإرسال لا تكمل فحص الاستلام؛ تُسجّل كفحص `incident` أو `handover` (`vehicle_inspections.kind`).
@@ -932,6 +932,8 @@ interface TicketRef { ticket_id: UUID; display_number: number; ticket_version: n
 | `ticket.inspection_completed` | اكتمال رفع صور الفحص المتأخرة (`incomplete` ← `complete`، §6.3) | المشرفون، المنشئ ← `ticket.updated` | — (لا رسالة للعميل) | — | يحل `inspection_incomplete` |
 | `ticket.inspection_exception_approved` | استثناء الفحص | المشرفون ← `ticket.updated` | — | — | يحل `inspection_incomplete` |
 | `ticket.manually_reconciled` | TT-22 | المشرفون ← `ticket.updated` | — (لا رسالة للعميل) | — | — |
+
+سطر الخط الزمني `ticket.photo_uploaded` ليس حدثًا نطاقيًا فلا يرد في هذا الجدول: الصورة العادية بلا Outbox ولا `ticket.updated`، والنشر الفوري لإتمام الصورة يأتي فقط مع `ticket.inspection_completed` (§1.6، DEC-95).
 
 ```ts
 interface TicketCreated { ticket: TicketRef; created_by: UUID; park_task_id: UUID }

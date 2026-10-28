@@ -149,7 +149,7 @@
 
 ## 3. المكونات
 
-اصطلاح التوصيف: الغرض · التشريح · المتغيرات · الأحجام · الحالات · السلوك · الوصولية · واجهة الخصائص المقترحة (TypeScript). المكونات تعيش في `apps/web/src/ui/` (أو `packages/ui`) وتقرأ الرموز فقط.
+اصطلاح التوصيف: الغرض · التشريح · المتغيرات · الأحجام · الحالات · السلوك · الوصولية · واجهة الخصائص المقترحة (TypeScript). المكونات تعيش في `apps/web/src/components/` (القرار DEC-84) وتقرأ الرموز فقط.
 
 ### 3.1 `Button` و`IconButton`
 
@@ -242,7 +242,7 @@ type OfferCardProps = { offerId: string; mode: 'single'|'broadcast'; ticketNumbe
 ### 3.14 `Banner`، `Toast`، `Dialog`، `Sheet`، `EmptyState`، `Skeleton`
 
 - `Banner` (أعلى المحتوى، ثابت حتى يزول السبب): انقطاع/بيانات قديمة، الصوت متوقف، قناة واتساب متعطلة (`channel.status`)، الإشعارات مرفوضة، تحديث متاح. لكل نوع أيقونة ولون دلالي وإجراء واحد.
-- `Toast` (أسفل الشاشة فوق `BottomNav`، 4 ثوانٍ، `aria-live="polite"`): نتائج الأوامر والأخطاء غير الحاجبة.
+- `Toast` (أسفل الشاشة فوق `BottomNav`، 3 ثوانٍ لنجاح الأوامر و4 ثوانٍ لغيره كما في 02 §1.6 (القرار DEC-87)، `aria-live="polite"`): نتائج الأوامر والأخطاء غير الحاجبة.
 - `Dialog`: تأكيد الإجراءات غير القابلة للتراجع (الإلغاء، الإبطال، إعادة الإسناد، التسليم الاستثنائي، كشف الجوال) مع حقل سبب إلزامي حيث يلزم (`REASON_REQUIRED`). زر التأكيد بلون `danger` للإجراءات الهدامة.
 - `Sheet`: اختيارات طويلة (المواقف، الخانات، الحفلات).
 - `EmptyState`: أيقونة + جملة + إجراء (مثل «لا توجد طلبات الآن»).
@@ -344,7 +344,7 @@ type OfferCardProps = { offerId: string; mode: 'single'|'broadcast'; ticketNumbe
 
 ## 8. ملاحظات التنفيذ والاختبار
 
-- بنية مقترحة: `apps/web/src/ui/` (المكونات العامة)، `apps/web/src/features/<area>/` (مكونات الشاشات)، `apps/web/src/ui/tokens.css` (نسخة من `brand/tokens/tokens.css`).
+- البنية (القرار DEC-84): `apps/web/src/components/` (المكونات العامة بأسماء §3)، `apps/web/src/features/<area>/` (مكونات الشاشات)، والرموز تُستورد من `brand/tokens/tokens.css` مباشرة في `apps/web/src/styles/index.css` دون نسخة.
 - المكونات تعتمد على Radix Primitives للسلوكيات القابلة للوصول (Dialog، Popover، Toggle، RadioGroup) مع تنسيق من الرموز.
 - لقطات بصرية بـPlaywright لكل مكون أساسي ولكل شاشة سائق عند 360 و390 و430px، بالوضعين الفاتح والداكن، واتجاه RTL، كجزء من AC-21.
 - فحص آلي للوصولية (axe) في اختبارات e2e للشاشات D-04 وD-05 وD-09 وD-11 وS-02.

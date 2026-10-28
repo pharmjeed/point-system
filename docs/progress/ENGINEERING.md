@@ -56,6 +56,14 @@ export class TicketsController {
 - Throw `new AppError('CODE', details)` for every rejection (codes from canon §8 only). Use `keepEffects: true` only
   for the documented exceptions (wrong handover code attempts, login failure counters, draft_abandoned alert).
 - Never call the network inside a transaction (WhatsApp, Push, S3 uploads). Presigning S3 URLs is local math and allowed.
+- **Network, then commit (DEC-96).** A command that needs network or storage work before it can commit (e.g.
+  `POST /v1/media/{mediaId}/complete`) does that work in a route guard/preparer that runs after the session and
+  permission guards and before the `CommandInterceptor` opens the transaction (`MediaCompletionPreparer`). The phase
+  never rejects: it leaves a plan (outcome or error) on the request, and the handler answers it inside the command
+  transaction, after L0 and under the normal locks and re-checks, so idempotency is unchanged (a deterministic 4xx is
+  stored with the key, a 5xx such as `DEPENDENCY_TIMEOUT` is not). A missing, malformed or already known
+  Idempotency-Key skips the phase and lets the interceptor answer. Keep the phase safe to repeat (create-only writes,
+  resumable after a commit that failed).
 - Time: use `tx.now` (taken once from the injected Clock). Never `new Date()` / `Date.now()` in domain or use-cases.
 - Domain events are emitted with `emitEvent`; planners registered with `registerTxPlanner` turn them into notifications,
   WhatsApp jobs and realtime messages before COMMIT (DEC-41, DEC-48). Domain code does not enqueue `job.wa_send` itself.

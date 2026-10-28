@@ -1301,7 +1301,7 @@ paths:
       description: |-
         يتحقق الخادم من وجود الكائن وأن حجمه وهاشه يطابقان المُعلن، ثم يزيل بيانات EXIF والموقع (DEC-36) ويحفظ النسخة المنقّاة بحجمها وهاشها الجديدين.
 
-        الأثر: upload_status=uploaded بعد التنقية؛ الكائن الأصلي غير المنقّى لا يبقى
+        الأثر: upload_status=uploaded بعد التنقية؛ الكائن الأصلي غير المنقّى لا يبقى؛ ticket_events(ticket.photo_uploaded) دون زيادة إصدار التذكرة (DEC-95). WS ticket.updated عند الإكمال المتأخر للفحص فقط (ticket.inspection_completed)؛ الصورة العادية بلا حدث نطاقي ولا نشر فوري.
       parameters:
       - $ref: '#/components/parameters/mediaId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1356,13 +1356,16 @@ paths:
         '503':
           $ref: '#/components/responses/Error'
           description: SERVICE_UNAVAILABLE
+        '504':
+          $ref: '#/components/responses/Error'
+          description: DEPENDENCY_TIMEOUT
       security:
       - cookieSession: []
         csrfHeader: []
       x-permission: ticket.intake
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [MEDIA_TOO_LARGE, MEDIA_TYPE_UNSUPPORTED, MEDIA_UPLOAD_INCOMPLETE]
+      x-error-codes: [DEPENDENCY_TIMEOUT, MEDIA_TOO_LARGE, MEDIA_TYPE_UNSUPPORTED, MEDIA_UPLOAD_INCOMPLETE]
       x-ws-events: [ticket.updated]
   /v1/media/{mediaId}/url:
     get:
@@ -1388,6 +1391,9 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: MEDIA_UPLOAD_INCOMPLETE
         '429':
           $ref: '#/components/responses/RateLimited'
           description: RATE_LIMITED
@@ -1400,7 +1406,7 @@ paths:
       x-permission: ticket.read_photos
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [MEDIA_UPLOAD_INCOMPLETE]
   /v1/tickets/{ticketId}/submit-intake:
     post:
       operationId: submitIntake
@@ -9631,6 +9637,14 @@ components:
             restricted:
               type: boolean
               description: true إذا الجلسة مقيدة بتغيير السر أو إعداد MFA
+            pending:
+              type: array
+              items:
+                type: string
+                enum: [secret_change, mfa_setup]
+              uniqueItems: true
+              maxItems: 2
+              description: 'ما بقي معلقًا في الجلسة المقيدة بترتيب تنفيذه (secret_change أولًا ثم mfa_setup)؛ مصفوفة فارغة حين restricted = false (DEC-82)'
         brand:
           type: object
           properties:

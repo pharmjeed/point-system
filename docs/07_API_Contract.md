@@ -30,7 +30,7 @@
 - الجلسة كوكي `__Host-point_sid`: رمز معتم 256-bit، `httpOnly; Secure; SameSite=Lax; Path=/`. الخادم يخزن `sha256` فقط في `auth_sessions.token_hash`. لا JWT ولا تخزين في `localStorage`.
 - مدة الجلسة من إعدادات المؤسسة: السائق `security.driver_session_hours` (14)، الموظفون `security.staff_session_hours` (12). يُحدَّث `last_seen_at` بحد أقصى مرة كل دقيقة.
 - الإبطال فوري لأن الجلسة على الخادم: `logout`، `transfer` (نقل السائق)، `disabled`، `secret_reset`، `admin`. بعد الإبطال يعيد أي طلب `401 AUTH_SESSION_REVOKED` ويصل حدث `session.revoked` عبر WebSocket.
-- الجلسة المقيدة: إذا `must_change_secret=true` أو الحساب يحتاج إعداد MFA، تُنشأ جلسة لا تصل إلا لمسارات `auth.self`؛ غيرها يعيد `403 AUTH_SECRET_CHANGE_REQUIRED` أو `403 AUTH_MFA_SETUP_REQUIRED`.
+- الجلسة المقيدة: إذا `must_change_secret=true` أو الحساب يحتاج إعداد MFA، تُنشأ جلسة لا تصل إلا لمسارات `auth.self`؛ غيرها يعيد `403 AUTH_SECRET_CHANGE_REQUIRED` أو `403 AUTH_MFA_SETUP_REQUIRED`. ويصف `Me` القيد في `session.restricted` و`session.pending`: مصفوفة من `secret_change` و`mfa_setup` بترتيب تنفيذهما (`secret_change` أولًا)، فارغة حين لا قيد (DEC-82).
 - القفل: 5 محاولات فاشلة (`security.max_login_attempts`) ثم `423 AUTH_ACCOUNT_LOCKED` لمدة 15 دقيقة مع `details.locked_until`. محاولات الدخول تُحسب لكل حساب ولكل عنوان IP.
 
 تدفق السائق (رقم سري 6 أرقام):
@@ -138,7 +138,7 @@ sequenceDiagram
 
 - `message_ar` جاهز للعرض للسائق والمشرف؛ النص الكامل والإجراء المطلوب لكل رمز في `08_Error_Codes_Guide.md`.
 - `retryable=true` فقط حين تجوز إعادة **نفس** الطلب بنفس المفتاح: `IDEMPOTENCY_IN_PROGRESS`، `RATE_LIMITED`، `SERVICE_UNAVAILABLE`، `DEPENDENCY_TIMEOUT`، `INTERNAL_ERROR`، `WA_CHANNEL_UNAVAILABLE`.
-- الحقول الشائعة في `details`: `fields` (قائمة `FieldError`) مع `VALIDATION_FAILED`، `missing` مع `INTAKE_INCOMPLETE`/`INSPECTION_INCOMPLETE`، `attempts_left` مع `HANDOVER_CODE_INVALID`، `current_status` و`allowed` مع `INVALID_STATE_TRANSITION`، `current_version` مع `VERSION_CONFLICT`، `items` مع `CUSTODY_OPEN`/`TRANSFER_BLOCKED_CUSTODY`/`DUTY_END_BLOCKED_CUSTODY`، `blockers` مع `EVENT_CLOSE_BLOCKED`، `cycle_id` مع `RETRIEVAL_ALREADY_ACTIVE`.
+- الحقول الشائعة في `details`: `fields` (قائمة `FieldError`) مع `VALIDATION_FAILED`، `missing` مع `INTAKE_INCOMPLETE`/`INSPECTION_INCOMPLETE`، `attempts_left` مع `HANDOVER_CODE_INVALID`، `current_status` و`allowed_from` (شكل 11 §1.5 كاملًا، DEC-106) مع `INVALID_STATE_TRANSITION`، `current_version` مع `VERSION_CONFLICT`، `items` مع `CUSTODY_OPEN`/`TRANSFER_BLOCKED_CUSTODY`/`DUTY_END_BLOCKED_CUSTODY`، `blockers` مع `EVENT_CLOSE_BLOCKED`، `cycle_id` مع `RETRIEVAL_ALREADY_ACTIVE`.
 - الأخطاء لا تكشف بيانات غير مصرح بها: مورد يُطلب بمعرّفه (تذكرة، مهمة، عرض، دورة، دفعة...) ويقع في موقع خارج نطاق المستدعي يعيد رمز «غير موجود» الخاص به (`404 TICKET_NOT_FOUND` أو `OFFER_NOT_FOUND` أو `RESOURCE_NOT_FOUND`) كما لو لم يوجد؛ و`403 SCOPE_VENUE_DENIED` فقط حين يختار المستدعي الموقع بنفسه (`{venueId}` في المسار أو `venue_id` في الاستعلام أو الجسم). التفاصيل في الملف 08.
 
 ### 1.7 الترقيم
@@ -333,14 +333,15 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 يتحقق الخادم من وجود الكائن وأن حجمه وهاشه يطابقان المُعلن، ثم يزيل بيانات EXIF والموقع (DEC-36) ويحفظ النسخة المنقّاة بحجمها وهاشها الجديدين.
 
 - الصلاحية: `ticket.intake` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: upload_status=uploaded بعد التنقية؛ الكائن الأصلي غير المنقّى لا يبقى
-- WS: `ticket.updated`
-- أخطاء خاصة: `MEDIA_TOO_LARGE`, `MEDIA_TYPE_UNSUPPORTED`, `MEDIA_UPLOAD_INCOMPLETE`
+- الأثر: upload_status=uploaded بعد التنقية؛ الكائن الأصلي غير المنقّى لا يبقى؛ ticket_events(ticket.photo_uploaded) دون زيادة إصدار التذكرة (DEC-95)
+- WS: `ticket.updated` عند الإكمال المتأخر للفحص فقط (`ticket.inspection_completed`)؛ الصورة العادية بلا حدث نطاقي ولا نشر فوري (DEC-95)
+- أخطاء خاصة: `DEPENDENCY_TIMEOUT`, `MEDIA_TOO_LARGE`, `MEDIA_TYPE_UNSUPPORTED`, `MEDIA_UPLOAD_INCOMPLETE`
 
 #### `GET /v1/media/{mediaId}/url` — رابط عرض صورة مؤقت
 
 - الصلاحية: `ticket.read_photos` · مفتاح التكرار: — · نجاح: `200`
 - الشروط: المكلّف بمهمة مفتوحة على التذكرة أو منشئها أثناء التسجيل أو المشرف/الإدارة
+- أخطاء خاصة: `MEDIA_UPLOAD_INCOMPLETE` (DEC-105)
 
 #### `POST /v1/tickets/{ticketId}/submit-intake` — إنهاء التسجيل والانتقال للصف
 

@@ -1366,6 +1366,7 @@ SELECT h.driver_id,
 | الجدول | القاعدة | المدة |
 |---|---|---|
 | `media_assets` + كائنات التخزين | حذف الكائن وتحويل السطر إلى `upload_status = 'deleted'` و`delete_reason = 'retention'` (يبقى السطر شاهدًا) | `retention.photos_days` (90 يومًا) من إغلاق التذكرة |
+| `media_assets` بحالة `pending` | تحويل السطر إلى `upload_status = 'failed'` (رفع لم يكتمل أو إتمام مرفوض ترك السطر `pending`، DEC-101)؛ والأصل في `incoming/` تحذفه قاعدة دورة حياة الدلو (DEC-97) | تقني: أقدم من مدة رابط الرفع `MEDIA_UPLOAD_URL_TTL_S` منذ إنشاء السطر |
 | `whatsapp_messages` | تنقيح: تفريغ `body_redacted` و`payload_redacted` و`recipient_wa_id`/`sender_wa_id` و`recipient_user_id`/`sender_user_id`؛ يبقى الهيكل (المعرّفات والحالات والأوقات) | `retention.wa_messages_days` (180 يومًا)؛ الهيكل يُحذف مع حذف العميل |
 | `whatsapp_inbound_events` | تفريغ `raw_body` بعد المعالجة، ثم حذف السطر | `retention.wa_raw_days` (7 أيام) للتفريغ، و`retention.wa_messages_days` للحذف |
 | `notifications` · `notification_attempts` | حذف | `retention.wa_messages_days` |

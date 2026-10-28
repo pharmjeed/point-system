@@ -65,7 +65,7 @@ interface ActorContext {
 |---|---|---|---|---|---|---|
 | `auth.self` | ✓ | ✓ | ✓ | ✓ | حسابه وجلسته وأجهزته فقط | أحداث الدخول والخروج وتغيير السر وMFA |
 | `duty.self` | — | — | D* | ✓ | السائق: تعيين نشط؛ المشرف: `can_drive` + نطاق الموقع؛ الوردية `open` في مجموعة التوزيع شرط لبدء المناوبة وحده (`POST /v1/me/duty/start`)، والقراءة (`GET /v1/me/home`) تعمل دونها | بدء وإنهاء واستراحة |
-| `ticket.intake` | — | — | D* | ✓ | مناوبة `on_duty` في موقع الحفل والحفل `open`؛ لمنشئ التذكرة فقط (مكلّف مهمة `park` الجارية): التعديل والإرسال في `received`، ورفع الصور في `received` أو `parking` (إكمال الناقص)، وتحويل القناة إلى ورقية في `parking` بـ`channel = paper` و`paper_serial` فقط والتذكرة غير مربوطة (DEC-40) | `ticket_events` |
+| `ticket.intake` | — | — | D* | ✓ | مناوبة `on_duty` في موقع الحفل والحفل `open`؛ لمنشئ التذكرة فقط (مكلّف مهمة `park` الجارية): التعديل والإرسال في `received`، ورفع الصور في `received` أو `parking` (إكمال الناقص؛ وإتمام الرفع لرافعه في أي حالة، ومسارا الصور لا يفحصان المناوبة ولا الحفل المفتوح: DEC-103، DEC-104)، وتحويل القناة إلى ورقية في `parking` بـ`channel = paper` و`paper_serial` فقط والتذكرة غير مربوطة (DEC-40) | `ticket_events` |
 | `ticket.read_minimal` | ✓ | ✓ | ✓ | ✓ | السائق: تذاكر موقع تعيينه **المفتوحة** فقط بحقول `TicketSummary`؛ المشرف: مواقع نطاقه بكل الحالات؛ المالك والإدارة: المؤسسة | — |
 | `ticket.read_full` | ✓ | ✓ | ✓ | ✓ | السائق: المكلّف بمهمة مفتوحة على التذكرة، أو منشئها أثناء `received`/`parking` | — |
 | `ticket.read_photos` | ✓ | ✓ | ✓ | ✓ | شرط `ticket.read_full` نفسه؛ روابط موقعة قصيرة (§6) | سجل تقني لإصدار الرابط |
@@ -499,7 +499,7 @@ function requireDuty(a: ActorContext, poolId: string) {
 - العمر المطلق: 14 ساعة للسائق (`security.driver_session_hours`) و12 للموظفين (`security.staff_session_hours`)؛ يُحدَّث `last_seen_at` مع الاستخدام.
 - رمز جديد عند الدخول وعند إكمال MFA وعند تغيير السر (منع تثبيت الجلسة).
 - **CSRF:** كل `POST/PUT/PATCH/DELETE` عدا `/webhooks/whatsapp` — ومنها مسار الدخول لمنع login CSRF — يتطلب الترويسة `X-Requested-With: point-web` وترويسة `Origin` مطابقة لـ`APP_BASE_URL`، وإلا `403 PERMISSION_DENIED` (`reason = csrf`). الأوامر تقبل `application/json` فقط.
-- CSP صارمة في تطبيق الويب (لا سكربتات مضمنة ولا أطراف ثالثة) لتقليل أثر XSS على الجلسة.
+- CSP صارمة في تطبيق الويب (لا سكربتات مضمنة ولا أطراف ثالثة) لتقليل أثر XSS على الجلسة. يضعها الخادم أو الوكيل العكسي ترويسةً `Content-Security-Policy` للتطبيق المبني، لا `<meta>` في `index.html` (خادم Vite للتطوير يحقن سكربتات مضمنة): `script-src 'self'`، و`img-src 'self' data:` ومضيف التخزين للروابط الموقعة للصور، و`connect-src 'self'` ومضيف التخزين للرفع المباشر؛ القيمة الكاملة في 05 §14.1 (DEC-94).
 
 ### 9.4 أسباب الإبطال
 
