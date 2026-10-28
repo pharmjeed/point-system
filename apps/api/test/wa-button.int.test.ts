@@ -13,7 +13,8 @@ import {
   whatsappTicket,
   type CustomerApp,
 } from './customer-harness.js';
-import { expectConsistent, ok, outboxEvents, patchIntake } from './dispatch-fixtures.js';
+import { auditCount, err, expectConsistent, ok, outboxEvents, patchIntake, U } from './dispatch-fixtures.js';
+import { ORG } from './wa-harness.js';
 
 let phoneSeq = 4_200_000;
 const newPhone = () => `+96655${phoneSeq++}`;
@@ -29,7 +30,7 @@ const notifications = async (w: CustomerApp, ticketId: string, purpose?: string)
 const texts = async (w: CustomerApp, phone: string) =>
   (await messagesTo(w, phone)).map((m) => m.renderedText);
 
-describe('S3 «طلب السيارة» (PNT-045), one number for two venues (PNT-050)', () => {
+describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one number for two venues (PNT-050)', () => {
   let w: CustomerApp;
   beforeAll(async () => {
     w = await createCustomerApp();
@@ -269,6 +270,144 @@ describe('S3 «طلب السيارة» (PNT-045), one number for two venues (PNT
     await settle(w, phone);
     expect((await texts(w, phone)).at(-1)).toBe(waMessageText('W-09', 'inactive'));
     expect(await cyclesOf(w, t.ticketId)).toHaveLength(0);
+  });
+
+  describe('PNT-049 — PATCH /v1/tickets/{ticketId}/customer-phone', () => {
+    const change = (as: string, ticketId: string, body: Record<string, unknown>) =>
+      w.command('patch', `/v1/tickets/${ticketId}/customer-phone`, { as, body });
+    const consent = { method: 'verbal_staff_confirmed', confirmed: true };
+
+    it('TC-005 / TC-WA-19: the old number’s button answers W-09 «inactive», the new number gets W-01 and its button works', async () => {
+      const t = await linkedTicket();
+      const next = newPhone();
+      const row = await ticketRow(w, t.ticketId);
+      const d = ok(
+        await change(t.driver, t.ticketId, {
+          expected_version: row.version,
+          customer_phone: `0${next.slice(4)}`,
+          consent,
+          reason: 'العميل أعطى رقم زوجته',
+        }),
+      );
+      expect(d).toMatchObject({ wa_link_status: 'pending_send', projection: 'minimal' }); // the creator after parking
+      const supView = ok(await w.get(`/v1/tickets/${t.ticketId}`, 'SUP-R'));
+      expect(supView.customer).toMatchObject({ phone_masked: `05•••••${next.slice(-3)}`, opted_out: false });
+      expect(supView.customer.consent).toMatchObject({ method: 'verbal_staff_confirmed', revoked_at: null });
+      const after = await ticketRow(w, t.ticketId);
+      expect(after).toMatchObject({ link_version: row.link_version + 1, wa_link_status: 'pending_send' });
+      expect(
+        (
+          await w.db.query(
+            `SELECT count(*)::int AS n FROM action_tokens WHERE ticket_id = $1 AND revoked_at IS NULL`,
+            [t.ticketId],
+          )
+        ).rows[0].n,
+      ).toBe(0);
+      const changed = (await outboxEvents(w.db, 'ticket.customer_phone_changed')).filter(
+        (e) => e.payload.aggregate.id === t.ticketId,
+      );
+      expect(changed.map((e) => e.payload.payload)).toEqual([
+        expect.objectContaining({ changed_by: t.driver, reason: 'العميل أعطى رقم زوجته', link_version: 2 }),
+      ]);
+      const audit = (
+        await w.db.query(
+          `SELECT reason, before, after, metadata FROM audit_log WHERE action = 'ticket.change_phone' AND entity_id = $1`,
+          [t.ticketId],
+        )
+      ).rows[0];
+      expect(audit.before).toMatchObject({ phone_masked: `05•••••${t.phone.slice(-3)}`, link_version: 1 });
+      expect(audit.after).toMatchObject({ phone_masked: `05•••••${next.slice(-3)}`, link_version: 2 });
+      expect(JSON.stringify(audit)).not.toContain(next.slice(4));
+
+      await settle(w, next);
+      const newW01 = (await messagesTo(w, next)).filter((m) => m.purpose === 'W-01');
+      expect(newW01).toHaveLength(1);
+      await press(w, t.phone, { wamid: t.w01.wamid }); // the old number, the old button
+      await settle(w, t.phone);
+      expect((await texts(w, t.phone)).at(-1)).toBe(waMessageText('W-09', 'inactive'));
+      expect(await cyclesOf(w, t.ticketId)).toHaveLength(0);
+      await press(w, next, { wamid: newW01[0]!.wamid });
+      await settle(w, next);
+      expect(await cyclesOf(w, t.ticketId)).toHaveLength(1);
+      expect((await messagesTo(w, next)).map((m) => m.purpose)).toEqual(['W-01', 'W-02']);
+    });
+
+    it('errors: REASON_REQUIRED, CONSENT_REQUIRED, PHONE_INVALID, TICKET_NOT_FOUND, PERMISSION_DENIED, VERSION_CONFLICT, WA_CUSTOMER_OPTED_OUT, TICKET_CLOSED', async () => {
+      const t = await linkedTicket();
+      const v = (await ticketRow(w, t.ticketId)).version;
+      const body = { expected_version: v, customer_phone: newPhone(), consent, reason: 'رقم خاطئ' };
+      expect(
+        err(await change(t.driver, t.ticketId, { ...body, reason: 'x' }), 'REASON_REQUIRED', 422),
+      ).toEqual({
+        field: 'reason',
+        min_length: 3,
+      });
+      expect(
+        err(await change(t.driver, t.ticketId, { ...body, consent: undefined }), 'CONSENT_REQUIRED', 422),
+      ).toEqual({
+        field: 'consent',
+      });
+      err(
+        await change(t.driver, t.ticketId, {
+          ...body,
+          consent: { method: 'verbal_staff_confirmed', confirmed: false },
+        }),
+        'CONSENT_REQUIRED',
+        422,
+      );
+      expect(
+        err(await change(t.driver, t.ticketId, { ...body, customer_phone: '12345' }), 'PHONE_INVALID', 422),
+      ).toEqual({
+        field: 'customer_phone',
+      });
+      err(await change(t.driver, '00000000-0000-4000-8000-0000deadbeef', body), 'TICKET_NOT_FOUND', 404);
+      const other = await freshDriver(w);
+      expect(err(await change(other, t.ticketId, body), 'PERMISSION_DENIED', 403)).toMatchObject({
+        reason: 'not_creator_or_assignee',
+      });
+      expect(
+        err(
+          await change(t.driver, t.ticketId, { ...body, expected_version: v - 1 }),
+          'VERSION_CONFLICT',
+          409,
+        ),
+      ).toMatchObject({
+        current_version: v,
+      });
+      expect(
+        err(
+          await change(t.driver, t.ticketId, { ...body, customer_phone: t.phone }),
+          'VALIDATION_FAILED',
+          422,
+        ).fields,
+      ).toEqual([{ field: 'customer_phone', issue: 'unchanged' }]);
+      const optedOut = newPhone();
+      await w.db.query(`INSERT INTO customers (org_id, phone_e164, wa_opted_out_at) VALUES ($1, $2, now())`, [
+        ORG,
+        optedOut,
+      ]);
+      err(
+        await change(t.driver, t.ticketId, { ...body, customer_phone: optedOut }),
+        'WA_CUSTOMER_OPTED_OUT',
+        409,
+      );
+      // a supervisor may change it (no creator rule), a closed ticket is refused
+      ok(await change('SUP-R', t.ticketId, body));
+      await w.db.query(
+        `UPDATE tickets SET status = 'voided', voided_at = now(), voided_by = $2, void_reason = 'test' WHERE id = $1`,
+        [t.ticketId, U['SUP-R']],
+      );
+      err(
+        await change('SUP-R', t.ticketId, {
+          ...body,
+          expected_version: (await ticketRow(w, t.ticketId)).version,
+          customer_phone: newPhone(),
+        }),
+        'TICKET_CLOSED',
+        409,
+      );
+      expect(await auditCount(w.db, 'ticket.change_phone', t.ticketId)).toBe(1);
+    });
   });
 
   it('PNT-050 / AC-20 / TC-058: one number, tickets in RMS and LYL — W-01 names each venue, everything leaves from the one phone_number_id, the LYL button reaches LYL drivers only', async () => {

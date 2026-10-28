@@ -20,6 +20,9 @@ FEATURE_MODULES.push(DispatchHttpModule);
 import { WhatsappHttpModule } from '@point/server';
 FEATURE_MODULES.push(WhatsappHttpModule);
 
+import { CustomerFlowsHttpModule } from '@point/server';
+FEATURE_MODULES.push(CustomerFlowsHttpModule);
+
 import { NotificationsHttpModule } from '@point/server';
 FEATURE_MODULES.push(NotificationsHttpModule);
 
