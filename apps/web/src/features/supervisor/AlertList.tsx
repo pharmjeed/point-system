@@ -1,0 +1,168 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { CircleAlert, Info, TriangleAlert } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
+import type { Alert, Me } from '@/api/types';
+import { AlertItem, EmptyState, Icon, TextArea } from '@/components';
+import { alertSeverity, alertStatus, alertType, buttons, s04 } from '@/i18n/ar';
+import { formatTime } from '@/lib/format';
+import { useOnline } from '@/hooks/useOnline';
+import { applyAlertReply } from './cache';
+import { alertContext } from './opsModel';
+import { can } from './permissions';
+import { commands, staffKeys } from './staffApi';
+import { staffPaths } from './staffPaths';
+import { ReasonDialog, REASON_MIN } from './ui';
+import { useStaffCommand } from './useStaffCommand';
+
+/**
+ * Alerts with «إقرار» / «حل» (S-04, and the S-02 alerts tab). Acknowledge sends no note; resolve asks for a
+ * resolution note (PNT-075 «ملاحظة الحل محفوظة»; see DEC-PROPOSED in the notes). Both stop the escalation
+ * sound through the shared cache (cache.ts). Without `alert.manage` (09 §3), and for a resolved alert, the
+ * row is read-only: `AlertItem` always draws its buttons, so the same row is drawn without them.
+ */
+export function AlertList({
+  me,
+  alerts,
+  emptyTitle = s04.empty,
+  renderExtra,
+}: {
+  me: Me;
+  alerts: readonly Alert[];
+  emptyTitle?: string;
+  renderExtra?: (alert: Alert) => ReactNode;
+}) {
+  const [resolving, setResolving] = useState<Alert | null>(null);
+  if (!alerts.length) return <EmptyState title={emptyTitle} />;
+  return (
+    <>
+      <ul className="st-stack" aria-live="polite">
+        {alerts.map((alert) => (
+          <li key={alert.id} data-alert-id={alert.id}>
+            <AlertRow me={me} alert={alert} onResolve={() => setResolving(alert)} />
+            {renderExtra?.(alert)}
+          </li>
+        ))}
+      </ul>
+      {resolving ? <ResolveDialog alert={resolving} onClose={() => setResolving(null)} /> : null}
+    </>
+  );
+}
+
+function AlertRow({ me, alert, onResolve }: { me: Me; alert: Alert; onResolve: () => void }) {
+  const qc = useQueryClient();
+  const online = useOnline();
+  const ack = useStaffCommand(
+    (_: Record<string, never>, key: string) => commands.acknowledgeAlert(alert.id, { note: null }, key),
+    {
+      successMessage: null,
+      onSuccess: (updated) => applyAlertReply(qc, updated),
+      invalidate: [staffKeys.alerts(), staffKeys.boards()],
+    },
+  );
+  const manage = can(me, 'alert.manage') && alert.status !== 'resolved';
+  const title = alertType[alert.type] ?? alert.type;
+  const meta = alertContext(alert) ?? alertStatus[alert.status];
+  const time = formatTime(alert.raised_at);
+  return (
+    <div className="st-section">
+      {manage ? (
+        <AlertItem
+          severity={alert.severity}
+          title={title}
+          type={meta}
+          time={time}
+          acknowledged={alert.status !== 'open'}
+          loading={ack.pending ? 'ack' : undefined}
+          error={ack.message ?? undefined}
+          disabled={!online}
+          onAck={() => ack.run({})}
+          onResolve={onResolve}
+        />
+      ) : (
+        <ReadOnlyAlert alert={alert} title={title} context={alertContext(alert)} time={time} />
+      )}
+      {alert.ticket_id ? (
+        <div className="st-row-actions">
+          <Link className="pt-link" to={staffPaths.ticket(alert.ticket_id)}>
+            {buttons.open}
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const SEVERITY_ICON = { critical: TriangleAlert, warning: CircleAlert, info: Info } as const;
+
+/** `AlertItem`'s look without its actions (resolved, or no `alert.manage`). */
+function ReadOnlyAlert({
+  alert,
+  title,
+  context,
+  time,
+}: {
+  alert: Alert;
+  title: string;
+  context: string | null;
+  time: string;
+}) {
+  return (
+    <div className={`pt-alert pt-alert--${alert.severity} is-acked`}>
+      <span className="pt-alert__sev">
+        <Icon icon={SEVERITY_ICON[alert.severity]} size={16} />
+        <span>{alertSeverity[alert.severity]}</span>
+      </span>
+      <div className="pt-alert__body">
+        <span className="pt-alert__title">{title}</span>
+        <span className="pt-alert__meta">
+          {context ? `${context} · ` : ''}
+          <bdi dir="ltr">{time}</bdi> · {alertStatus[alert.status]}
+        </span>
+        {alert.resolution_note ? <span className="pt-alert__meta">{alert.resolution_note}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function ResolveDialog({ alert, onClose }: { alert: Alert; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [note, setNote] = useState('');
+  const resolve = useStaffCommand(
+    (body: { note: string }, key: string) => commands.resolveAlert(alert.id, body, key),
+    {
+      onSuccess: (updated) => {
+        applyAlertReply(qc, updated);
+        onClose();
+      },
+      onPermissionDenied: onClose,
+      invalidate: [staffKeys.alerts(), staffKeys.boards()],
+    },
+  );
+  const trimmed = note.trim();
+  return (
+    <ReasonDialog
+      open
+      onOpenChange={(open) => (open ? undefined : onClose())}
+      title={s04.resolveTitle}
+      body={alertType[alert.type] ?? alert.type}
+      withReason={false}
+      canConfirm={trimmed.length >= REASON_MIN}
+      pending={resolve.pending}
+      error={resolve.message}
+      confirmLabel={buttons.confirm}
+      onConfirm={() => resolve.run({ note: trimmed })}
+      id={`resolve-${alert.id}`}
+    >
+      <TextArea
+        id={`resolve-${alert.id}-note`}
+        label={s04.resolveNote}
+        value={note}
+        rows={2}
+        maxLength={300}
+        hint={trimmed.length < REASON_MIN ? s04.resolveNoteRequired : undefined}
+        onChange={(e) => setNote(e.target.value)}
+      />
+    </ReasonDialog>
+  );
+}
