@@ -240,44 +240,44 @@
     "note": "D-03…D-11 on 5 s polling, paper channel: two-step intake with on-device JPEG + presigned PUT, parking pickers, offer accept, retrieval steps, stub handover + collection; G1 and 08-error e2e at 390 on the stateful fake, layout 360/390/430; live-API seam for PNT-036"
   },
   "PNT-043": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "direct W-01 link at submit with action tokens (hash only), WA_TEMPLATE_NOT_APPROVED"
   },
   "PNT-044": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "QR link D-07: link codes, W-11, expiry job"
   },
   "PNT-045": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "«طلب السيارة» → retrieval request (one request path with S4), early requests, W-09/W-10"
   },
   "PNT-047": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "claim codes: hash + single ciphertext, issue at ready, W-05, verify, resend, lock alert, expiry"
   },
   "PNT-049": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "customer phone change with link_version"
   },
   "PNT-050": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "one number for two venues (routing by token/link)"
   },
   "PNT-051": {
     "status": "in_progress",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "automated G2 scenario green with the simulator; manual run on the Meta test number waits for Q-03 (owner)"
   },
   "PNT-078": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (S3 linking)"
+    "note": "handover exception without code (identity fields, incident, code revoked) + S-03 action"
   },
   "PNT-052": {
     "status": "done",
@@ -340,29 +340,29 @@
     "note": "race suite (broadcast, intake/accept, accept/expiry, double handover, reassign/accept, AC-17); pnpm test:race"
   },
   "PNT-084": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "backend done: force-end (DEC-32), DriverLive.duty_session_id; S-05/S-06 screens with the web agent"
+    "note": "force-end with DUTY_END_BLOCKED_CUSTODY (DEC-32), live drivers data; list polls until the realtime client"
   },
   "PNT-086": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "backend done: transfers, job.transfer_activate, blocked + re-evaluation (AC-10/AC-16); S-07 screen with the web agent"
+    "note": "driver transfers (immediate/scheduled, job.transfer_activate, transfer_blocked) + S-07"
   },
   "PNT-074": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "backend done, screen pending"
+    "note": "operations board API (matches reference SQL after 200 random ops) + S-02 screen"
   },
   "PNT-075": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "backend done, screen pending: alerts list/acknowledge/resolve (publishStatus), AlertAutoResolver projector, ready_not_collected timer, draft_abandoned in the SystemMonitor; the escalation sound stop is client-side"
+    "note": "alerts center API (ack/resolve, auto-resolution) + S-04 with escalation sound"
   },
   "PNT-076": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "backend done, screen pending: timeline with masked messages, custody chain, signed photo URLs, driver view; the server refuses supervisor actions to drivers"
+    "note": "ticket timeline API (redacted messages, signed photo URLs) + S-03"
   },
   "PNT-077": {
     "status": "done",
@@ -385,34 +385,34 @@
     "note": "manual-reconcile (TT-22): no customer message, custody manual_reconcile, payment per 13 §8.5, drivers settled, audit; 6 API tests"
   },
   "PNT-080": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (payments-reports + screens)"
+    "note": "collection at handover (inline + route), amount/method checks"
   },
   "PNT-081": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (payments-reports + screens)"
+    "note": "waiver and reversal with payment_status recomputation"
   },
   "PNT-082": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (payments-reports + screens)"
+    "note": "cash handovers with discrepancy incident, settlement report"
   },
   "PNT-087": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (payments-reports + screens)"
+    "note": "start-closing, reconciliation blockers, close with summary + S-10"
   },
   "PNT-088": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (payments-reports + screens)"
+    "note": "reports per 15 KPIs + S-11"
   },
   "PNT-089": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agents (payments-reports + screens)"
+    "note": "audited CSV exports to the private bucket, signed links, expiry + S-11"
   },
   "PNT-072": {
     "status": "in_progress",

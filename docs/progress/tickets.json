@@ -596,10 +596,10 @@
   "epic": "EP-07",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "direct W-01 link at submit with action tokens (hash only), WA_TEMPLATE_NOT_APPROVED"
  },
  {
   "ticket": "PNT-044",
@@ -610,10 +610,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "QR link D-07: link codes, W-11, expiry job"
  },
  {
   "ticket": "PNT-045",
@@ -624,10 +624,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "«طلب السيارة» → retrieval request (one request path with S4), early requests, W-09/W-10"
  },
  {
   "ticket": "PNT-046",
@@ -652,10 +652,10 @@
   "epic": "EP-07",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "claim codes: hash + single ciphertext, issue at ready, W-05, verify, resend, lock alert, expiry"
  },
  {
   "ticket": "PNT-048",
@@ -680,10 +680,10 @@
   "epic": "EP-07",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "customer phone change with link_version"
  },
  {
   "ticket": "PNT-050",
@@ -694,10 +694,10 @@
   "epic": "EP-07",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "one number for two venues (routing by token/link)"
  },
  {
   "ticket": "PNT-051",
@@ -711,7 +711,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "automated G2 scenario green with the simulator; manual run on the Meta test number waits for Q-03 (owner)"
  },
  {
   "ticket": "PNT-052",
@@ -1030,10 +1030,10 @@
   "epic": "EP-09",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "backend done, screen pending"
+  "note": "operations board API (matches reference SQL after 200 random ops) + S-02 screen"
  },
  {
   "ticket": "PNT-075",
@@ -1044,10 +1044,10 @@
   "epic": "EP-09",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "backend done, screen pending: alerts list/acknowledge/resolve (publishStatus), AlertAutoResolver projector, ready_not_collected timer, draft_abandoned in the SystemMonitor; the escalation sound stop is client-side"
+  "note": "alerts center API (ack/resolve, auto-resolution) + S-04 with escalation sound"
  },
  {
   "ticket": "PNT-076",
@@ -1058,10 +1058,10 @@
   "epic": "EP-09",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "backend done, screen pending: timeline with masked messages, custody chain, signed photo URLs, driver view; the server refuses supervisor actions to drivers"
+  "note": "ticket timeline API (redacted messages, signed photo URLs) + S-03"
  },
  {
   "ticket": "PNT-077",
@@ -1086,10 +1086,10 @@
   "epic": "EP-08",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agent (S3 linking)"
+  "note": "handover exception without code (identity fields, incident, code revoked) + S-03 action"
  },
  {
   "ticket": "PNT-079",
@@ -1114,10 +1114,10 @@
   "epic": "EP-08",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (payments-reports + screens)"
+  "note": "collection at handover (inline + route), amount/method checks"
  },
  {
   "ticket": "PNT-081",
@@ -1128,10 +1128,10 @@
   "epic": "EP-08",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (payments-reports + screens)"
+  "note": "waiver and reversal with payment_status recomputation"
  },
  {
   "ticket": "PNT-082",
@@ -1142,10 +1142,10 @@
   "epic": "EP-08",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (payments-reports + screens)"
+  "note": "cash handovers with discrepancy incident, settlement report"
  },
  {
   "ticket": "PNT-083",
@@ -1170,10 +1170,10 @@
   "epic": "EP-09",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "backend done: force-end (DEC-32), DriverLive.duty_session_id; S-05/S-06 screens with the web agent"
+  "note": "force-end with DUTY_END_BLOCKED_CUSTODY (DEC-32), live drivers data; list polls until the realtime client"
  },
  {
   "ticket": "PNT-085",
@@ -1198,10 +1198,10 @@
   "epic": "EP-10",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "backend done: transfers, job.transfer_activate, blocked + re-evaluation (AC-10/AC-16); S-07 screen with the web agent"
+  "note": "driver transfers (immediate/scheduled, job.transfer_activate, transfer_blocked) + S-07"
  },
  {
   "ticket": "PNT-087",
@@ -1212,10 +1212,10 @@
   "epic": "EP-10",
   "size": "L",
   "weight": 3,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (payments-reports + screens)"
+  "note": "start-closing, reconciliation blockers, close with summary + S-10"
  },
  {
   "ticket": "PNT-088",
@@ -1226,10 +1226,10 @@
   "epic": "EP-10",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (payments-reports + screens)"
+  "note": "reports per 15 KPIs + S-11"
  },
  {
   "ticket": "PNT-089",
@@ -1240,10 +1240,10 @@
   "epic": "EP-10",
   "size": "S",
   "weight": 1,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
+  "status": "done",
+  "status_ar": "منجز",
   "date": "2026-10-28",
-  "note": "parallel agents (payments-reports + screens)"
+  "note": "audited CSV exports to the private bucket, signed links, expiry + S-11"
  },
  {
   "ticket": "PNT-090",
