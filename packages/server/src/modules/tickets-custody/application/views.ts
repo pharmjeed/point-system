@@ -4,6 +4,7 @@ import { maskPhone } from '../../../core/logging/redact.js';
 import { listTicketMedia } from '../../media/index.js';
 import { plateView } from '../domain/plate.js';
 import type { CycleRow, TicketRow } from '../infra/rows.js';
+import { loadClaimCodeState } from './claim-codes.js';
 
 /** Anything that can run a query: a Tx, the Database pool, a pg client. */
 export interface Queryable {
@@ -337,7 +338,7 @@ export async function loadTicketDetail(q: Queryable, ticketId: string, viewer: V
     current_key_slot: slot ? { id: slot.id, label: slot.label, board_name: slot.board_name } : null,
     active_cycle: cycle ? cycleView(cycle) : null,
     media,
-    claim_code: null,
+    claim_code: await loadClaimCodeState(q, t.venue_id, t.active_cycle_id), // PNT-047: state only, never the code
     submitted_at: iso(t.submitted_at),
     delivered_at: iso(t.delivered_at),
     voided_at: iso(t.voided_at),

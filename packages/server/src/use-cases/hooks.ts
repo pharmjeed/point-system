@@ -31,7 +31,7 @@ export interface ClaimCodeHook {
   issueAtReady(
     tx: Tx,
     ctx: { ticket: TicketRow; cycle: CycleRow; actor: ActorContext },
-  ): Promise<{ claim_code_id: string } | null>;
+  ): Promise<{ claim_code_id: string; expires_at: string } | null>;
   verifyAtHandover(
     tx: Tx,
     ctx: { ticket: TicketRow; cycle: CycleRow; code: string; actor: ActorContext },

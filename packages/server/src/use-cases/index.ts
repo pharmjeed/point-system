@@ -23,3 +23,4 @@ export {
 export { installCustomerFlows } from './customer-flows/install.js';
 export { CustomerFlowsHttpModule } from './http/customer-flows.module.js';
 export { handleButtonPress } from './customer-flows/button-press.js';
+export { claimCodeHookFor, claimCodeSecrets } from './customer-flows/handover-codes.js';

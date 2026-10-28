@@ -214,7 +214,7 @@ export class MovementUseCase {
         ? await claimCodeHook().issueAtReady(tx, { ticket: tk, cycle: { ...cycle, ready_at: tx.now }, actor })
         : null;
     const expected = code ? 'code' : tk.paper_serial ? 'paper_stub' : 'supervisor_exception';
-    // `code_expires_at` of 11 §8.2 is left out: outbox payload keys containing "code" are rejected (DEC-38 guard)
+    // 11 §8.2 `code_expires_at` (a safe key since DEC-131; the code itself never leaves claim_codes)
     await emitForTicket(tx, tk, {
       type: 'ticket.ready',
       actor: eventActor(actor),
@@ -224,6 +224,7 @@ export class MovementUseCase {
         task_id: task.id,
         expected_method: expected,
         claim_code_id: code?.claim_code_id ?? null,
+        code_expires_at: code?.expires_at ?? null,
       },
     });
     // extension point (S4, PNT-058): job.ready_uncollected_check at ready_at + ready.uncollected_alert_min

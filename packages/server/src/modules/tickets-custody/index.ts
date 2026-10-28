@@ -49,3 +49,20 @@ export {
   type IntakePatch,
 } from './application/intake-service.js';
 export { ticketsCustodyJobs } from './jobs/index.js';
+// handover codes (PNT-047; 11 §5.1, DEC-38)
+export {
+  CLAIM_CODE_DIGITS,
+  claimCodeHash,
+  issueClaimCode,
+  verifyClaimCode,
+  resendClaimCode,
+  revokeClaimCodes,
+  lockLiveClaimCode,
+  latestClaimCode,
+  claimCodeState,
+  loadClaimCodeState,
+  claimCodeExpireHandler,
+  type ClaimCodeRow,
+  type ClaimCodeSecrets,
+  type ClaimCodeState,
+} from './application/claim-codes.js';
