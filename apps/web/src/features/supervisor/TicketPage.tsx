@@ -10,7 +10,6 @@ import {
   EmptyState,
   Header,
   ListItem,
-  MaskedPhone,
   PlateBadge,
   Sheet,
   StatusChip,
@@ -37,6 +36,7 @@ import { fmt } from '@/i18n/fmt';
 import { formatHalalas, formatTime } from '@/lib/format';
 import { plateText, plateValue, vehicleSummary } from './opsModel';
 import { can, isReversible, ticketActions, type TicketAction } from './permissions';
+import { RevealPhone } from './RevealPhone';
 import { fetchMediaUrl, fetchTicket, fetchTimeline, LIVE_REFETCH_MS, staffKeys } from './staffApi';
 import { staffPaths } from './staffPaths';
 import { TicketActionDialog } from './TicketActions';
@@ -187,11 +187,7 @@ function TicketView({
               </div>
               <div className="st-facts__row">
                 <Fact label={s03.phone}>
-                  {ticket.customer?.phone_masked ? (
-                    <MaskedPhone phone={ticket.customer.phone_masked} />
-                  ) : (
-                    staff.none
-                  )}
+                  <RevealPhone ticket={ticket} allowed={available.includes('revealPhone') && online} />
                 </Fact>
               </div>
             </>
