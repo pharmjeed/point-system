@@ -23,3 +23,4 @@ export { SupervisorHttpModule } from './http/supervisor.module.js';
 export { maskCustomerText, waMessageView, custodyEventView, paymentView } from './supervisor-views.js';
 export { InspectionExceptionUseCase } from './inspection-exception.js';
 export { CustodyTransferUseCase, type CustodyTransferBody } from './custody-transfer.js';
+export { OperationsBoardQuery, type BoardBadge } from './operations-board.js';

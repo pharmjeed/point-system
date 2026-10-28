@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { CustodyTransferUseCase } from '../custody-transfer.js';
 import { InspectionExceptionUseCase } from '../inspection-exception.js';
 import { SupervisorActionsController } from './supervisor-actions.controller.js';
+import { OperationsBoardQuery } from '../operations-board.js';
+import { OperationsBoardController } from './operations-board.controller.js';
 
 /**
  * HTTP surface of the S6 supervisor backend: reads and commands on events and tickets that compose
@@ -9,7 +11,7 @@ import { SupervisorActionsController } from './supervisor-actions.controller.js'
  * rule 2).
  */
 @Module({
-  controllers: [SupervisorActionsController],
-  providers: [InspectionExceptionUseCase, CustodyTransferUseCase],
+  controllers: [SupervisorActionsController, OperationsBoardController],
+  providers: [InspectionExceptionUseCase, CustodyTransferUseCase, OperationsBoardQuery],
 })
 export class SupervisorHttpModule {}
