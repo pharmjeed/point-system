@@ -6,7 +6,7 @@ export * from './realtime/index.js';
 
 export * from './modules/identity-access/index.js';
 
-// export * from './modules/venues-events/index.js';
+export * from './modules/venues-events/index.js';
 
 // export * from './modules/tickets-custody/index.js';
 

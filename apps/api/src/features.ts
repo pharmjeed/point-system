@@ -8,8 +8,8 @@ export const FEATURE_MODULES: Type[] = [];
 import { IdentityAccessHttpModule } from '@point/server';
 FEATURE_MODULES.push(IdentityAccessHttpModule);
 
-// import { VenuesEventsHttpModule } from '@point/server';
-// FEATURE_MODULES.push(VenuesEventsHttpModule);
+import { VenuesEventsHttpModule } from '@point/server';
+FEATURE_MODULES.push(VenuesEventsHttpModule);
 
 // import { TicketsCustodyHttpModule } from '@point/server';
 // FEATURE_MODULES.push(TicketsCustodyHttpModule);
