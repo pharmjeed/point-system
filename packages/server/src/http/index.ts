@@ -4,6 +4,7 @@ export * from './exception-filter.js';
 export * from './zod-pipe.js';
 export * from './interceptors.js';
 export * from './guards.js';
+export * from './rate-limit.js';
 export * from './middleware.js';
 export * from './request-id.js';
 export * from './health.controller.js';

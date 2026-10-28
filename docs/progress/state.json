@@ -420,14 +420,14 @@
     "note": "backend done; SW/web pending"
   },
   "PNT-095": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (deployment, backups, hardening)"
+    "note": "encrypted backups (age/openssl, snapshot manifest, 30 d + 12 monthly), verified restore, pnpm ops:restore-drill passes locally (also in CI); drill on the chosen hosting due before G5"
   },
   "PNT-096": {
-    "status": "in_progress",
+    "status": "done",
     "date": "2026-10-28",
-    "note": "parallel agent (deployment, backups, hardening)"
+    "note": "rate limits per x-rate-limit-class (429 + Retry-After), boot guards (__Host-/Secure/https/one origin), API+proxy headers, secrets scan in lint, audit:prod clean, security tests; CSP vs Radix scroll lock pending (notes)"
   },
   "PNT-036": {
     "status": "todo",

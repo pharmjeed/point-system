@@ -44,8 +44,10 @@ jobs:
         run: corepack enable && pnpm --version
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Lint (ESLint, Prettier, brand names)
+      - name: Lint (ESLint, Prettier, brand names, secrets scan)
         run: pnpm lint
+      - name: Security — production dependencies (no high or critical advisories, PNT-096)
+        run: pnpm audit:prod
       - name: Typecheck
         run: pnpm typecheck
       - name: Build
@@ -62,6 +64,12 @@ jobs:
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - name: Integration tests (Testcontainers postgres:16)
         run: pnpm test:int
+      - name: Ops scripts (shellcheck, preinstalled on the runner)
+        run: shellcheck -s bash infra/backup/*.sh && shellcheck -s sh infra/compose/*.sh
+      - name: Restore drill (PNT-095, encrypted backup → restore → verify; openssl when age is absent)
+        run: pnpm ops:restore-drill
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
   e2e:
     name: e2e (Playwright 360/390/430, RTL)

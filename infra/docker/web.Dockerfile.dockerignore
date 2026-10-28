@@ -1,0 +1,17 @@
+# Build context of infra/docker/web.Dockerfile: the web app, the brand assets and the proxy config only.
+**
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!package.json
+!tsconfig.base.json
+!apps/web/**
+!brand/**
+!infra/caddy/Caddyfile
+!infra/caddy/conf.d/00-site.caddy
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+**/playwright-report
+**/test-results

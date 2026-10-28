@@ -1,0 +1,136 @@
+# Reverse proxy and static host of the staff app (05 §14, 09 §9.3, DEC-29, DEC-94; docs/DEPLOYMENT.md).
+# One origin for everything: the PWA, /v1, /ws, /webhooks/whatsapp and /health on https://{DOMAIN};
+# TLS certificates are obtained and renewed automatically for DOMAIN (ACME, ports 80 and 443).
+#
+# Environment (docker-compose.prod.yml passes it):
+#   DOMAIN            the staff app host (Q-01), e.g. app.example.sa — its DNS must point at this server
+#   ACME_EMAIL        contact address for the certificate authority
+#   API_UPSTREAM      the api service (default api:3000)
+#   STORAGE_UPSTREAM  self-hosted object storage served on this origin (default minio:9000); presigned
+#                     URLs then use S3_ENDPOINT=https://{DOMAIN} with path-style buckets
+#   STORAGE_ORIGIN    origin of presigned URLs when the storage is NOT on this origin (managed S3), for
+#                     img-src/connect-src; empty when the buckets are served here
+#   S3_BUCKET_MEDIA / S3_BUCKET_EXPORTS  bucket names (defaults point-media / point-exports)
+#   WEB_ROOT, HTTP_PORT, HTTPS_PORT  /srv, 80 and 443 in the image (other values for a local trial only)
+{
+	email {$ACME_EMAIL}
+	http_port {$HTTP_PORT:80}
+	https_port {$HTTPS_PORT:443}
+}
+
+(api_headers) {
+	# the api sets its own security headers (helmet); these fill in only what is missing
+	header {
+		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		?X-Content-Type-Options "nosniff"
+		?Referrer-Policy "no-referrer"
+		-X-Powered-By
+	}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	header -Server
+
+	# access log on stdout without secrets: cookies and authorization are redacted by default; the webhook
+	# verify token and presigned-URL signatures are removed from query strings (09 §6.3: no signed URL in logs)
+	log {
+		output stdout
+		format filter {
+			request>uri query {
+				delete hub.verify_token
+				delete X-Amz-Signature
+				delete X-Amz-Credential
+				delete X-Amz-Security-Token
+			}
+			request>headers>X-Hub-Signature-256 delete
+		}
+	}
+
+	# site-specific additions without editing this file (mounted directory, may be empty)
+	import /etc/caddy/conf.d/*.caddy
+
+	# --- API on the same origin (DEC-29): no CORS, first-party cookie, connect-src 'self' ---
+	@api path /v1 /v1/* /ws /ws/* /health/live /health/ready
+	handle @api {
+		import api_headers
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	# --- WhatsApp webhook: raw body up to 3 MB, verified by the api (12 §6.2, DEC-130) ---
+	handle /webhooks/whatsapp {
+		import api_headers
+		request_body {
+			max_size 4MB
+		}
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	# --- metrics stay on the internal network (canon §9.8): served on METRICS_PORT, never proxied ---
+	handle /metrics* {
+		respond 404
+	}
+
+	# --- private buckets on this origin (path-style), presigned requests only; signatures checked by the storage ---
+	@storage path /{$S3_BUCKET_MEDIA:point-media} /{$S3_BUCKET_MEDIA:point-media}/* /{$S3_BUCKET_EXPORTS:point-exports} /{$S3_BUCKET_EXPORTS:point-exports}/*
+	handle @storage {
+		request_body {
+			max_size 12MB
+		}
+		header ?Cache-Control "private, no-store"
+		reverse_proxy {$STORAGE_UPSTREAM:minio:9000}
+	}
+
+	# --- the PWA (apps/web/dist) ---
+	handle {
+		root * {$WEB_ROOT:/srv}
+
+		header {
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data: {$STORAGE_ORIGIN}; connect-src 'self' wss://{$DOMAIN} {$STORAGE_ORIGIN}; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+			Permissions-Policy "geolocation=(), microphone=(), camera=(self), payment=()"
+			Referrer-Policy "no-referrer"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Cross-Origin-Opener-Policy "same-origin"
+			Cross-Origin-Resource-Policy "same-origin"
+		}
+
+		# caching (05 §11.2 rule 5): hashed assets for a year; the shell, the service worker and the manifest
+		# are always revalidated; icons and sounds for a day
+		@hashed {
+			path /assets/*
+			not path *.map
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@brand {
+			path /icons/* /sounds/*
+			file
+		}
+		header @brand Cache-Control "public, max-age=86400"
+		header ?Cache-Control "no-cache"
+		header /manifest.webmanifest Content-Type "application/manifest+json"
+
+		# source maps are not published; a missing asset is a plain 404 (an old client must never cache
+		# index.html under an asset name after a release)
+		@not_served {
+			path /assets/* /icons/* /sounds/*
+			not file
+		}
+		respond @not_served 404
+		@maps path *.map
+		respond @maps 404
+
+		# client-side routes (/d, /ops, /login …) are served by index.html
+		@spa {
+			not path /assets/* /icons/* /sounds/* *.map
+			not file
+		}
+		rewrite @spa /index.html
+		file_server
+	}
+}

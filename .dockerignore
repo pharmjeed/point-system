@@ -1,0 +1,17 @@
+# Safety net for builds that use the repository root as context without their own <Dockerfile>.dockerignore
+# (infra/docker/*.Dockerfile.dockerignore are the precise lists): never send secrets or local state.
+.git
+.claude
+**/node_modules
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.zip
+*.dump
+*.dump.*
+backups

@@ -1,0 +1,18 @@
+# Build context of infra/docker/Dockerfile (BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile):
+# only what the backend image needs — never .env files, local builds or dependencies.
+**
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!package.json
+!tsconfig.base.json
+!packages/**
+!apps/api/**
+!apps/worker/**
+!docs/06_schema.sql
+!docs/06_schema_invariants_test.sql
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+**/coverage

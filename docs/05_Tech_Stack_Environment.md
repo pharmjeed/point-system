@@ -306,11 +306,17 @@ MEDIA_READ_URL_TTL_S=300
 MEDIA_MAX_BYTES=10485760
 EXPORT_URL_TTL_S=300
 
-# ---------- Rate limits ----------
-RATE_LIMIT_LOGIN_PER_15MIN=10        # per IP + per phone
-RATE_LIMIT_COMMANDS_PER_MIN=120      # per user
-RATE_LIMIT_READS_PER_MIN=600         # per user
-RATE_LIMIT_WEBHOOK_PER_MIN=6000      # per source IP
+# ---------- Rate limits (07 §1.9 classes; per api process; 0 = no limit for the class) ----------
+RATE_LIMIT_ENABLED=true              # default: on, except NODE_ENV=test
+RATE_LIMIT_AUTH_PER_MIN=10           # per client IP (login, MFA verify); raise it if many drivers share one NAT/Wi-Fi
+RATE_LIMIT_COMMANDS_PER_MIN=60       # per user
+RATE_LIMIT_ACCEPT_PER_10S=20         # per user, accepting offers (on top of the command class)
+RATE_LIMIT_WRITES_PER_MIN=30         # per user (logout, MFA setup/confirm, secret change)
+RATE_LIMIT_READS_PER_MIN=300         # per user
+RATE_LIMIT_DEVICE_PER_MIN=60         # per device session (heartbeat, devices, audio test, telemetry)
+RATE_LIMIT_EXPORTS_PER_HOUR=5        # per user
+RATE_LIMIT_WEBHOOK_PER_MIN=6000      # per source IP (a valve; Meta retries a 429)
+TRUST_PROXY=1                        # reverse-proxy hops in front of the api (client IP from X-Forwarded-For)
 
 # ---------- Worker ----------
 WORKER_ID=                           # defaults to hostname
