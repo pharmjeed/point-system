@@ -44,8 +44,10 @@ jobs:
         run: corepack enable && pnpm --version
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Lint (ESLint, Prettier, brand names)
+      - name: Lint (ESLint, Prettier, brand names, secrets scan)
         run: pnpm lint
+      - name: Security — production dependencies (no high or critical advisories, PNT-096)
+        run: pnpm audit:prod
       - name: Typecheck
         run: pnpm typecheck
       - name: Build
