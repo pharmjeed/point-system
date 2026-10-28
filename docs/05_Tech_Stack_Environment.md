@@ -47,7 +47,8 @@ point/
 ├─ packages/
 │  ├─ server/              # الوحدات النطاقية التسع + core + use-cases (يستوردها api و worker)
 │  ├─ shared/              # zod schemas للسلك، القيم المحدودة (Canon §5)، رموز الأخطاء (§8)،
-│  │                       # أنواع الأحداث (§7)، الصلاحيات (§10)، مخطط الإعدادات (§12)، القوالب (§11)
+│  │                       # أنواع الأحداث (§7)، الصلاحيات (§10)، مخطط الإعدادات (§12)، القوالب (§11)،
+│  │                       # كتالوجا التحليلات (15 §7–§8، DEC-147)
 │  ├─ db/                  # Drizzle schema يطابق 06_schema.sql، ترحيلات SQL، seed، فحص الانحراف
 │  └─ config/              # إعدادات tsconfig و eslint و prettier المشتركة
 ├─ tools/
@@ -115,7 +116,7 @@ packages/server/src/
 | `libphonenumber-js` | تطبيع الجوال إلى E.164 والتحقق منه | الافتراضي `SA` |
 | `uuid` (v7) | معرفات مرتبة زمنيًا تولدها الخلفية | القاعدة تحتفظ بـ`gen_random_uuid()` احتياطًا |
 | `pino`, `nestjs-pino` | سجلات JSON منظمة | قائمة تنقيح إلزامية (§7.6) |
-| `@opentelemetry/sdk-node` + instrumentations (http, express, pg) + مُصدِّر OTLP | التتبع عبر api و worker و Graph API | `OTEL_*` |
+| `@opentelemetry/sdk-node` + instrumentations (http, express, pg) + مُصدِّر OTLP | التتبع عبر api و worker و Graph API | `OTEL_*`؛ مؤجل في الإصدار الأول حتى توجد نقطة استقبال، ويُفعَّل فقط عند ضبط `OTEL_EXPORTER_OTLP_ENDPOINT` (DEC-163) |
 | `prom-client` | مقاييس `/metrics` | شبكة داخلية فقط |
 | `helmet`, `cookie-parser` | ترويسات الأمان وقراءة الكوكي | CSP للـAPI بسيطة (§14) |
 | `@nestjs/throttler` | حد المعدل لكل نسخة | الحماية الأساسية من التخمين في القاعدة نفسها (`failed_login_count`, `locked_until`) |
@@ -144,6 +145,8 @@ packages/server/src/
 | `@fontsource/ibm-plex-sans-arabic` + `@fontsource/ibm-plex-mono` (woff2 مستضافة ذاتيًا عبر الحزمة) | الطباعة (DEC-18) | `font-display: swap`؛ لا خطوط من نطاقات خارجية |
 
 التصوير: `<input type="file" accept="image/*" capture="environment">` ثم ضغط الصورة في المتصفح (Canvas) إلى عرض أقصى 1600 بكسل بصيغة JPEG أو WebP دائمًا قبل الرفع المباشر إلى S3 برابط موقع؛ يقبل الخادم الأنواع في `media_assets.content_type`، لكن HEIC لا يُفك على الخادم (libvips المبني مسبقًا في `sharp` بلا HEVC) فينتهي رفعه بـ`MEDIA_TYPE_UNSUPPORTED` عند `complete` (القرار DEC-98). عند `POST /v1/media/{mediaId}/complete` يتحقق الخادم من الحجم و`sha256` المعلنين مقابل الكائن المرفوع، ثم يزيل بيانات EXIF والموقع ويحفظ النسخة المنقّاة بصيغتها المعلنة (JPEG أو PNG أو WebP بجودة 85) وبحجمها وهاشها الجديدين (DEC-36).
+
+القياسات: الواجهة تتحقق من كل حدث بـ`parseTelemetryEvent` من `@point/shared` قبل إدراجه في الدفعة، وترسل `POST /v1/telemetry` بـ`fetch(…, {keepalive: true})` مع ترويسات CSRF (DEC-29) ولو عند إخفاء الصفحة؛ لا `navigator.sendBeacon` لأنه لا يضبط الترويسات (DEC-167).
 
 ---
 
@@ -205,7 +208,7 @@ packages/server/src/
 ### 7.6 السجلات
 
 - pino بصيغة JSON، وكل سطر يحمل: `request_id`, `user_id`, `role`, `venue_id`, `route`, `status`, `duration_ms` (والعامل: `outbox_id`, `job_type`, `attempt`).
-- قائمة التنقيح الإلزامية: الكوكيز وترويسة `authorization`، أي مفتاح يحتوي `phone` أو `wa_id` أو `code` أو `token` أو `pin` أو `password` أو `secret`، `raw_body`، `code_ciphertext`، `mfa_secret_enc`، `push_endpoint` و`push_p256dh` و`push_auth`.
+- قائمة التنقيح الإلزامية: الكوكيز وترويسة `authorization`، أي مفتاح يحتوي `phone` أو `wa_id` أو `code` أو `token` أو `pin` أو `password` أو `secret`، `raw_body`، `code_ciphertext`، `mfa_secret_enc`، `push_endpoint` و`push_p256dh` و`push_auth`. عدا أسماء Canon التي تصف رمزًا أو رقمًا سريًا أو جوالًا ولا تحمل قيمته، فلا تُنقَّح ولا يرفضها حارس صندوق الصادر: `code_expires_at`، `code_ttl_min`، `pin_length`، `reveal_phone_per_hour`، `action_token_ttl_h` (DEC-131).
 - لا يُسجل نص رسالة واتساب الصادرة إلا بنسخته المقنّعة، ولا قيمة زر واتساب (`payload`) أبدًا.
 - المستويات: `error` لما يحتاج تدخلًا، `warn` للرفض المتوقع المتكرر، `info` للأوامر، `debug` محليًا فقط.
 
@@ -318,6 +321,7 @@ WORKER_LEASE_SECONDS=30
 DISPATCH_SWEEP_INTERVAL_S=5
 HEARTBEAT_SWEEP_INTERVAL_S=15
 RETENTION_PURGE_CRON_UTC=0 2 * * *   # 05:00 Asia/Riyadh
+MONITOR_INTERVAL_S=10                # SystemMonitor (outbox_lag, task_stuck, gauges) in worker + api; 0 = off
 
 # ---------- Realtime ----------
 WS_PATH=/ws
@@ -345,6 +349,8 @@ VITE_APP_VERSION=dev
 القيم التشغيلية (المؤقتات، الحدود، الاحتفاظ) **ليست** متغيرات بيئة؛ هي في `venues.settings` و`organizations.settings` بالقيم الافتراضية في Canon §12.
 
 - **متغيرات الويب (القرار DEC-83):** يقرأ Vite ملف `.env` الواحد في جذر المستودع (`envDir`). إن لم يُضبط `VITE_BRAND_STAFF_NAME_AR` إطلاقًا (نسخة جديدة، CI) يؤخذ `short_name` من `manifest.webmanifest` لا نص صلب، و`brand` في `GET /v1/me` (إعدادات المؤسسة) يتقدم وقت التشغيل.
+- **قائمة سماح الاختبار (القرار DEC-144):** مستلم خارج `WA_TEST_RECIPIENT_ALLOWLIST` (إلزامية في `staging`، وفي `local` و`test` إن ضُبطت) يجعل الإشعار `failed` بـ`WA_SEND_FAILED` دون استدعاء المزود ودون تنبيه.
+- **المراقب (القرار DEC-157):** `MONITOR_INTERVAL_S` فاصل `SystemMonitor` في العامل والـAPI معًا (الافتراضي 10 ثوانٍ، و0 يعطله كما في الاختبارات التي تستدعي دورته مباشرة).
 - **مشغّل التخزين (القرار DEC-108):** S3 عند ضبط `S3_ENDPOINT` أو المفتاحين الثابتين معًا (`S3_ACCESS_KEY_ID` و`S3_SECRET_ACCESS_KEY`)، ودائمًا في `staging` و`production` (دور المثيل أو المهمة عبر سلسلة اعتماد AWS الافتراضية حين لا تُضبط مفاتيح ثابتة)؛ والحاوية في الذاكرة فقط في `local` و`test` دون أي إعداد S3، مع تحذير في `local` لأن الصور تضيع عند إعادة التشغيل.
 
 ---
@@ -364,6 +370,7 @@ VITE_APP_VERSION=dev
 2. بيئة `staging` ترفض الإرسال لأي رقم خارج القائمة المسموحة حتى لو وُجد خطأ في البيانات.
 3. رقم الإنتاج لا يُستخدم في أي بيئة أخرى، ولا يوجد إلا صف `whatsapp_channel` فعال واحد في كل بيئة (`uq_whatsapp_channel_active`).
 4. دلو الوسائط في كل بيئة له قاعدة دورة حياة تحذف البادئة `incoming/` بعد يوم واحد (القرار DEC-97): رابط PUT الموقّع يكتب في `incoming/{org}/{ticket}/{media}-{nonce}`، والنسخة المنقّاة تُحفظ بمفتاح 09 §6.1 ويُحذف الأصل قبل `uploaded`، فتكنس القاعدة الأيتام (رفع لم يكتمل، إعادة PUT برابط ما زال صالحًا بعد الإتمام، توقف بين الكتابة والحذف). محليًا تضيفها خدمة `minio-init` (§9.1).
+5. دور الاحتفاظ `point_retention` (الترحيل `0004_retention_role.sql`) يأخذه `job.retention_purge` بـ`SET LOCAL ROLE`؛ في `staging` و`production` يُمنح دور دخول العامل عضويته (`GRANT point_retention TO <worker login>`)، ودونها تفشل كل دفعة حذف (مهمة فاشلة وتنبيه `outbox_lag`) (القرار DEC-153).
 
 ### 9.1 التطوير المحلي (`infra/compose/docker-compose.yml`)
 
@@ -476,7 +483,7 @@ volumes:
 ### 12.1 السجلات والتتبع
 
 - سجلات JSON مركزية بالحقول في §7.6، والاحتفاظ 30–90 يومًا حسب المنصة.
-- OpenTelemetry يتتبع: طلب HTTP → المعاملة → `pg`؛ والعامل: استئجار المهمة → استدعاء Graph API أو Push. معرف التتبع يُضاف للسجل.
+- OpenTelemetry يتتبع: طلب HTTP → المعاملة → `pg`؛ والعامل: استئجار المهمة → استدعاء Graph API أو Push. معرف التتبع يُضاف للسجل. **مؤجل في الإصدار الأول (DEC-163):** لا يُوصل في الكود حتى توجد نقطة استقبال في بيئة ما؛ يُفعَّل فقط عند ضبط `OTEL_EXPORTER_OTLP_ENDPOINT`، ويضاف حينها حقل `traceparent` إلى غلاف Canon §7 ليكمل امتداد العامل امتداد الـAPI (الإصدارات المقترحة في القرار، ويُعاد التحقق منها عند التنفيذ).
 
 ### 12.2 المقاييس الأساسية (الكتالوج الملزم)
 
@@ -498,6 +505,11 @@ volumes:
 | `point_outbox_due{type}` | Gauge | صفوف Outbox المستحقة غير المعالجة |
 | `point_outbox_oldest_pending_seconds{type}` | Gauge | عمر أقدم صف مستحق |
 | `point_outbox_events_total{type,status}` | Counter | نتائج المعالجة (`done`، `failed`، `dead`، `canceled`) |
+| `point_outbox_dead{type}` | Gauge | صفوف `dead` الحالية لكل نوع (DEC-159) |
+| `point_dispatch_eligible_drivers{pool}` | Gauge | المناوبون غير المستريحين لكل مجموعة نشطة (DEC-159) |
+| `point_tasks_stuck{type}` | Gauge | المهام التي تجاوزت حد `task_stuck` (DEC-159، DEC-160) |
+| `point_analytics_rejected_total{source,reason}` | Counter | صفوف تحليلية مرفوضة أو أحداث قياس مُسقطة بسببها (DEC-148، DEC-159) |
+| `point_retention_rows_total{step}` · `point_retention_duration_seconds` | Counter · Histogram | صفوف كل خطوة احتفاظ وزمن التشغيل (DEC-159) |
 | `point_wa_send_duration_seconds` | Histogram | من إنشاء الإشعار حتى قبول المزود |
 | `point_wa_delivery_seconds` | Histogram | من قبول المزود حتى `delivered` (للمعلومة) |
 | `point_wa_send_total{outcome,error_code}` | Counter | محاولات الإرسال ونتائجها |
@@ -511,7 +523,7 @@ volumes:
 | `point_push_send_total{outcome}` | Counter | Web Push ونتائجه |
 | `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري |
 | `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات |
-| `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات |
+| `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159) |
 | `point_backup_last_success_timestamp_seconds` | Gauge | آخر نسخة احتياطية ناجحة |
 
 ### 12.3 تنبيهات النظام (من المعمارية §15، قيم أولية تُضبط بعد التجربة)
@@ -521,7 +533,7 @@ volumes:
 | التنبيه | الشرط المقترح | الأثر |
 |---|---|---|
 | ارتفاع عمر Outbox | أقدم صف مستحق أقدم من `ops.outbox_lag_alert_s` (30 ثانية)، أو أي صف يصير `dead` | تنبيه `outbox_lag` حرج |
-| توقف Webhooks | لا حدث وارد منذ 10 دقائق مع وجود إرسال ناجح في الفترة نفسها | تنبيه `wa_webhook_silent` حرج (صوت `escalation`) لمشرفي الموقع والإدارة |
+| توقف Webhooks | لا حدث وارد منذ 10 دقائق مع رسالة صادرة قُبلت بعد آخر حدث وارد قبل 10 دقائق فأكثر؛ يفحصه المرسل عند قبول إرسال (DEC-146) | تنبيه `wa_webhook_silent` حرج (صوت `escalation`) لمشرفي الموقع والإدارة |
 | صحة قناة واتساب وفشل الإرسال | انتقالات `healthy`/`degraded`/`down` بالقاعدة المعرّفة في الملف 12 §5.14 وحده (لا تُكرر هنا)؛ الفشل الدائم لإشعار عميل | `wa_channel_down` عند `down` / `wa_send_failed` للإشعار الفاشل |
 | غياب السائقين المؤهلين | طلب إحضار مفتوح في مجموعة لا يوجد فيها سائق مناوب غير مستريح | `no_drivers_on_duty` |
 | مهام معلقة | حسب `StuckDetector` (`04` §6.7) | تنبيه `task_stuck` (تحذير، صوت `reminder`) لمشرفي الموقع |

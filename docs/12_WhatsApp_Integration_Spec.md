@@ -194,6 +194,8 @@ flowchart LR
 
 «مربوطة» = `tickets.wa_link_status = 'linked'` و`customers.wa_opted_out_at IS NULL` وموافقة غير مبطلة. التذاكر الورقية `channel = 'paper'` لا تولد أي إشعار واتساب.
 
+قواعد التخطيط (DEC-143): رسائل التذكرة W-02…W-08 تُخطَّط لتذاكر `pending_send` و`linked` و`opted_out` (فالأخيرة تنتهي `skipped`)، والمرسل يشترط `linked` لحظة الإرسال، وبوابة الترتيب (§5.6) تضمن معالجة W-01 أولًا. W-07 يُخطَّط فقط إن وُجد إشعار W-02 للدورة أو لطلبها المبكر (مفتاحه `wa:W-02:early:{ticket_id}:{pending_retrieval_at_epoch}`، وهو وقت طلب الدورة الأصلي، DEC-13). خنق W-09 لكل تذكرة وW-10 لكل مرسل يُحسب من الرسائل الواردة عبر فهارسها ومن مفاتيح التكرار، لا بمسح `notifications`. وردود الفعل (`reaction`) لا تلقى W-10 (§6.7).
+
 ### 5.3 خوارزمية `job.wa_send`
 
 ```ts
@@ -201,11 +203,13 @@ async function waSend(job: { notificationId: string }) {
   const n = await notifications.lock(job.notificationId);            // SELECT ... FOR NO KEY UPDATE (canon §14ب L9)
   if (n.status !== 'pending') return;                                 // أُنجز أو تُخطّي سابقًا
 
-  const ch = await channel.active();
-  if (ch.health_status === 'down') return defer(job, 30);             // لا تُستهلك محاولة؛ §5.14
-
-  const gate = await preSendGates(n);                                 // §5.4 و§5.5
+  const gate = await preSendGates(n);                                 // §5.4 و§5.5 — قبل فحص القناة (DEC-135)
   if (gate.skip) return markSkipped(n, gate.reason);                  // superseded | opted_out | no_consent | stale
+
+  const ch = await channel.active();
+  if (ch.health_status === 'down')                                    // §5.14
+    return isSessionReply(n) ? markSkipped(n, 'channel_down')         // W-09…W-12 تُتخطى فورًا (DEC-135)
+                             : defer(job, 30);                        // لا تُستهلك محاولة (DEC-134)
   if (gate.waitSeconds) return defer(job, gate.waitSeconds);          // بوابة الترتيب أو حد الزوج
 
   if (!(await throughput.tryTake(1))) return defer(job, 1);           // §5.8
@@ -221,6 +225,8 @@ async function waSend(job: { notificationId: string }) {
 
 قواعد: كل تعديل لحالة `notifications` و`whatsapp_messages` و`notification_attempts` يُكتب في معاملة قصيرة بعد الاستدعاء، وليس داخل معاملة مفتوحة أثناء الاتصال الشبكي.
 
+`defer` (DEC-134): الانتظار (بوابة الترتيب، دلو المستلم، السقف العام، تعطل القناة، نافذة الانهيار) يعيد محاولة صف `outbox_events` فلا يستهلكها؛ محاولات المزود تُعد في `notifications.attempts` مقابل `wa.send_max_attempts`، وأخطاء فئة القناة تُسجل في `notification_attempts` ولا تُعد (يبقى الإشعار `pending`)؛ و`max_attempts` لصف `job.wa_send` = 50 لإيقاف مهمة تتعطل باستمرار فقط.
+
 ### 5.4 بوابات ما قبل الإرسال
 
 | البوابة | القاعدة | النتيجة عند الفشل |
@@ -228,7 +234,7 @@ async function waSend(job: { notificationId: string }) {
 | القالب | `whatsapp_templates.status = 'approved'` للاسم واللغة `ar` | فشل دائم بالرمز الداخلي `WA_TEMPLATE_NOT_APPROVED` + تنبيه `wa_send_failed` (السبب `template`) — انظر البديل §8.4 لـW-05 |
 | الإيقاف | `customers.wa_opted_out_at IS NULL` (عدا W-12) | `skipped`، `skipped_reason = 'opted_out'` |
 | الموافقة | موافقة `customer_consents` غير مبطلة للعميل (عدا W-09…W-12 لأنها رد على رسالته) | `skipped`، `skipped_reason = 'no_consent'` |
-| الصحة | `whatsapp_channel.health_status <> 'down'` | تأجيل دون استهلاك محاولة |
+| الصحة | `whatsapp_channel.health_status <> 'down'` | تأجيل دون استهلاك محاولة؛ ولردود الجلسة W-09…W-12 تخطٍ فوري `skipped_reason = 'channel_down'` (DEC-135) |
 | النافذة | لردود الجلسة فقط: `now() - customers.last_inbound_at < 24h` | `skipped`، `skipped_reason = 'stale'` |
 | الحداثة | جدول §5.5 | `skipped`، `skipped_reason = 'superseded'` |
 | الترتيب | §5.6 | تأجيل قصير |
@@ -266,6 +272,7 @@ async function waSend(job: { notificationId: string }) {
 
 - محدد عام 60 رسالة/ثانية لكل الرقم (الإعداد `wa.global_mps = 60`)، أقل من الافتراضي 80 (F-06) لترك هامش لردود الجلسة والإعادات.
 - العامل يلتقط مهام `job.wa_send` المستحقة بالتناوب بين القاعات (Round-robin على `venue_id`): يجلب أقدم مهمة مستحقة لكل قاعة ثم يكرر، بحد أعلى لكل قاعة في الدورة الواحدة، فلا يستحوذ ضغط قاعة واحدة على الطابور (المعمارية §5).
+- السقف العام وعدالة القاعات في ذاكرة العامل (نافذة منزلقة ثانية واحدة لكل قناة)، لأن المخطط لا يملك عمودًا أو جدولًا مشتركًا لأوقات الإرسال دون مسح كامل؛ نسخة عامل واحدة في الإطلاق التجريبي (04 §10)، ومع نسختين يُقسم `wa.global_mps` عليهما حتى يضاف مخزن مشترك. أما دلو المستلم (§5.7) فيُحسب من القاعدة (`ix_whatsapp_messages_customer`) فيصح عبر العمليات (DEC-136).
 
 ```sql
 -- اختيار دفعة عادلة: أقدم مهمة مستحقة لكل قاعة (المعالجة بـ SKIP LOCKED في العامل)
@@ -343,7 +350,7 @@ LIMIT 50;
 }
 ```
 
-- الرمز `rq1.` + 16 بايت عشوائية بترميز base64url (26 حرفًا). يُخزن فقط `sha256(token)` في `action_tokens.token_hash`؛ القيمة الخام تعيش في ذاكرة المرسل لحظة البناء ثم تُنسى.
+- الرمز `rq1.` + 16 بايت عشوائية بترميز base64url (26 حرفًا). يُخزن فقط `sha256(token)` في `action_tokens.token_hash`؛ القيمة الخام تعيش في ذاكرة المرسل لحظة البناء ثم تُنسى. لذلك يصدر رمز جديد في معاملة الحجز لكل محاولة إرسال W-01 (لا تُعاد قيمة سابقة)، والرموز السابقة للتذكرة نفسها تبقى صالحة بنفس `link_version` حتى انتهائها (DEC-137).
 - `biz_opaque_callback_data` يحمل معرف صف `whatsapp_messages` لربط Webhook الحالة حتى لو وصل قبل حفظ `wamid` (F-11). موضع الحقل وطوله الأقصى يُعاد التحقق منهما عند التنفيذ.
 - إن كان العميل معروفًا بـBSUID فقط (ربط QR دون رقم ظاهر) يُستبدل `"to"` بالحقل `"recipient": "<BSUID>"` (F-21).
 - `vehicle summary` يُبنى: الشركة + الطراز إن وجد + اللون + « — لوحة » + أرقام اللوحة إن وجدت؛ بحد 60 حرفًا، بلا أحرف اللوحة ولا أي بيانات أخرى.
@@ -410,9 +417,11 @@ LIMIT 50;
 |---|---|---|
 | `healthy` | `degraded` | قالب موقوف/معطل، أو جودة الرقم صفراء، أو `131048`، أو نسبة أخطاء مؤقتة > 20% خلال 5 دقائق |
 | `healthy`/`degraded` | `down` | أي خطأ من فئة «القناة» في §5.9، أو فشل كل المحاولات المؤقتة لأكثر من دقيقتين متتاليتين |
-| `down`/`degraded` | `healthy` | نجاح فحص صحة دوري (كل 60 ثانية) لحالة الرقم + نجاح أول إرسال فعلي |
+| `down`/`degraded` | `healthy` | نجاح فحص صحة دوري (كل 60 ثانية) لحالة الرقم + نجاح أول إرسال فعلي؛ ومن `degraded` يُشترط أيضًا جودة غير صفراء ولا حمراء وكل قوالب الكتالوج `approved` بفئة `UTILITY` (DEC-135) |
 
 كل انتقال يحدّث `health_status` و`health_changed_at` ويكتب الحدث `wa.channel_health_changed` ← حدث WebSocket `channel.status` لكل غرف الموظفين (شريط «واتساب متعطل» في D-15 وS-02) ← وعند `down` تنبيه `wa_channel_down` حرج: صف لكل موقع متأثر فيه حفل مفتوح أو قيد الإغلاق (`dedupe_key = 'wa_channel_down:{channel_id}'`، فريد لكل `(venue_id, dedupe_key)` وفق DEC-46) يصل مشرفي الموقع والإدارة عبر غرفتها، ويُحل آليًا عند العودة. أثناء `down` تستمر العمليات الداخلية، والعميل يطلب سيارته من السائق ميدانيًا، ولا يتحول النظام لأرقام السائقين (المعمارية §5).
+
+سلوك المرسل أثناء `down` (DEC-135): القوالب تُؤجل 30 ثانية دون استهلاك محاولة، وفحص `GET /{phone_number_id}` مرة كل 60 ثانية لكل عملية؛ نجاحه يسمح بإرسال فعلي، ونجاح ذلك الإرسال يعيد `healthy`. ردود الجلسة W-09…W-12 تُتخطى فورًا (`skipped_reason = 'channel_down'`) لأن الرد المتأخر يربك العميل والنافذة 24 ساعة. فحص التخطي (§5.5) يسبق فحص القناة، فيُغلق الإشعار المتجاوَز حتى أثناء التعطل.
 
 ---
 
@@ -460,7 +469,7 @@ markProcessed();     // whatsapp_inbound_events.status = 'processed'
 | `contacts[].user_id` / `messages[].from_user_id` | `customers.wa_user_id` | BSUID ثابت لكل محفظة أعمال ومستخدم |
 | `contacts[].profile.name` | لا يُخزن؛ يُعرض للسائق مؤقتًا في D-07 فقط | بيانات شخصية لا حاجة لحفظها |
 
-دالة `sameCustomer(customer, message)` تعيد صوابًا إذا تحقق أحد الشروط: `customer.wa_id = contacts.wa_id`، أو `customer.wa_user_id = from_user_id`، أو `customer.phone_e164 = '+' + from`. كل رسالة واردة تحدّث `customers.last_inbound_at = timestamp` (بتوقيت الرسالة، لا وقت المعالجة) للعميل المطابق إن وجد.
+دالة `sameCustomer(customer, message)` تعيد صوابًا إذا تحقق أحد الشروط: `customer.wa_id = contacts.wa_id`، أو `customer.wa_user_id = from_user_id`، أو `customer.phone_e164 = '+' + from`. كل رسالة واردة تحدّث `customers.last_inbound_at = timestamp` (بتوقيت الرسالة، لا وقت المعالجة) للعميل المطابق؛ والمرسل غير المعروف يُنشأ له صف بمعرّفاته فقط (DEC-132).
 
 ### 6.5 ضغط الزر (`type = "button"`)
 
@@ -520,10 +529,10 @@ async function handleText(m, contact) {
   const inbound = await whatsappMessages.insertInbound(m, { kind: 'inbound_text', status: 'received',
                                                              body_redacted: truncate(m.text.body, 1000) });
   if (!inbound.created) return;
-  const customer = await customers.matchOrNull(m, contact);       // لا يُنشأ عميل لمجرد رسالة حرة
-  if (customer) await customers.touchInbound(customer.id, m.timestamp);
+  const customer = await customers.upsertFrom(m, contact);        // صف لكل مرسل وارد بمعرّفاته فقط: ردود W-10…W-12 تشترط recipient_customer_id (ck_notifications_recipient، DEC-132)
+  await customers.touchInbound(customer.id, m.timestamp);
   const norm = normalize(m.text.body);
-  if (OPT_OUT.has(norm)) return optOut(customer ?? await customers.upsertFrom(m, contact), inbound);   // §7.6
+  if (OPT_OUT.has(norm)) return optOut(customer, inbound);         // §7.6
   const code = extractLinkCode(norm);
   if (code) return handleLinkCode(code, m, contact, inbound);      // §7.2
   return reply('W-10', inbound);                                   // مخنوق 10 دقائق لكل مرسل
@@ -552,10 +561,10 @@ async function handleStatus(s) {
     else await appendErrorDetails(row, e);                   // لا تُنزل رسالة مسلّمة إلى فاشلة
     return classifyPermanent(row, e);                        // §5.9 — مثل 131026 لـW-01
   }
-  if (rank && rank > row.status_rank)
-    await advance(row, s.status, rank, s.timestamp);         // read يملأ delivered_at إن كان فارغًا
+  const changed = rank && rank > row.status_rank;
+  if (changed) await advance(row, s.status, rank, s.timestamp);   // read يملأ delivered_at إن كان فارغًا
   if (s.pricing) await setPricing(row, s.pricing.category, s.pricing.billable);
-  emit('wa.message_status_changed', { message_id: row.id, status: s.status });
+  if (changed) emit('wa.message_status_changed', { message_id: row.id, status: s.status });   // لا للمكرر أو المتأخر (DEC-141)
 }
 ```
 
@@ -566,7 +575,7 @@ async function handleStatus(s) {
 
 | الحقل | الأثر |
 |---|---|
-| تحديث حالة القالب/جودته/فئته | تحديث `whatsapp_templates.status` و`rejection_reason`؛ أي خروج لقالب من `approved` أو تغير فئته يرفع تنبيه إدارة ويجعل القناة `degraded` |
+| تحديث حالة القالب/جودته/فئته | تحديث `whatsapp_templates.status` و`rejection_reason`؛ أي خروج لقالب من `approved` أو تغير فئته (هنا أو بالمزامنة أو بخطأ إرسال `132xxx`) يجعل القناة `degraded` (شريط `channel.status`) ويُسجَّل خطأً؛ لا نوع تنبيه له في 14 §8 (DEC-140) |
 | تحديث اسم العرض | تسجيل النتيجة في سجل التدقيق وإظهارها في S-13 |
 | تحديث جودة الرقم/الحساب | تحديث `quality_rating` وقواعد §5.14 |
 
@@ -696,7 +705,7 @@ sequenceDiagram
 - الزر الوحيد: `QUICK_REPLY` «طلب السيارة» في W-01 فقط (11 حرفًا ≤ 25).
 - الأسماء بلاحقة إصدار `_v1`. تعديل نص معتمد = قالب جديد `_v2` يُعتمد أولًا ثم يُبدّل في الإعدادات، ولا يُحرر المعتمد في مكانه.
 - لا يظهر اسم «بوينت» في أي قالب. النص المعتمد مطابق حرفيًا لـ`14_Notification_Matrix_Templates.md` §4.
-- مصدر التعريفات ملفات JSON في المستودع `packages/shared/whatsapp/templates/*.json`، والمزامنة عبر `POST /v1/admin/whatsapp/templates/sync` (تنشئ عبر `POST /{api_version}/{business_account_id}/message_templates` وتقرأ الحالة)، وتحديثات الحالة عبر Webhook (§6.9).
+- مصدر التعريفات كود في `packages/shared` (`WA_TEMPLATE_DEFINITIONS`؛ لا صفوف قوالب في البذر، DEC-52، DEC-139)، والمزامنة عبر `POST /v1/admin/whatsapp/templates/sync` (تنشئ عبر `POST /{api_version}/{business_account_id}/message_templates` وتقرأ الحالة)، وتحديثات الحالة عبر Webhook (§6.9).
 
 ### 8.2 تعريفات الإنشاء
 
@@ -844,7 +853,7 @@ sequenceDiagram
 
 1. قالب واحد فقط (W-01) يحوي مكون `BUTTONS`، وفيه زر واحد `QUICK_REPLY` نصه «طلب السيارة» حرفيًا (AC-18).
 2. لا أزرار `URL` أو `PHONE_NUMBER` أو `COPY_CODE` أو `OTP` في أي قالب.
-3. لا يظهر «بوينت» أو `POINT` في أي نص.
+3. لا يظهر «بوينت» أو `POINT` في أي نص، ويذكر W-01 علامة العميل «مصاف»؛ والفاحص يقرأ أسماء العلامتين من `BRAND_DEFAULTS` لا من نص صلب (DEC-138).
 4. عدد `{{n}}` في كل نص يطابق عدد عناصر `example.body_text` ويطابق المتغيرات المعرفة في القاموس §11.
 5. لا يبدأ ولا ينتهي نص بمتغير، والطول ضمن 1024.
 6. أسماء القوالب تطابق القاموس حرفيًا.
@@ -852,7 +861,7 @@ sequenceDiagram
 ### 8.4 خطر إعادة تصنيف W-05 وخطته البديلة
 
 W-05 يحمل رمز تسليم. صياغته معاملية (استلام مركبة في طلب قائم) وليست تحققًا من هوية حساب، لكن Meta قد تعيد تصنيفه إلى AUTHENTICATION فيصبح `REJECTED` أول الشهر التالي (F-13). التحوط:
-1. مراقبة Webhook تحديث فئة القالب؛ أي إشعار بإعادة التصنيف يرفع تنبيه إدارة فوريًا.
+1. مراقبة Webhook تحديث فئة القالب؛ أي إشعار بإعادة التصنيف يجعل القناة `degraded` فورًا ويُسجَّل خطأً (§6.9؛ لا نوع تنبيه له في 14 §8، DEC-140).
 2. البديل التشغيلي إذا لم يكن W-05 معتمدًا لحظة الإرسال:
    - إن كانت نافذة الخدمة مفتوحة (العميل ضغط الزر خلال 24 ساعة — الحالة الغالبة) يُرسل المحتوى نفسه رسالة جلسة نصية (`kind = 'session_text'`، `purpose = 'W-05'`) بنفس قواعد السرية §5.10.
    - وإلا (طلب نيابة عن العميل والنافذة مغلقة): خطأ واضح `WA_TEMPLATE_NOT_APPROVED` يظهر للسائق في D-11 وللمشرف كتنبيه `wa_send_failed`، ويتم التسليم بإجراء استثناء المشرف الموثق (`POST /v1/tickets/{ticketId}/handover-exception`) — يحقق AC-07.
@@ -1000,7 +1009,7 @@ W-05 يحمل رمز تسليم. صياغته معاملية (استلام مر�
 | القناة `down` (رمز منتهٍ `190`) | تنبيه `wa_channel_down` | تدوير رمز مستخدم النظام في مدير الأسرار | الفحص الدوري يعيد `healthy`؛ المرسل يرسل الحالات الحالية فقط |
 | مشكلة دفع `131042` | تنبيه حرج | تحديث وسيلة الدفع في Billing Hub | كما سبق |
 | الحساب مقيد `368`/`131031` | تنبيه حرج | مراجعة جودة الرقم ونهج الرسائل؛ تواصل مع دعم Meta | لا تحويل لأرقام بديلة؛ تشغيل ميداني حتى العودة |
-| قالب موقوف/مرفوض | تنبيه إدارة، القناة `degraded` | لـW-05: البديل §8.4؛ لغيره: الرسالة `failed` وتظهر للمشرف | إنشاء `_v2` واعتماده ثم التبديل |
+| قالب موقوف/مرفوض | القناة `degraded` وخطأ في السجل (لا نوع تنبيه له، DEC-140)؛ والإرسال الفاشل يرفع `wa_send_failed` | لـW-05: البديل §8.4؛ لغيره: الرسالة `failed` وتظهر للمشرف | إنشاء `_v2` واعتماده ثم التبديل |
 | تجاوز حد المراسلة اليومي | مقياس F-18 وأخطاء الإرسال | تفضيل ربط QR (لا يُحتسب)، والتذاكر الورقية للفائض | طلب رفع الحد/التوثيق |
 | تأخر Webhooks | `point_wa_inbound_backlog` | التحقق من العامل والقاعدة | Meta تعيد التسليم حتى 7 أيام؛ الإزالة تمنع التكرار |
 | انقطاع كامل للخادم | — | سجل ورقي مرقم (المعمارية §14) | بعد العودة تُرسل الحالات الحالية فقط؛ الأوامر المؤجلة لا تُشغّل تلقائيًا؛ الأزرار المضغوطة أثناء الانقطاع تُعالج من الـWebhooks المعادة وتخضع لقواعد التخطي |

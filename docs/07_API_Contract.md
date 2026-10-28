@@ -145,7 +145,7 @@ sequenceDiagram
 
 - `?limit=` (افتراضي 50، أقصى 200) و`?cursor=` معتم من `meta.next_cursor` (`null` عند النهاية).
 - الترتيب ثابت لكل قائمة ومذكور في وصف المسار (التذاكر: الأحدث إنشاءً؛ الطابور: الأقدم `priority_at` ثم `seq`؛ التنبيهات: الأحدث).
-- مؤشر تالف أو من مسار آخر يعيد `400 PAGINATION_CURSOR_INVALID`.
+- مؤشر تالف أو من مسار آخر يعيد `400 PAGINATION_CURSOR_INVALID`؛ فالمؤشر موقّع HMAC بمفتاح مشتق من `SESSION_SECRET` ومربوط بقائمته ومرشحاتها (DEC-124، DEC-168).
 
 ### 1.8 صيغ البيانات
 
@@ -166,7 +166,7 @@ sequenceDiagram
 | `read` | 300/دقيقة لكل مستخدم | |
 | `device` | 60/دقيقة لكل جهاز | النبضة كل 15 ثانية |
 | `export` | 5/ساعة لكل مستخدم | |
-| `webhook` | بلا حد تطبيقي؛ جسم ≤ 1 MB | الرد السريع أهم من الحد |
+| `webhook` | بلا حد تطبيقي؛ جسم خام ≤ 3 MB (وبقية أجسام JSON ≤ 1 MB، DEC-130) | الرد السريع أهم من الحد |
 | `health` | شبكة داخلية | |
 
 التجاوز يعيد `429 RATE_LIMITED` مع `Retry-After` بالثواني، وترويسات `RateLimit-Limit` و`RateLimit-Remaining` و`RateLimit-Reset` على كل رد. `RESEND_LIMIT_REACHED` حد أعمال منفصل (`handover.max_resends`).
@@ -272,10 +272,10 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 #### `POST /v1/me/duty/start` — بدء ورديتي
 
 - الصلاحية: `duty.self` · مفتاح التكرار: إلزامي · نجاح: `201`
-- الشروط: تعيين نشط (السائق) أو نطاق الموقع (مشرف can_drive) · وردية open لمجموعة التوزيع · لا مناوبة مفتوحة
+- الشروط: تعيين نشط (السائق) أو نطاق الموقع (مشرف can_drive) · وردية open لمجموعة التوزيع · لا مناوبة مفتوحة · المشرف بعدة مواقع في نطاقه يرسل venue_id (وإلا VALIDATION_FAILED على venue_id بـrequired_multiple_venues، وبلا موقع في نطاقه no_venue_scope)، وموقع خارج نطاقه ← SCOPE_VENUE_DENIED (DEC-182)
 - الأثر: duty_sessions(on_duty, available_since=now) + الانضمام لغرفة pool:{poolId}:drivers + تمريرة توزيع
 - أحداث: `driver.duty_started`, `driver.availability_changed` · WS: `driver.state_changed`
-- أخطاء خاصة: `ASSIGNMENT_REQUIRED`, `DRIVER_DISABLED`, `DUTY_ALREADY_STARTED`, `SHIFT_NOT_OPEN`
+- أخطاء خاصة: `ASSIGNMENT_REQUIRED`, `DRIVER_DISABLED`, `DUTY_ALREADY_STARTED`, `SCOPE_VENUE_DENIED`, `SHIFT_NOT_OPEN`
 
 #### `POST /v1/me/duty/break` — بدء/إنهاء الاستراحة
 
@@ -351,6 +351,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 - الشروط: status=received · منشئ التذكرة
 - الأثر: status=parking (لقطة الرسوم أُخذت عند الإنشاء، DEC-43)؛ واتساب مباشر: wa_link_status=pending_send + action token + job.wa_send(W-01)؛ alert inspection_incomplete عند الحاجة
 - أحداث: `ticket.intake_submitted`, `ticket.wa_link_changed`, `alert.raised` · WS: `ticket.updated` · واتساب: W-01
+- `INTAKE_INCOMPLETE.missing`: `plate`، `vehicle.make`، `vehicle.color`، `key_tag`، ومعها `paper_serial` (ورقية) أو `customer_phone` (واتساب بلا عميل ولا رمز QR حي أو مستهلك ولا ربط) (DEC-172)
 - أخطاء خاصة: `CONSENT_REQUIRED`, `INSPECTION_INCOMPLETE`, `INTAKE_INCOMPLETE`, `INVALID_STATE_TRANSITION`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`, `WA_CUSTOMER_OPTED_OUT`, `WA_TEMPLATE_NOT_APPROVED`
 
 #### `POST /v1/tickets/{ticketId}/discard-draft` — تجاهل مسودة فارغة
@@ -368,7 +369,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 للمسودات المهجورة أو الخاطئة قبل إتمام الصف. يقرّ المشرف بعودة المركبة والمفتاح للعميل قبل تحرير السائق. لتذاكر متوقفة خاطئة استخدم /manual-reconcile.
 
 - الصلاحية: `ticket.void` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: status ∈ {received, parking} · لا دورة استرجاع مفتوحة
+- الشروط: status ∈ {received, parking} (تذكرة نهائية ← INVALID_STATE_TRANSITION بـallowed_from [received, parking] لا TICKET_CLOSED) · لا دورة استرجاع مفتوحة · custody_returned_to_customer=true، وإلا CUSTODY_OPEN بالعناصر التي لم تعد للعميل (DEC-175)
 - الأثر: voided + عهدة → customer (correction) + حل تنبيه draft_abandoned
 - أحداث: `ticket.voided`, `task.canceled`, `custody.changed`, `driver.availability_changed`, `alert.resolved` · WS: `ticket.updated`, `driver.state_changed`
 - أخطاء خاصة: `CUSTODY_OPEN`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
@@ -443,7 +444,7 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 يُدخل الموقف (أو ملاحظة نصية حسب parking.mode) وخانة المفتاح (إلزامية إذا keys.require_slot). إن وُجد طلب مبكر pending_retrieval_at تُنشأ دورة استرجاع بوقت الطلب الأصلي (DEC-13).
 
 - الصلاحية: `task.execute` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: task.type ∈ {park, repark} وstatus=in_progress · المكلّف بالمهمة · ticket.status ∈ {parking, reparking}
+- الشروط: task.type ∈ {park, repark} وstatus=in_progress · المكلّف بالمهمة · ticket.status ∈ {parking, reparking} · الموقف ومنطقته والخانة ولوحتها نشطة (تُقرأ FOR SHARE بعد أقفال Canon)، وإلا VALIDATION_FAILED بالمشكلة inactive أو zone_inactive أو board_inactive على parking_spot_id أو key_slot_id (DEC-190)
 - الأثر: parked + spot/key allocations + عهدة → spot/key_slot + ترقية المهمة التالية أو available_since=now + تمريرة توزيع
 - أحداث: `ticket.parked`, `task.completed`, `custody.changed`, `driver.availability_changed`, `task.promoted`, `ticket.retrieval_requested`, `task.created` · WS: `task.updated`, `ticket.updated`, `driver.state_changed`
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `NOT_TASK_ASSIGNEE`, `PARKING_SPOT_OCCUPIED`, `VERSION_CONFLICT`
@@ -507,6 +508,7 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 
 - الصلاحية: `handover.verify` · مفتاح التكرار: إلزامي · نجاح: `200`
 - الشروط: ticket.status=ready · المكلّف بمهمة الإحضار
+- ترتيب الفحص (DEC-177): مغلقة (TICKET_CLOSED) ← غير جاهزة (HANDOVER_NOT_READY) ← المكلّف (NOT_TASK_ASSIGNEE) ← الإصدار (VERSION_CONFLICT) ← العهدة (CUSTODY_HOLDER_MISMATCH) ← بوابة الدفع (PAYMENT_PENDING وأخطاء التحصيل المضمّن) ← التحقق بالرمز أو الكعب؛ فالبوابة ترفض قبل احتساب أي محاولة خاطئة
 - الأثر: delivered + الدورة outcome=delivered + عهدة → customer + الرمز consumed + W-06 + ترقية التالية أو available
 - أحداث: `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `payment.recorded`, `handover.code_attempt_failed`, `handover.code_locked`, `task.promoted`, `driver.availability_changed` · WS: `task.updated`, `ticket.updated`, `driver.state_changed`, `alert.raised` · واتساب: W-06
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `HANDOVER_CODE_CONSUMED`, `HANDOVER_CODE_EXPIRED`, `HANDOVER_CODE_INVALID`, `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `PAPER_STUB_MISMATCH`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
@@ -702,20 +704,20 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `GET /v1/reports/drivers` | أداء السائقين | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
 | `GET /v1/reports/payments` | تقرير التحصيل | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
 | `GET /v1/reports/messages` | صحة رسائل واتساب | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `POST /v1/exports` | طلب ملف تصدير CSV | `export.create` | إلزامي | exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read | `RESOURCE_NOT_FOUND` |
+| `POST /v1/exports` | طلب ملف تصدير CSV | `export.create` | إلزامي | exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read | `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED` (لـ`filters.venue_id` خارج النطاق، DEC-191) |
 | `GET /v1/exports/{exportId}` | حالة التصدير ورابط التنزيل — الشروط: طالب التصدير فقط | `export.create` | — | — | — |
-| `GET /v1/admin/whatsapp/channel` | قناة واتساب (مصاف) | `wa.channel_read` | — | — | — |
+| `GET /v1/admin/whatsapp/channel` | قناة واتساب (مصاف) — بلا قناة بعد: RESOURCE_NOT_FOUND (DEC-142) | `wa.channel_read` | — | — | `RESOURCE_NOT_FOUND` |
 | `PUT /v1/admin/whatsapp/channel` | ضبط القناة الوحيدة — قناة فعالة واحدة فقط لكل بيئة (phone_number_id واحد). المراجع تشير لمدير الأسرار ولا تحمل الأسرار نفسها. | `wa.channel_manage` | إلزامي | استبدال كامل للصف الفعال الوحيد (أو إنشاؤه أول مرة)؛ audit_log؛ لا يُنشئ قناة ثانية فعالة | `INVALID_STATE_TRANSITION` |
 | `GET /v1/admin/whatsapp/templates` | القوالب وحالة اعتمادها | `wa.channel_read` | — | — | — |
-| `POST /v1/admin/whatsapp/templates/sync` | مزامنة حالة القوالب من Meta | `wa.templates_manage` | إلزامي | — | `DEPENDENCY_TIMEOUT`, `WA_CHANNEL_UNAVAILABLE` |
+| `POST /v1/admin/whatsapp/templates/sync` | مزامنة حالة القوالب من Meta — يستدعي Graph في حارس بعد الجلسة والصلاحية وقبل معاملة الأمر، ويتخطاه إن كان مفتاح التكرار مكتملًا؛ المهلة ← DEPENDENCY_TIMEOUT، والتعطل أو 5xx أو خطأ القناة ← WA_CHANNEL_UNAVAILABLE (503 مع Retry-After)، وغير ذلك ← WA_SEND_FAILED (DEC-142) | `wa.templates_manage` | إلزامي | ينشئ الناقص من تعريفات WA_TEMPLATE_DEFINITIONS ويحدّث الحالات (DEC-139) | `DEPENDENCY_TIMEOUT`, `WA_CHANNEL_UNAVAILABLE`, `WA_SEND_FAILED` |
 | `GET /v1/admin/outbox` | أحداث Outbox العالقة/الفاشلة | `outbox.manage` | — | — | — |
-| `POST /v1/admin/outbox/{outboxId}/retry` | إعادة جدولة حدث فاشل — يعيد failed/dead إلى pending. رسائل العميل القديمة تمر بفحص الحداثة قبل الإرسال وقد تُتخطى (skipped=stale). | `outbox.manage` | إلزامي | — | `INVALID_STATE_TRANSITION` |
+| `POST /v1/admin/outbox/{outboxId}/retry` | إعادة جدولة حدث فاشل — يعيد failed/dead إلى pending. رسائل العميل القديمة تمر بفحص الحداثة قبل الإرسال وقد تُتخطى (skipped=stale). صف job.* تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، يُغلق canceled بالسبب في last_error ويرد 200 دون إعادة (canceled_stale أو canceled_superseded في التدقيق)؛ وأحداث النطاق تُعاد دائمًا (DEC-150). | `outbox.manage` | إلزامي | audit_log (outbox.manage) بالنتيجة | `INVALID_STATE_TRANSITION` |
 | `GET /v1/admin/audit-log` | سجل التدقيق | `audit.read` | — | — | — |
 | `GET /v1/admin/retention-policy` | سياسة الاحتفاظ | `audit.read` | — | — | — |
-| `PUT /v1/admin/retention-policy` | اعتماد سياسة الاحتفاظ | `retention.manage` | إلزامي | يطبقها job.retention_purge مع استثناء الوقائع المفتوحة | — |
+| `PUT /v1/admin/retention-policy` | اعتماد سياسة الاحتفاظ — المفاتيح الستة كلها، أعداد صحيحة موجبة حتى 36,500 يوم أو 1,200 شهر؛ الحفظ يضبط approved_by_owner=true، وupdated_at وقت آخر تدقيق retention.manage (DEC-154) | `retention.manage` | إلزامي | يطبقها job.retention_purge مع استثناء الوقائع المفتوحة | — |
 | `GET /v1/admin/org-settings` | إعدادات المؤسسة | `org.settings_manage` | — | — | — |
 | `PUT /v1/admin/org-settings` | تعديل إعدادات المؤسسة — للمالك فقط (DEC-39). تغيير security.* يسري على الجلسات الجديدة؛ heartbeat.* يُدفع للأجهزة عبر sync.required. | `org.settings_manage` | إلزامي | organizations.settings + audit_log | — |
-| `POST /v1/telemetry` | دفعة قياسات العميل | `telemetry.write` | — | analytics_events(source=client) | — |
+| `POST /v1/telemetry` | دفعة قياسات العميل — ليست أمرًا: بلا Idempotency-Key ولا صف تدقيق، 202 بلا جسم في معاملتها الخاصة (DEC-149)؛ ترد مشكلات الدفعة وحدها، والحدث غير الصالح يُسقط ويُعد (DEC-148، 15 §9) | `telemetry.write` | — | analytics_events(source=client) | — |
 
 ### 2.8 Webhooks والصحة (Canon §9.8)
 
@@ -1211,7 +1213,7 @@ Content-Type: application/json
 | الحدث | الحمولة | الرد (ack) |
 |---|---|---|
 | `client.heartbeat` | `{visible: boolean, audio_unlocked: boolean, last_event_id, app_version}` كل `heartbeat.interval_s` (15 ث)؛ الجهاز معروف من الجلسة (`auth_sessions.device_id`) | `{server_time, connection_state, sync_required}` |
-| `client.offer_seen` | `{offer_id}` عند ظهور البطاقة فعليًا على الشاشة | `{ok: true}` — يحدّث `offer_recipients.seen_at` للقياس |
+| `client.offer_seen` | `{offer_id, receive_latency_ms?}` عند ظهور البطاقة فعليًا على الشاشة | `{ok: true}` — يملأ `offer_recipients.seen_at` مرة واحدة ويكتب `offer_card_seen` (`via: ws`) في المعاملة نفسها (DEC-166، 15 §9.4) |
 
 ### 4.5 دلالات التسليم والمزامنة
 
@@ -1232,10 +1234,10 @@ Content-Type: application/json
 
 ### 5.2 الاستقبال
 
-1. اقرأ **الجسم الخام** (bytes) قبل أي تحليل JSON؛ عطّل محلل الجسم العام لهذا المسار.
+1. اقرأ **الجسم الخام** (bytes) قبل أي تحليل JSON حتى 3 MB؛ عطّل محلل الجسم العام لهذا المسار (بقية أجسام JSON حتى 1 MB؛ الأكبر ← `413 PAYLOAD_TOO_LARGE` دون حفظ، DEC-130).
 2. احسب `HMAC-SHA256(app_secret, raw_body)` وقارنه مع `X-Hub-Signature-256` (`sha256=<hex>`) بمقارنة زمن ثابت. الفشل: `401 WA_WEBHOOK_SIGNATURE_INVALID` دون حفظ (مقياس فقط).
 3. في معاملة واحدة: أدرج `whatsapp_inbound_events` (`body_sha256` فريد؛ التكرار الحرفي يُعتبر نجاحًا) + `outbox_events(type=job.wa_process_inbound)`.
-4. أعد `200` خلال أقل من ثانية. تعذر الحفظ ⇒ `500` ليعيد المزود المحاولة؛ لا نجاح كاذب.
+4. بعد الالتزام أعد `200` بلا جسم (DEC-130) خلال أقل من ثانية. تعذر الحفظ ⇒ `500` ليعيد المزود المحاولة؛ لا نجاح كاذب.
 5. المعالجة لاحقًا بالعامل: التحقق من `phone_number_id`، إدراج الرسائل بـ`wa_message_id` فريد، تحديث `customers.last_inbound_at` و`wa_id`، ثم توجيه الرسالة (زر/نص/ربط QR/إيقاف/أخرى) والحالات (رتبة لا تنخفض). التفاصيل والرسائل W-09…W-12 في `12_WhatsApp_Integration_Spec.md`.
 
 الرقم المركزي واحد: الموقع يُستنتج دائمًا من `action_token → ticket_id → venue_id`، لا من آخر محادثة ولا من رقم العميل. عميل لديه تذكرتان في موقعين يضغط زر رسالة كل تذكرة فيصل كل طلب لمجموعة سائقي موقعها.

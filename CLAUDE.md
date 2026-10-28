@@ -39,7 +39,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 | — | `brand/BRAND_GUIDELINES.md`, `brand/tokens/`, `brand/logo/`, `brand/app-icons/`, `brand/sounds/` | UI identity assets (copy, never redraw) |
 | — | `docs/design/README.md`, `docs/design/system/` | the published design system «بوينت · POINT» (Claude Design): every component's look, states and both themes. Read the README first: values come from `brand/tokens`, behaviour and props from 02/03/07 (DEC-49, DEC-50) |
 
-**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-129`) in `docs/DECISIONS.md` and fix the affected file in the same change.
+**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-192`) in `docs/DECISIONS.md` and fix the affected file in the same change.
 
 ## 3. Non-negotiables (full list: canon §2)
 
@@ -59,7 +59,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 
 - Build **sprint by sprint** following `docs/16_Dev_Tickets_Sprint_Plan.md`. Do not start a sprint behind a gate (G1–G5) until the gate passes.
 - One ticket = one branch `pnt-###-slug` = one PR (or one reviewed commit series). Each ticket ships with the tests that prove its acceptance criteria (`docs/17`).
-- The first migration is `docs/06_schema.sql` verbatim (Drizzle schema must match it; partial indexes and checks via raw SQL migrations). `docs/06_schema_invariants_test.sql` runs in CI and must stay green.
+- The first migration is `docs/06_schema.sql` verbatim (later corrections to it ship as new migrations, DEC-129; Drizzle schema must match it; partial indexes and checks via raw SQL migrations). `docs/06_schema_invariants_test.sql` runs in CI and must stay green.
 - Integration tests run on a real PostgreSQL 16 (Testcontainers). Time-dependent logic goes through an injectable `Clock`.
 - Pin the latest **stable** versions at implementation time after checking official docs. Do not use version numbers from memory. Minimums: Node.js 24 LTS, PostgreSQL 16.
 - Use the WhatsApp simulator (`tools/wa-simulator`) everywhere except the explicitly configured live environment. Never message real customers from dev or staging.
