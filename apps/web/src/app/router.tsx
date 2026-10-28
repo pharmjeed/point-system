@@ -8,6 +8,7 @@ import { VehiclesPage } from '@/features/driver/VehiclesPage';
 import { BootSkeleton, NotFoundPage, RootRedirect, SessionEndedPage } from '@/features/system/SystemPages';
 import { paths } from './paths';
 import { RootLayout } from './RootLayout';
+import { staffRoutes } from './routes.staff';
 
 /**
  * Component gallery (design-system comparison, e2e screenshots). Only in builds with
@@ -82,10 +83,7 @@ export const routes: RouteObject[] = [
       {
         lazy: async () => ({ Component: (await import('@/features/ops/StaffLayout')).StaffLayout }),
         children: [
-          {
-            path: paths.ops,
-            lazy: async () => ({ Component: (await import('@/features/ops/StaffPages')).OpsPage }),
-          },
+          ...staffRoutes,
           {
             path: paths.drivers,
             lazy: async () => ({ Component: (await import('@/features/drivers/DriversPage')).DriversPage }),
@@ -109,14 +107,6 @@ export const routes: RouteObject[] = [
             lazy: async () => ({
               Component: (await import('@/features/venues/VenueSetupPage')).VenueSetupPage,
             }),
-          },
-          {
-            path: paths.reports,
-            lazy: async () => ({ Component: (await import('@/features/ops/StaffPages')).ReportsPage }),
-          },
-          {
-            path: paths.admin,
-            lazy: async () => ({ Component: (await import('@/features/ops/StaffPages')).AdminPage }),
           },
         ],
       },
