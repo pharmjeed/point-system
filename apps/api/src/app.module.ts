@@ -8,7 +8,10 @@ import {
   CsrfGuard,
   EnvelopeInterceptor,
   HealthController,
+  RateLimitGuard,
+  RateLimiter,
   RouteAudit,
+  UserRateLimitGuard,
 } from '@point/server';
 import { CoreModule, type CoreModuleOptions } from './core.module.js';
 import { FEATURE_MODULES } from './features.js';
@@ -22,9 +25,13 @@ export class AppModule {
       controllers: [HealthController],
       providers: [
         { provide: APP_FILTER, useClass: ApiExceptionFilter },
-        // guards run in registration order: CSRF → session → permission (09 §8.1)
+        // guards run in registration order: rate limit by IP → CSRF → session → permission → rate limit by
+        // user/device (09 §8.1, 08 §2; PNT-096)
+        RateLimiter,
+        { provide: APP_GUARD, useClass: RateLimitGuard },
         { provide: APP_GUARD, useClass: CsrfGuard },
         { provide: APP_GUARD, useClass: AuthGuard },
+        { provide: APP_GUARD, useClass: UserRateLimitGuard },
         RouteAudit,
         // interceptors: the envelope wraps whatever the command interceptor produced
         { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },

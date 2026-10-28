@@ -12,6 +12,7 @@ import {
   RealtimeServer,
   TelemetryIngest,
   requestContextMiddleware,
+  trustProxySetting,
   type Clock,
   type Database,
   type Env,
@@ -45,12 +46,25 @@ export async function createApp(opts: CoreModuleOptions): Promise<NestExpressApp
   );
   app.useBodyParser('json', { limit: '1mb' });
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // the client address (rate limits by IP, audit ip) comes from X-Forwarded-For of the reverse proxy (TRUST_PROXY hops)
+  app.set('trust proxy', trustProxySetting(opts.env.TRUST_PROXY));
   app.use(
     helmet({
-      contentSecurityPolicy: false, // the API serves JSON only; the web app sets its own CSP
+      // the API serves JSON and text only: a CSP that allows nothing (05 §4 «CSP للـAPI بسيطة»); the web app's
+      // own CSP is set by the reverse proxy on the static files (DEC-94, infra/caddy/Caddyfile)
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'none'"],
+          formAction: ["'none'"],
+        },
+      },
       crossOriginResourcePolicy: { policy: 'same-site' },
       referrerPolicy: { policy: 'no-referrer' },
+      frameguard: { action: 'deny' },
+      // HSTS (helmet default max-age=31536000; includeSubDomains) matches 05 §14.1 and the proxy
     }),
   );
   app.use(requestContextMiddleware);

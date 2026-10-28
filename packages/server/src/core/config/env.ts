@@ -81,10 +81,19 @@ export const envSchema = z.object({
   MEDIA_MAX_BYTES: int(10485760),
   EXPORT_URL_TTL_S: int(300),
 
-  RATE_LIMIT_LOGIN_PER_15MIN: int(10),
-  RATE_LIMIT_COMMANDS_PER_MIN: int(120),
-  RATE_LIMIT_READS_PER_MIN: int(600),
-  RATE_LIMIT_WEBHOOK_PER_MIN: int(6000),
+  // 07 §1.9 rate-limit classes (PNT-096): one bucket per IP before login, per user (or device) after; 0 = no limit.
+  // Off by default when NODE_ENV=test (the API tests send hundreds of requests at a frozen FakeClock time).
+  RATE_LIMIT_ENABLED: bool.optional(),
+  RATE_LIMIT_AUTH_PER_MIN: int(10), // per IP: login, MFA verify (the account lock is security.max_login_attempts)
+  RATE_LIMIT_COMMANDS_PER_MIN: int(60), // per user
+  RATE_LIMIT_ACCEPT_PER_10S: int(20), // per user, POST /v1/task-offers/{offerId}/accept, on top of `command`
+  RATE_LIMIT_WRITES_PER_MIN: int(30), // per user (auth.self writes)
+  RATE_LIMIT_READS_PER_MIN: int(300), // per user
+  RATE_LIMIT_DEVICE_PER_MIN: int(60), // per device (session): heartbeat, devices, audio test, telemetry
+  RATE_LIMIT_EXPORTS_PER_HOUR: int(5), // per user
+  RATE_LIMIT_WEBHOOK_PER_MIN: int(6000), // per source IP (valve only, 05 §14.3)
+  // Express `trust proxy` (05 §14.2): hops in front of the api (1 = the reverse proxy), or a subnet list
+  TRUST_PROXY: z.string().default('1'),
 
   WORKER_ID: z.string().default(''),
   WORKER_CONCURRENCY: int(8),
@@ -137,10 +146,66 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   return env;
 }
 
+/**
+ * The configuration of a running process (api, worker, command-line tools): loadEnv plus the deployment
+ * guards. Unit tests that only need a parsed configuration keep using loadEnv.
+ */
+export function loadDeployedEnv(source: Record<string, string | undefined> = process.env): Env {
+  const env = loadEnv(source);
+  const problems = deploymentProblems(env, source);
+  if (problems.length) throw new EnvError(problems);
+  return env;
+}
+
+/**
+ * PNT-096: settings a deployment must not get wrong (09 §9.3 cookie, DEC-29 one origin, 05 §9 staging
+ * allow-list, 17 H-03). Checked when a process boots (loadDeployedEnv, loadEnvOrExit).
+ */
+export function deploymentProblems(env: Env, source: Record<string, string | undefined> = {}): string[] {
+  const out: string[] = [];
+  const hosted = env.APP_ENV === 'staging' || env.APP_ENV === 'production';
+  if (env.SESSION_COOKIE_NAME.startsWith('__Host-') && !env.SESSION_COOKIE_SECURE) {
+    out.push(
+      'SESSION_COOKIE_NAME with the __Host- prefix needs SESSION_COOKIE_SECURE=true (browsers drop it)',
+    );
+  }
+  if (env.WA_MODE === 'live' && new URL(env.WA_GRAPH_BASE_URL).protocol !== 'https:') {
+    out.push('WA_GRAPH_BASE_URL must be https when WA_MODE=live');
+  }
+  if (env.APP_ENV === 'staging' && env.WA_MODE === 'live' && !env.WA_TEST_RECIPIENT_ALLOWLIST.trim()) {
+    out.push('WA_TEST_RECIPIENT_ALLOWLIST is required in staging with WA_MODE=live (05 §9 rule 2)');
+  }
+  if (hosted) {
+    if (!env.SESSION_COOKIE_SECURE) out.push('SESSION_COOKIE_SECURE must be true in staging/production');
+    if (!env.SESSION_COOKIE_NAME.startsWith('__Host-')) {
+      out.push('SESSION_COOKIE_NAME must start with __Host- in staging/production (09 §9.3)');
+    }
+    if (new URL(env.APP_BASE_URL).protocol !== 'https:') {
+      out.push('APP_BASE_URL must be https in staging/production');
+    }
+    if (env.API_BASE_URL && new URL(env.API_BASE_URL).origin !== new URL(env.APP_BASE_URL).origin) {
+      out.push('API_BASE_URL must be on the origin of APP_BASE_URL (one origin, DEC-29)');
+    }
+  }
+  if (env.APP_ENV === 'production' && source.CHAOS_KILL_AT?.trim()) {
+    out.push('CHAOS_KILL_AT is refused in production (17 H-03)');
+  }
+  return out;
+}
+
+/** `trust proxy` for Express: a hop count ("1") or Express's own list syntax ("loopback, 10.0.0.0/8"). */
+export function trustProxySetting(value: string): number | string | boolean {
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  if (v === 'false') return false;
+  if (v === 'true') return true;
+  return v;
+}
+
 /** Boot helper for the entry points: print the problems and exit(1). */
 export function loadEnvOrExit(source: Record<string, string | undefined> = process.env): Env {
   try {
-    return loadEnv(source);
+    return loadDeployedEnv(source);
   } catch (e) {
     if (e instanceof EnvError) {
       console.error(e.message);

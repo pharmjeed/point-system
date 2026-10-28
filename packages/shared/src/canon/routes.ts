@@ -29,6 +29,19 @@ export type IdempotencyMode = (typeof IDEMPOTENCY_MODES)[number];
 export const ROUTE_SECTIONS = ['9.1', '9.2', '9.3', '9.4', '9.5', '9.6', '9.7', '9.8'] as const;
 export type RouteSection = (typeof ROUTE_SECTIONS)[number];
 
+/** `x-rate-limit-class` of docs/07_openapi.yaml; limits per class in 07 §1.9. */
+export const RATE_LIMIT_CLASSES = [
+  'auth',
+  'command',
+  'write',
+  'read',
+  'device',
+  'export',
+  'webhook',
+  'health',
+] as const;
+export type RateLimitClass = (typeof RATE_LIMIT_CLASSES)[number];
+
 export interface RouteDef {
   method: HttpMethod;
   /** Canon path template, e.g. `/v1/tickets/{ticketId}/void`. */
@@ -40,6 +53,8 @@ export interface RouteDef {
   /** Extra fields gated by another permission (`GET /v1/tickets/{ticketId}` + `ticket.read_full`). */
   fieldPermission?: Permission;
   section: RouteSection;
+  /** Rate-limit class (07 §1.9, `x-rate-limit-class`): reads `read`, other methods `command`, except the listed ones. */
+  rateLimitClass: RateLimitClass;
 }
 
 type Row = readonly [HttpMethod, string, RoutePermission, IdempotencyMode, RouteSection, Permission?];
@@ -194,6 +209,30 @@ const ROWS: readonly Row[] = [
   ['GET', '/metrics', 'internal', 'none', '9.8'], // internal network only
 ];
 
+/**
+ * Routes whose `x-rate-limit-class` is not the default of their method (`GET` → `read`, anything else →
+ * `command`). Checked against every operation of docs/07_openapi.yaml by test/routes.test.ts.
+ */
+const RATE_LIMIT_CLASS_OF: Readonly<Record<string, RateLimitClass>> = {
+  'POST /v1/auth/login': 'auth',
+  'POST /v1/auth/mfa/verify': 'auth',
+  'POST /v1/auth/mfa/setup': 'write',
+  'POST /v1/auth/mfa/confirm': 'write',
+  'POST /v1/auth/secret/change': 'write',
+  'POST /v1/auth/logout': 'write',
+  'POST /v1/me/devices': 'device',
+  'PUT /v1/me/devices/{deviceId}': 'device',
+  'POST /v1/me/audio-test': 'device',
+  'POST /v1/me/heartbeat': 'device',
+  'POST /v1/telemetry': 'device',
+  'POST /v1/exports': 'export',
+  'GET /webhooks/whatsapp': 'webhook',
+  'POST /webhooks/whatsapp': 'webhook',
+  'GET /health/live': 'health',
+  'GET /health/ready': 'health',
+  'GET /metrics': 'health',
+};
+
 export const ROUTES: readonly RouteDef[] = ROWS.map(
   ([method, path, permission, idempotency, section, fieldPermission]): RouteDef => ({
     method,
@@ -203,6 +242,7 @@ export const ROUTES: readonly RouteDef[] = ROWS.map(
     idempotency,
     section,
     ...(fieldPermission ? { fieldPermission } : {}),
+    rateLimitClass: RATE_LIMIT_CLASS_OF[`${method} ${path}`] ?? (method === 'GET' ? 'read' : 'command'),
   }),
 );
 
