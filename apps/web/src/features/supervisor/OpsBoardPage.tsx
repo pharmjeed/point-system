@@ -48,7 +48,7 @@ import { cx } from '@/lib/cx';
 import { formatClock, formatSinceMinutes, formatTime } from '@/lib/format';
 import { useUiStore } from '@/stores/ui';
 import { AlertList } from './AlertList';
-import { useLiveAlerts } from './OpsArea';
+import { AlertSoundBanner, useLiveAlerts } from './OpsArea';
 import {
   driverTaskInfo,
   liveAlerts,
@@ -184,6 +184,7 @@ function Board({ me }: { me: Me }) {
     <div className="st-page" aria-busy={pending || undefined}>
       {header}
       {picker}
+      <AlertSoundBanner />
       {board ? <BoardBanners board={board} /> : null}
       {boardError && board ? (
         <Banner

@@ -12,7 +12,10 @@ const SCREENS: Array<{
   heading: RegExp;
   ready: string;
   closing?: boolean;
-}> = [{ path: '/ops', role: 'supervisor', heading: /لوحة التشغيل/, ready: '[data-ticket="47"]' }];
+}> = [
+  { path: '/ops', role: 'supervisor', heading: /لوحة التشغيل/, ready: '[data-ticket="47"]' },
+  { path: '/ops/alerts', role: 'supervisor', heading: /مركز التنبيهات/, ready: '[data-alert-id="al-47"]' },
+];
 
 for (const s of SCREENS) {
   test(`${s.path} — layout`, async ({ page }) => {
