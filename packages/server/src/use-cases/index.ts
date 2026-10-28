@@ -21,3 +21,4 @@ export {
 
 // S3 customer flows (PNT-043 … PNT-051, PNT-078): installed at load (button press, direct link at submit)
 export { installCustomerFlows } from './customer-flows/install.js';
+export { handleButtonPress } from './customer-flows/button-press.js';
