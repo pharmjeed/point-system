@@ -14,7 +14,7 @@ export interface CommandMeta {
 
 export interface AuditInput {
   /** canon §10 permission used by the command (11 §1.1 rule 4) */
-  action: Extract<Permission, 'venue.manage' | 'event.manage' | 'shift.manage'>;
+  action: Extract<Permission, 'venue.manage' | 'event.manage' | 'shift.manage' | 'org.settings_manage'>;
   entityType: string;
   entityId: string;
   venueId: string | null;
