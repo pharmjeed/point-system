@@ -4,6 +4,11 @@ export { setChannelHealth, channelDownDedupeKey } from './application/channel-he
 export { WhatsappChannelAdmin, WhatsappChannelPutBody } from './application/channel-admin.js';
 export { WhatsappTemplates, templateStatus, templateView } from './application/templates.js';
 export {
+  WhatsappWebhookIntake,
+  verifyHubSignature,
+  constantTimeEqual,
+} from './application/webhook-intake.js';
+export {
   registerTicketUpdatePublisher,
   publishTicketUpdated,
   type TicketUpdatePublisher,
