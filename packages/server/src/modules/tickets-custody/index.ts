@@ -49,3 +49,8 @@ export {
   type IntakePatch,
 } from './application/intake-service.js';
 export { ticketsCustodyJobs } from './jobs/index.js';
+export {
+  READY_UNCOLLECTED_JOB,
+  readyUncollectedHandler,
+  scheduleReadyUncollectedCheck,
+} from './jobs/ready-uncollected.js';

@@ -9,6 +9,7 @@ import {
   emitForTicket,
   invalidTransition,
   moveCustody,
+  scheduleReadyUncollectedCheck,
   ticketRef,
   type CycleRow,
   type TicketRow,
@@ -226,7 +227,8 @@ export class MovementUseCase {
         claim_code_id: code?.claim_code_id ?? null,
       },
     });
-    // extension point (S4, PNT-058): job.ready_uncollected_check at ready_at + ready.uncollected_alert_min
+    // TT-17 timer: job.ready_uncollected_check at ready_at + ready.uncollected_alert_min (ready_not_collected)
+    if (cycle) await scheduleReadyUncollectedCheck(tx, tk, cycle.id, tx.now);
     await auditCommand(tx, actor, {
       action: 'task.execute',
       operation: op,
