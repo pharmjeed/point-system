@@ -1,0 +1,10 @@
+{
+  "name": "signatures-and-reorder",
+  "description": "TC-WA-13 + TC-WA-15: a correctly signed text, the same text badly signed and unsigned (the API must answer 401 to both), then reordered statuses of the last W-01.",
+  "steps": [
+    { "action": "text", "from": "+966551234567", "body": "hello" },
+    { "action": "text", "from": "+966551234567", "body": "hello", "signature": "invalid" },
+    { "action": "text", "from": "+966551234567", "body": "hello", "signature": "missing" },
+    { "action": "statuses", "to": "+966551234567", "purpose": "W-01", "order": "reorder" }
+  ]
+}

@@ -1,0 +1,10 @@
+node_modules
+dist
+test
+coverage
+*.md
+*.log
+.env
+.env.*
+tsconfig.json
+tsconfig.build.json

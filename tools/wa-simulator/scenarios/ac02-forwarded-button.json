@@ -1,0 +1,5 @@
+{
+  "name": "ac02-forwarded-button",
+  "description": "AC-02 / TC-004: CUS3 presses the W-01 button that was sent to CUS1 (same payload, different sender).",
+  "steps": [{ "action": "press", "to": "+966551234567", "purpose": "W-01", "from": "+966500001234" }]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@point/wa-simulator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local fake of the WhatsApp Cloud (Graph) API plus a signed-webhook emitter (dev/test only)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@point/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "scenarios"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsc -p tsconfig.build.json && node dist/main.js",
+    "replay": "node dist/replay.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

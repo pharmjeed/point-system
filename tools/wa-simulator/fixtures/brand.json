@@ -1,0 +1,8 @@
+{
+  "$comment": "Customer-facing brand defaults used by the simulator UI and fake phone-number profile (canon §1). Overridable with BRAND_CUSTOMER_NAME_AR / BRAND_CUSTOMER_NAME_EN.",
+  "customerNameAr": "مصاف",
+  "customerNameEn": "MASAF",
+  "linkCodePrefix": "ربط تذكرة مصاف",
+  "stopKeyword": "إيقاف",
+  "requestButtonText": "طلب السيارة"
+}
