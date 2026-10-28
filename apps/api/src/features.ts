@@ -32,5 +32,5 @@ FEATURE_MODULES.push(IdentityAccessHttpModule);
 // import { AuditMonitoringHttpModule } from '@point/server';
 // FEATURE_MODULES.push(AuditMonitoringHttpModule);
 
-// import { MediaHttpModule } from '@point/server';
-// FEATURE_MODULES.push(MediaHttpModule);
+import { MediaHttpModule } from '@point/server';
+FEATURE_MODULES.push(MediaHttpModule);
