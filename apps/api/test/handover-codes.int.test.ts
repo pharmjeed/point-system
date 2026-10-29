@@ -33,6 +33,8 @@ import {
   U,
 } from './dispatch-fixtures.js';
 import { newKey } from './harness.js';
+import { captureRealtime } from './dispatch-s4-fixtures.js';
+import { rooms } from '@point/shared';
 import { ORG } from './wa-harness.js';
 
 let phoneSeq = 5_300_000;
@@ -274,11 +276,22 @@ describe('S3 handover codes (PNT-047) and the exceptional handover (PNT-078)', (
     );
     const [c0] = await codes(w, t.ticketId);
     expect(expired).toEqual({ expired_at: new Date(c0.expires_at).toISOString() });
+    const rt = await captureRealtime(w);
     await w.drain(); // job.claim_code_expire
     expect((await codes(w, t.ticketId))[0]).toMatchObject({
       revoke_reason: 'expired_cleanup',
       code_ciphertext: null,
     });
+    // 14 §3.7: the assignee (D-11 «انتهى الرمز — أعد الإرسال») and the supervisors (S-03) hear of it at once
+    await rt.settle();
+    const updates = rt
+      .of('ticket.updated')
+      .filter((m) => m.message.data.cause === 'job.claim_code_expire' && m.message.data.id === t.ticketId);
+    const venueId = (await ticketRow(w, t.ticketId)).venue_id as string;
+    expect(updates.flatMap((m) => m.rooms).sort()).toEqual(
+      [rooms.user(t.driver), rooms.venueSupervisors(venueId)].sort(),
+    );
+    await rt.stop();
     err(await handover(w, t.driver, t.ticketId, byCode(t.code!)), 'HANDOVER_CODE_EXPIRED', 410);
 
     const sent: string[] = [];

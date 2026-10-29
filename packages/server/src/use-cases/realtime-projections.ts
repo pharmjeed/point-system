@@ -6,13 +6,14 @@ import {
   requestTicketUpdate,
   type TicketMessageRef,
 } from '../modules/notifications/index.js';
-import { loadTicketSummary } from '../modules/tickets-custody/index.js';
+import { loadTicketSummary, registerCustodyTicketUpdatePublisher } from '../modules/tickets-custody/index.js';
 import { registerTicketUpdatePublisher } from '../modules/whatsapp/index.js';
 
 /**
- * One TicketSummary builder for every `ticket.updated` (07 §4.3): the notifications realtime planner and the
- * WhatsApp adapter's direct updates (`publishTicketUpdated`: opt-out, W-01 outcome, delivery states) both go
- * through the per-transaction coalescer, built from tickets-custody's `loadTicketSummary`.
+ * One TicketSummary builder for every `ticket.updated` (07 §4.3): the notifications realtime planner, the
+ * WhatsApp adapter's direct updates (`publishTicketUpdated`: opt-out, W-01 outcome, delivery states) and
+ * tickets-custody's (a code expiry) all go through the per-transaction coalescer, built from tickets-custody's
+ * `loadTicketSummary`.
  */
 export function wireTicketRealtime(): void {
   registerTicketSummaryProjection((q, ticketId) => loadTicketSummary(q, ticketId));
@@ -22,6 +23,8 @@ export function wireTicketRealtime(): void {
       ...(extra?.message ? { message: extra.message as TicketMessageRef } : {}),
     }),
   );
+  // tickets-custody's own updates without a domain event (a handover code that expired, 14 §3.7)
+  registerCustodyTicketUpdatePublisher((tx, ticketId, cause) => requestTicketUpdate(tx, ticketId, { cause }));
 }
 
 wireTicketRealtime();

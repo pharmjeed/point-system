@@ -13,6 +13,7 @@ import { schedule } from '../../../core/outbox/outbox-writer.js';
 import { venueSettingsFor } from '../../venues-events/index.js';
 import type { CycleRow, TicketRow } from '../infra/rows.js';
 import { emitForTicket, type EventActor } from './events.js';
+import { requestCustodyTicketUpdate } from './ticket-update-seam.js';
 import type { Queryable } from './views.js';
 
 /**
@@ -349,8 +350,10 @@ export async function loadClaimCodeState(
 
 /**
  * `job.claim_code_expire` (11 §8.11): at `expires_at` a code neither consumed nor revoked is revoked
- * (`expired_cleanup`) and its encrypted copy purged; an early timer reschedules itself, a stale one does
- * nothing. A verify after expiry answers HANDOVER_CODE_EXPIRED either way.
+ * (`expired_cleanup`) and its encrypted copy purged, and the ticket is published (`ticket.updated`, cause
+ * `job.claim_code_expire`) to the assignee and the venue's supervisors (14 §3.7: D-11 «انتهى الرمز — أعد
+ * الإرسال», S-03's ClaimCodeState) without waiting for a refused handover; an early timer reschedules itself, a
+ * stale one does nothing. A verify after expiry answers HANDOVER_CODE_EXPIRED either way.
  */
 export const claimCodeExpireHandler: JobHandler = {
   type: 'job.claim_code_expire',
@@ -377,5 +380,6 @@ export const claimCodeExpireHandler: JobHandler = {
       `UPDATE claim_codes SET revoked_at = $2, revoke_reason = 'expired_cleanup', code_ciphertext = NULL WHERE id = $1`,
       [c.id, tx.now],
     );
+    await requestCustodyTicketUpdate(tx, c.ticket_id, 'job.claim_code_expire');
   },
 };
