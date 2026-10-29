@@ -433,6 +433,11 @@ export const d04 = {
     on_break: 'أنت في استراحة',
   },
   noOpenEvent: 'لا يوجد حفل مفتوح في الموقع الآن. تواصل مع المشرف.',
+  /**
+   * 01 FR-DUTY-02 «تحذير دائم ظاهر في D-04» after a start without a heard sound test: 02 D-03's sentence (the
+   * not-heard case says D-03's hint, «ارفع صوت الجهاز…»), with «تفعيل واختبار الصوت».
+   */
+  audioUntested: 'لم تختبر الصوت بعد، وقد لا تسمع طلبات الإحضار.',
   chooseEvent: 'لأي حفل هذه المركبة؟',
   /** TaskCard rows of the D-04 table: heading before «#n», the stage line, the button. */
   task: {
@@ -858,7 +863,8 @@ export const components = {
   },
   plate: {
     label: 'رقم اللوحة',
-    other: 'لوحة أخرى',
+    /** 02 D-05 «[ ] لوحة غير سعودية» (03 §6: 02's text over 03 §3.7's «لوحة أخرى»). */
+    other: 'لوحة غير سعودية',
     otherHint: 'اكتب اللوحة كما هي',
     saudi: 'لوحة سعودية',
     letters: 'أحرف اللوحة',

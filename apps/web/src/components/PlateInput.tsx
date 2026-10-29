@@ -12,7 +12,7 @@ export interface PlateInputProps {
   letters: PlateLetter[];
   onDigitsChange: (digits: string) => void;
   onLettersChange: (letters: PlateLetter[]) => void;
-  /** «لوحة أخرى»: free text `plate_raw`. */
+  /** «لوحة غير سعودية» (02 D-05): free text `plate_raw`. */
   other?: boolean;
   onOtherChange?: (other: boolean) => void;
   raw?: string;

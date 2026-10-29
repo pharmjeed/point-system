@@ -24,10 +24,11 @@ import { hasOpenDuty, paths } from '@/app/paths';
 import { Banner, Button, EmptyState, Icon, ListItem, Sheet, Skeleton, TaskCard } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { d04, nav, ui } from '@/i18n/ar';
+import { d03, d04, nav, ui } from '@/i18n/ar';
 import { formatSinceMinutes } from '@/lib/format';
 import { useCommandGate } from '@/realtime/hooks';
 import { useSyncStore } from '@/realtime/syncStore';
+import { useAudioStore } from '@/stores/audio';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -39,6 +40,7 @@ import {
   vehicleSummary,
   type TaskStage,
 } from './fieldModel';
+import { useAudioCheck } from './deviceSetup';
 import { useDriverMe } from './DriverLayout';
 import { LiveOfferCard } from './LiveOffer';
 import { useDriverHome } from './useDriverHome';
@@ -102,6 +104,32 @@ export function DriverHomePage() {
   );
 }
 
+/**
+ * 01 FR-DUTY-02: a duty started without a heard sound test keeps a warning on D-04 — the device's result is
+ * not `heard` (`checks.audio_tested`) and this page's test did not say «نعم، سمعتها» — while the sound runs (a
+ * stopped AudioContext is D-15 د's banner, on every screen). «تفعيل واختبار الصوت» is D-03's test.
+ */
+function AudioWarning({ home }: { home: DriverHome }) {
+  const me = useDriverMe();
+  const status = useAudioStore((s) => s.status);
+  const { audio, test, dialog } = useAudioCheck(me);
+  const show = status === 'running' && audio !== 'ok' && home.checks.audio_tested !== true;
+  return (
+    <>
+      {show ? (
+        <Banner
+          kind="audio"
+          rounded
+          message={audio === 'notHeard' ? d03.notHeardHint : d04.audioUntested}
+          actionLabel={d03.testAudio}
+          onAction={test}
+        />
+      ) : null}
+      {dialog}
+    </>
+  );
+}
+
 function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unknown> }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -159,6 +187,7 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
 
   return (
     <>
+      <AudioWarning home={home} />
       {state === 'on_break' ? (
         <Banner
           kind="break"

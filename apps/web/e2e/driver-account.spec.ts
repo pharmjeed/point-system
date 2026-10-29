@@ -50,10 +50,12 @@ test('PNT-070: D-14 shows the duty, the cash in hand and the device; the break s
   await page.getByRole('switch', { name: 'استراحة' }).click();
   await expect(page.getByRole('switch', { name: 'استراحة' })).not.toBeChecked();
 
-  // إنهاء الوردية (02 D-14 dialog) → off duty: «بدء الوردية» is offered instead
+  // إنهاء الوردية (02 D-14 dialog) → off duty: «بدء الوردية» is offered instead; the cash in hand does not
+  // block it, the dialog reminds of it (13 §8.7, audit A-driver-9)
   await page.getByRole('button', { name: 'إنهاء الوردية' }).click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toContainText('إنهاء الوردية؟ لن تصلك طلبات بعد الآن.');
+  await expect(dialog).toContainText('نقد بعهدتك: 120.00 ر.س');
   await pressCommand(fake, 'POST /v1/me/duty/end', dialog.getByRole('button', { name: 'إنهاء الوردية' }));
   await expect(page.getByRole('button', { name: 'بدء الوردية' })).toBeVisible();
   await expect(page.getByRole('switch', { name: 'استراحة' })).toHaveCount(0);
@@ -204,6 +206,29 @@ test('PNT-070 AC2: the home-screen guide only outside the installed app', async 
   await installed.page.goto('/d/account');
   await expect(installed.page.getByRole('heading', { name: 'حسابي' })).toBeVisible();
   await expect(installed.page.getByText(/إلى الشاشة الرئيسية؟/)).toHaveCount(0);
+});
+
+test('audit A-driver-10 (01 FR-DUTY-02): a duty without a heard sound test keeps a warning on D-04 until «نعم، سمعتها»', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1'); // started with «البدء دون اختبار»: no result on the device
+  const { page, session } = await actorPage(browser, fake, 'DRV1');
+  await installFakeAudio(page);
+  await page.goto('/d');
+  // the sound is stopped first (D-15 د, every screen); once it runs, D-04 says the test is still missing
+  await page.getByRole('button', { name: 'تفعيل الصوت' }).click();
+  const warning = page.getByText('لم تختبر الصوت بعد، وقد لا تسمع طلبات الإحضار.');
+  await expect(warning).toBeVisible();
+  await page.getByRole('button', { name: 'تفعيل واختبار الصوت' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'لا' }).click();
+  await expect(page.getByText('ارفع صوت الجهاز وأوقف الوضع الصامت ثم أعد الاختبار.')).toBeVisible();
+  await expect.poll(() => fake.devices.get(session.deviceId as string)?.audio_test_result).toBe('not_heard');
+  await page.getByRole('button', { name: 'تفعيل واختبار الصوت' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'نعم، سمعتها' }).click();
+  await expect(page.getByText('ارفع صوت الجهاز وأوقف الوضع الصامت ثم أعد الاختبار.')).toHaveCount(0);
+  await expect(warning).toHaveCount(0);
+  await expect.poll(() => fake.devices.get(session.deviceId as string)?.audio_test_result).toBe('heard');
 });
 
 test('PNT-066/070: the D-14 sound test unlocks, plays `test` and records «heard» on the device', async ({
