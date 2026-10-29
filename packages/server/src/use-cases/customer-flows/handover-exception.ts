@@ -124,16 +124,19 @@ const OPERATION = 'POST /v1/tickets/{ticketId}/handover-exception';
 /**
  * Exceptional handover without the code (PNT-078; 11 TT-19; 13 §8.4): a supervisor of the venue approves the
  * handover after a documented identity verification and a reason — for a lost or locked code, a code that
- * never arrived, or a lost paper stub. Locks L1 pool → (L2 event FOR SHARE when money is due or sent) → L4
- * task → L5 ticket → L6 cycle like TT-18. Effects
- * as TT-18 with: the cycle's live code (locked too) revoked `exception_handover`; `delivered_by` = the
- * assignee who actually delivered and the supervisor as approver (event + audit, `self_approved` when he is
- * the assignee, 09 §10 rule 2); a documented `manual_verification` incident (`lost_ticket` for a paper
- * ticket) created `resolved`; `handover_code_locked` and `ready_not_collected` resolved; the driver settled
- * and a dispatch pass. The payment gate is TT-18's: a due ticket needs `payment` or a waiver (PAYMENT_PENDING);
- * 13 §8.4: the payment passes the 13 §5.2 checks of the handover before any effect and is recorded with
- * `source = exception`, collected by its `collected_by` — the assignee or the approving supervisor
- * (`VALIDATION_FAILED payment.collected_by not_collector` otherwise), who then owes the cash (13 §10).
+ * never arrived, or a lost paper stub. Locks L1 pool → (L2 event FOR SHARE when money is due or sent, 13 §5.5)
+ * → L4 task → L5 ticket → L6 cycle like TT-18. Effects as TT-18 with: the cycle's live code (locked too)
+ * revoked `exception_handover`; `delivered_by` = the assignee who actually delivered and the supervisor as
+ * approver (event + audit, `self_approved` when he is the assignee, 09 §10 rule 2); a documented
+ * `manual_verification` incident (`lost_ticket` for a paper ticket) created `resolved` (`auto_created`);
+ * `handover_code_locked` and `ready_not_collected` resolved; the driver settled and a dispatch pass.
+ *
+ * The payment gate is TT-18's (the PNT-080 InlinePaymentHook, before the code is revoked and without effect):
+ * a due ticket needs `payment` (13 §5.2 rules on `payment.*`) or a prior waiver, a collected one refuses a second
+ * payment (PAYMENT_ALREADY_RECORDED), `not_required` / `waived` refuse one (`not_applicable`). The collector
+ * `collected_by` is the retrieval's assignee or the approving supervisor himself (13 §8.4; anyone else →
+ * VALIDATION_FAILED `payment.collected_by` `not_eligible`): the cash stays in his custody until it is handed over
+ * (13 §9), recorded with `source = exception` (PAY-TC-22).
  */
 @Injectable()
 export class HandoverExceptionUseCase {
@@ -151,7 +154,7 @@ export class HandoverExceptionUseCase {
       [ticketId],
     );
     await lockPools(tx, [pre.dispatch_pool_id]); // L1
-    // 13 §5.5 / §8.4: like TT-18, an exception that collects (or must collect) holds the event FOR SHARE (L2)
+    // 13 §5.5: a handover that collects (or must collect) holds the event row FOR SHARE (L2), like the close
     if (money.payment_status === 'due' || body.payment) await lockEvents(tx, [money.event_id], 'FOR SHARE');
     const [task] = taskId ? ((await lockTasks(tx, [taskId])) as TaskRow[]) : [null]; // L4
     const [locked] = (await lockTickets(tx, [ticketId])) as TicketRow[]; // L5
@@ -171,50 +174,43 @@ export class HandoverExceptionUseCase {
       : null;
     const methods = identityMethods(body.identity_checks, stored?.phone_e164 ?? null);
 
-    // payment gate (TT-18 rules)
-    const pay = inlinePaymentHook();
-    if (t.payment_status === 'due' && !(body.payment && pay)) {
-      const ev = await tx.one<{ allowed_payment_methods: string[] }>(
-        `SELECT allowed_payment_methods FROM events WHERE id = $1`,
-        [t.event_id],
-      );
-      throw new AppError('PAYMENT_PENDING', {
-        amount_halalas: Number(t.fee_halalas),
-        allowed_methods: ev.allowed_payment_methods,
-      });
-    }
-    if (t.payment_status !== 'due' && body.payment)
-      throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
-    const collection =
-      t.payment_status === 'due' && body.payment && pay
-        ? {
-            method: body.payment.method,
-            amount_halalas: body.payment.amount_halalas,
-            pos_reference: body.payment.pos_reference ?? null,
-          }
-        : null;
-    if (collection && body.payment) {
-      // 13 §8.4: the money was taken by the assignee (default) or by the approving supervisor himself
-      if (body.payment.collected_by !== task.assignee_id && body.payment.collected_by !== actor.userId)
-        throw new AppError('VALIDATION_FAILED', {
-          fields: [{ field: 'payment.collected_by', issue: 'not_collector' }],
-        });
-      // the 13 §5.2 checks of the handover (method, exact fee, POS reference), before any effect
-      await pay!.check?.(tx, { ticket: t, payment: collection, actor });
-    }
-
+    // payment gate (TT-18 rules, 13 §8.4) before any effect: the code is revoked only after it passed
     const assignee = task.assignee_id;
+    const input = body.payment ?? null;
+    const pay = inlinePaymentHook();
+    if (pay?.check) {
+      await pay.check(tx, { ticket: t, payment: input, actor, operation: OPERATION });
+    } else {
+      if (t.payment_status === 'due' && !(input && pay)) {
+        const ev = await tx.one<{ allowed_payment_methods: string[] }>(
+          `SELECT allowed_payment_methods FROM events WHERE id = $1`,
+          [t.event_id],
+        );
+        throw new AppError('PAYMENT_PENDING', {
+          amount_halalas: Number(t.fee_halalas),
+          allowed_methods: ev.allowed_payment_methods,
+        });
+      }
+      if (t.payment_status !== 'due' && input)
+        throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
+    }
+    // 13 §8.4: the money is with the assignee who handed the car over, or with the approving supervisor
+    if (input && input.collected_by !== assignee && input.collected_by !== actor.userId)
+      throw new AppError('VALIDATION_FAILED', {
+        fields: [{ field: 'payment.collected_by', issue: 'not_eligible' }],
+      });
+
     const ea = eventActor(actor);
     const revokedCodes = await revokeClaimCodes(tx, cycle.id, 'exception_handover');
     let payment: Record<string, unknown> | null = null;
-    if (collection && body.payment && pay) {
+    if (t.payment_status === 'due' && input && pay) {
       payment = await pay.collect(tx, {
         ticket: t,
         cycle,
-        payment: collection,
+        payment: input,
         actor,
         requestId,
-        collectedBy: body.payment.collected_by,
+        collectedBy: input.collected_by,
         source: 'exception',
         operation: OPERATION,
       });
@@ -235,7 +231,8 @@ export class HandoverExceptionUseCase {
       ownerId: actor.userId,
       actor: { type: 'user', id: actor.userId },
       resolution: `handover_exception: ${methods.join(', ')}`,
-      autoCreated: null,
+      // opened by the command itself, as TT-20 and the payment discrepancies (DEC-240)
+      autoCreated: true,
       timeline: { ticketVersion: t.version },
     });
 

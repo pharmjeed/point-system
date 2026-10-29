@@ -144,7 +144,8 @@ sequenceDiagram
 ### 1.7 الترقيم
 
 - `?limit=` (افتراضي 50، أقصى 200) و`?cursor=` معتم من `meta.next_cursor` (`null` عند النهاية).
-- الترتيب ثابت لكل قائمة ومذكور في وصف المسار (التذاكر: الأحدث إنشاءً؛ الطابور: الأقدم `priority_at` ثم `seq`؛ التنبيهات: الأحدث).
+- الترتيب ثابت لكل قائمة ومذكور في وصف المسار (التذاكر: الأحدث إنشاءً؛ الطابور: الأقدم `priority_at` ثم `seq`؛ التنبيهات: الأحدث `raised_at` ثم `id`؛ الوقائع: الأحدث `created_at` ثم `id`، DEC-235).
+- معاملات المصفوفة في الاستعلام بصيغة OpenAPI الافتراضية (`form` مع `explode`: `?status=open&status=acknowledged`)، وقائمتا التنبيهات والوقائع تقبلان أيضًا القيم مفصولة بفواصل (DEC-235)؛ و`status` في `GET /v1/tickets` قائمة بفواصل كما في وصفه (DEC-321).
 - مؤشر تالف أو من مسار آخر يعيد `400 PAGINATION_CURSOR_INVALID`؛ فالمؤشر موقّع HMAC بمفتاح مشتق من `SESSION_SECRET` ومربوط بقائمته ومرشحاتها (DEC-124، DEC-168).
 
 ### 1.8 صيغ البيانات
@@ -152,9 +153,9 @@ sequenceDiagram
 - الأوقات ISO‑8601 بتوقيت UTC وبلاحقة `Z` (`2026-10-29T18:42:10.120Z`). العرض في الواجهة بتوقيت `Asia/Riyadh`. `event_date` تاريخ محلي `YYYY-MM-DD`. المدد بالثواني صحيحة.
 - المبالغ أعداد صحيحة بالهللة `*_halalas` والعملة `SAR` (2000 = 20.00 ريال).
 - الجوال يُقبل بأي صيغة سعودية (`0551234567`، `551234567`، `+966551234567`، `966551234567`) أو E.164 دولي، ويُطبّع إلى E.164. الرد يعرض `phone_masked` بصيغة `05•••••123`؛ الرقم الكامل فقط عبر `POST /v1/tickets/{ticketId}/reveal-phone` المدقق أو لصاحب الحساب. صيغة خاطئة: `422 PHONE_INVALID`.
-- اللوحة السعودية: `digits` حتى 4 أرقام + `letters_ar` ثلاثة أحرف من المجموعة المستخدمة في اللوحات، ويُشتق `letters_en` آليًا بالمقابل الشائع: ا=A، ب=B، ح=J، د=D، ر=R، س=S، ص=X، ط=T، ع=E، ق=G، ك=K، ل=L، م=Z، ن=N، ه=H، و=U، ى=V (تُراجع القائمة عند التنفيذ). اللوحات الأخرى في `raw` مع `country`. الخطأ `422 PLATE_INVALID`. البحث `q` يطابق الأرقام فقط أو الرقم الظاهر للتذكرة.
+- اللوحة السعودية: `digits` حتى 4 أرقام + `letters_ar` ثلاثة أحرف من المجموعة المستخدمة في اللوحات، ويُشتق `letters_en` آليًا بالمقابل الشائع: ا=A، ب=B، ح=J، د=D، ر=R، س=S، ص=X، ط=T، ع=E، ق=G، ك=K، ل=L، م=Z، ن=N، ه=H، و=U، ى=V (تُراجع القائمة عند التنفيذ). اللوحات الأخرى في `raw` مع `country`؛ واللوحة غير السعودية التي لا تُعرف دولتها (D-05 «لوحة غير سعودية») تُرسل `country = XX` (رمز ISO المخصص للمستخدم) مع `raw`، وواجهة اللوحة تعرض «هـ» وتحمل «ه» على السلك (DEC-349). الشركة واللون بمفاتيح 02 §8.4 (`toyota`، `white`)، و«أخرى» بالنص المكتوب (DEC-350). الخطأ `422 PLATE_INVALID`. البحث `q` يطابق الأرقام فقط أو الرقم الظاهر للتذكرة.
 - الأرقام لاتينية `0-9` في كل الحقول والنصوص (DEC-17). المعرّفات `uuid`.
-- رمز التسليم لا يظهر في أي رد أو سجل أو حدث WebSocket؛ فقط `ClaimCodeState` (المحاولات، الصلاحية، حالة الإرسال).
+- رمز التسليم لا يظهر في أي رد أو سجل أو حدث WebSocket؛ فقط `ClaimCodeState` (المحاولات، الصلاحية، حالة الإرسال) بحقوله في `07_openapi.yaml` بالضبط: `sent_status` = حالة رسالة W-05 وإلا حالة إشعارها (`failed` أو `skipped` أو `queued`)، و`TicketDetail.claim_code` = أحدث رمز للدورة النشطة و`null` دونه (DEC-208).
 
 ### 1.9 حدود المعدل
 
@@ -166,10 +167,12 @@ sequenceDiagram
 | `read` | 300/دقيقة لكل مستخدم | |
 | `device` | 60/دقيقة لكل جهاز | النبضة كل 15 ثانية |
 | `export` | 5/ساعة لكل مستخدم | |
-| `webhook` | بلا حد تطبيقي؛ جسم خام ≤ 3 MB (وبقية أجسام JSON ≤ 1 MB، DEC-130) | الرد السريع أهم من الحد |
+| `webhook` | صمام لكل عنوان مصدر (`RATE_LIMIT_WEBHOOK_PER_MIN`، 6000 في الدقيقة افتراضيًا؛ Meta تعيد بعد 429)؛ جسم خام ≤ 3 MB (وبقية أجسام JSON ≤ 1 MB، DEC-130) | الرد السريع أهم من الحد (DEC-293) |
 | `health` | شبكة داخلية | |
 
-التجاوز يعيد `429 RATE_LIMITED` مع `Retry-After` بالثواني، وترويسات `RateLimit-Limit` و`RateLimit-Remaining` و`RateLimit-Reset` على كل رد. `RESEND_LIMIT_REACHED` حد أعمال منفصل (`handover.max_resends`).
+التجاوز يعيد `429 RATE_LIMITED` مع `Retry-After` بالثواني و`details.retry_after_s`، وترويسات `RateLimit-Limit` و`RateLimit-Remaining` و`RateLimit-Reset` على كل رد. `RESEND_LIMIT_REACHED` حد أعمال منفصل (`handover.max_resends`).
+
+التنفيذ (DEC-293، DEC-294، DEC-295): دلو رموز داخل كل عملية `api` (N نسخ ← N × الحد) تقوده فئة المسار (`x-rate-limit-class`)، ومتغير بيئة لكل فئة (05 §8، 0 = بلا حد)؛ الموضوع قبل الدخول عنوان العميل (IPv6 بـ/64؛ فئتا `auth` و`webhook` وكل طلب بلا كوكي جلسة، أول الحراس)، وبعده المستخدم، والجهاز (الجلسة) لفئة `device` بعد حارسي الجلسة والصلاحية؛ والطلب بكوكي يتبين بطلانه لا يُحد بالعنوان (الحماية الحجمية للحافة)؛ والحمايات عبر النسخ في PostgreSQL (قفل الحساب، حد كشف الجوال).
 
 ### 1.10 تقييم الصلاحية والنطاق
 
@@ -318,7 +321,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 - الصلاحية: `ticket.intake` · مفتاح التكرار: إلزامي · نجاح: `200`
 - الشروط: status=received (كل الحقول)، أو status=parking مع channel=paper وpaper_serial فقط وwa_link_status≠linked (DEC-40)؛ غير ذلك INVALID_STATE_TRANSITION · المستدعي منشئ التذكرة وأثناء مناوبته
 - الأثر: يحدّث حقول المسودة؛ لا رسائل للعميل. تحويل الورقي (DEC-40): channel=paper + wa_link_status=none + link_version+1 + ticket.wa_link_changed
-- أحداث: `ticket.wa_link_changed` · WS: `ticket.updated`
+- أحداث: `ticket.wa_link_changed` · WS: `ticket.updated` لتحويل DEC-40 وحده؛ تعديل المسودة لا يصدر حدثًا نطاقيًا ولا `ticket.updated`، وتتابع S-02 المسودات بـ`ticket.created` و`ticket.intake_submitted` (DEC-274)
 - أخطاء خاصة: `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `KEY_TAG_IN_USE`, `PAPER_SERIAL_IN_USE`, `PHONE_INVALID`, `PLATE_INVALID`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tickets/{ticketId}/media` — طلب رابط رفع صورة فحص
@@ -377,8 +380,8 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 #### `POST /v1/tickets/{ticketId}/inspection-exception` — اعتماد استثناء الفحص الناقص
 
 - الصلاحية: `ticket.inspection_exception` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: inspection_status=incomplete
-- الأثر: inspection_status=exception_approved
+- الشروط: inspection_status=incomplete (وإلا INVALID_STATE_TRANSITION بـreason=inspection_not_incomplete) · التذكرة النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed، لا TICKET_CLOSED) (DEC-249)
+- الأثر: inspection_status=exception_approved؛ حل inspection_incomplete آليًا؛ الحمولة مع missing_photos_count؛ التدقيق missing_photos وself_approved (DEC-249)
 - أحداث: `ticket.inspection_exception_approved`, `alert.resolved` · WS: `ticket.updated`, `alert.updated`
 - أخطاء خاصة: `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`
 
@@ -387,9 +390,9 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يتطلب موافقة سارية)؛ يُستخدم آليًا عند submit-intake ويدويًا لإعادة المحاولة. qr: يصدر link_code صالح link.qr_ttl_min ويعيد رابط wa.me برسالة معبأة؛ العميل يضغط إرسال ثم يؤكد السائق المطابقة.
 
 - الصلاحية: `wa.link` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: تذكرة مفتوحة في موقع السائق · qr: status ∈ {received, parking, parked}
-- الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ qr: link_codes(active) + job.link_code_expire
-- أحداث: `ticket.wa_link_changed` · WS: `ticket.updated` · واتساب: W-01
+- الشروط: تذكرة مفتوحة في موقع السائق (ومناوبته فيه، `DUTY_REQUIRED`) · الورقية ← INVALID_STATE_TRANSITION (reason=paper_channel) · قناة فعالة غير down، وإلا WA_CHANNEL_UNAVAILABLE (DEC-195) · direct (إعادة المحاولة من D-07، DEC-193): wa_link_status ∈ {none, failed, pending_send}؛ received ← INVALID_STATE_TRANSITION (submit_intake_links_directly، فالإرسال يربط مباشرة)، linked (already_linked)، رسالة QR بانتظار التأكيد (qr_pending_confirmation)؛ بلا جوال ← PHONE_INVALID {field: customer_phone, issue: missing} (DEC-194) · qr: status ∈ {received, parking, parked} وwa_link_status ∈ {none, failed, opted_out, pending_send} (linked وpending_confirmation يرفضان رمزًا جديدًا)؛ بلا رقم عرض مضبوط ← WA_CHANNEL_UNAVAILABLE (reason=display_phone_not_configured) (DEC-196)
+- الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ link_version+1 إن وُجد إشعار W-01 للإصدار الحالي فتصير الأزرار السابقة غير نشطة (DEC-193). qr: link_codes(active) + job.link_code_expire، ولا يتغير شيء في التذكرة ولا إصدارها ولا يصدر حدث نطاقي؛ رسالة العميل لاحقًا ترفع إصدار التذكرة (DEC-196)
+- أحداث: `ticket.wa_link_changed` (direct) · WS: `ticket.updated` · واتساب: W-01
 - أخطاء خاصة: `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PHONE_INVALID`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `WA_CHANNEL_UNAVAILABLE`, `WA_CONSENT_MISSING`, `WA_CUSTOMER_OPTED_OUT`, `WA_TEMPLATE_NOT_APPROVED`
 
 #### `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` — تأكيد مطابقة مرسل QR للمركبة
@@ -397,26 +400,27 @@ direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يت�
 بعد وصول رسالة الربط يرى السائق الرقم المقنّع ويسأل «هل هذا العميل أمامك؟». matches=false يرفض الربط ويُبطل الرمز.
 
 - الصلاحية: `wa.link` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: link_codes.status=pending_confirmation لنفس التذكرة
-- الأثر: matches=true: موافقة customer_initiated + ticket.customer_id + linked + W-01؛ false: revoked
+- الشروط: link_codes.status=pending_confirmation لنفس التذكرة (وإلا INVALID_STATE_TRANSITION؛ رمز ليس للتذكرة ← RESOURCE_NOT_FOUND بـresource=link_code؛ المنتهي ← WA_LINK_CODE_EXPIRED بـexpired_at) · السائق منشئ الرمز (وإلا PERMISSION_DENIED بـreason=not_link_code_creator)، ويجوز لمشرفي الموقع؛ لا فحص مناوبة (DEC-198)
+- الأثر: matches=true: موافقة customer_initiated (captured_by = المؤكِّد) + ticket.customer_id + linked + W-01؛ مرسل غير عميل التذكرة الحالي: تُبطل موافقات السابق للتذكرة ورموز الإجراء ويزيد link_version (DEC-199). false: revoked (driver_rejected_match) وwa_link_status=none (DEC-200)
 - أحداث: `ticket.wa_link_changed` · WS: `ticket.updated` · واتساب: W-01
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `TICKET_NOT_FOUND`, `WA_LINK_CODE_EXPIRED`
+- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `TICKET_NOT_FOUND`, `WA_LINK_CODE_EXPIRED`
 
 #### `PATCH /v1/tickets/{ticketId}/customer-phone` — تعديل جوال العميل
 
 يبطل كل رموز الإجراء السابقة (link_version+1) ويتطلب تحققًا ميدانيًا وسببًا وموافقة جديدة، ثم يرسل W-01 للرقم الجديد.
 
 - الصلاحية: `ticket.change_phone` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: تذكرة مفتوحة · السائق: منشئ التذكرة أو المكلّف بمهمة مفتوحة عليها
-- الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + سجل تدقيق
+- الشروط (DEC-211): تذكرة مفتوحة ليست في received (INVALID_STATE_TRANSITION بـreason=draft_use_intake؛ المسودة تُعدَّل بـPATCH /intake) وليست ورقية (paper_channel) · السائق: مناوبة في الموقع (DUTY_REQUIRED) ومنشئ التذكرة أو المكلّف بمهمة مفتوحة عليها (وإلا PERMISSION_DENIED بـreason=not_creator_or_assignee)؛ المشرف والإدارة بلا قيد المنشئ · الرقم نفسه ← VALIDATION_FAILED (customer_phone، unchanged) · لا فحص لقالب W-01 (يظهر الفشل في D-07)
+- الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + رموز الربط الحية revoked (linked_direct، DEC-201) + سجل تدقيق
 - أحداث: `ticket.customer_phone_changed`, `ticket.wa_link_changed` · WS: `ticket.updated` · واتساب: W-01
-- أخطاء خاصة: `CONSENT_REQUIRED`, `PHONE_INVALID`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`, `WA_CUSTOMER_OPTED_OUT`
+- أخطاء خاصة: `CONSENT_REQUIRED`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `PHONE_INVALID`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`, `WA_CUSTOMER_OPTED_OUT`
 
 #### `POST /v1/tickets/{ticketId}/reveal-phone` — كشف جوال العميل كاملًا
 
 - الصلاحية: `ticket.reveal_phone` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: audit_log(action=ticket.reveal_phone, reason) فقط
-- أخطاء خاصة: `REASON_REQUIRED`, `TICKET_NOT_FOUND`
+- الشروط (DEC-248): أي حالة للتذكرة · تذكرة بلا جوال (ورقية أو عميل بمعرّف BSUID فقط) ← RESOURCE_NOT_FOUND (resource=customer) · security.reveal_phone_per_hour يعد صفوف تدقيق ticket.reveal_phone للمستخدم في ساعة متحركة (قفل استشاري لكل مستخدم) ← RATE_LIMITED (retry_after_s) مع Retry-After حتى يخرج أقدم كشف من النافذة، ولا يُحفظ 429 مع المفتاح
+- الأثر: audit_log(action=ticket.reveal_phone, reason) فقط؛ الرد بـ`Cache-Control: private, no-store`، والرد المحفوظ مع مفتاح التكرار يُعاد كتابته مقنّعًا قبل الالتزام فالإعادة ترد الرقم مقنّعًا
+- أخطاء خاصة: `REASON_REQUIRED`, `RESOURCE_NOT_FOUND`, `TICKET_NOT_FOUND`
 
 #### `GET /v1/tickets` — قائمة/بحث المركبات
 
@@ -433,6 +437,8 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 - أخطاء خاصة: `TICKET_NOT_FOUND`
 
 #### `GET /v1/tickets/{ticketId}/timeline` — السجل الزمني الكامل للتذكرة (S-03)
+
+الأقسام `events` و`custody` و`cycles` و`tasks` و`messages` و`payments` و`incidents` و`media` (صور بروابط عرض ≤ 300 ث توقّعها وحدة الوسائط، DEC-245)، كلها الأقدم أولًا. الموظفون في النطاق يرون كله؛ والسائق فقط مكلّفًا بالمهمة المفتوحة أو منشئًا أثناء الاستلام (وإلا TICKET_NOT_FOUND)، ثم خطواته وحدها بلا `wa.*` ولا وقائع، وحالة W-01 وW-05 بلا نص (DEC-246). النص الوارد يُخفى فيه كل 6 أرقام فأكثر وكل ما يشبه رمز الربط (DEC-247).
 
 - الصلاحية: `ticket.read_full` · مفتاح التكرار: — · نجاح: `200`
 - أخطاء خاصة: `TICKET_NOT_FOUND`
@@ -464,9 +470,9 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 السائق: قبل الإسناد فقط (requested)؛ بعده INVALID_STATE_TRANSITION (reason=driver_cancel_after_assignment). المشرف: في requested/assigned/assigned_waiting، وإذا استُلم المفتاح يلزم /release-custody أولًا. بعد بدء الحركة (retrieving/ready) للمشرف فقط (DEC-30): مهمة الإحضار canceled (cancel_reason=supervisor_cancel) ومهمة repark بحالة in_progress لنفس السائق الحائز والتذكرة reparking، فلا يتحرر السائق ولا تُمحى العهدة حتى /complete-parking (AC-11).
 
 - الصلاحية: `retrieval.cancel` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking
+- الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: يشترط المركبة والمفتاح مع سائق المهمة الجارية وإلا CUSTODY_HOLDER_MISMATCH {subject, current_holder_type} دون أثر (DEC-226)؛ cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking + حل ready_not_collected وhandover_code_locked للدورة
 - أحداث: `ticket.retrieval_canceled`, `ticket.reparking`, `task.canceled`, `task.created`, `offer.revoked`, `driver.availability_changed` · WS: `offer.closed`, `task.updated`, `ticket.updated`, `driver.state_changed` · واتساب: W-07
-- أخطاء خاصة: `CUSTODY_RELEASE_REQUIRED`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `REASON_REQUIRED`
+- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `CUSTODY_RELEASE_REQUIRED`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `REASON_REQUIRED`
 
 #### `POST /v1/task-offers/{offerId}/accept` — قبول الطلب أو حجزه كمهمة تالية
 
@@ -511,60 +517,63 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 - ترتيب الفحص (DEC-177): مغلقة (TICKET_CLOSED) ← غير جاهزة (HANDOVER_NOT_READY) ← المكلّف (NOT_TASK_ASSIGNEE) ← الإصدار (VERSION_CONFLICT) ← العهدة (CUSTODY_HOLDER_MISMATCH) ← بوابة الدفع (PAYMENT_PENDING وأخطاء التحصيل المضمّن) ← التحقق بالرمز أو الكعب؛ فالبوابة ترفض قبل احتساب أي محاولة خاطئة
 - الأثر: delivered + الدورة outcome=delivered + عهدة → customer + الرمز consumed + W-06 + ترقية التالية أو available
 - أحداث: `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `payment.recorded`, `handover.code_attempt_failed`, `handover.code_locked`, `task.promoted`, `driver.availability_changed` · WS: `task.updated`, `ticket.updated`, `driver.state_changed`, `alert.raised` · واتساب: W-06
-- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `HANDOVER_CODE_CONSUMED`, `HANDOVER_CODE_EXPIRED`, `HANDOVER_CODE_INVALID`, `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `PAPER_STUB_MISMATCH`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- بوابة الدفع (DEC-277، DEC-278): خطاف التحصيل المضمّن يفحص بلا أثر قبل الرمز أو الكعب: due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ ويُقفل الحفل FOR SHARE بعد المجموعة فقط حين تكون التذكرة due أو يُرسل payment
+- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `HANDOVER_CODE_CONSUMED`, `HANDOVER_CODE_EXPIRED`, `HANDOVER_CODE_INVALID`, `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `PAPER_STUB_MISMATCH`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tickets/{ticketId}/handover-code/resend` — إعادة إرسال رمز التسليم
 
 يولّد رمزًا جديدًا ويبطل السابق (revoke_reason=resend) ضمن handover.max_resends. الرمز المقفل يعيد إصداره المشرف فقط.
 
 - الصلاحية: `handover.resend_code` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready · المكلّف أو المشرف
+- الشروط (DEC-207): ticket.status=ready مع مهمة إحضار (وإلا HANDOVER_NOT_READY) · المكلّف (سائق غيره ← NOT_TASK_ASSIGNEE) أو المشرف · الفحص بالترتيب: WA_CUSTOMER_OPTED_OUT ثم WA_NOT_LINKED ثم WA_CHANNEL_UNAVAILABLE (لا قناة فعالة أو down) · W-05 غير معتمد يُرفض (WA_TEMPLATE_NOT_APPROVED) فقط ونافذة الخدمة 24 ساعة مغلقة (12 §8.4) · الرمز المقفل يبقى مقفلًا للمكلّف ولو بعد تنظيف انتهائه (HANDOVER_CODE_LOCKED) · RESEND_LIMIT_REACHED بـmax_resends
+- الأثر: الرمز الحي revoked (resend) ورمز جديد بـresend_no+1 ومحاولات جديدة؛ دورة بلا رمز تأخذ أول رمز لها (resend_no=0)؛ إعادة المشرف لرمز مقفل تحل تنبيه handover_code_locked
 - أحداث: `handover.code_issued` · WS: `ticket.updated` · واتساب: W-05
-- أخطاء خاصة: `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `RESEND_LIMIT_REACHED`, `TICKET_NOT_FOUND`, `WA_CHANNEL_UNAVAILABLE`, `WA_CUSTOMER_OPTED_OUT`, `WA_NOT_LINKED`, `WA_TEMPLATE_NOT_APPROVED`
+- أخطاء خاصة: `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `RESEND_LIMIT_REACHED`, `TICKET_NOT_FOUND`, `WA_CHANNEL_UNAVAILABLE`, `WA_CUSTOMER_OPTED_OUT`, `WA_NOT_LINKED`, `WA_TEMPLATE_NOT_APPROVED`
 
 #### `POST /v1/tickets/{ticketId}/handover-exception` — تسليم استثنائي باعتماد المشرف
 
 للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
 - الصلاحية: `handover.exception` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready
-- الأثر: كالتسليم + claim code revoked (exception_handover) + incident manual_verification اختياري
-- أحداث: `handover.exception_approved`, `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `driver.availability_changed`, `task.promoted` · WS: `ticket.updated`, `task.updated`, `driver.state_changed` · واتساب: W-06
-- أخطاء خاصة: `HANDOVER_NOT_READY`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو تذكرة بلا جوال ← VALIDATION_FAILED على identity_checks.phone_last4 بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (identity_checks: insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED على payment.collected_by بـnot_eligible)؛ ويُقفل الحفل FOR SHARE بعد المجموعة حين تكون التذكرة due أو يُرسل payment
+- الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة `manual_verification` (أو `lost_ticket` للورقية) تُنشأ دائمًا بحالة resolved وحلها `handover_exception: <methods>` (incident.opened وincident.resolved بـauto_created: true) + العهدة من حائزيها الحاليين (سائق أو مشرف) إلى العميل + حل handover_code_locked وready_not_collected (DEC-210) + التحصيل المضمّن: payments(recorded) بـcollected_by من الجسم وpayment.recorded بـsource=exception، فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22)
+- أحداث: `handover.exception_approved`, `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `incident.opened`, `incident.resolved`, `payment.recorded`, `driver.availability_changed`, `task.promoted` · WS: `ticket.updated`, `task.updated`, `driver.state_changed` · واتساب: W-06
+- أخطاء خاصة: `HANDOVER_NOT_READY`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tasks/{taskId}/reassign` — إعادة إسناد آمنة قبل بدء الحركة
 
 target_driver_id=null يعيد المهمة للطابور بأولويتها الأصلية؛ وإلا تُسند لسائق مؤهل في نفس المجموعة (accepted إن كان متاحًا، assigned_waiting إن كان مشغولًا بلا مهمة تالية). لا سحب خفي ولا إعادة إسناد بعد بدء الحركة.
 
 - الصلاحية: `task.reassign` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: task.status ∈ {offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · offered/broadcast: target_driver_id إلزامي وتُسحب الجولة (close_reason=reassigned) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
-- الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة)
+- الشروط: task.status ∈ {queued, offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · queued/offered/broadcast: target_driver_id إلزامي وتُسحب الجولة الحية (close_reason=reassigned)؛ null لمهمة في الطابور ← INVALID_STATE_TRANSITION (reason=already_in_queue)، والمكلّف نفسه ← (reason=same_assignee) (DEC-214) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
+- الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع تستثني السائق السابق (DEC-216)؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة)، بـtask.reassigned (trigger=reassign، target=driver، from_status، result_status) وticket.assigned(_waiting) بـvia=supervisor، دون task.claimed (DEC-215)
 - أحداث: `task.withdrawn`, `task.reassigned`, `ticket.assigned`, `ticket.assigned_waiting`, `offer.revoked`, `task.offered`, `task.broadcast_opened`, `driver.availability_changed` · WS: `task.updated`, `ticket.updated`, `driver.state_changed`, `offer.closed`, `task.offered`, `task.broadcast` · واتساب: W-03
 - أخطاء خاصة: `CUSTODY_RELEASE_REQUIRED`, `DRIVER_NOT_AVAILABLE`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `NEXT_TASK_ALREADY_RESERVED`, `OLDER_REQUEST_PENDING`, `REASON_REQUIRED`, `REASSIGN_BLOCKED_MOVEMENT`, `VERSION_CONFLICT`
 
 #### `POST /v1/tasks/{taskId}/release-custody` — إعادة المفتاح لخانته قبل السحب
 
 - الصلاحية: `task.release_custody` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: task.status=accepted وkey_picked_up_at غير فارغ · لم تبدأ الحركة
-- الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null
+- الشروط: task.status=accepted وkey_picked_up_at غير فارغ (الاستدعاء الثاني ← INVALID_STATE_TRANSITION بـreason=key_not_picked_up) · لم تبدأ الحركة · المكلّف أو المشرف · الخانة المطلوبة شاغرة (KEY_SLOT_OCCUPIED) ونشطة هي ولوحتها (DEC-230)
+- الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null؛ المهمة تبقى accepted لمكلّفها ولا يُسوّى (DEC-230)
 - أحداث: `custody.changed` · WS: `task.updated`
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `REASON_REQUIRED`
 
 #### `POST /v1/tickets/{ticketId}/repark` — إعادة الصف لغياب العميل
 
 - الصلاحية: `ticket.repark` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready
-- الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + W-08
-- أحداث: `ticket.reparking`, `task.canceled`, `task.created` · WS: `task.updated`, `ticket.updated` · واتساب: W-08
+- الشروط: ticket.status=ready ومهمة الإحضار in_progress · المركبة والمفتاح مع سائق المهمة الجارية، وإلا CUSTODY_HOLDER_MISMATCH {subject, current_holder_type} دون أثر (DEC-226)
+- الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + واقعة customer_absent محلولة (DEC-222) + حل ready_not_collected وhandover_code_locked + W-08
+- أحداث: `ticket.reparking`, `task.canceled`, `task.created`, `incident.opened`, `incident.resolved` · WS: `task.updated`, `ticket.updated` · واتساب: W-08
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tickets/{ticketId}/custody-transfers` — نقل عهدة رسمي
 
-توثيق تسليم مركبة أو مفتاح من حائزه الحالي (يستنتجه الخادم من التذكرة) إلى حائز جديد. إن كانت للتذكرة مهمة accepted أو in_progress وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (task.reassigned، trigger=custody_transfer) بشرط ألا تكون لديه حركة نشطة (MOVEMENT_IN_PROGRESS)، ويُسوّى السائق السابق (ترقية مهمته التالية أو يصبح متاحًا) مع تمريرة توزيع تحت قفل المجموعة (الملف 11 §2.4).
+توثيق تسليم مركبة أو مفتاح من حائزه الحالي (يستنتجه الخادم من التذكرة) إلى حائز جديد. إن كانت للتذكرة مهمة accepted أو in_progress وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (task.reassigned، trigger=custody_transfer، مع from_status وtarget=driver) بشرط ألا تكون لديه حركة نشطة (MOVEMENT_IN_PROGRESS)، فيغادر التوفر وتُسحب عروضه الفردية الحية، ويُسوّى السائق السابق (ترقية مهمته التالية أو يصبح متاحًا) مع تمريرة توزيع تحت قفل المجموعة (الملف 11 §2.4، DEC-251). وصول المفتاح إلى مكلّف مهمة إحضار accepted — مكلّفها الحالي، أو السائق الذي ينقل إليه النقلُ نفسه المهمة — يضبط key_picked_up_at مع task.key_picked_up بـkey_slot_id=null (ما لم يكن الاستلام مضبوطًا قبل النقل، فيبقى وقته بلا حدث جديد)، وخروجه من المكلّف قبل البدء يعيده null بلا حدث، فلا يرد start-retrieval بـKEY_NOT_PICKED_UP بعد مفتاح حائزه unknown وصل بهذا النقل (DEC-187، DEC-251).
 
 - الصلاحية: `ticket.custody_transfer` · مفتاح التكرار: إلزامي · نجاح: `201`
+- الشروط (DEC-250): الحائز الجديد ليس customer (التسليم TT-18/TT-19: VALIDATION_FAILED بـuse_handover)؛ المركبة إلى driver أو spot أو supervisor أو unknown، والمفتاح إلى driver أو key_slot أو supervisor أو unknown (not_allowed_for_subject)؛ المركبة parked إلى spot أو unknown فقط (parked_vehicle_spot_or_unknown)؛ الحائز السائق سائق نشط (أو مشرف can_drive) في مناوبة on_duty بمجموعة التذكرة (driver_not_on_duty، not_a_driver)، والحائز المشرف موظف نشط بنطاق الموقع؛ السبب يُحفظ note لحدث العهدة؛ وقفل المجموعة يؤخذ دائمًا
 - الأثر: custody_events(official_transfer) + حقول الحائز الحالي (+ نقل المهمة وتسوية السائق السابق عند الحاجة)
-- أحداث: `custody.changed`, `task.reassigned`, `driver.availability_changed` · WS: `ticket.updated`, `task.updated`, `driver.state_changed`
+- أحداث: `custody.changed`, `task.reassigned`, `task.key_picked_up`, `driver.availability_changed`, `task.promoted`, `offer.revoked` · WS: `ticket.updated`, `task.updated`, `driver.state_changed`
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `KEY_SLOT_OCCUPIED`, `MOVEMENT_IN_PROGRESS`, `PARKING_SPOT_OCCUPIED`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`
 
 #### `POST /v1/tickets/{ticketId}/manual-reconcile` — مطابقة يدوية بعد انقطاع
@@ -572,9 +581,10 @@ target_driver_id=null يعيد المهمة للطابور بأولويتها ا
 بعد عودة النظام من تعطل كلي: يضبط الحالة النهائية من السجل الورقي المرقّم. لا تُشغّل أوامر مؤجلة ولا تُرسل رسائل عميل قديمة.
 
 - الصلاحية: `ticket.manual_reconcile` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: حالة نهائية + custody_events(manual_reconcile) + ticket_events(data.manual=true) + كبت رسائل واتساب
+- الشروط (DEC-253): أي حالة مفتوحة ومنها `parked` ← `parked` للتصحيح · النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed) · الموقف والملاحظة والخانة لـparked فقط · الورقية بلا كعب إلى voided فقط · incident_id من موقع التذكرة وليس لتذكرة أخرى · الدفع (DEC-252): delivered لتذكرة due يتطلب payment بـcollected_by أو إعفاءً سابقًا وإلا PAYMENT_PENDING؛ payment لـdelivered ولـdue فقط (not_applicable) مع PAYMENT_ALREADY_RECORDED وقواعد 13 §5؛ التحصيل المسجل يمنع voided (reason=payment_recorded)
+- الأثر: حالة نهائية + custody_events(manual_reconcile، الملاحظة = paper_log_ref) + ticket_events(data.manual=true) + كبت رسائل واتساب (المعلّقة بلا محاولة جارية ← skipped superseded) + رموز التسليم الحية canceled ومسح نسختها، ورموز الربط والإجراء لـvoided فقط + delivered_by = مكلّف الإحضار وإلا retrieved_by/accepted_by وإلا الفاعل، parked_by = مكلّف الصف المفتوح + تسوية سائق الحركة الملغاة + إسقاط الطلب المبكر المعلّق دون إعادة + حل تنبيهات الحالة السابقة (عدا inspection_incomplete لـparked) (DEC-253)؛ payment.recorded بـsource=reconcile مع تدقيق payment.record (DEC-252)
 - أحداث: `ticket.manually_reconciled`, `custody.changed`, `task.canceled`, `payment.recorded` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `PARKING_SPOT_OCCUPIED`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `PARKING_SPOT_OCCUPIED`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 ### 2.4 التحصيل (Canon §9.4)
 
@@ -583,38 +593,42 @@ target_driver_id=null يعيد المهمة للطابور بأولويتها ا
 عادةً يُرسل ضمن /handover؛ هذا المسار للتحصيل قبل التسليم مباشرة. لا بيانات بطاقات.
 
 - الصلاحية: `payment.record` · مفتاح التكرار: إلزامي · نجاح: `201`
-- الشروط: payment_status=due · ticket.status=ready · المكلّف بمهمة الإحضار
+- الشروط: payment_status=due (not_required أو waived ← INVALID_STATE_TRANSITION بـcurrent_status = payment_status وallowed_from [due] وreason payment_not_required أو payment_waived، DEC-282) · ticket.status=ready · المكلّف بمهمة الإحضار · pos_reference يُطبّع ويُفحص في الجسم (13 §5.6، DEC-280) · الحفل المغلق ← EVENT_ALREADY_CLOSED (دفاعي)
 - الأثر: payments(recorded) + payment_status=collected
 - أحداث: `payment.recorded` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `NOT_TASK_ASSIGNEE`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `TICKET_NOT_FOUND`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `NOT_TASK_ASSIGNEE`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `TICKET_NOT_FOUND`
 
 #### `POST /v1/payments/{paymentId}/reverse` — عكس تحصيل
 
 replacement اختياري لتصحيح الوسيلة أو المرجع: يُعكس الأصل ويُدرج تحصيل جديد recorded بقيم البديل مع نسخ collected_by وcollected_at من الأصل، فتبقى payment_status=collected (الملف 13).
 
 - الصلاحية: `payment.reverse` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: دون بديل: payments.status=reversed + payment_status=due؛ إذا التذكرة مسلّمة تُفتح واقعة payment_discrepancy. مع بديل: عكس + تحصيل جديد وتبقى collected
+- الشروط (DEC-276، DEC-281، DEC-282): التحصيل خارج النطاق ← RESOURCE_NOT_FOUND (payment) · الحفل المغلق ← EVENT_ALREADY_CLOSED · تذكرة ليست collected ← INVALID_STATE_TRANSITION (reason=payment_integrity) · بديل بالوسيلة والمرجع المطبّع نفسيهما ← VALIDATION_FAILED (replacement، no_change)، وحقوله بالبادئة replacement.
+- الأثر: دون بديل: payments.status=reversed + payment_status=due؛ إذا التذكرة مسلّمة تُفتح واقعة payment_discrepancy (incident.opened بـauto_created: true، DEC-284). مع بديل: عكس + تحصيل جديد يُدرج بعد العكس وتبقى collected
 - أحداث: `payment.reversed`, `payment.recorded`, `incident.opened` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_REVERSED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `REASON_REQUIRED`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_REVERSED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `REASON_REQUIRED`, `RESOURCE_NOT_FOUND`
 
 #### `POST /v1/tickets/{ticketId}/payment-waiver` — إعفاء من الرسوم
 
 - الصلاحية: `payment.waive` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: payment_status=due
-- الأثر: payment_status=waived + payment_waived_* 
+- الشروط: payment_status=due (collected ← PAYMENT_ALREADY_RECORDED، وnot_required أو waived ← INVALID_STATE_TRANSITION بـallowed_from [due]، DEC-282) · التذكرة ليست voided (TICKET_CLOSED) · الحفل ليس مغلقًا (EVENT_ALREADY_CLOSED) (13 §6، DEC-276)
+- الأثر: payment_status=waived + payment_waived_*
 - أحداث: `payment.waived` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_RECORDED`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_RECORDED`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`
 
 #### `POST /v1/cash-handovers` — استلام نقد السائق
 
 المشرف المستلم يسجل المبلغ؛ يحسب الخادم المتوقع من تحصيلات السائق النقدية غير المعكوسة وغير المسلّمة في الحفل ويربطها.
 
 - الصلاحية: `cash.handover_confirm` · مفتاح التكرار: إلزامي · نجاح: `201`
-- الأثر: cash_handovers + payments.cash_handover_id؛ فرق ≠ 0 يفتح واقعة payment_discrepancy
+- الشروط (DEC-275، DEC-276، DEC-283): السائق هو المستلم ← PERMISSION_DENIED (reason=self_handover) قبل أي قفل · حفل خارج النطاق ← RESOURCE_NOT_FOUND (event)، وسائق من مؤسسة أخرى ← (driver) · حفل draft ← INVALID_STATE_TRANSITION (allowed_from [open, closing])، وclosed أو canceled ← EVENT_ALREADY_CLOSED · المتوقع 0 والمبلغ 0 ← VALIDATION_FAILED (amount_halalas، nothing_to_hand_over) · أي سائق في المؤسسة يسلّم نقدًا حصّله في هذا الحفل
+- الأثر: cash_handovers + payments.cash_handover_id؛ فرق ≠ 0 يفتح واقعة payment_discrepancy تعود incident_id ويُعثر عليها من صف التدقيق (metadata.incident_id، DEC-284)
 - أحداث: `cash.handover_recorded`, `incident.opened`
-- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `RESOURCE_NOT_FOUND`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`
 
 #### `GET /v1/events/{eventId}/settlement` — تسوية الحفل
+
+تسوية الحفل (الملف 13 §11) في لقطة REPEATABLE READ واحدة للقراءة فقط؛ `discrepancies[].type`: `cash_difference` و`delivered_due` و`reversed_without_replacement` (DEC-291).
 
 - الصلاحية: `report.read` · مفتاح التكرار: — · نجاح: `200`
 - أخطاء خاصة: `RESOURCE_NOT_FOUND`
@@ -648,10 +662,10 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `PATCH /v1/events/{eventId}` | تعديل حفل — الشروط: status ∈ {draft, open}؛ التسعير يُعدَّل ولو بعد أول تذكرة ويسري على التذاكر الجديدة فقط (DEC-109)؛ dispatch_pool_id في draft فقط (DEC-118) | `event.manage` | إلزامي | — | `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
 | `POST /v1/events/{eventId}/open` | فتح الحفل أو إعادة فتحه — الشروط: status ∈ {draft, closing}؛ مجموعة التوزيع نشطة (DEC-117) | `event.manage` | إلزامي | status=open؛ يسمح بالاستلام · `event.opened` (`reopened: true` عند إعادة الفتح) | `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
 | `POST /v1/events/{eventId}/start-closing` | بدء إقفال الحفل — الشروط: status=open | `event.manage` | إلزامي | status=closing؛ يمنع استلامات جديدة ويستمر الإحضار والتسليم · `event.closing_started` | `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
-| `GET /v1/events/{eventId}/reconciliation` | موانع إغلاق الحفل (S-10) | `event.manage` | — | — | `RESOURCE_NOT_FOUND` |
-| `POST /v1/events/{eventId}/close` | إغلاق الحفل كمكتمل — يرفض الإغلاق ما دامت أي قائمة في Reconciliation.blockers غير فارغة (عهدة، طلب، مهمة، تحصيل مستحق، نقد غير مسلّم، خلل سلامة مالية)؛ details.blockers بالبنية نفسها. الوقائع المفتوحة والرسائل الفاشلة تحذيرات لا تمنع. الشروط: status=closing | `event.manage` | إلزامي | status=closed + close_summary · `event.closed` | `EVENT_ALREADY_CLOSED`, `EVENT_CLOSE_BLOCKED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
+| `GET /v1/events/{eventId}/reconciliation` | موانع إغلاق الحفل (S-10) وتحذيراته في لقطة REPEATABLE READ واحدة: open_tickets غير delivered ولا voided؛ keys_not_in_slots حائز مفتاحها ليس خانة (أو مفتاح مسودة مع العميل)؛ open_requests مهام إحضار queued/offered/broadcast بجولتها الحية؛ open_tasks كل مهمة مفتوحة أخرى؛ warnings.failed_messages أحدث 200 مقنّعة (DEC-286) | `event.manage` | — | — | `RESOURCE_NOT_FOUND` |
+| `POST /v1/events/{eventId}/close` | إغلاق الحفل كمكتمل — يرفض الإغلاق ما دامت أي قائمة في Reconciliation.blockers غير فارغة (عهدة، طلب، مهمة، تحصيل مستحق، نقد غير مسلّم، خلل سلامة مالية)؛ details.blockers بالبنية نفسها. الوقائع المفتوحة والرسائل الفاشلة تحذيرات لا تمنع. الشروط: status=closing (open ← INVALID_STATE_TRANSITION بـallowed_from [closing])؛ يقفل الحفل FOR NO KEY UPDATE ويعيد قراءة الموانع داخل المعاملة؛ حالة استخدام تجمع الوحدات (DEC-290) | `event.manage` | إلزامي | status=closed + close_summary = {closed_at, closed_by, note, tickets, finance, warnings}، والملاحظة (حتى 500 محرف) سبب التدقيق (DEC-287) · `event.closed` | `EVENT_ALREADY_CLOSED`, `EVENT_CLOSE_BLOCKED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
 | `POST /v1/events/{eventId}/cancel` | إلغاء حفل — الشروط: status ∈ {draft, open} ولا تذاكر غير ملغاة (وإلا EVENT_CLOSE_BLOCKED بـreason=non_voided_tickets، DEC-120) | `event.manage` | إلزامي | status=canceled؛ تدقيق فقط بلا حدث نطاقي (DEC-120) | `EVENT_ALREADY_CLOSED`, `EVENT_CLOSE_BLOCKED`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `VERSION_CONFLICT` |
-| `GET /v1/events/{eventId}/operations` | لوحة التشغيل الحية (S-02) — لقطة كاملة لمزامنة لوحة المشرف؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors. | `alert.read` | — | — | `RESOURCE_NOT_FOUND` |
+| `GET /v1/events/{eventId}/operations` | لوحة التشغيل الحية (S-02) — لقطة كاملة لمزامنة لوحة المشرف (REPEATABLE READ ولحظة واحدة)؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors. الطابور ما لا يحركه أحد بعد مع الشارات ومستلم الجولة الفردية، ومؤشرات KPI-01 والسائقين، والتنبيهات والرسائل الفاشلة والعهدة كما في `OperationsBoard` (DEC-241…DEC-244). | `alert.read` | — | — | `RESOURCE_NOT_FOUND` |
 | `GET /v1/venues/{venueId}/shifts` | ورديات الموقع | `shift.manage` | — | — | `SCOPE_VENUE_DENIED` |
 | `POST /v1/venues/{venueId}/shifts` | إنشاء وردية — الشروط: starts_at إلزامي وends_at لا يسبقه؛ المجموعة الافتراضية للموقع ما لم تُحدَّد (DEC-127) | `shift.manage` | إلزامي | — | `SCOPE_VENUE_DENIED` |
 | `POST /v1/shifts/{shiftId}/open` | فتح الوردية — الشروط: status=scheduled؛ لا وردية مفتوحة أخرى لنفس المجموعة؛ مجموعة التوزيع نشطة (DEC-117)؛ لا يقيده وقت starts_at (DEC-127) | `shift.manage` | إلزامي | `shift.opened` | `INVALID_STATE_TRANSITION`, `SHIFT_ALREADY_OPEN`, `VERSION_CONFLICT` |
@@ -680,9 +694,9 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `POST /v1/drivers/{driverId}/reset-secret` | إعادة تعيين الرقم السري | `driver.manage` | إلزامي | must_change_secret=true + إبطال الجلسات (secret_reset) · WS `session.revoked` | `DRIVER_DISABLED` |
 | `GET /v1/drivers/{driverId}/assignments` | سجل تعيينات السائق | `driver.read` | — | — | `RESOURCE_NOT_FOUND` |
 | `POST /v1/drivers/{driverId}/assignments` | تعيين أولي لموقع — لسائق بلا تعيين نشط. للنقل بين موقعين استخدم /transfers. | `driver.assign` | إلزامي | — | `ASSIGNMENT_CONFLICT`, `DRIVER_DISABLED`, `SCOPE_VENUE_DENIED` |
-| `POST /v1/drivers/{driverId}/transfers` | نقل سائق بين موقعين — فوري (scheduled_at فارغ أو ماضٍ) أو مجدول. يُمنع مع مركبة أو مفتاح بعهدته أو مهمة in_progress أو مهمة صف/إعادة صف نشطة (DEC-32): الفوري يعيد TRANSFER_BLOCKED_CUSTODY دون إنشاء سجل نقل، والمجدول يصبح عند تفعيله blocked مع تنبيه transfer_blocked ويُعاد تقييمه آليًا. المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان لطابور الموقع القديم بأولويتهما. عند الإتمام: إبطال العروض، إعادة المهمة التالية لطابور الموقع القديم، إنهاء المناوبة والتعيين القديم وفتح الجديد، إبطال الجلسات ومغادرة الغرف. السجلات القديمة لا تُعاد كتابتها. الشروط: المشرف يملك نطاق الموقعين؛ لا نقل مفتوح آخر | `driver.transfer` | إلزامي | `driver.transfer_requested`, `driver.transferred`, `driver.transfer_blocked`, `task.withdrawn`, `offer.revoked`, `driver.duty_ended` · WS `session.revoked`, `driver.state_changed` | `DRIVER_DISABLED`, `REASON_REQUIRED`, `TRANSFER_ALREADY_PENDING`, `TRANSFER_BLOCKED_CUSTODY`, `TRANSFER_SCOPE_DENIED` |
-| `POST /v1/transfers/{transferId}/cancel` | إلغاء نقل مجدول/محجوب — الشروط: status ∈ {pending, blocked} | `driver.transfer` | إلزامي | `alert.resolved` | `INVALID_STATE_TRANSITION`, `REASON_REQUIRED` |
-| `POST /v1/duty-sessions/{sessionId}/force-end` | إنهاء مناوبة سائق بالمشرف — الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا)؛ المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) | `duty.force_end` | إلزامي | end_reason=forced · `driver.duty_ended`, `driver.availability_changed`, `task.withdrawn`, `offer.revoked` · WS `driver.state_changed`, `sync.required` | `DUTY_END_BLOCKED_CUSTODY`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED` |
+| `POST /v1/drivers/{driverId}/transfers` | نقل سائق بين موقعين — فوري (scheduled_at فارغ أو ماضٍ) أو مجدول. الهدف هو الموقع الحالي ← VALIDATION_FAILED (to_venue_id، same_as_current)؛ تغيّر التعيين المتزامن ← ASSIGNMENT_CONFLICT (reason=assignment_changed)؛ سائق عُطّل قبل التفعيل ← النقل canceled؛ الأقفال L1 لكل مجموعات الموقعين تصاعديًا ثم L3 (DEC-224، DEC-225). يُمنع مع مركبة أو مفتاح بعهدته أو مهمة in_progress أو مهمة صف/إعادة صف نشطة (DEC-32): الفوري يعيد TRANSFER_BLOCKED_CUSTODY دون إنشاء سجل نقل، والمجدول يصبح عند تفعيله blocked مع تنبيه transfer_blocked ويُعاد تقييمه آليًا. المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان لطابور الموقع القديم بأولويتهما. عند الإتمام: إبطال العروض، إعادة المهمة التالية لطابور الموقع القديم، إنهاء المناوبة والتعيين القديم وفتح الجديد، إبطال الجلسات ومغادرة الغرف. السجلات القديمة لا تُعاد كتابتها. الشروط: المشرف يملك نطاق الموقعين؛ لا نقل مفتوح آخر | `driver.transfer` | إلزامي | `driver.transfer_requested`, `driver.transferred`, `driver.transfer_blocked`, `task.withdrawn`, `offer.revoked`, `driver.duty_ended` · WS `session.revoked`, `driver.state_changed` | `ASSIGNMENT_CONFLICT`, `DRIVER_DISABLED`, `REASON_REQUIRED`, `TRANSFER_ALREADY_PENDING`, `TRANSFER_BLOCKED_CUSTODY`, `TRANSFER_SCOPE_DENIED` |
+| `POST /v1/transfers/{transferId}/cancel` | إلغاء نقل مجدول/محجوب — الشروط: status ∈ {pending, blocked}؛ نطاق الموقعين كالإنشاء (DEC-224) | `driver.transfer` | إلزامي | `alert.resolved` | `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `TRANSFER_SCOPE_DENIED` |
+| `POST /v1/duty-sessions/{sessionId}/force-end` | إنهاء مناوبة سائق بالمشرف — الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا؛ العناصر صفوف blockingCustody كمنع النقل والتعطيل، DEC-229)؛ معرّف المسار duty_session_id من DriverLive (DEC-217)؛ المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) | `duty.force_end` | إلزامي | end_reason=forced · `driver.duty_ended`, `driver.availability_changed`, `task.withdrawn`, `offer.revoked` · WS `driver.state_changed`, `sync.required` | `DUTY_END_BLOCKED_CUSTODY`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED` |
 | `GET /v1/staff` | المشرفون والإدارة | `staff.manage` | — | — | — |
 | `POST /v1/staff` | إضافة مشرف أو إدارة — الإدارة تضيف مشرفين فقط؛ المالك يضيف إدارة. كلمة مرور مؤقتة تُعرض مرة واحدة؛ MFA حسب السياسة. | `staff.manage` | إلزامي | — | `PHONE_INVALID` |
 | `PATCH /v1/staff/{userId}` | تعديل/تعطيل موظف | `staff.manage` | إلزامي | WS `session.revoked` | `CUSTODY_OPEN`, `PHONE_INVALID`, `REASON_REQUIRED`, `VERSION_CONFLICT` |
@@ -693,19 +707,19 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 
 | المسار | الغرض والشروط | الصلاحية | تكرار | الأثر والأحداث | أخطاء خاصة |
 |---|---|---|---|---|---|
-| `GET /v1/alerts` | تنبيهات المشرف | `alert.read` | — | — | — |
-| `POST /v1/alerts/{alertId}/acknowledge` | إقرار تنبيه | `alert.manage` | إلزامي | يوقف تكرار صوت التصعيد لهذا التنبيه · `alert.acknowledged` · WS `alert.updated` | `INVALID_STATE_TRANSITION` |
-| `POST /v1/alerts/{alertId}/resolve` | حل تنبيه | `alert.manage` | إلزامي | `alert.resolved` · WS `alert.updated` | `INVALID_STATE_TRANSITION` |
-| `GET /v1/incidents` | الوقائع | `incident.read` | — | — | — |
-| `POST /v1/incidents` | فتح واقعة — الشروط: السائق: لتذاكر موقعه فقط | `incident.create` | إلزامي | `incident.opened` · WS `alert.raised` | `SCOPE_VENUE_DENIED`, `TICKET_NOT_FOUND` |
+| `GET /v1/alerts` | تنبيهات المشرف — الأحدث أولًا؛ دون `venue_id` كل مواقع النطاق (DEC-235) | `alert.read` | — | — | `SCOPE_VENUE_DENIED` |
+| `POST /v1/alerts/{alertId}/acknowledge` | إقرار تنبيه — `open` ← `acknowledged`؛ الملاحظة في صف التدقيق (`metadata.note`) لأن `alerts` بلا عمود لها (DEC-234) | `alert.manage` | إلزامي | يوقف تكرار صوت التصعيد لهذا التنبيه · `alert.acknowledged` · WS `alert.updated` | `INVALID_STATE_TRANSITION` |
+| `POST /v1/alerts/{alertId}/resolve` | حل تنبيه — `open` أو `acknowledged` ← `resolved`؛ الملاحظة `resolution_note` (DEC-234) | `alert.manage` | إلزامي | `alert.resolved` · WS `alert.updated` | `INVALID_STATE_TRANSITION` |
+| `GET /v1/incidents` | الوقائع — الأحدث أولًا؛ مرشحات `venue_id`، `event_id`، `ticket_id`، `status[]`، `type` (DEC-235) | `incident.read` | — | — | `SCOPE_VENUE_DENIED` |
+| `POST /v1/incidents` | فتح واقعة — الشروط: السائق: لتذاكر موقعه فقط وبـ`ticket_id` إلزامي لتذكرة مفتوحة؛ تذكرة أو حفل من موقع آخر ← `VALIDATION_FAILED` (`venue_mismatch`، `ticket_event_mismatch`)؛ حفل خارج النطاق ← `RESOURCE_NOT_FOUND`؛ `event_id` افتراضيًا حفل التذكرة (DEC-237) | `incident.create` | إلزامي | `incident.opened` · WS `incident.updated` (و`ticket.updated` للمرتبطة) من مخطِّط الاتصال الفوري (DEC-238) | `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED`, `TICKET_NOT_FOUND` |
 | `GET /v1/incidents/{incidentId}` | تفاصيل واقعة | `incident.read` | — | — | — |
-| `PATCH /v1/incidents/{incidentId}` | تحديث/حل واقعة — الشروط: resolved/closed يتطلب resolution | `incident.manage` | إلزامي | `incident.updated`, `incident.resolved` | `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
-| `GET /v1/reports/events/{eventId}/summary` | تقرير الحفل | `report.read` | — | — | `RESOURCE_NOT_FOUND` |
-| `GET /v1/reports/drivers` | أداء السائقين | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `GET /v1/reports/payments` | تقرير التحصيل | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `GET /v1/reports/messages` | صحة رسائل واتساب | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `POST /v1/exports` | طلب ملف تصدير CSV | `export.create` | إلزامي | exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read | `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED` (لـ`filters.venue_id` خارج النطاق، DEC-191) |
-| `GET /v1/exports/{exportId}` | حالة التصدير ورابط التنزيل — الشروط: طالب التصدير فقط | `export.create` | — | — | — |
+| `PATCH /v1/incidents/{incidentId}` | تحديث/حل واقعة — الشروط: resolved/closed يتطلب resolution؛ `closed` نهائية (`incident_closed`)؛ إعادة الفتح تمسح الحل؛ `owner_id` موظف نشط بنطاق الموقع؛ بلا تغيير ← `noop` دون حدث (DEC-239) | `incident.manage` | إلزامي | حدث واحد لكل تغيير: `incident.updated` أو `incident.resolved` · WS `incident.updated` | `INVALID_STATE_TRANSITION`, `RESOURCE_NOT_FOUND`, `VERSION_CONFLICT` |
+| `GET /v1/reports/events/{eventId}/summary` | تقرير الحفل — `tickets_total` يشمل الملغاة (وتُعد في `voided`)؛ الأزمنة KPI-01 وKPI-02 وKPI-03 (المسلّمة والمعاد صفها) وKPI-04؛ الدورات الملغاة في `canceled_requests` وحدها؛ حفل خارج النطاق ← 404 (DEC-276، DEC-288) | `report.read` | — | — | `RESOURCE_NOT_FOUND` |
+| `GET /v1/reports/drivers` | أداء السائقين — صف لكل (سائق، موقع) (FR-RPT-06)؛ الأعداد بزمن الإتمام في `[from, to)` وساعات المناوبة مقصوصة على الفترة؛ مؤشر keyset `(employee_code, user_id, venue_id)` موقّع مع المرشحات؛ `from` بعد `to` ← `VALIDATION_FAILED` (`after_to`) (DEC-288) | `report.read` | — | — | `PAGINATION_CURSOR_INVALID`, `SCOPE_VENUE_DENIED` |
+| `GET /v1/reports/payments` | تقرير التحصيل — صف لكل حفل أُقيم في الفترة (يوم `event_date` بتوقيت الرياض `[00:00، 00:00 التالي)` يتقاطع مع `[from, to)` نصف المفتوحة كبقية التقارير، فيوم الرياض المرسل `[from, to+1)` لا يجلب حفلات اليوم التالي) بإجمالياته، والعكس والإعفاء منفصلان؛ لا قائمة تحصيلات (هي تصدير `payments`) (DEC-288) | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
+| `GET /v1/reports/messages` | صحة رسائل واتساب — إجماليات بالحالة الحالية لرسائل أُنشئت في `[from, to)`، و`status` يضيّق الإجماليات والقائمة (افتراضيًا الفاشلة)؛ الرسائل بلا موقع لنطاق المؤسسة دون `venue_id` فقط؛ بلا معرّف مستلم أو مرسل ولا جوال كامل (DEC-288) | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
+| `POST /v1/exports` | طلب ملف تصدير CSV — يرد 202 بالتصدير `pending`؛ المرشحات تُجمع بـAND (`drivers` مع `event_id` = موقع الحفل في الفترة؛ بلا `to` = حتى وقت التوليد)؛ المهمة تعيد حساب نطاق الطالب (`requester_inactive`، `scope_revoked`)، وتقرأ في لقطة واحدة، وترفع خارج أي معاملة، وتفشل `too_many_rows` فوق 50 000 صف، والملف 24 ساعة؛ حد المعدل فئة `export` (DEC-289، DEC-292) | `export.create` | إلزامي | exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read (`PERMISSION_DENIED` بـ`audit_read_required`) | `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED` (لـ`filters.venue_id` خارج النطاق، DEC-191) |
+| `GET /v1/exports/{exportId}` | حالة التصدير ورابط التنزيل — الشروط: طالب التصدير فقط (غيره ← 404)؛ الرابط موقّع لمدة `min(EXPORT_URL_TTL_S, المتبقي)` مع `private, no-store`، وكل رابط يُدقَّق (`metadata.download_link_issued`) (DEC-289) | `export.create` | — | — | `RESOURCE_NOT_FOUND` |
 | `GET /v1/admin/whatsapp/channel` | قناة واتساب (مصاف) — بلا قناة بعد: RESOURCE_NOT_FOUND (DEC-142) | `wa.channel_read` | — | — | `RESOURCE_NOT_FOUND` |
 | `PUT /v1/admin/whatsapp/channel` | ضبط القناة الوحيدة — قناة فعالة واحدة فقط لكل بيئة (phone_number_id واحد). المراجع تشير لمدير الأسرار ولا تحمل الأسرار نفسها. | `wa.channel_manage` | إلزامي | استبدال كامل للصف الفعال الوحيد (أو إنشاؤه أول مرة)؛ audit_log؛ لا يُنشئ قناة ثانية فعالة | `INVALID_STATE_TRANSITION` |
 | `GET /v1/admin/whatsapp/templates` | القوالب وحالة اعتمادها | `wa.channel_read` | — | — | — |
@@ -798,7 +812,7 @@ PATCH /v1/tickets/3f6c1a52-6a7e-4f0e-9d58-0a5b2b9c7e11/intake
 {
   "expected_version": 1,
   "plate": { "country": "SA", "digits": "1234", "letters_ar": "ب ح د" },
-  "vehicle": { "make": "تويوتا", "model": "كامري", "color": "أبيض", "type": "sedan" },
+  "vehicle": { "make": "toyota", "model": "كامري", "color": "white", "type": "sedan" },
   "customer_phone": "0551234567",
   "consent": { "method": "verbal_staff_confirmed", "confirmed": true }
 }
@@ -1193,17 +1207,17 @@ Content-Type: application/json
 |---|---|---|---|
 | `task.offered` | `user:{recipientId}` | `OfferCard` (mode=single) | تعرض البطاقة، صوت `offer`، عداد من `expires_at` مقابل `server_time` |
 | `task.broadcast` | `user:{recipientId}` لكل مستلم | `OfferCard` (mode=broadcast، `eligible_as` خاص بكل سائق) | تعرض البطاقة إن كانت أقدم طلب قابل للقبول، صوت `broadcast` |
-| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by}` | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
-| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
+| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by: {id, full_name}}` — `offer_ids` الجولة المقبولة؛ يسبقه `task.updated` للفائز بإصدار المهمة نفسه فيتجاهل جهازه الحجز (DEC-220) | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
+| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
-| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task`؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
-| `ticket.updated` | المشرفون + السائق المعني (المكلّف/المنشئ أثناء التسجيل) | `TicketSummary` + `cause` (+ `wa_link_pending` للسائق في ربط QR) | تحدّث البطاقات والقوائم |
-| `driver.state_changed` | `user:{driverId}` + المشرفون | `DriverLive` | تحدّث شريط الحالة ولوحة السائقين |
+| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
+| `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265) | تحدّث البطاقات والقوائم |
+| `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |
 | `alert.updated` | نفس الغرف | `Alert` | يوقف صوت التصعيد عند الإقرار أو الحل |
-| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
-| `channel.status` | كل الغرف في المؤسسة | `{whatsapp: WaHealthStatus, changed_at}` | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
-| `sync.required` | `user:{userId}` | `{reason}` | تجلب `GET /v1/me/home` (السائق) أو `GET /v1/events/{eventId}/operations` (المشرف) |
+| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` + `cause` (`incident.opened` أو `incident.updated` أو `incident.resolved`) بقراءة طازجة؛ ينشره مخطِّط الإشعارات لا وحدة الوقائع (DEC-272) | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
+| `channel.status` | كل غرف الموظفين في المؤسسة: `org:{orgId}:admins` ومشرفو كل موقع وسائقو كل مجموعة | `{whatsapp: WaHealthStatus, changed_at}` + `cause` (`wa.channel_health_changed`) بـ`aggregate {type: whatsapp_channel, id, version: null}`؛ ناشر واحد هو مخطِّط الإشعارات (DEC-268) | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
+| `sync.required` | حسب `reason` (DEC-267): `duty_force_ended` أو `duty_ended` (`scope: home`) لغرفة السائق عند إنهاء مناوبته قسرًا أو ذاتيًا (لأجهزته الأخرى)، أما النقل والتعطيل فيكتفيان بـ`session.revoked` (DEC-221)؛ `shift_status_changed` (`scope: home`، `shift_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة المجموعة، ومعها عند الفتح غرف `user:` للسائقين ذوي التعيين النشط في الموقع وعند الإغلاق غرف المناوبات المنتهية؛ `event_status_changed` (`scope: events`، `event_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة مجموعة الحفل؛ `settings_changed` (`scope: me`) لكل مستخدم نشط عند تغيير `heartbeat.*`؛ `scope_changed` لغرفة المستخدم عند تغيير نطاقه؛ `publish_overflow` (`cause: job.ws_publish`) لغرف رسالة تعذر نشرها (DEC-269) | `{reason}` (+ `scope` و`cause` والمعرّفات أعلاه حين تنطبق) | تجلب `GET /v1/me/home` (السائق؛ و`scope: events` يحدّث `open_events` فيها، و`scope: me` يجلب `GET /v1/me`) أو `GET /v1/events/{eventId}/operations` (المشرف) |
 | `session.revoked` | `user:{userId}` | `{reason: SessionRevokedReason}` | تمسح البيانات المحلية وتعود لشاشة الدخول |
 
 تنبيه أمني: لا يحمل أي حدث رمز التسليم ولا الجوال الكامل؛ موضع المفتاح والموقف يصلان فقط في `TaskCard` للمكلّف.
@@ -1220,6 +1234,7 @@ Content-Type: application/json
 - التسليم «مرة واحدة على الأكثر» دون إعادة تشغيل للأحداث الفائتة. الترتيب داخل الغرفة أفضل جهد.
 - العميل يتجاهل حدثًا مكرر `id`، وأي تحديث `aggregate.version` فيه ≤ آخر إصدار يعرفه.
 - عند (إعادة) الاتصال، أو العودة من الخلفية، أو `sync.required`، أو فجوة نبضات: مزامنة كاملة قبل السماح بالأوامر — السائق `GET /v1/me/home`، المشرف `GET /v1/events/{eventId}/operations`. تظهر «آخر مزامنة» في الشريط العلوي.
+- رسالة أكبر من حد NOTIFY تُستبدل بـ`sync.required` (`reason: publish_overflow`) لغرفها عبر `job.ws_publish`، لأن صفه يحمل المعرّفات وحدها؛ وكل مخطِّط يقسم غرفه 60 لكل NOTIFY فيبقى ذلك استثناءً (DEC-269، يكمل DEC-48).
 - حالة الاتصال تُحسب على الخادم من آخر نبضة (WebSocket أو `POST /v1/me/heartbeat`): `online` حتى 45 ث، `uncertain` حتى 120 ث، ثم `offline` (إعدادات `heartbeat.*`). الاتصال مؤشر منفصل: لا يغيّر التوفر ولا يسحب مهمة جارية، ولا يُفترض بقاء الاتصال في الخلفية.
 - بلا اتصال مؤكد لا تعرض الواجهة «تم القبول»؛ تنتظر رد HTTP. البيانات المخزنة تُعلَّم «قديمة» ويُعطّل القبول والتسليم حتى المزامنة.
 - الصوت داخل الصفحة يعمل فقط بعد «تفعيل واختبار الصوت» وأثناء ظهور الصفحة؛ في الخلفية يحاول Web Push (حيث يُدعم) بإشعار لا يحمل إلا رقم التذكرة (DEC-23). المؤقتات والتصعيد تعمل على الخادم حتى لو أُغلقت كل الصفحات.

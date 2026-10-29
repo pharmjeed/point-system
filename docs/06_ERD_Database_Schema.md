@@ -622,7 +622,7 @@ erDiagram
 
 #### 10) `events`
 - **الغرض:** الحفل. أرقام التذاكر فريدة داخله، والتسعير يُحدد على مستواه.
-- **أعمدة أساسية:** `dispatch_pool_id` (ثابت بعد الفتح)، `name_ar`، `host_name`، `event_date`، `starts_at/ends_at`، `status`، `pricing_mode` و`fee_halalas` و`allowed_payment_methods`، `next_display_number` (عداد التذاكر)، `opened_*`، `closing_started_at`، `closed_*`، `close_summary`، `canceled_at` و`cancel_reason`، `version`.
+- **أعمدة أساسية:** `dispatch_pool_id` (ثابت بعد الفتح)، `name_ar`، `host_name`، `event_date`، `starts_at/ends_at`، `status`، `pricing_mode` و`fee_halalas` و`allowed_payment_methods`، `next_display_number` (عداد التذاكر)، `opened_*`، `closing_started_at`، `closed_*`، `close_summary` (يُكتب عند الإغلاق ولا يتغير: `{closed_at, closed_by, note, tickets, finance, warnings}`، و`finance` = `{currency, amounts, drivers, discrepancies}`، DEC-287)، `canceled_at` و`cancel_reason`، `version`.
 - **القيود:** `ck_events_fee_zero_unless_per_vehicle` (الرسوم صفر إلا لـ`per_vehicle`)، `ck_events_per_vehicle_fee_positive` (`per_vehicle` برسوم موجبة)، `ck_events_closed_at` (المغلق له `closed_at`)، `ck_events_payment_methods`، `events_fee_halalas_check`، `events_next_display_number_check`، `ix_events_venue_status`.
 - **الكتابة/القراءة:** `POST /v1/venues/{venueId}/events`، `PATCH /v1/events/{eventId}`، `.../open`، `.../start-closing`، `.../close`، `.../cancel`؛ بدء الاستلام يزيد العداد (§5.3) **دون** زيادة `version` حتى لا يتعارض مع تعديل المشرف. يُقرأ في الاستلام (الحفلات المفتوحة) وS-08 وS-10 والتقارير.
 
@@ -746,7 +746,7 @@ erDiagram
 - **الغرض:** من وصله العرض في كل جولة، ومتى وصله وشاهده وماذا فعل.
 - **أعمدة أساسية:** المفتاح المركب `(offer_id, user_id)`، `duty_session_id`، `eligible_as` لحظة العرض (`accept`، `reserve_next`، `view_only`)، `notified_ws_at`، `notified_push_at`، `seen_at` (من `client.offer_seen`)، `responded_at`، `response` (`accepted` أو `rejected_late`).
 - **القيود:** `offer_recipients_pkey`، `offer_recipients_eligible_as_check`، `ix_offer_recipients_user`.
-- **الكتابة/القراءة:** تمريرة التوزيع (إدراج)، `job.ws_publish`/`job.push_send` (أوقات الإشعار)، القبول. القبول يُسمح فقط لمستلم مسجل (`NOT_OFFER_RECIPIENT`). يُقرأ في استعلام بطاقة السائق (§6.1).
+- **الكتابة/القراءة:** تمريرة التوزيع (إدراج)، `job.push_send` (`notified_push_at` عند أول Push ناجح للمستلم، أولًا في معاملة النتيجة: L7 قبل L9؛ ولا يكتب `job.ws_publish` أوقات الإشعار، DEC-273)، القبول. القبول يُسمح فقط لمستلم مسجل (`NOT_OFFER_RECIPIENT`). يُقرأ في استعلام بطاقة السائق (§6.1).
 
 ### 3.ز واتساب والرموز والإشعارات
 
@@ -759,8 +759,8 @@ erDiagram
 #### 31) `link_codes`
 - **الغرض:** ربط محادثة العميل بالتذكرة عبر QR يفتح واتساب برسالة جاهزة فيها رمز قصير؛ المسح وحده ليس إرسالًا (المعمارية §4د).
 - **أعمدة أساسية:** `code` (6 رموز من أبجدية بلا التباس `^[A-HJ-NP-Z2-9]{6}$`)، `status` (Canon §5.7)، `created_by`، `expires_at`، `inbound_message_id`، `inbound_wa_id`، `inbound_user_id` (BSUID حين يُخفي المرسل رقمه، DEC-35)، `inbound_phone_e164`، `confirmed_by/at`.
-- **القيود:** `link_codes_code_check`، `uq_link_codes_live_code` (لا يتكرر رمز حي)، `uq_link_codes_live_ticket` (رمز حي واحد للتذكرة؛ يُبطل القديم قبل إصدار جديد).
-- **الكتابة/القراءة:** `POST /v1/tickets/{ticketId}/whatsapp-link` بطريقة QR، المعالجة الواردة (`pending_confirmation`)، `.../whatsapp-link/confirm` (`consumed`)، `job.link_code_expire`. يُقرأ في D-07.
+- **القيود:** `link_codes_code_check`، `uq_link_codes_live_code` (لا يتكرر رمز حي)، `uq_link_codes_live_ticket` (رمز حي واحد للتذكرة؛ يُبطل القديم قبل إصدار جديد)، وقيمة `revoke_reason` من `driver_rejected_match` أو `regenerated` أو `linked_direct` أو `ticket_voided` أو `channel_paper`؛ ولا قيمة لتغيير الجوال فيبطل رموزه الحية بـ`linked_direct` (DEC-201)، وكذلك رسالة رمز لتذكرة رُبطت في الأثناء (DEC-197).
+- **الكتابة/القراءة:** `POST /v1/tickets/{ticketId}/whatsapp-link` بطريقة QR، المعالجة الواردة (`pending_confirmation`)، `.../whatsapp-link/confirm` (`consumed`)، `PATCH /v1/tickets/{ticketId}/customer-phone` (`revoked`)، `job.link_code_expire`. يُقرأ في D-07.
 
 #### 32) `action_tokens`
 - **الغرض:** قيمة `payload` المعتمة لزر «طلب السيارة» في W-01؛ تربط الزر بالعميل والتذكرة وإصدار الربط.
@@ -796,7 +796,7 @@ erDiagram
 - **الغرض:** كل إشعار مقصود لمستلم على قناة (`whatsapp` للعميل، `push` لجهاز موظف)، مع نتيجته.
 - **أعمدة أساسية:** `channel`، `purpose`، `recipient_customer_id`/`recipient_user_id`/`recipient_device_id`، `venue_id`، `ticket_id`، `task_id`، `source_outbox_id`، `dedupe_key`، `status`، `skipped_reason` (`superseded`، `opted_out`، `no_consent`، `channel_down`، `stale`، `no_subscription`)، `attempts`، `next_attempt_at`، `last_error_*`، `sent_at`، `failed_at`.
 - **القيود:** `notifications_dedupe_key_key`، `ck_notifications_recipient` (المستلم يناسب القناة)، `ix_notifications_failed`.
-- **الكتابة/القراءة:** مستهلكو Outbox (`job.wa_send`، `job.push_send`). يُقرأ في S-02 (الرسائل الفاشلة) والتقارير.
+- **الكتابة/القراءة:** الإدراج داخل معاملة الأمر (`NotificationPlanner` للعميل، DEC-41، ومخطِّط Push للموظفين)، والنتيجة من مستهلكي Outbox (`job.wa_send`، `job.push_send`)؛ و`id` UUIDv7 من الخلفية فتحفظ صفوف اللحظة الواحدة ترتيبها (DEC-273). يُقرأ في S-02 (الرسائل الفاشلة) والتقارير.
 
 #### 38) `notification_attempts`
 - **الغرض:** سجل كل محاولة إرسال ورد المزود.
@@ -859,7 +859,7 @@ erDiagram
 - **الغرض:** ملفات تصدير مؤقتة (CSV) تُنشأ بمهمة وتُحذف بعد انتهائها.
 - **أعمدة أساسية:** `requested_by`، `kind`، `filters`، `status`، `storage_key`، `row_count`، `error`، `completed_at`، `expires_at`.
 - **القيود:** `exports_kind_check`، `exports_status_check`.
-- **الكتابة/القراءة:** `POST /v1/exports` ثم `job.export_generate`؛ `GET /v1/exports/{exportId}`. كل تصدير يُسجل في `audit_log`.
+- **الكتابة/القراءة:** `POST /v1/exports` ثم `job.export_generate` (يرفع الملف خارج أي معاملة إلى `exports/{org_id}/{export_id}.csv` ويبقيه 24 ساعة؛ `error` عند `failed`: `requester_inactive`، `scope_revoked`، `too_many_rows` فوق 50 000 صف، `storage_unavailable`، `storage_error`؛ DEC-289)؛ `GET /v1/exports/{exportId}` لطالبه وحده. كل تصدير وكل رابط تنزيل يُسجل في `audit_log`.
 
 ### 3.ط العروض المشتقة والمشغّلات
 
@@ -1396,7 +1396,7 @@ SELECT h.driver_id,
 ### 8.3 تنفيذ مهمة الاحتفاظ
 
 - `job.retention_purge` صف واحد يوميًا لكل المؤسسات عند `RETENTION_PURGE_CRON_UTC` (02:00 UTC = 05:00 بتوقيت `Asia/Riyadh`، خارج وقت الذروة وبعيدًا عن ليالي الحفلات) بمفتاح `retention:<date>`، وداخله تشغيل لكل مؤسسة؛ تُعاد جدولته بعد كل تشغيل فعلي ويُنشئه المراقب إن غاب (DEC-161).
-- دفعات صغيرة (1000 سطر لكل معاملة؛ 10,000 للتحليلات) بدور قاعدة البيانات `point_retention` (الترحيل `0004_retention_role.sql`: عضو في `point_app`، مع `DELETE` على الجداول القابلة للحذف فقط و`UPDATE (note)` على `custody_events`) تأخذه المهمة بـ`SET LOCAL ROLE`، وتمنح كل بيئة دور دخول العامل عضويته (DEC-153؛ تعليق القسم 17 في `06_schema.sql` أمثلة فقط).
+- دفعات صغيرة (1000 سطر لكل معاملة؛ 10,000 للتحليلات) بدور قاعدة البيانات `point_retention` (الترحيل `0004_retention_role.sql`: عضو في `point_app`، مع `DELETE` على الجداول القابلة للحذف فقط و`UPDATE (note)` على `custody_events`) تأخذه المهمة بـ`SET LOCAL ROLE`، وتمنح كل بيئة دور دخول العامل عضويته بلا وراثة: `GRANT point_retention TO point_worker WITH INHERIT FALSE, SET TRUE` (المنح العادي يورّث العامل `DELETE` على `audit_log` و`analytics_events` في كل معاملاته)؛ والأدوار في `infra/db/bootstrap-roles.sql`: `point_owner` يملك الكائنات ويشغّل الترحيلات، و`point_api` و`point_worker` عضوان في `point_app`، ومجموعتا `point_app` و`point_retention` تُنشآن قبل أول ترحيل مع `ADMIN OPTION` للمالك؛ وكل ترحيل يضيف جدولًا يمنح `point_app` صراحة (DEC-153، DEC-301؛ تعليق القسم 17 في `06_schema.sql` أمثلة فقط ولا يتغير).
 - تكتب سطر `audit_log` لكل دفعة بالفعل `job.retention_purge` (`entity_type` = الجدول، ومعرّف التشغيل والخطوة والأعداد والكائنات المحذوفة والفاشلة) وسطر ملخص لكل تشغيل (`entity_type = organization`، السياسة وكل خطوة)، ولها وضع تجربة (dry-run) يكتب الملخص وحده، وقياسات للعدد والزمن (DEC-152).
 - المرشحون يُقرؤون خارج أي معاملة، وتُحذف كائنات التخزين دون معاملة مفتوحة، ثم تُعلَّم في معاملة قصيرة الصفوف التي زالت كائناتها فقط، ويُعاد ما فشل حذفه في التشغيل التالي؛ وبلا حاذف كائنات مسجل تُتخطى الخطوة ويُبلَّغ بها (`no_object_deleter`)؛ والحجز (§8.2) يُفحص عند اختيار المرشحين فقط، فالكائن المحذوف فعلًا يُعلَّم دائمًا (DEC-151).
 
@@ -1423,7 +1423,7 @@ SELECT h.driver_id,
 ### 9.3 حارس التطابق في CI
 
 1. تطبيق كل الترحيلات على PostgreSQL 16 فارغة ثم تشغيل `06_schema_invariants_test.sql` عليها: يجب `ALL INVARIANT TESTS PASSED`.
-2. مقارنة لقطة الكتالوج (الجداول والأعمدة وأنواعها والقيود و`pg_get_indexdef` للفهارس) بين قاعدة الترحيلات وقاعدة محمّلة من `06_schema.sql`؛ أي فرق يفشل البناء ما لم يُحدَّث `06_schema.sql` في الطلب نفسه.
+2. مقارنة لقطة الكتالوج (الجداول والأعمدة وأنواعها والقيود و`pg_get_indexdef` للفهارس بشروطها، والعروض والدوال والمشغّلات) بين قاعدة الترحيلات وقاعدة محمّلة من `06_schema.sql`: يفشل البناء إن **نقص** من قاعدة الترحيلات كائن يعرّفه `06_schema.sql` أو اختلف تعريفه، ما لم يُحدَّث `06_schema.sql` في الطلب نفسه؛ أما الكائنات **الزائدة** التي تضيفها ترحيلات لاحقة (مثل دور `point_retention` وفهرس `ix_outbox_failed_dead` في الترحيل `0004`، DEC-153) فمسموحة وتُذكر في التقرير (DEC-364).
 3. اختبار يتأكد من وجود كل فهرس `uq_*` المذكور في §4 بالاسم.
 
 ### 9.4 البيانات الأولية للتطوير

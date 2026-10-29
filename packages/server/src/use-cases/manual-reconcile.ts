@@ -16,7 +16,7 @@ import {
   type TaskRow,
 } from '../modules/dispatch/index.js';
 import { scopeStillGranted } from '../modules/incidents/index.js';
-import { normalizePosReference } from '../modules/payments-reports/index.js';
+import { alreadyRecorded, normalizePosReference } from '../modules/payments-reports/index.js';
 import {
   checkVersion,
   emitForTicket,
@@ -176,7 +176,8 @@ export class ManualReconcileUseCase {
     } | null = null;
     if (body.payment) {
       if (target !== 'delivered') throw fields('payment', 'not_applicable');
-      if (t.payment_status === 'collected' || recorded) throw new AppError('PAYMENT_ALREADY_RECORDED');
+      // 13 §16: the details of the recorded payment ({payment_id, method, collected_by}), as every other route
+      if (t.payment_status === 'collected' || recorded) throw await alreadyRecorded(tx, t.id);
       if (t.payment_status !== 'due') throw fields('payment', 'not_applicable');
       const methods = (event as { allowed_payment_methods: string[] }).allowed_payment_methods;
       if (!methods.includes(body.payment.method))
@@ -415,6 +416,7 @@ export class ManualReconcileUseCase {
         payload: {
           payment_id: paymentId,
           ticket_id: t.id,
+          cycle_id: closedCycle?.id ?? null, // 11 §8.7 PaymentRecorded (DEC-285): the row's cycle
           method: payment.method,
           amount_halalas: payment.amount,
           collected_by: payment.collectedBy,

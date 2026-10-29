@@ -350,6 +350,17 @@ export function driverReportRow(r: DriverReportRawRow) {
 // payments (KPI-11 per event; the events held in the period, i.e. their local date)
 // ------------------------------------------------------------------------------------------------
 
+/**
+ * «Held in the period» for an event of a Riyadh calendar day (DEC-288, DEC-331): the day
+ * `[event_date 00:00, event_date + 1 00:00)` Asia/Riyadh overlaps the half-open period `[from, to)` — the same
+ * convention as the drivers and messages reports, so S-11's Riyadh days sent as `[from, to + 1 day)` never pull
+ * in the events of the day after. `e` is the events alias; the argument is the SQL parameter of the bound.
+ */
+export const EVENT_DAY_STARTS_BEFORE = (to: string) =>
+  `(e.event_date::timestamp AT TIME ZONE 'Asia/Riyadh') < ${to}::timestamptz`;
+export const EVENT_DAY_ENDS_AFTER = (from: string) =>
+  `((e.event_date + 1)::timestamp AT TIME ZONE 'Asia/Riyadh') > ${from}::timestamptz`;
+
 export interface PaymentsReportFilters {
   venueIds: string[];
   from: string;
@@ -380,8 +391,7 @@ export async function paymentsReportRows(q: TicketQueryable, f: PaymentsReportFi
               WHERE t.event_id = e.id AND t.status <> 'voided' AND t.payment_status = 'due') AS outstanding
        FROM events e
       WHERE e.venue_id = ANY($1::uuid[])
-        AND e.event_date BETWEEN ($2::timestamptz AT TIME ZONE 'Asia/Riyadh')::date
-                             AND ($3::timestamptz AT TIME ZONE 'Asia/Riyadh')::date
+        AND ${EVENT_DAY_STARTS_BEFORE('$3')} AND ${EVENT_DAY_ENDS_AFTER('$2')}
         AND ($4::uuid IS NULL OR e.id = $4::uuid)
       ORDER BY e.event_date, e.id`,
     [f.venueIds, f.from, f.to, f.eventId ?? null],

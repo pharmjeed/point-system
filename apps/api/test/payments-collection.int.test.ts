@@ -18,7 +18,7 @@ import {
   startDuty,
   U,
 } from './dispatch-fixtures.js';
-import { CASH, deliver, FEE, pay, POS, readyTicket } from './payments-fixtures.js';
+import { CASH, deliver, FEE, pay, POS, readyTicket, settlement } from './payments-fixtures.js';
 
 /**
  * PNT-080 (13 §5; PAY-TC-01 … PAY-TC-11): the collection of a per_vehicle fee, separately in `ready`
@@ -355,5 +355,151 @@ describe('PNT-080 — the collection inside the handover (13 §5.3, TT-18)', () 
     expect(await one(t.db, `SELECT fee_halalas FROM tickets WHERE id = $1`, [r.ticketId])).toEqual({
       fee_halalas: 0,
     });
+  });
+});
+
+describe('PNT-078 + PNT-080 — the collection inside the exceptional handover (13 §8.4, TT-19)', () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await createS2App();
+    ok(await startDuty(t, 'DRV1'), 201);
+  });
+  afterEach(async () => t.close());
+
+  const OP = 'POST /v1/tickets/{ticketId}/handover-exception';
+  const exception = (ticketId: string, payment?: unknown, as = 'SUP-R') =>
+    t.command('post', `/v1/tickets/${ticketId}/handover-exception`, {
+      as,
+      body: {
+        reason: 'فقد العميل الكعب',
+        identity_checks: { plate_confirmed: true, vehicle_description_confirmed: true },
+        ...(payment === undefined ? {} : { payment }),
+      },
+    });
+  const nothingWritten = async (ticketId: string) => {
+    expect(await paymentsOf(t, ticketId)).toEqual([]);
+    expect(await one(t.db, `SELECT status, payment_status FROM tickets WHERE id = $1`, [ticketId])).toEqual({
+      status: 'ready',
+      payment_status: 'due',
+    });
+    expect(await rows(t.db, `SELECT id FROM incidents WHERE ticket_id = $1`, [ticketId])).toEqual([]);
+  };
+
+  it('PAY-TC-22: PAYMENT_PENDING without payment; the 13 §5.2 rules and the collector before any effect; the cash stays with the driver', async () => {
+    const r = await readyTicket(t, 'DRV1');
+    expect(err(await exception(r.ticketId), 'PAYMENT_PENDING', 409)).toEqual({
+      amount_halalas: FEE,
+      allowed_methods: ['cash', 'pos'],
+    });
+    expect(
+      err(
+        await exception(r.ticketId, { method: 'cash', amount_halalas: 1500, collected_by: U.DRV1 }),
+        'PAYMENT_AMOUNT_MISMATCH',
+        422,
+      ),
+    ).toEqual({ expected_halalas: FEE, received_halalas: 1500 });
+    expect(
+      err(
+        await exception(r.ticketId, { ...POS('4111111111111111'), collected_by: U.DRV1 }),
+        'VALIDATION_FAILED',
+        422,
+      ).fields,
+    ).toEqual([{ field: 'payment.pos_reference', issue: 'looks_like_card_number' }]);
+    // a collector who is neither the assignee nor the approving supervisor (13 §8.4)
+    expect(
+      err(await exception(r.ticketId, { ...CASH, collected_by: U.DRV2 }), 'VALIDATION_FAILED', 422).fields,
+    ).toEqual([{ field: 'payment.collected_by', issue: 'not_eligible' }]);
+    await cashOnly(t);
+    expect(
+      err(await exception(r.ticketId, { ...POS(), collected_by: U.DRV1 }), 'PAYMENT_METHOD_NOT_ALLOWED', 422),
+    ).toEqual({ allowed_methods: ['cash'] });
+    await nothingWritten(r.ticketId);
+
+    t.clock.advanceSeconds(4);
+    const done = ok(await exception(r.ticketId, { ...CASH, collected_by: U.DRV1 }));
+    expect(done.ticket).toMatchObject({ status: 'delivered', payment_status: 'collected' });
+    expect(done.payment).toMatchObject({
+      ticket_id: r.ticketId,
+      cycle_id: r.cycleId,
+      method: 'cash',
+      amount_halalas: FEE,
+      status: 'recorded',
+      collected_by: { id: U.DRV1 },
+      collected_at: t.clock.now().toISOString(),
+    });
+    expect(await paymentsOf(t, r.ticketId)).toEqual([
+      expect.objectContaining({ id: done.payment.id, collected_by: U.DRV1, status: 'recorded' }),
+    ]);
+    expect((await outboxEvents(t.db, 'payment.recorded')).map((e) => e.payload.payload)).toEqual([
+      {
+        ticket_id: r.ticketId,
+        payment_id: done.payment.id,
+        cycle_id: r.cycleId,
+        method: 'cash',
+        amount_halalas: FEE,
+        collected_by: U.DRV1,
+        source: 'exception',
+      },
+    ]);
+    // the supervisor approved and recorded; the money is the driver's (13 §8.4 audit)
+    const audit = await one(
+      t.db,
+      `SELECT actor_id, request_id, metadata FROM audit_log WHERE action = 'payment.record' AND entity_id = $1`,
+      [done.payment.id],
+    );
+    expect(audit.actor_id).toBe(U['SUP-R']);
+    expect(audit.request_id).toEqual(expect.any(String));
+    expect(audit.request_id).not.toBe('');
+    expect(audit.metadata).toMatchObject({ operation: OP, collected_by: U.DRV1, source: 'exception' });
+    expect(await auditCount(t.db, 'handover.exception', r.ticketId)).toBe(1);
+    // the incident of TT-19 is opened by the command itself
+    expect((await outboxEvents(t.db, 'incident.opened')).map((e) => e.payload.payload.auto_created)).toEqual([
+      true,
+    ]);
+    // PAY-TC-22: the cash is in the driver's custody until he hands it over (13 §9)
+    const s = await settlement(t, 'SUP-R', EVT_R2);
+    const of = (id: string) => s.drivers.find((d: { driver: { id: string } }) => d.driver.id === id);
+    expect(of(U.DRV1).cash).toMatchObject({
+      count: 1,
+      collected_halalas: FEE,
+      handed_over_halalas: 0,
+      outstanding_halalas: FEE,
+    });
+    expect(of(U['SUP-R'])).toBeUndefined();
+    await expectConsistent(t.db);
+  });
+
+  it('a collected ticket refuses a second payment; the approving supervisor may be the collector; an included event takes none', async () => {
+    const a = await readyTicket(t, 'DRV1');
+    const paid = ok(await pay(t, 'DRV1', a.ticketId, POS()), 201);
+    expect(
+      err(await exception(a.ticketId, { ...CASH, collected_by: U.DRV1 }), 'PAYMENT_ALREADY_RECORDED', 409),
+    ).toEqual({
+      payment_id: paid.payment.id,
+      method: 'pos',
+      collected_by: U.DRV1,
+    });
+    const first = ok(await exception(a.ticketId));
+    expect(first.payment).toBeNull();
+    expect(first.ticket).toMatchObject({ status: 'delivered', payment_status: 'collected' });
+
+    const b = await readyTicket(t, 'DRV1');
+    const done = ok(await exception(b.ticketId, { ...CASH, collected_by: U['SUP-R'] }));
+    expect(done.payment).toMatchObject({ collected_by: { id: U['SUP-R'] }, status: 'recorded' });
+    expect((await outboxEvents(t.db, 'payment.recorded')).at(-1).payload.payload).toMatchObject({
+      payment_id: done.payment.id,
+      collected_by: U['SUP-R'],
+      source: 'exception',
+    });
+
+    const c = await readyTicket(t, 'DRV1', { eventId: EVT_R1 });
+    expect(
+      err(await exception(c.ticketId, { ...CASH, collected_by: U.DRV1 }), 'VALIDATION_FAILED', 422).fields,
+    ).toEqual([{ field: 'payment', issue: 'not_applicable' }]);
+    expect(ok(await exception(c.ticketId)).ticket).toMatchObject({
+      status: 'delivered',
+      payment_status: 'not_required',
+    });
+    await expectConsistent(t.db);
   });
 });

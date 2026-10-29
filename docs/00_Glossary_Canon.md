@@ -810,7 +810,7 @@
 - غير الوظيفية `NFR-<CAT>-nn` حيث CAT ∈ `PERF` `REL` `SEC` `PRIV` `UX` `A11Y` `OPS` `COMP`.
 - معايير القبول `AC-01` … `AC-22` = البنود 1–22 في القسم 16 من الوثيقة الأصلية بالترتيب نفسه.
 - تذاكر التطوير `PNT-###`، الملاحم `EP-##`، القرارات `DEC-##` (في `DECISIONS.md`؛ كانت `D-##` في المسودات وتختلط بمعرّفات شاشات السائق، فأعيدت تسميتها).
-- أفعال `audit_log.action`: أسماء الصلاحيات (§10) وأوامرها، إضافة إلى `dispatch.priority_override` · `wa.button_sender_mismatch` · `wa.button_context_mismatch` · `ticket.reveal_phone`.
+- أفعال `audit_log.action`: أسماء الصلاحيات (§10) وأوامرها، إضافة إلى `dispatch.priority_override` · `wa.button_sender_mismatch` · `wa.button_context_mismatch` · `ticket.reveal_phone` · `owner.bootstrap` (أداة تهيئة المالك بفاعل `system`، DEC-302).
 - أنواع `ticket_events.type`: أحداث النطاق الخاصة بالتذكرة (§7.1، التفصيل في 11 §1.6)، إضافة إلى `ticket.photo_uploaded` عند اكتمال رفع صورة، وهو سطر خط زمني فقط لا حدث نطاقي: لا يُكتب في `outbox_events` ولا يُنشر فوريًا (DEC-95).
 - رقم التذكرة الظاهر: عدد صحيح يبدأ من 1 لكل حفل. يظهر للموظف `#125` مع اسم الحفل، وللعميل «تذكرة 125» مع اسم الموقع.
 - الجوال يُخزن E.164 (`+9665XXXXXXXX`) ويُعرض مقنّعًا `05•••••123`.

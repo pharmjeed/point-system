@@ -22,8 +22,8 @@ import { readyRetrieval } from './supervisor-fixtures.js';
  * One incident writer (consolidation of the S3, S4 and payments writers into the incidents module's
  * `openIncident`, 11 §6.11): every flow that opens an incident inside its command goes through it — the use-cases
  * directly, payments-reports through the core seam (04 §4.3) — and each keeps the rows and the events it
- * documented before: TT-19 (exception handover: resolved, owned by the supervisor, on the ticket timeline, no
- * `auto_created`), TT-20 (repark: resolved, `low`, both payloads `resolved` + `auto_created`), 13 §7.1 / §10.2
+ * documented before: TT-19 (exception handover: resolved, owned by the supervisor, on the ticket timeline,
+ * `auto_created`, DEC-240), TT-20 (repark: resolved, `low`, both payloads `resolved` + `auto_created`), 13 §7.1 / §10.2
  * (payment discrepancy: open, the event's pool on the envelope, `auto_created`).
  */
 
@@ -89,6 +89,7 @@ describe('incident writer — the system-opened incidents go through openInciden
       status,
       severity: 'medium',
       ticket_id: r.ticketId,
+      auto_created: true,
     });
     for (const [type, status] of [
       ['incident.opened', 'open'],
@@ -105,7 +106,7 @@ describe('incident writer — the system-opened incidents go through openInciden
         aggregate: { type: 'incident', id: incident.id, version: 1 },
         actor: { type: 'user', id: U['SUP-R'] },
       });
-      expect(env.payload).toEqual(payload(status)); // no auto_created key, as TT-19 documents it
+      expect(env.payload).toEqual(payload(status)); // auto_created: the command opens it itself (DEC-240)
     }
     // both events on the ticket timeline, at the version of the ready ticket (tickets-custody emitForTicket)
     expect(await timelineOf(t, r.ticketId)).toEqual([

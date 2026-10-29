@@ -1,9 +1,15 @@
-import type { ExportKind } from '@point/shared';
+import { vehicleColorLabelAr, vehicleMakeLabelAr, type ExportKind } from '@point/shared';
 import { maskPhone, redact } from '../../../core/logging/redact.js';
 import { plateView, type TicketQueryable } from '../../tickets-custody/index.js';
 import { formatRiyadh, formatSar } from '../domain/payment-rules.js';
 import { toCsv, type CsvColumn } from '../infra/csv.js';
-import { driverReportRow, driverReportRows, eventSummaryReport } from './reports.js';
+import {
+  driverReportRow,
+  driverReportRows,
+  EVENT_DAY_ENDS_AFTER,
+  EVENT_DAY_STARTS_BEFORE,
+  eventSummaryReport,
+} from './reports.js';
 import { maskPhonesInText } from './views.js';
 
 /**
@@ -151,8 +157,9 @@ const TICKET_COLUMNS: CsvColumn<TicketExportRow>[] = [
   { name: 'channel', value: (r) => r.channel },
   { name: 'wa_link_status', value: (r) => r.wa_link_status },
   { name: 'plate', value: (r) => plateView(r).display, text: true },
-  { name: 'vehicle_make', value: (r) => r.vehicle_make, text: true },
-  { name: 'vehicle_color', value: (r) => r.vehicle_color, text: true },
+  // stored as the 02 §8.4 keys (DEC-350): the file carries their Arabic labels, typed text as is
+  { name: 'vehicle_make', value: (r) => vehicleMakeLabelAr(r.vehicle_make), text: true },
+  { name: 'vehicle_color', value: (r) => vehicleColorLabelAr(r.vehicle_color), text: true },
   { name: 'customer_phone_masked', value: (r) => maskPhone(r.customer_phone) },
   { name: 'payment_status', value: (r) => r.payment_status },
   { name: 'fee_sar', value: (r) => formatSar(r.fee_halalas) },
@@ -202,8 +209,8 @@ async function eventSummaryCsv(q: TicketQueryable, s: ExportScope, f: ExportFilt
     q,
     `SELECT e.id, v.code AS venue_code FROM events e JOIN venues v ON v.id = e.venue_id
       WHERE e.org_id = $1 AND e.venue_id = ANY($2::uuid[]) AND ($3::uuid IS NULL OR e.id = $3::uuid)
-        AND ($4::timestamptz IS NULL OR e.event_date >= ($4::timestamptz AT TIME ZONE 'Asia/Riyadh')::date)
-        AND ($5::timestamptz IS NULL OR e.event_date <= ($5::timestamptz AT TIME ZONE 'Asia/Riyadh')::date)
+        AND ($4::timestamptz IS NULL OR ${EVENT_DAY_ENDS_AFTER('$4')})
+        AND ($5::timestamptz IS NULL OR ${EVENT_DAY_STARTS_BEFORE('$5')})
       ORDER BY e.event_date, e.id`,
     [s.orgId, venueSet(s, f), f.event_id ?? null, f.from ?? null, f.to ?? null],
   );

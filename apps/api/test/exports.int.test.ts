@@ -7,6 +7,7 @@ import {
   createS2App,
   err,
   EVT_L1,
+  EVT_R1,
   EVT_R2,
   LYL,
   ok,
@@ -270,10 +271,11 @@ describe('PNT-089 — POST /v1/exports and GET /v1/exports/{exportId}', () => {
 
   it('every kind builds; tickets mask the phone and carry no stub, key or spot; messages carry no recipient', async () => {
     const a = await deliveredWith(t, 'DRV1', CASH);
-    await t.db.query(`UPDATE tickets SET customer_id = $2 WHERE id = $1`, [
-      a.ticketId,
-      SEED_IDS.customers.CUS1,
-    ]);
+    // the make and the colour as the driver app stores them: the 02 §8.4 keys (DEC-350)
+    await t.db.query(
+      `UPDATE tickets SET customer_id = $2, vehicle_make = 'toyota', vehicle_color = 'white' WHERE id = $1`,
+      [a.ticketId, SEED_IDS.customers.CUS1],
+    );
     await t.db.query(
       `INSERT INTO whatsapp_messages (org_id, channel_id, direction, kind, purpose, status, recipient_wa_id, body_redacted,
                                       ticket_id, venue_id, event_id)
@@ -299,10 +301,24 @@ describe('PNT-089 — POST /v1/exports and GET /v1/exports/{exportId}', () => {
     expect(masked).not.toContain('551234567');
     const tk = await one(t.db, `SELECT paper_serial, key_tag FROM tickets WHERE id = $1`, [a.ticketId]);
     for (const secret of [tk.paper_serial, tk.key_tag]) expect(files.tickets).not.toContain(secret);
+    // the file carries the Arabic labels of the stored keys
+    expect(tickets[1]![tickets[0]!.indexOf('vehicle_make')]).toBe('تويوتا');
+    expect(tickets[1]![tickets[0]!.indexOf('vehicle_color')]).toBe('أبيض');
 
     const summary = parseCsv(files.event_summary!);
     expect(summary[1]![summary[0]!.indexOf('event_id')]).toBe(EVT_R2);
     expect(summary[1]![summary[0]!.indexOf('cash_sar')]).toBe('20.00');
+    // event_summary by period: Riyadh days half-open like the payments report — the 26th alone is empty, the
+    // 27th holds the seeded events (DEC-288, DEC-331)
+    const byPeriod = async (from: string, to: string) => {
+      const x = ok(await createExport(t, 'SUP-R', { kind: 'event_summary', filters: { from, to } }), 202);
+      await generate();
+      return parseCsv((await download('SUP-R', x.id)).text).slice(1);
+    };
+    expect(await byPeriod('2026-10-26T00:00:00+03:00', '2026-10-27T00:00:00+03:00')).toEqual([]);
+    expect(
+      (await byPeriod('2026-10-27T00:00:00+03:00', '2026-10-28T00:00:00+03:00')).map((r) => r[0]).sort(),
+    ).toEqual([EVT_R1, EVT_R2].sort());
     const drivers = parseCsv(files.drivers!);
     expect(drivers.slice(1).map((r) => r[drivers[0]!.indexOf('employee_code')])).toEqual(['D-0001']);
     const messages = parseCsv(files.messages!);

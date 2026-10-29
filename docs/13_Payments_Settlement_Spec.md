@@ -101,7 +101,7 @@
 | `amount_halalas` | عدد صحيح | نعم | يساوي `tickets.fee_halalas` تمامًا؛ لا جزئي ولا زيادة | `PAYMENT_AMOUNT_MISMATCH` (التفاصيل `expected_halalas`, `received_halalas`) |
 | `pos_reference` | نص أو `null` | لا | يُقبل مع `pos` فقط؛ قواعد §5.6 | `VALIDATION_FAILED` (الحقل `pos_reference`) |
 
-- `pos_reference` مع `cash` → `VALIDATION_FAILED` بالسبب `not_applicable`.
+- `pos_reference` مع `cash` → `VALIDATION_FAILED` بالمشكلة `not_applicable` (خطأ الحقل `{field, issue}` كما في 08 §2، DEC-279).
 - العملة ليست حقلًا في الطلب؛ الخادم يكتب `SAR`.
 
 ### 5.3 ترتيب التحقق داخل أمر التسليم
@@ -115,8 +115,9 @@
 5. **التحقق المالي قبل رمز التسليم، بلا أي أثر جانبي:**
    - `due` ولا يوجد `payment` → `PAYMENT_PENDING` مع التفاصيل `amount_halalas` و`allowed_methods`.
    - `due` ويوجد `payment` → قواعد §5.2.
-   - `collected` ويوجد `payment` → `PAYMENT_ALREADY_RECORDED`.
-   - `not_required` أو `waived` ويوجد `payment` → `VALIDATION_FAILED` (الحقل `payment`، السبب `not_applicable`).
+   - `collected` ويوجد `payment` → `PAYMENT_ALREADY_RECORDED` (`payment_id`، `method`، `collected_by`؛ DEC-278).
+   - `not_required` أو `waived` ويوجد `payment` → `VALIDATION_FAILED` (الحقل `payment`، المشكلة `not_applicable`).
+   - تُجرى هذه الفحوص بلا أثر عند بوابة الدفع عبر خطاف التحصيل المضمّن (`check`)، ويُسجَّل التحصيل بعد نجاح التحقق في معاملة التسليم (`collect`)، وأخطاء حقول `payment` بالبادئة `payment.` (DEC-277، DEC-280).
 6. التحقق من رمز التسليم أو رقم كعب التذكرة الورقية (يستهلك محاولة عند الخطأ وفق `11_State_Machines_Domain_Events.md` و`12_WhatsApp_Integration_Spec.md`).
 7. معاملة النجاح الذرية (§5.5): تسجيل التحصيل (إن وُجد) + استهلاك الرمز + التسليم.
 
@@ -134,7 +135,7 @@
 
 ### 5.5 المعاملة الذرية للتحصيل
 
-نفس المنطق في المسار المنفصل وفي التسليم المضمّن، بترتيب Canon §14ب ونمط `FOR NO KEY UPDATE` للصفوف: صف الحفل `FOR SHARE` (L2؛ يتسلسل مع إغلاق الحفل الذي يقفله `FOR NO KEY UPDATE`)، ثم مهمة الإحضار (L4)، ثم التذكرة (L5). التحصيل المنفصل لا يقفل المجموعة. أمر التسليم بتحصيل مضمّن يأخذ: المجموعة (L1) ← الحفل `FOR SHARE` (L2) ← المهمة (L4) ← التذكرة (L5) ← الدورة (L6) ← مناوبة السائق (L8) ← الرمز والتحصيل (L9)، ثم الإلحاقيات (L10).
+نفس المنطق في المسار المنفصل وفي التسليم المضمّن، بترتيب Canon §14ب ونمط `FOR NO KEY UPDATE` للصفوف: صف الحفل `FOR SHARE` (L2؛ يتسلسل مع إغلاق الحفل الذي يقفله `FOR NO KEY UPDATE`)، ثم مهمة الإحضار (L4)، ثم التذكرة (L5). التحصيل المنفصل لا يقفل المجموعة. أمر التسليم بتحصيل مضمّن يأخذ: المجموعة (L1) ← الحفل `FOR SHARE` (L2) ← المهمة (L4) ← التذكرة (L5) ← الدورة (L6) ← مناوبة السائق (L8) ← الرمز والتحصيل (L9)، ثم الإلحاقيات (L10)؛ ولا يقفل التسليم صف الحفل إلا حين تكون التذكرة `due` أو يُرسل `payment`، فلا يتنازع مع الاستلام في غير ذلك (DEC-277).
 
 ```sql
 BEGIN;
@@ -176,9 +177,9 @@ COMMIT;
 
 الغرض: رقم يساعد المشرف على مطابقة إيصال جهاز نقاط البيع، **وليس** بيانات البطاقة.
 
-1. التطبيع في الخادم قبل أي تحقق أو تخزين: حذف المسافات والشرطات، تحويل الأحرف إلى كبيرة.
-2. الصيغة بعد التطبيع: `^[A-Z0-9]{1,24}$`.
-3. رفض أي تسلسل من 13 رقمًا متتاليًا فأكثر (أرقام البطاقات 13–19 رقمًا؛ يطابق قيد المخطط `ck_payments_no_pan`: `pos_reference !~ '[0-9]{13,}'`) → `VALIDATION_FAILED` بالسبب `looks_like_card_number`.
+1. التطبيع في الخادم قبل أي تحقق أو تخزين: تحويل الأرقام العربية الهندية إلى لاتينية، وحذف المسافات (ومنها غير الفاصلة) والشرطات (ومنها شرطات Unicode وعلامة الطرح) وعلامات العرض الصفري والاتجاه، وتحويل الأحرف إلى كبيرة؛ والفارغ بعد التطبيع = بلا مرجع (DEC-280).
+2. الصيغة بعد التطبيع: `^[A-Z0-9]{1,24}$`، وإلا `VALIDATION_FAILED` بالمشكلة `invalid_format`؛ ومع `cash` ← `not_applicable`. يُفحص في أنبوب جسم المسار المنفصل (شكل المدخل) وفي فحص خطاف التسليم بالبادئة `payment.` (DEC-280).
+3. رفض أي تسلسل من 13 رقمًا متتاليًا فأكثر (أرقام البطاقات 13–19 رقمًا؛ يطابق قيد المخطط `ck_payments_no_pan`: `pos_reference !~ '[0-9]{13,}'`) → `VALIDATION_FAILED` بالمشكلة `looks_like_card_number`.
 4. التطبيع ضروري لأن قيد قاعدة البيانات يعمل على النص المخزن؛ إدخال مثل `4111 1111 1111 1111` لا يلتقطه القيد إلا بعد حذف المسافات.
 5. نص المساعدة في D-11: «رمز الموافقة أو رقم الإيصال القصير — لا تكتب رقم البطاقة».
 6. لا يظهر `pos_reference` في التحليلات ولا الإشعارات، ويظهر في تقرير التسوية والتصدير للمشرف والإدارة فقط.
@@ -247,6 +248,7 @@ COMMIT;
 2. يُدرج سجل جديد `recorded` بقيم البديل، مع `collected_by` و`cycle_id` و`collected_at` منسوخة من الأصل (التحصيل حدث فعلًا في ذلك الوقت وبيد ذلك الشخص)، و`created_at = now()`.
 3. `tickets.payment_status` تبقى `collected`، و`version + 1`.
 4. أحداث: `payment.reversed` (مع `replacement_payment_id`) ثم `payment.recorded` (المصدر `replacement`)، وصفّا تدقيق.
+5. بديل بالوسيلة نفسها والمرجع المطبّع نفسه ← `VALIDATION_FAILED` (`replacement`، `no_change`)؛ ومسارات حقول البديل بالبادئة `replacement.`؛ ويُدرج البديل بعد عكس الأصل لأن الفهرس الجزئي الفريد غير قابل للتأجيل (DEC-281).
 
 هذا هو المسار الصحيح لخطأ الوسيلة (نقد بدل شبكة أو العكس) ولخطأ المرجع، ويعمل على التذاكر المسلّمة دون الحاجة لصلاحية تحصيل بعد التسليم. تنبيه في الواجهة S-03 قبل التأكيد: «العكس بلا بديل يعيد التذكرة مستحقة؛ لتصحيح الوسيلة استخدم البديل».
 
@@ -263,9 +265,9 @@ COMMIT;
 | 8.1 إعادة الصف لغياب العميل (`ready` → `reparking` → `parked`) | لا تغيير. أي تحصيل سابق يبقى على التذكرة ولا يُحصَّل مرة ثانية في الدورة التالية. حالة `due` تبقى `due` |
 | 8.2 إلغاء طلب الإحضار ميدانيًا | لا تغيير |
 | 8.3 سحب المهمة أو إعادة إسنادها أو نقل السائق | لا تغيير على التذكرة. النقد يبقى منسوبًا إلى `collected_by` وبعهدته حتى تسليمه، ولو أكمل التسليمَ سائق آخر |
-| 8.4 التسليم الاستثنائي بالمشرف `POST /v1/tickets/{ticketId}/handover-exception` | إن كانت `due`: يجب أن يتضمن الجسم كائن `payment` مع الحقل الإضافي `collected_by` (الافتراضي: المكلّف بمهمة الإحضار؛ ويجوز أن يكون المشرف نفسه إن استلم المال)، أو أن يسبقه إعفاء؛ وإلا `PAYMENT_PENDING`. التدقيق: `handover.exception` ثم `payment.record` بفاعل المشرف و`metadata.collected_by` |
-| 8.5 المطابقة اليدوية بعد انقطاع `POST /v1/tickets/{ticketId}/manual-reconcile` إلى `delivered` | كالبند 8.4: كائن `payment` بـ`collected_by` المسجل في السجل الورقي، أو إعفاء سابق؛ وإلا `PAYMENT_PENDING`. لا تُنفذ أوامر مؤجلة تلقائيًا |
-| 8.6 إلغاء التذكرة `void` | لا يُسمح بإلغاء تذكرة عليها تحصيل `recorded`؛ يُعكس أولًا. عمليًا التحصيل لا يحدث قبل `ready` فلا يتقاطع مع المسودات |
+| 8.4 التسليم الاستثنائي بالمشرف `POST /v1/tickets/{ticketId}/handover-exception` | إن كانت `due`: يجب أن يتضمن الجسم كائن `payment` مع الحقل الإضافي `collected_by` (الافتراضي: المكلّف بمهمة الإحضار؛ ويجوز أن يكون المشرف نفسه إن استلم المال، ولا أحد غيرهما: `VALIDATION_FAILED` على `payment.collected_by` بـ`not_eligible`)، أو أن يسبقه إعفاء؛ وإلا `PAYMENT_PENDING`. وبوابته بوابة §5.3 قبل إبطال الرمز وبلا أثر (قواعد §5.2 و§5.6 على `payment.*`، و`PAYMENT_ALREADY_RECORDED` لتذكرة `collected`، و`not_applicable` لـ`not_required` و`waived`)، مع قفل الحفل `FOR SHARE` كما في §5.5؛ والتحصيل بـ`source = exception` ونقده بعهدة `collected_by` (DEC-210، PAY-TC-22). التدقيق: `handover.exception` ثم `payment.record` بفاعل المشرف و`metadata.collected_by` |
+| 8.5 المطابقة اليدوية بعد انقطاع `POST /v1/tickets/{ticketId}/manual-reconcile` إلى `delivered` | كالبند 8.4: كائن `payment` بـ`collected_by` المسجل في السجل الورقي، أو إعفاء سابق؛ وإلا `PAYMENT_PENDING` (يتقدم على «فتح واقعة» في 11 TT-22، DEC-252). `payment` لـ`delivered` ولتذكرة `due` فقط (`VALIDATION_FAILED` بـ`not_applicable`)، و`PAYMENT_ALREADY_RECORDED` وقواعد §5.2 و§5.6؛ `payment.recorded` بالمصدر `reconcile` وصف تدقيق ثانٍ `payment.record`. لا تُنفذ أوامر مؤجلة تلقائيًا |
+| 8.6 إلغاء التذكرة `void` | لا يُسمح بإلغاء تذكرة عليها تحصيل `recorded`؛ يُعكس أولًا. عمليًا التحصيل لا يحدث قبل `ready` فلا يتقاطع مع المسودات. والمطابقة اليدوية إلى `voided` لتذكرة عليها تحصيل مسجل ← `INVALID_STATE_TRANSITION` بـ`reason = payment_recorded` (DEC-252) |
 | 8.7 إنهاء المناوبة أو النقل أو التعطيل والسائق بعهدته نقد | غير ممنوع (موانع `DUTY_END_BLOCKED_CUSTODY` و`TRANSFER_BLOCKED_CUSTODY` تخص المركبة والمفتاح والمهمة فقط). النقد يبقى بندًا مفتوحًا في تسوية حفله ويمنع إغلاقه حتى التسليم. تعرض D-14 تنبيهًا للسائق قبل إنهاء الوردية |
 
 ---
@@ -324,7 +326,7 @@ INSERT INTO cash_handovers (org_id, venue_id, event_id, driver_id, received_by,
 VALUES ($org, $venue, $event_id, $driver_id, $actor, $amount, $expected, $note)
 RETURNING id, difference_halalas;                                       -- عمود محسوب = amount - expected
 UPDATE payments SET cash_handover_id = $handover_id WHERE id = ANY($locked_payment_ids);
--- فقط إن كان difference_halalas <> 0:
+-- فقط إن كان difference_halalas <> 0 (عبر openIncident()، DEC-240؛ ومعه incident.opened بـauto_created: true، DEC-284):
 INSERT INTO incidents (org_id, venue_id, event_id, type, severity, description, opened_by)
 VALUES ($org, $venue, $event_id, 'payment_discrepancy', 'medium', $description_ar, $actor);
 INSERT INTO audit_log (org_id, actor_type, actor_id, action, entity_type, entity_id, venue_id, request_id, after)
@@ -338,11 +340,12 @@ COMMIT;
 
 ### 10.2 قواعد
 
-- `driver_id <> received_by` (قيد المخطط)؛ مخالفته → `VALIDATION_FAILED` بالحقل `driver_id`. المشرف الذي يقود (`can_drive`) ويحصّل نقدًا يسلّمه لمشرف آخر ضمن النطاق.
-- `amount_halalas` هو المبلغ المعدود فعلًا (≥ 0). إن كان المتوقع 0 والمبلغ 0 → `VALIDATION_FAILED` بالسبب `nothing_to_hand_over`.
+- `driver_id <> received_by`؛ مخالفته → `403 PERMISSION_DENIED` (`permission: cash.handover_confirm`، `reason: self_handover`) قبل أي قفل، وقيد المخطط `ck_cash_handover_distinct_people` احتياطي (08 §4، 09 §10، DEC-275). المشرف الذي يقود (`can_drive`) ويحصّل نقدًا يسلّمه لمشرف آخر ضمن النطاق.
+- الحفل `open` أو `closing`: `draft` ← `INVALID_STATE_TRANSITION` (`allowed_from: [open, closing]`)، و`closed` أو `canceled` ← `EVENT_ALREADY_CLOSED`؛ والحفل خارج النطاق ← `404 RESOURCE_NOT_FOUND` (`resource: event`)، والسائق من مؤسسة أخرى أو غير موجود ← (`resource: driver`). أي سائق في المؤسسة (من أي موقع) يسلّم نقدًا حصّله في هذا الحفل، فالنقل يبقي النقد في الحفل الأصلي (PAY-TC-21، DEC-283).
+- `amount_halalas` هو المبلغ المعدود فعلًا (≥ 0). إن كان المتوقع 0 والمبلغ 0 → `VALIDATION_FAILED` بالمشكلة `nothing_to_hand_over` (`amount_halalas`).
 - يجوز أكثر من تسليم للسائق في الحفل الواحد (تسليم منتصف الحفل ثم نهايته)؛ كل تسليم يربط التحصيلات غير المربوطة لحظتها فقط، فلا يُحسب تحصيل مرتين.
 - تحصيل نقدي جديد يُسجَّل بالتوازي مع معاملة التسليم: إن التزم قبل قراءة الأقفال شمله التسليم، وإلا يبقى بعهدة السائق للتسليم التالي.
-- فرق غير صفري يفتح واقعة `payment_discrepancy` تلقائيًا بشدة `medium` ويربطها بالحفل (`ticket_id = NULL`)، ويعدّل المشرف الشدة عند الحاجة. وصف الواقعة يذكر المتوقع والمعدود والفرق بالريال. وما دامت `open` أو `in_review` فهي حجز قانوني لكل تذاكر الحفل من خطوات الاحتفاظ (06 ERD §8.2، DEC-156).
+- فرق غير صفري يفتح واقعة `payment_discrepancy` تلقائيًا بشدة `medium` ويربطها بالحفل (`ticket_id = NULL`)، ويعدّل المشرف الشدة عند الحاجة. لا عمود للواقعة في `cash_handovers`: يُعثر عليها من صف التدقيق (`metadata.incident_id`) وتعود `incident_id` في الرد (DEC-284). وصف الواقعة يذكر المتوقع والمعدود والفرق بالريال. وما دامت `open` أو `in_review` فهي حجز قانوني لكل تذاكر الحفل من خطوات الاحتفاظ (06 ERD §8.2، DEC-156).
 - صف `cash_handovers` نهائي لا يُعدّل ولا يُحذف؛ التصحيح عبر واقعة وتسليم لاحق.
 
 ### 10.3 العرض
@@ -387,7 +390,7 @@ SELECT h.driver_id,
 3. المبالغ: القابل للتحصيل، المحصّل حسب الوسيلة، المُعفى، المستحق، المعكوس (للشفافية).
 4. لكل سائق: نقد وشبكة (عددًا ومبلغًا)، المسلّم، بعهدته، الفرق المعدّل.
 5. سجلات تسليم النقد.
-6. الفروقات: فروق التسليم غير الصفرية، تذاكر مسلّمة مستحقة، تحصيلات معكوسة بلا بديل على تذاكر مسلّمة، مع روابط الوقائع.
+6. الفروقات (`discrepancies[].type`): `cash_difference` (فرق تسليم نقد غير صفري مع واقعته)، و`delivered_due` (تذكرة مسلّمة صارت `due`)، و`reversed_without_replacement` (تحصيل معكوس على تذكرة مسلّمة بلا تحصيل مسجل؛ يبقى تاريخًا بعد الإعفاء)، مع `driver_id` و`ticket_id` و`cash_handover_id` و`difference_halalas` و`incident_id` (DEC-291).
 7. الموانع المالية للإغلاق (§12).
 8. فحص السلامة (§11.3).
 
@@ -532,7 +535,7 @@ SELECT p.collected_by AS driver_id,
 
 لا يمنع الإغلاق (يظهر في `warnings` من `GET /v1/events/{eventId}/reconciliation` ويُحفظ في الملخص): فروق تسليم النقد غير الصفرية ما دامت لها واقعة (`warnings.cash_discrepancies`)، والوقائع المفتوحة ومنها `payment_discrepancy` (`warnings.open_incidents`؛ التحقيق قد يستمر بعد الإغلاق).
 
-- عند الإغلاق الناجح يُحفظ ملخص مالي في `events.close_summary.finance` (نفس حقول `amounts` و`drivers` و`discrepancies` في §11.2) ليبقى ثابتًا بعد الإغلاق.
+- عند الإغلاق الناجح يُحفظ ملخص مالي في `events.close_summary.finance` (`currency` ونفس حقول `amounts` و`drivers` و`discrepancies` في §11.2) ليبقى ثابتًا بعد الإغلاق؛ والملخص كله `{closed_at, closed_by, note, tickets, finance, warnings}` حيث `tickets` = `Settlement.tickets` و`warnings` = `{open_incidents: [معرّفات], failed_messages: عدد, cash_discrepancies: [...]}`، والملاحظة (حتى 500 محرف) سبب التدقيق أيضًا؛ وإغلاق حفل `open` ← `INVALID_STATE_TRANSITION` (`allowed_from: [closing]`) (DEC-287).
 - `GET /v1/events/{eventId}/reconciliation` يتضمن القسم المالي نفسه لعرض S-10 قبل محاولة الإغلاق.
 - بعد `closed` تُرفض كل الأوامر المالية (تحصيل، عكس، إعفاء، تسليم نقد) بـ`EVENT_ALREADY_CLOSED`؛ أي فرق يُكتشف بعدها يُعالج بواقعة.
 - أثناء `closing` تستمر الأوامر المالية (هنا تحدث تسليمات النقد النهائية)، بينما يتوقف الاستلام الجديد وفق 11.
@@ -545,9 +548,9 @@ SELECT p.collected_by AS driver_id,
 |---|---|---|
 | `GET /v1/events/{eventId}/settlement` | `report.read` | تقرير التسوية الكامل (§11) |
 | `GET /v1/reports/events/{eventId}/summary` | `report.read` | قسم مالي مختصر: المحصّل حسب الوسيلة، المُعفى، المستحق، الفروقات |
-| `GET /v1/reports/payments` | `report.read` | قائمة تحصيلات بفلاتر: `venue_id`، `event_id`، `from`، `to`، `method`، `status`، `collected_by` مع ترقيم بالمؤشر |
-| `POST /v1/exports` بالنوع `payments` أو `event_summary` | `export.create` | ملف CSV مؤقت خاص |
-| `GET /v1/exports/{exportId}` | `export.create` | الحالة ورابط تنزيل مؤقت عند `ready` |
+| `GET /v1/reports/payments` | `report.read` | صف لكل حفل أُقيم في الفترة (يوم `event_date` بتوقيت الرياض يتقاطع مع `[from, to)` نصف المفتوحة كبقية التقارير، DEC-288) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ المرشحات `from`، `to`، `venue_id`، `event_id` (07 يغلب على السلك؛ لا قائمة تحصيلات بمؤشر، DEC-288). قائمة التحصيلات المفصلة هي تصدير `payments` |
+| `POST /v1/exports` بالنوع `payments` أو `event_summary` | `export.create` | ملف CSV مؤقت خاص؛ قواعد التوليد والنطاق والسقف (50 000 صف) في DEC-289 |
+| `GET /v1/exports/{exportId}` | `export.create` | الحالة ورابط تنزيل مؤقت عند `ready` لطالبه وحده |
 
 أعمدة تصدير `payments` (ترتيب ثابت، ترميز UTF-8 مع BOM ليفتح في Excel بالعربية):
 
@@ -580,7 +583,7 @@ SELECT p.collected_by AS driver_id,
                "amount_halalas": 2000, "collected_by": "…", "source": "handover" } }
 ```
 
-`source` ∈ `separate` · `handover` · `exception` · `reconcile` · `replacement`. حدث `payment.reversed` يحمل `payment_id` و`with_replacement` و`replacement_payment_id` و`after_cash_handover`. حدث `payment.waived` يحمل `ticket_id` و`amount_halalas`. لا يُنسخ `reason` ولا `pos_reference` إلى التحليلات.
+`source` ∈ `separate` · `handover` · `exception` · `reconcile` · `replacement`، ومعه `replaces_payment_id` للبديل. الحمولات كاملة (DEC-285، كما في 11 §8.7): `payment.reversed` = `{payment_id, ticket_id, method, amount_halalas, reversed_by, reason, with_replacement, replacement_payment_id, after_cash_handover, ticket_delivered, incident_id}`؛ `payment.waived` = `{ticket_id, amount_halalas, waived_by, reason}`؛ `cash.handover_recorded` = `{cash_handover_id, event_id, driver_id, received_by, amount_halalas, expected_halalas, difference_halalas, linked_payments_count, incident_id}`؛ و`event.closing_started` و`event.closed` = `{event_id, status, by}`. لا يُنسخ `reason` ولا `pos_reference` إلى التحليلات.
 
 قيم before/after في `audit_log` تقتصر على: `payment_status`، `method`، `amount_halalas`، `status` للتحصيل، ونص السبب في عمود `reason`.
 
@@ -623,11 +626,11 @@ stateDiagram-v2
 |---|---|---|---|---|---|
 | `POST /v1/tickets/{ticketId}/payments` | `payment.record` | ✓ | §5.4 | 201: `payment` + `ticket` (`TicketSummary`) | `PAYMENT_ALREADY_RECORDED` · `PAYMENT_METHOD_NOT_ALLOWED` · `PAYMENT_AMOUNT_MISMATCH` · `VALIDATION_FAILED` · `INVALID_STATE_TRANSITION` · `NOT_TASK_ASSIGNEE` · `EVENT_ALREADY_CLOSED` |
 | `POST /v1/tickets/{ticketId}/handover` | `handover.verify` | ✓ | §5.3 | 200: `ticket` (`delivered`) + `cycle` + `payment` أو `null` + `driver` | ما سبق + `PAYMENT_PENDING` · `HANDOVER_NOT_READY` · `VERSION_CONFLICT` · أخطاء الرمز |
-| `POST /v1/tickets/{ticketId}/handover-exception` | `handover.exception` | ✓ | §8.4 | 200 | `PAYMENT_PENDING` · `REASON_REQUIRED` |
+| `POST /v1/tickets/{ticketId}/handover-exception` | `handover.exception` | ✓ | §8.4 | 200 | `PAYMENT_PENDING` · `PAYMENT_ALREADY_RECORDED` · `PAYMENT_METHOD_NOT_ALLOWED` · `PAYMENT_AMOUNT_MISMATCH` · `VALIDATION_FAILED` (`payment.collected_by`: `not_eligible`) · `REASON_REQUIRED` |
 | `POST /v1/tickets/{ticketId}/manual-reconcile` | `ticket.manual_reconcile` | ✓ | §8.5 | 200 | `PAYMENT_PENDING` · `REASON_REQUIRED` |
 | `POST /v1/tickets/{ticketId}/payment-waiver` | `payment.waive` | ✓ | §6 | 200: `ticket{payment_status: waived, version}` | `REASON_REQUIRED` · `PAYMENT_ALREADY_RECORDED` · `INVALID_STATE_TRANSITION` · `EVENT_ALREADY_CLOSED` · `TICKET_CLOSED` |
 | `POST /v1/payments/{paymentId}/reverse` | `payment.reverse` | ✓ | §7 | 200: `reversed` + `replacement` أو `null` | `PAYMENT_ALREADY_REVERSED` · `REASON_REQUIRED` · أخطاء §5.2 للبديل · `EVENT_ALREADY_CLOSED` |
-| `POST /v1/cash-handovers` | `cash.handover_confirm` | ✓ | §10 | 201: `CashHandover` (`expected_halalas`، `difference_halalas`، `payment_ids`، `incident_id` أو `null`) | `VALIDATION_FAILED` · `RESOURCE_NOT_FOUND` (حفل أو سائق خارج النطاق، لا كشف) · `EVENT_ALREADY_CLOSED` |
+| `POST /v1/cash-handovers` | `cash.handover_confirm` | ✓ | §10 | 201: `CashHandover` (`expected_halalas`، `difference_halalas`، `payment_ids`، `incident_id` أو `null`) | `VALIDATION_FAILED` · `RESOURCE_NOT_FOUND` (حفل أو سائق خارج النطاق، لا كشف) · `PERMISSION_DENIED` (`self_handover`، DEC-275) · `INVALID_STATE_TRANSITION` (حفل `draft`، DEC-283) · `EVENT_ALREADY_CLOSED` |
 | `GET /v1/events/{eventId}/settlement` | `report.read` | — | — | 200: §11.2 | `RESOURCE_NOT_FOUND` (يشمل حفلًا خارج النطاق) |
 | `PATCH /v1/events/{eventId}` (حقول التسعير) | `event.manage` | ✓ | §3 | 200 | `INVALID_STATE_TRANSITION` · `VALIDATION_FAILED` · `VERSION_CONFLICT` |
 
@@ -670,9 +673,10 @@ Content-Type: application/json
 | `PAYMENT_PENDING` | `{ "amount_halalas": 2000, "allowed_methods": ["cash","pos"] }` |
 | `PAYMENT_AMOUNT_MISMATCH` | `{ "expected_halalas": 2000, "received_halalas": 1500 }` |
 | `PAYMENT_METHOD_NOT_ALLOWED` | `{ "allowed_methods": ["cash"] }` |
-| `PAYMENT_ALREADY_RECORDED` | `{ "payment_id": "…", "method": "cash", "collected_by": "…" }` |
+| `PAYMENT_ALREADY_RECORDED` | `{ "payment_id": "…", "method": "cash", "collected_by": "…" }` (ومنه التسليم بـ`payment` لتذكرة محصّلة، DEC-278) |
+| `INVALID_STATE_TRANSITION` (حالة مالية) | `current_status` = `payment_status`، و`allowed_from` (`[due]` للتحصيل والإعفاء، `[collected]` للعكس)، و`reason` (`payment_not_required`، `payment_waived`، `payment_integrity`) (DEC-282) |
 | `PAYMENT_ALREADY_REVERSED` | `{ "payment_id": "…", "reversed_at": "…" }` |
-| `VALIDATION_FAILED` (`pos_reference`) | `{ "fields": [ { "field": "pos_reference", "reason": "looks_like_card_number" } ] }` |
+| `VALIDATION_FAILED` (`pos_reference`) | `{ "fields": [ { "field": "pos_reference", "issue": "looks_like_card_number" } ] }` (مفتاح الحقل `issue` كما في 08 §2، DEC-279) |
 
 ---
 
@@ -741,7 +745,7 @@ Content-Type: application/json
 | PAY-TC-22 | تسليم استثنائي لتذكرة `due` بلا `payment` / مع `payment` و`collected_by` للسائق | `PAYMENT_PENDING` / نجاح والنقد بعهدة السائق |
 | PAY-TC-23 | تقرير التسوية بعد حفل تجريبي | القابل للتحصيل = المحصّل + المُعفى + المستحق؛ فحوص §11.3 تعيد صفرًا |
 | PAY-TC-24 | تصدير `payments` | لا جوال ولا لوحة ولا رموز؛ المبالغ `20.00`؛ صف تدقيق `export.create` |
-| PAY-TC-25 | مشرف يقود يسجل تسليم نقد لنفسه | `VALIDATION_FAILED` (قيد `driver_id <> received_by`) |
+| PAY-TC-25 | مشرف يقود يسجل تسليم نقد لنفسه | `403 PERMISSION_DENIED` (`reason: self_handover`) قبل أي قفل؛ والقيد `driver_id <> received_by` احتياطي (DEC-275) |
 
 ترتبط هذه الحالات بمعياري القبول AC-09 (لا تسليم دون تحقق أو استثناء موثق) وAC-12 (تجربة حفل كامل حتى الإغلاق والمطابقة).
 

@@ -166,7 +166,7 @@ describe('PNT-053 — broadcast mode', () => {
       expires_at: null,
       can_accept: false,
       can_reserve_next: true,
-      safety_note_ar: expect.any(String),
+      safety_note_ar: 'احجزه فقط وأنت متوقف. لا تستخدم الجوال أثناء القيادة.', // 02 D-09 (DEC-361)
       ticket: { display_number: p.displayNumber },
     });
     expect(ws.all.some((m) => m.rooms.includes(`user:${U.DRV4}`) || m.rooms.includes(`user:${U.DRV7}`))).toBe(

@@ -81,7 +81,7 @@ describe('POST /v1/tickets/{ticketId}/handover-exception — the collection (13 
     ]);
     expect(
       err(await exception(t, r, { ...CASH, collected_by: U.DRV2 }), 'VALIDATION_FAILED', 422).fields,
-    ).toEqual([{ field: 'payment.collected_by', issue: 'not_collector' }]);
+    ).toEqual([{ field: 'payment.collected_by', issue: 'not_eligible' }]);
     err(
       await exception(t, r, { method: 'cash', amount_halalas: FEE - 500, collected_by: U.DRV1 }),
       'PAYMENT_AMOUNT_MISMATCH',

@@ -58,8 +58,9 @@ const fields = (field: string, issue: string) =>
  * available) and a dispatch pass runs. The new holder of a driver type must be on duty in the ticket's pool; a
  * supervisor holder must be staff of the venue. The customer is never a target: delivery is the handover (TT-18,
  * TT-19). A `parked` vehicle stays in a spot or unknown (ck_tickets_parked_holder). The key reaching the assignee
- * of an accepted retrieval counts as picked up (`task.key_picked_up`, DEC-PROPOSED-20 of S2); a key leaving him
- * before the start resets the pickup.
+ * of an accepted retrieval — the current one, or the driver the transfer moves the task to — counts as picked up
+ * (`key_picked_up_at` + `task.key_picked_up` with `key_slot_id: null`, DEC-187, DEC-251); a key leaving him before
+ * the start resets the pickup (no event).
  *
  * Locks: L1 pool → L4 task → L5 ticket → L6 cycle → (L4/L7 offers, L8 duty sessions under the L1 exception).
  */
@@ -220,6 +221,17 @@ export class CustodyTransferUseCase {
         },
         updated,
       );
+      // the key reaching the new assignee of an accepted retrieval is his pickup, as for the current assignee
+      // below (DEC-187, DEC-251); a pickup made before the move keeps its time and emits nothing new
+      if (task.type === 'retrieve' && task.status === 'accepted' && !task.key_picked_up_at && pickedUp)
+        await emitTaskEvent(
+          tx,
+          movedTask,
+          'task.key_picked_up',
+          ea,
+          { task_id: task.id, ticket_id: ticket.id, assignee_id: toId, key_slot_id: null },
+          updated,
+        );
       // the new assignee is busy now: no longer idle, his live single offers go back to the queue (10 §2.5)
       if (targetDuty!.available_since)
         await tx.query(

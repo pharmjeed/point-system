@@ -67,7 +67,7 @@ requests none.
 
 | # | Found by | Severity (17) | Defect | Fix |
 |---|---|---|---|---|
-| 4.1 | G4 (K14) | major | `POST /v1/tickets/{ticketId}/handover-exception` recorded every payment as collected by the supervisor (the body's `collected_by` was ignored), so the driver who took the cash did not owe it at the cash handover (13 §10); the 13 §5.2 checks (method, exact fee, POS reference) never ran on that path | the payment passes the handover's checks before any effect, is recorded with `source = exception` and `collected_by` from the body — the assignee or the approving supervisor, else `VALIDATION_FAILED payment.collected_by not_collector` — and the command holds the event FOR SHARE (L2) like TT-18 when money is involved. `apps/api/test/handover-exception-payment.int.test.ts` |
+| 4.1 | G4 (K14) | major | `POST /v1/tickets/{ticketId}/handover-exception` recorded every payment as collected by the supervisor (the body's `collected_by` was ignored), so the driver who took the cash did not owe it at the cash handover (13 §10); the 13 §5.2 checks (method, exact fee, POS reference) never ran on that path | the payment passes the handover's checks before any effect, is recorded with `source = exception` and `collected_by` from the body — the assignee or the approving supervisor, else `VALIDATION_FAILED payment.collected_by not_eligible` (DEC-210, as merged) — and the command holds the event FOR SHARE (L2) like TT-18 when money is involved. `apps/api/test/handover-exception-payment.int.test.ts` |
 | 4.2 | rehearsal (report row «request saved» empty) | minor (observability; 15 §10 / 17 M1 unmeasurable in production) | `point_retrieval_request_ingest_seconds` (05 §12.2) was declared and never observed; `ingest_latency_ms` of `ticket_retrieval_requested` (15 §7) was always null — the projector reads it from the event and nobody put it there | the inbound processor passes the stored delivery's `received_at` with the message; the button's request puts `ingest_latency_ms` (webhook received → the cycle's transaction) on `ticket.retrieval_requested`; the worker observes the histogram after the commit. Staff requests and early presses converted at parking carry none. `apps/api/test/wa-ingest-latency.int.test.ts` + the G4 AC2 step |
 | 4.3 | `pnpm test` on the base | minor (red unit suite) | 0ad3583 (DEC-192) changed the Caddyfile CSP without `apps/api/test/deploy-config.test.ts` | the file is byte-identical to wave4/load-chaos c6a93cb (same fix, merges cleanly) |
 
@@ -119,7 +119,7 @@ restore TC-037 on staging) stays an owner task: PNT-102 remains `in_progress`.
 - DEC-PROPOSED-2: Exceptional handover with money (13 §8.4) — context: `collected_by` "defaults to the assignee and
   may be the supervisor himself"; the code ignored it and skipped the 13 §5.2 checks — decision: `collected_by` must
   be the open retrieve task's assignee or the approving supervisor (`VALIDATION_FAILED payment.collected_by
-  not_collector` otherwise); the 13 §5.2 checks run before any effect (`PAYMENT_METHOD_NOT_ALLOWED`,
+  not_eligible` otherwise, DEC-210); the 13 §5.2 checks run before any effect (`PAYMENT_METHOD_NOT_ALLOWED`,
   `PAYMENT_AMOUNT_MISMATCH`, `VALIDATION_FAILED payment.pos_reference …`); `source = exception`; L2 event FOR SHARE
   between L1 and L4 when the ticket is due or a payment is sent — affected files: 13 §8.4 and §16 (the endpoint's
   errors: add `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_AMOUNT_MISMATCH`, `VALIDATION_FAILED`), 07 `handover-exception`

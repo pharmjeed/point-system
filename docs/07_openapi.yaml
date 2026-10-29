@@ -1084,6 +1084,8 @@ paths:
         الشروط: status=received (كل الحقول)، أو status=parking مع channel=paper وpaper_serial فقط وwa_link_status≠linked (DEC-40)؛ غير ذلك INVALID_STATE_TRANSITION · المستدعي منشئ التذكرة وأثناء مناوبته
 
         الأثر: يحدّث حقول المسودة؛ لا رسائل للعميل. تحويل الورقي (DEC-40): channel=paper + wa_link_status=none + link_version+1 + ticket.wa_link_changed
+
+        الاتصال الفوري: ticket.updated لتحويل DEC-40 وحده؛ تعديل المسودة لا يصدر حدثًا نطاقيًا ولا ticket.updated، وتتابع S-02 المسودات بـticket.created وticket.intake_submitted (DEC-274)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1137,9 +1139,9 @@ paths:
                     digits: '1234'
                     letters_ar: ب ح د
                   vehicle:
-                    make: تويوتا
+                    make: toyota
                     model: كامري
-                    color: أبيض
+                    color: white
                     type: sedan
                   customer_phone: '0551234567'
                   consent:
@@ -1640,9 +1642,9 @@ paths:
       summary: اعتماد استثناء الفحص الناقص
       tags: [Intake & Tickets]
       description: |-
-        الشروط: inspection_status=incomplete
+        الشروط: inspection_status=incomplete (وإلا INVALID_STATE_TRANSITION بـreason=inspection_not_incomplete)؛ التذكرة النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed، لا TICKET_CLOSED) (DEC-249)
 
-        الأثر: inspection_status=exception_approved
+        الأثر: inspection_status=exception_approved؛ حل inspection_incomplete آليًا (resolved_by فارغ)؛ الحمولة مع missing_photos_count؛ التدقيق missing_photos وself_approved (DEC-249)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1711,9 +1713,9 @@ paths:
       description: |-
         direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يتطلب موافقة سارية)؛ يُستخدم آليًا عند submit-intake ويدويًا لإعادة المحاولة. qr: يصدر link_code صالح link.qr_ttl_min ويعيد رابط wa.me برسالة معبأة؛ العميل يضغط إرسال ثم يؤكد السائق المطابقة.
 
-        الشروط: تذكرة مفتوحة في موقع السائق · qr: status ∈ {received, parking, parked}
+        الشروط: تذكرة مفتوحة في موقع السائق ومناوبته فيه · الورقية ← INVALID_STATE_TRANSITION (paper_channel) · قناة فعالة غير down وإلا WA_CHANNEL_UNAVAILABLE (DEC-195) · direct (إعادة المحاولة من D-07، DEC-193): wa_link_status ∈ {none, failed, pending_send}؛ received ← INVALID_STATE_TRANSITION (submit_intake_links_directly)، linked (already_linked)، رسالة QR بانتظار التأكيد (qr_pending_confirmation)؛ بلا جوال ← PHONE_INVALID {field: customer_phone, issue: missing} (DEC-194) · qr: status ∈ {received, parking, parked} وwa_link_status ∈ {none, failed, opted_out, pending_send}؛ بلا رقم عرض ← WA_CHANNEL_UNAVAILABLE (reason=display_phone_not_configured) (DEC-196)
 
-        الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ qr: link_codes(active) + job.link_code_expire
+        الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ link_version+1 إن وُجد إشعار W-01 للإصدار الحالي (DEC-193). qr: link_codes(active) + job.link_code_expire، بلا تغيير في التذكرة ولا إصدارها ولا حدث نطاقي (DEC-196)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1791,9 +1793,9 @@ paths:
       description: |-
         بعد وصول رسالة الربط يرى السائق الرقم المقنّع ويسأل «هل هذا العميل أمامك؟». matches=false يرفض الربط ويُبطل الرمز.
 
-        الشروط: link_codes.status=pending_confirmation لنفس التذكرة
+        الشروط: link_codes.status=pending_confirmation لنفس التذكرة (وإلا INVALID_STATE_TRANSITION؛ رمز ليس للتذكرة ← RESOURCE_NOT_FOUND بـresource=link_code؛ المنتهي ← WA_LINK_CODE_EXPIRED بـexpired_at) · السائق منشئ الرمز (وإلا PERMISSION_DENIED بـreason=not_link_code_creator) أو مشرف الموقع؛ لا فحص مناوبة (DEC-198)
 
-        الأثر: matches=true: موافقة customer_initiated + ticket.customer_id + linked + W-01؛ false: revoked
+        الأثر: matches=true: موافقة customer_initiated (captured_by = المؤكِّد) + ticket.customer_id + linked + W-01؛ مرسل غير العميل الحالي: إبطال موافقات السابق للتذكرة ورموز الإجراء وlink_version+1 (DEC-199). false: revoked (driver_rejected_match) وwa_link_status=none (DEC-200)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1826,7 +1828,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
@@ -1854,7 +1856,7 @@ paths:
       x-permission: wa.link
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, TICKET_NOT_FOUND, WA_LINK_CODE_EXPIRED]
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, RESOURCE_NOT_FOUND, TICKET_NOT_FOUND, WA_LINK_CODE_EXPIRED]
       x-domain-events: [ticket.wa_link_changed]
       x-ws-events: [ticket.updated]
       x-whatsapp: [W-01]
@@ -1866,9 +1868,9 @@ paths:
       description: |-
         يبطل كل رموز الإجراء السابقة (link_version+1) ويتطلب تحققًا ميدانيًا وسببًا وموافقة جديدة، ثم يرسل W-01 للرقم الجديد.
 
-        الشروط: تذكرة مفتوحة · السائق: منشئ التذكرة أو المكلّف بمهمة مفتوحة عليها
+        الشروط (DEC-211): تذكرة مفتوحة ليست في received (INVALID_STATE_TRANSITION بـdraft_use_intake) وليست ورقية (paper_channel) · السائق: مناوبة في الموقع (DUTY_REQUIRED) ومنشئ التذكرة أو المكلّف بمهمة مفتوحة عليها (وإلا PERMISSION_DENIED بـnot_creator_or_assignee)؛ المشرف والإدارة بلا قيد المنشئ · الرقم نفسه ← VALIDATION_FAILED (customer_phone، unchanged) · لا فحص لقالب W-01
 
-        الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + سجل تدقيق
+        الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + رموز الربط الحية revoked (linked_direct، DEC-201) + سجل تدقيق
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1912,7 +1914,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | TICKET_CLOSED | VERSION_CONFLICT | WA_CUSTOMER_OPTED_OUT
+          description: DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | TICKET_CLOSED | VERSION_CONFLICT | WA_CUSTOMER_OPTED_OUT
         '422':
           $ref: '#/components/responses/Error'
           description: CONSENT_REQUIRED | IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | REASON_REQUIRED | VALIDATION_FAILED
@@ -1934,7 +1936,7 @@ paths:
       x-permission: ticket.change_phone
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CONSENT_REQUIRED, PHONE_INVALID, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT, WA_CUSTOMER_OPTED_OUT]
+      x-error-codes: [CONSENT_REQUIRED, DUTY_REQUIRED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PHONE_INVALID, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT, WA_CUSTOMER_OPTED_OUT]
       x-domain-events: [ticket.customer_phone_changed, ticket.wa_link_changed]
       x-ws-events: [ticket.updated]
       x-whatsapp: [W-01]
@@ -1943,7 +1945,7 @@ paths:
       operationId: revealCustomerPhone
       summary: كشف جوال العميل كاملًا
       tags: [Intake & Tickets]
-      description: 'الأثر: audit_log(action=ticket.reveal_phone, reason) فقط'
+      description: 'الأثر: audit_log(action=ticket.reveal_phone, reason) فقط، والرد Cache-Control: private, no-store. الشروط (DEC-248): أي حالة للتذكرة؛ تذكرة بلا جوال (ورقية أو عميل بمعرّف BSUID فقط) ← RESOURCE_NOT_FOUND (resource=customer)؛ security.reveal_phone_per_hour يعد صفوف تدقيق ticket.reveal_phone للمستخدم في ساعة متحركة ← RATE_LIMITED (retry_after_s) مع Retry-After حتى يخرج أقدم كشف من النافذة، ولا يُحفظ 429 مع المفتاح؛ والرد المحفوظ مع المفتاح يحمل الرقم مقنّعًا فالإعادة ترد المقنّع'
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1990,7 +1992,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
@@ -2015,7 +2017,7 @@ paths:
       x-permission: ticket.reveal_phone
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [REASON_REQUIRED, TICKET_NOT_FOUND]
+      x-error-codes: [REASON_REQUIRED, RESOURCE_NOT_FOUND, TICKET_NOT_FOUND]
   /v1/tickets/{ticketId}:
     get:
       operationId: getTicket
@@ -2058,7 +2060,7 @@ paths:
       operationId: getTicketTimeline
       summary: السجل الزمني الكامل للتذكرة (S-03)
       tags: [Intake & Tickets]
-      description: السجل الزمني الكامل للتذكرة (S-03)
+      description: 'السجل الزمني الكامل للتذكرة (S-03)، الأقسام الأقدم أولًا. الموظفون في النطاق يرون كله؛ والسائق فقط مكلّفًا بالمهمة المفتوحة أو منشئًا أثناء الاستلام (وإلا TICKET_NOT_FOUND)، ثم خطواته وحدها بلا wa.* ولا وقائع، وحالة W-01 وW-05 بلا نص (DEC-246). لا SCOPE_VENUE_DENIED (DEC-191). النص الوارد يُخفى فيه كل 6 أرقام فأكثر وكل ما يشبه رمز الربط (DEC-247).'
       parameters:
       - $ref: '#/components/parameters/ticketId'
       responses:
@@ -2282,7 +2284,7 @@ paths:
       description: |-
         السائق: قبل الإسناد فقط (requested)؛ بعده INVALID_STATE_TRANSITION (reason=driver_cancel_after_assignment). المشرف: في requested/assigned/assigned_waiting، وإذا استُلم المفتاح يلزم /release-custody أولًا. بعد بدء الحركة (retrieving/ready) للمشرف فقط (DEC-30): مهمة الإحضار canceled (cancel_reason=supervisor_cancel) ومهمة repark بحالة in_progress لنفس السائق الحائز والتذكرة reparking، فلا يتحرر السائق ولا تُمحى العهدة حتى /complete-parking (AC-11).
 
-        الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking
+        الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: يشترط المركبة والمفتاح مع سائق المهمة الجارية وإلا CUSTODY_HOLDER_MISMATCH دون أثر (DEC-226)؛ cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking + حل ready_not_collected وhandover_code_locked
       parameters:
       - $ref: '#/components/parameters/cycleId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2334,7 +2336,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: CUSTODY_RELEASE_REQUIRED | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+          description: CUSTODY_HOLDER_MISMATCH | CUSTODY_RELEASE_REQUIRED | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -2356,7 +2358,7 @@ paths:
       x-permission: retrieval.cancel
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CUSTODY_RELEASE_REQUIRED, DUTY_REQUIRED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, REASON_REQUIRED]
+      x-error-codes: [CUSTODY_HOLDER_MISMATCH, CUSTODY_RELEASE_REQUIRED, DUTY_REQUIRED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, REASON_REQUIRED]
       x-domain-events: [ticket.retrieval_canceled, ticket.reparking, task.canceled, task.created, offer.revoked, driver.availability_changed]
       x-ws-events: [offer.closed, task.updated, ticket.updated, driver.state_changed]
       x-whatsapp: [W-07]
@@ -2658,6 +2660,8 @@ paths:
         الشروط: ticket.status=ready · المكلّف بمهمة الإحضار
 
         الأثر: delivered + الدورة outcome=delivered + عهدة → customer + الرمز consumed + W-06 + ترقية التالية أو available
+
+        بوابة الدفع (DEC-277، DEC-278): خطاف التحصيل المضمّن يفحص بلا أثر قبل الرمز أو الكعب، فلا يستهلك خطأ مالي محاولة: due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable). يُقفل الحفل FOR SHARE بعد المجموعة فقط حين تكون التذكرة due أو يُرسل payment، ويُسجَّل التحصيل بعد نجاح التحقق في معاملة التسليم.
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2758,7 +2762,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: CUSTODY_HOLDER_MISMATCH | HANDOVER_CODE_CONSUMED | HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
+          description: CUSTODY_HOLDER_MISMATCH | HANDOVER_CODE_CONSUMED | HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
         '410':
           $ref: '#/components/responses/Error'
           description: HANDOVER_CODE_EXPIRED
@@ -2786,8 +2790,7 @@ paths:
       x-permission: handover.verify
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CUSTODY_HOLDER_MISMATCH, HANDOVER_CODE_CONSUMED, HANDOVER_CODE_EXPIRED, HANDOVER_CODE_INVALID, HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, NOT_TASK_ASSIGNEE,
-        PAPER_STUB_MISMATCH, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [CUSTODY_HOLDER_MISMATCH, HANDOVER_CODE_CONSUMED, HANDOVER_CODE_EXPIRED, HANDOVER_CODE_INVALID, HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, NOT_TASK_ASSIGNEE, PAPER_STUB_MISMATCH, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [handover.completed, ticket.delivered, task.completed, custody.changed, payment.recorded, handover.code_attempt_failed, handover.code_locked,
         task.promoted, driver.availability_changed]
       x-ws-events: [task.updated, ticket.updated, driver.state_changed, alert.raised]
@@ -2800,7 +2803,7 @@ paths:
       description: |-
         يولّد رمزًا جديدًا ويبطل السابق (revoke_reason=resend) ضمن handover.max_resends. الرمز المقفل يعيد إصداره المشرف فقط.
 
-        الشروط: ticket.status=ready · المكلّف أو المشرف
+        الشروط (DEC-207): ticket.status=ready مع مهمة إحضار (وإلا HANDOVER_NOT_READY) · المكلّف (سائق غيره ← NOT_TASK_ASSIGNEE) أو المشرف · WA_CUSTOMER_OPTED_OUT ثم WA_NOT_LINKED ثم WA_CHANNEL_UNAVAILABLE · W-05 غير معتمد يُرفض فقط ونافذة الخدمة مغلقة (12 §8.4) · الرمز المقفل يبقى مقفلًا للمكلّف ولو بعد تنظيفه · دورة بلا رمز تأخذ أول رمز (resend_no=0) · RESEND_LIMIT_REACHED بـmax_resends
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2816,7 +2819,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | NOT_TASK_ASSIGNEE | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: TICKET_NOT_FOUND
@@ -2847,8 +2850,7 @@ paths:
       x-permission: handover.resend_code
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, RESEND_LIMIT_REACHED, TICKET_NOT_FOUND, WA_CHANNEL_UNAVAILABLE, WA_CUSTOMER_OPTED_OUT, WA_NOT_LINKED,
-        WA_TEMPLATE_NOT_APPROVED]
+      x-error-codes: [HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, NOT_TASK_ASSIGNEE, RESEND_LIMIT_REACHED, TICKET_NOT_FOUND, WA_CHANNEL_UNAVAILABLE, WA_CUSTOMER_OPTED_OUT, WA_NOT_LINKED, WA_TEMPLATE_NOT_APPROVED]
       x-domain-events: [handover.code_issued]
       x-ws-events: [ticket.updated]
       x-whatsapp: [W-05]
@@ -2860,9 +2862,9 @@ paths:
       description: |-
         للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
-        الشروط: ticket.status=ready
+        الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو بلا جوال ← VALIDATION_FAILED بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED بـnot_eligible)؛ ويُقفل الحفل FOR SHARE حين تكون التذكرة due أو يُرسل payment
 
-        الأثر: كالتسليم + claim code revoked (exception_handover) + incident manual_verification اختياري
+        الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة manual_verification (أو lost_ticket للورقية) تُنشأ دائمًا resolved بحل handover_exception: <methods> (auto_created: true) + العهدة من حائزيها الحاليين إلى العميل (DEC-210) + التحصيل المضمّن بـcollected_by من الجسم وpayment.recorded بـsource=exception (النقد بعهدة المحصّل حتى تسليمه، PAY-TC-22)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2938,10 +2940,10 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_PENDING | VERSION_CONFLICT
+          description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
         '422':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | REASON_REQUIRED | VALIDATION_FAILED
+          description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
         '428':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REQUIRED
@@ -2960,8 +2962,8 @@ paths:
       x-permission: handover.exception
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_AMOUNT_MISMATCH, PAYMENT_PENDING, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
-      x-domain-events: [handover.exception_approved, handover.completed, ticket.delivered, task.completed, custody.changed, driver.availability_changed, task.promoted]
+      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-domain-events: [handover.exception_approved, handover.completed, ticket.delivered, task.completed, custody.changed, driver.availability_changed, task.promoted, incident.opened, incident.resolved, payment.recorded]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
       x-whatsapp: [W-06]
   /v1/tasks/{taskId}/reassign:
@@ -2972,9 +2974,9 @@ paths:
       description: |-
         target_driver_id=null يعيد المهمة للطابور بأولويتها الأصلية؛ وإلا تُسند لسائق مؤهل في نفس المجموعة (accepted إن كان متاحًا، assigned_waiting إن كان مشغولًا بلا مهمة تالية). لا سحب خفي ولا إعادة إسناد بعد بدء الحركة.
 
-        الشروط: task.status ∈ {offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · offered/broadcast: target_driver_id إلزامي وتُسحب الجولة (close_reason=reassigned) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
+        الشروط: task.status ∈ {queued, offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · queued/offered/broadcast: target_driver_id إلزامي وتُسحب الجولة الحية (close_reason=reassigned)؛ null لمهمة في الطابور ← INVALID_STATE_TRANSITION (already_in_queue)، والمكلّف نفسه ← (same_assignee) (DEC-214) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
 
-        الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة)
+        الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع تستثني السائق السابق (DEC-216)؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة) بـtask.reassigned (trigger=reassign، target=driver، from_status، result_status) وticket.assigned(_waiting) بـvia=supervisor، دون task.claimed (DEC-215)
       parameters:
       - $ref: '#/components/parameters/taskId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3067,9 +3069,9 @@ paths:
       summary: إعادة المفتاح لخانته قبل السحب
       tags: [Retrieval & Handover]
       description: |-
-        الشروط: task.status=accepted وkey_picked_up_at غير فارغ · لم تبدأ الحركة
+        الشروط: task.status=accepted وkey_picked_up_at غير فارغ (الاستدعاء الثاني ← INVALID_STATE_TRANSITION بـreason=key_not_picked_up) · لم تبدأ الحركة · المكلّف أو المشرف · الخانة شاغرة (KEY_SLOT_OCCUPIED) ونشطة هي ولوحتها (DEC-230)
 
-        الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null
+        الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null؛ المهمة تبقى accepted لمكلّفها ولا يُسوّى (DEC-230)
       parameters:
       - $ref: '#/components/parameters/taskId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3139,9 +3141,9 @@ paths:
       summary: إعادة الصف لغياب العميل
       tags: [Retrieval & Handover]
       description: |-
-        الشروط: ticket.status=ready
+        الشروط: ticket.status=ready ومهمة الإحضار in_progress · المركبة والمفتاح مع سائق المهمة الجارية، وإلا CUSTODY_HOLDER_MISMATCH دون أثر (DEC-226)
 
-        الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + W-08
+        الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + واقعة customer_absent محلولة (DEC-222) + حل ready_not_collected وhandover_code_locked + W-08
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3216,7 +3218,7 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [CUSTODY_HOLDER_MISMATCH, INVALID_STATE_TRANSITION, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
-      x-domain-events: [ticket.reparking, task.canceled, task.created]
+      x-domain-events: [ticket.reparking, task.canceled, task.created, incident.opened, incident.resolved]
       x-ws-events: [task.updated, ticket.updated]
       x-whatsapp: [W-08]
   /v1/tickets/{ticketId}/custody-transfers:
@@ -3225,7 +3227,9 @@ paths:
       summary: نقل عهدة رسمي
       tags: [Retrieval & Handover]
       description: |-
-        توثيق تسليم مركبة أو مفتاح من حائزه الحالي (يستنتجه الخادم من التذكرة) إلى حائز جديد. إن كانت للتذكرة مهمة accepted أو in_progress وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (task.reassigned، trigger=custody_transfer) بشرط ألا تكون لديه حركة نشطة (MOVEMENT_IN_PROGRESS)، ويُسوّى السائق السابق (ترقية مهمته التالية أو يصبح متاحًا) مع تمريرة توزيع تحت قفل المجموعة (الملف 11 §2.4).
+        توثيق تسليم مركبة أو مفتاح من حائزه الحالي (يستنتجه الخادم من التذكرة) إلى حائز جديد. إن كانت للتذكرة مهمة accepted أو in_progress وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (task.reassigned، trigger=custody_transfer، مع from_status وtarget=driver) بشرط ألا تكون لديه حركة نشطة (MOVEMENT_IN_PROGRESS)، فيغادر التوفر وتُسحب عروضه الفردية الحية، ويُسوّى السائق السابق (ترقية مهمته التالية أو يصبح متاحًا) مع تمريرة توزيع تحت قفل المجموعة (الملف 11 §2.4، DEC-251). وصول المفتاح إلى مكلّف مهمة إحضار accepted — مكلّفها الحالي، أو السائق الذي ينقل إليه النقلُ نفسه المهمة — يضبط key_picked_up_at مع task.key_picked_up بـkey_slot_id=null (ما لم يكن الاستلام مضبوطًا قبل النقل، فيبقى وقته بلا حدث جديد)، وخروجه من المكلّف قبل البدء يعيده null بلا حدث، فلا يرد start-retrieval بـKEY_NOT_PICKED_UP بعد مفتاح حائزه unknown وصل بهذا النقل (DEC-187، DEC-251).
+
+        الشروط (DEC-250): لا customer (VALIDATION_FAILED بـuse_handover) · المركبة إلى driver/spot/supervisor/unknown والمفتاح إلى driver/key_slot/supervisor/unknown (not_allowed_for_subject) · المركبة parked إلى spot أو unknown فقط (parked_vehicle_spot_or_unknown) · الحائز السائق نشط في مناوبة on_duty بمجموعة التذكرة (driver_not_on_duty، not_a_driver)، والمشرف نشط بنطاق الموقع · السبب note لحدث العهدة · قفل المجموعة دائمًا
 
         الأثر: custody_events(official_transfer) + حقول الحائز الحالي (+ نقل المهمة وتسوية السائق السابق عند الحاجة)
       parameters:
@@ -3293,7 +3297,7 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [CUSTODY_HOLDER_MISMATCH, KEY_SLOT_OCCUPIED, MOVEMENT_IN_PROGRESS, PARKING_SPOT_OCCUPIED, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND]
-      x-domain-events: [custody.changed, task.reassigned, driver.availability_changed]
+      x-domain-events: [custody.changed, task.reassigned, driver.availability_changed, task.key_picked_up, task.promoted, offer.revoked]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
   /v1/tickets/{ticketId}/manual-reconcile:
     post:
@@ -3303,7 +3307,9 @@ paths:
       description: |-
         بعد عودة النظام من تعطل كلي: يضبط الحالة النهائية من السجل الورقي المرقّم. لا تُشغّل أوامر مؤجلة ولا تُرسل رسائل عميل قديمة.
 
-        الأثر: حالة نهائية + custody_events(manual_reconcile) + ticket_events(data.manual=true) + كبت رسائل واتساب
+        الشروط: أي حالة مفتوحة ومنها parked ← parked للتصحيح؛ النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed)؛ الموقف والملاحظة والخانة لـparked فقط؛ الورقية بلا كعب إلى voided فقط؛ incident_id من موقع التذكرة وليس لتذكرة أخرى (DEC-253) · الدفع (DEC-252): delivered لتذكرة due يتطلب payment (بـcollected_by) أو إعفاءً سابقًا وإلا PAYMENT_PENDING؛ payment لـdelivered ولـdue فقط (not_applicable) وقواعد 13 §5؛ التحصيل المسجل يمنع voided (reason=payment_recorded)
+
+        الأثر: حالة نهائية + custody_events(manual_reconcile، note = paper_log_ref) + ticket_events(data.manual=true) + كبت رسائل واتساب (المعلّقة بلا محاولة جارية ← skipped superseded) + رموز التسليم الحية canceled مع مسح نسختها، ورموز الربط والإجراء لـvoided فقط + تسوية سائق الحركة الملغاة + إسقاط الطلب المبكر المعلّق + حل تنبيهات الحالة السابقة (DEC-253)؛ payment.recorded بـsource=reconcile مع تدقيق payment.record (DEC-252)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3372,10 +3378,10 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | VERSION_CONFLICT
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | VERSION_CONFLICT
         '422':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+          description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
         '428':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REQUIRED
@@ -3394,7 +3400,7 @@ paths:
       x-permission: ticket.manual_reconcile
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, KEY_SLOT_OCCUPIED, PARKING_SPOT_OCCUPIED, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, KEY_SLOT_OCCUPIED, PARKING_SPOT_OCCUPIED, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [ticket.manually_reconciled, custody.changed, task.canceled, payment.recorded]
       x-ws-events: [ticket.updated]
   /v1/tickets/{ticketId}/payments:
@@ -3408,6 +3414,8 @@ paths:
         الشروط: payment_status=due · ticket.status=ready · المكلّف بمهمة الإحضار
 
         الأثر: payments(recorded) + payment_status=collected
+
+        الحالة المالية (DEC-282): not_required أو waived ← INVALID_STATE_TRANSITION (current_status = payment_status، allowed_from [due]، reason payment_not_required أو payment_waived)؛ collected ← PAYMENT_ALREADY_RECORDED. pos_reference يُطبّع ويُفحص في الجسم (13 §5.6، DEC-280). الحفل المغلق ← EVENT_ALREADY_CLOSED (دفاعي: لا تذكرة ready في حفل مغلق).
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3447,7 +3455,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | VALIDATION_FAILED
@@ -3469,7 +3477,7 @@ paths:
       x-permission: payment.record
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, NOT_TASK_ASSIGNEE, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, TICKET_NOT_FOUND]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, NOT_TASK_ASSIGNEE, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, TICKET_NOT_FOUND]
       x-domain-events: [payment.recorded]
       x-ws-events: [ticket.updated]
   /v1/payments/{paymentId}/reverse:
@@ -3481,6 +3489,8 @@ paths:
         replacement اختياري لتصحيح الوسيلة أو المرجع: يُعكس الأصل ويُدرج تحصيل جديد recorded بقيم البديل مع نسخ collected_by وcollected_at من الأصل، فتبقى payment_status=collected (الملف 13).
 
         الأثر: دون بديل: payments.status=reversed + payment_status=due؛ إذا التذكرة مسلّمة تُفتح واقعة payment_discrepancy. مع بديل: عكس + تحصيل جديد وتبقى collected
+
+        الشروط (DEC-276، DEC-281، DEC-282): التحصيل خارج النطاق ← RESOURCE_NOT_FOUND (payment)؛ الحفل المغلق ← EVENT_ALREADY_CLOSED؛ المعكوس ← PAYMENT_ALREADY_REVERSED؛ تذكرة ليست collected ← INVALID_STATE_TRANSITION (reason payment_integrity)؛ بديل بالوسيلة والمرجع المطبّع نفسيهما ← VALIDATION_FAILED (replacement، no_change)، وحقوله بالبادئة replacement.، ويُدرج بعد عكس الأصل وينسخ collected_by وcycle_id وcollected_at. العكس بلا بديل على تذكرة مسلّمة يفتح واقعة payment_discrepancy مرتبطة بها (incident.opened بـauto_created: true، DEC-284).
       parameters:
       - $ref: '#/components/parameters/paymentId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3534,7 +3544,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_REVERSED
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_REVERSED
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3556,7 +3566,7 @@ paths:
       x-permission: payment.reverse
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, PAYMENT_ALREADY_REVERSED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, REASON_REQUIRED]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, PAYMENT_ALREADY_REVERSED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
       x-domain-events: [payment.reversed, payment.recorded, incident.opened]
       x-ws-events: [ticket.updated]
   /v1/tickets/{ticketId}/payment-waiver:
@@ -3564,7 +3574,12 @@ paths:
       operationId: waivePayment
       summary: إعفاء من الرسوم
       tags: [Payments]
-      description: "الشروط: payment_status=due\n\nالأثر: payment_status=waived + payment_waived_* "
+      description: |-
+        الشروط: payment_status=due
+
+        الأثر: payment_status=waived + payment_waived_*
+
+        الشروط (DEC-276، DEC-282): الحفل المغلق ← EVENT_ALREADY_CLOSED؛ التذكرة voided ← TICKET_CLOSED؛ collected ← PAYMENT_ALREADY_RECORDED؛ not_required أو waived ← INVALID_STATE_TRANSITION (allowed_from [due]).
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3600,7 +3615,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED | TICKET_CLOSED
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3622,7 +3637,7 @@ paths:
       x-permission: payment.waive
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, PAYMENT_ALREADY_RECORDED, REASON_REQUIRED, TICKET_NOT_FOUND]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, PAYMENT_ALREADY_RECORDED, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND]
       x-domain-events: [payment.waived]
       x-ws-events: [ticket.updated]
   /v1/cash-handovers:
@@ -3634,6 +3649,8 @@ paths:
         المشرف المستلم يسجل المبلغ؛ يحسب الخادم المتوقع من تحصيلات السائق النقدية غير المعكوسة وغير المسلّمة في الحفل ويربطها.
 
         الأثر: cash_handovers + payments.cash_handover_id؛ فرق ≠ 0 يفتح واقعة payment_discrepancy
+
+        الشروط (DEC-275، DEC-276، DEC-283): السائق هو المستلم ← PERMISSION_DENIED (permission: cash.handover_confirm، reason: self_handover) قبل أي قفل؛ الحفل خارج النطاق ← RESOURCE_NOT_FOUND (event)، والسائق من مؤسسة أخرى ← (driver)؛ الحفل draft ← INVALID_STATE_TRANSITION (allowed_from [open, closing])، وclosed أو canceled ← EVENT_ALREADY_CLOSED؛ المتوقع 0 والمبلغ 0 ← VALIDATION_FAILED (amount_halalas، nothing_to_hand_over)؛ أي سائق في المؤسسة يسلّم نقدًا حصّله في هذا الحفل. الواقعة التلقائية تُعاد incident_id ويُعثر عليها من صف التدقيق (metadata.incident_id، DEC-284).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -3677,7 +3694,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -3699,14 +3716,15 @@ paths:
       x-permission: cash.handover_confirm
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [EVENT_ALREADY_CLOSED]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, RESOURCE_NOT_FOUND]
       x-domain-events: [cash.handover_recorded, incident.opened]
   /v1/events/{eventId}/settlement:
     get:
       operationId: getSettlement
       summary: تسوية الحفل
       tags: [Payments]
-      description: تسوية الحفل
+      description: |-
+        تسوية الحفل (الملف 13 §11) في لقطة REPEATABLE READ واحدة للقراءة فقط. الحفل خارج النطاق ← RESOURCE_NOT_FOUND (event، DEC-276).
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -3737,7 +3755,7 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/venues:
     get:
       operationId: listVenues
@@ -5366,7 +5384,8 @@ paths:
       operationId: getEventReconciliation
       summary: موانع إغلاق الحفل (S-10)
       tags: [Events & Shifts]
-      description: موانع إغلاق الحفل (S-10)
+      description: |-
+        موانع إغلاق الحفل (S-10) وتحذيراته في لقطة REPEATABLE READ واحدة للقراءة فقط (DEC-286)؛ blockers هي details.blockers لخطأ EVENT_CLOSE_BLOCKED نفسها.
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -5397,7 +5416,7 @@ paths:
       x-permission: event.manage
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/events/{eventId}/close:
     post:
       operationId: closeEvent
@@ -5409,6 +5428,8 @@ paths:
         الشروط: status=closing
 
         الأثر: status=closed + close_summary
+
+        close_summary (DEC-287): {closed_at, closed_by, note, tickets, finance, warnings} حيث tickets = Settlement.tickets، وfinance = {currency, amounts, drivers, discrepancies}، وwarnings = {open_incidents: [معرّفات], failed_messages: عدد, cash_discrepancies}؛ الملاحظة (حتى 500 محرف) سبب التدقيق؛ حفل open ← INVALID_STATE_TRANSITION (allowed_from [closing])؛ يقفل الحفل FOR NO KEY UPDATE فينتظر كل أمر مالي ثم يعيد قراءة الموانع داخل المعاملة. المطابقة والإغلاق حالة استخدام تجمع الوحدات (DEC-290).
       parameters:
       - $ref: '#/components/parameters/eventId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5545,7 +5566,7 @@ paths:
       operationId: getOperationsBoard
       summary: لوحة التشغيل الحية (S-02)
       tags: [Events & Shifts]
-      description: لقطة كاملة لمزامنة لوحة المشرف؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors.
+      description: 'لقطة كاملة لمزامنة لوحة المشرف (REPEATABLE READ ولحظة واحدة)؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors. الأقسام والمؤشرات في OperationsBoard (DEC-241…DEC-244).'
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -6015,7 +6036,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -6320,7 +6341,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -6409,7 +6430,7 @@ paths:
       description: |-
         فوري (scheduled_at فارغ أو ماضٍ) أو مجدول. يُمنع مع مركبة أو مفتاح بعهدته أو مهمة in_progress أو مهمة صف/إعادة صف نشطة (DEC-32): الفوري يعيد TRANSFER_BLOCKED_CUSTODY دون إنشاء سجل نقل، والمجدول يصبح عند تفعيله blocked مع تنبيه transfer_blocked ويُعاد تقييمه آليًا. المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان لطابور الموقع القديم بأولويتهما. عند الإتمام: إبطال العروض، إعادة المهمة التالية لطابور الموقع القديم، إنهاء المناوبة والتعيين القديم وفتح الجديد، إبطال الجلسات ومغادرة الغرف. السجلات القديمة لا تُعاد كتابتها.
 
-        الشروط: المشرف يملك نطاق الموقعين · لا نقل مفتوح آخر
+        الشروط: المشرف يملك نطاق الموقعين (TRANSFER_SCOPE_DENIED بـmissing_venue_id) · لا نقل مفتوح آخر · الهدف ليس الموقع الحالي (VALIDATION_FAILED: to_venue_id same_as_current) · تغيّر التعيين المتزامن ← ASSIGNMENT_CONFLICT (assignment_changed) · سائق عُطّل قبل التفعيل ← النقل canceled · الأقفال L1 لكل مجموعات الموقعين تصاعديًا ثم L3 (DEC-224، DEC-225)
       parameters:
       - $ref: '#/components/parameters/driverId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6457,7 +6478,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: DRIVER_DISABLED | IDEMPOTENCY_IN_PROGRESS | TRANSFER_ALREADY_PENDING | TRANSFER_BLOCKED_CUSTODY
+          description: ASSIGNMENT_CONFLICT | DRIVER_DISABLED | IDEMPOTENCY_IN_PROGRESS | TRANSFER_ALREADY_PENDING | TRANSFER_BLOCKED_CUSTODY
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -6479,7 +6500,7 @@ paths:
       x-permission: driver.transfer
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [DRIVER_DISABLED, REASON_REQUIRED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED]
+      x-error-codes: [ASSIGNMENT_CONFLICT, DRIVER_DISABLED, REASON_REQUIRED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED]
       x-domain-events: [driver.transfer_requested, driver.transferred, driver.transfer_blocked, task.withdrawn, offer.revoked, driver.duty_ended]
       x-ws-events: [session.revoked, driver.state_changed]
   /v1/transfers/{transferId}/cancel:
@@ -6487,7 +6508,7 @@ paths:
       operationId: cancelTransfer
       summary: إلغاء نقل مجدول/محجوب
       tags: [Drivers & Staff]
-      description: 'الشروط: status ∈ {pending, blocked}'
+      description: 'الشروط: status ∈ {pending, blocked} · نطاق الموقعين كالإنشاء (TRANSFER_SCOPE_DENIED، DEC-224)'
       parameters:
       - $ref: '#/components/parameters/transferId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6517,7 +6538,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | TRANSFER_SCOPE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -6545,7 +6566,7 @@ paths:
       x-permission: driver.transfer
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, REASON_REQUIRED]
+      x-error-codes: [INVALID_STATE_TRANSITION, REASON_REQUIRED, TRANSFER_SCOPE_DENIED]
       x-domain-events: [alert.resolved]
   /v1/duty-sessions/{sessionId}/force-end:
     post:
@@ -6553,9 +6574,9 @@ paths:
       summary: إنهاء مناوبة سائق بالمشرف
       tags: [Drivers & Staff]
       description: |-
-        الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا) · المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32)
+        الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا؛ items = صفوف blockingCustody: type ∈ {vehicle, key, task} مع task_id وtask_type وtask_status للمهمة، DEC-229) · المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) · sessionId = DriverLive.duty_session_id (DEC-217)
 
-        الأثر: end_reason=forced
+        الأثر: end_reason=forced؛ وsync.required (reason=duty_force_ended، scope=home) لغرفة السائق (DEC-221)
       parameters:
       - $ref: '#/components/parameters/sessionId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7006,7 +7027,7 @@ paths:
       operationId: listAlerts
       summary: تنبيهات المشرف
       tags: [Alerts & Incidents]
-      description: تنبيهات المشرف
+      description: 'تنبيهات المشرف، الأحدث أولًا (raised_at ثم id)؛ status يُقبل مكررًا أو مفصولًا بفواصل؛ دون venue_id كل مواقع نطاق المستدعي، وvenue_id خارجه ← SCOPE_VENUE_DENIED (DEC-235)'
       parameters:
       - name: venue_id
         in: query
@@ -7061,7 +7082,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '429':
           $ref: '#/components/responses/RateLimited'
           description: RATE_LIMITED
@@ -7074,13 +7095,13 @@ paths:
       x-permission: alert.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [SCOPE_VENUE_DENIED]
   /v1/alerts/{alertId}/acknowledge:
     post:
       operationId: acknowledgeAlert
       summary: إقرار تنبيه
       tags: [Alerts & Incidents]
-      description: 'الأثر: يوقف تكرار صوت التصعيد لهذا التنبيه'
+      description: 'الأثر: يوقف تكرار صوت التصعيد لهذا التنبيه؛ open ← acknowledged. لا عمود للملاحظة في alerts، فتُحفظ note في صف التدقيق (metadata.note) (DEC-234)'
       parameters:
       - $ref: '#/components/parameters/alertId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7143,7 +7164,7 @@ paths:
       operationId: resolveAlert
       summary: حل تنبيه
       tags: [Alerts & Incidents]
-      description: حل تنبيه
+      description: 'حل تنبيه: open أو acknowledged ← resolved، وnote تُحفظ في resolution_note (DEC-234)'
       parameters:
       - $ref: '#/components/parameters/alertId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7206,7 +7227,7 @@ paths:
       operationId: listIncidents
       summary: الوقائع
       tags: [Alerts & Incidents]
-      description: الوقائع
+      description: 'الوقائع، الأحدث أولًا (created_at ثم id)؛ status يُقبل مكررًا أو مفصولًا بفواصل؛ دون venue_id كل مواقع نطاق المستدعي، وvenue_id خارجه ← SCOPE_VENUE_DENIED (DEC-235)'
       parameters:
       - name: venue_id
         in: query
@@ -7267,7 +7288,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '429':
           $ref: '#/components/responses/RateLimited'
           description: RATE_LIMITED
@@ -7280,12 +7301,12 @@ paths:
       x-permission: incident.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [SCOPE_VENUE_DENIED]
     post:
       operationId: createIncident
       summary: فتح واقعة
       tags: [Alerts & Incidents]
-      description: 'الشروط: السائق: لتذاكر موقعه فقط'
+      description: 'الشروط: السائق: لتذاكر موقعه فقط — ticket_id إلزامي له (VALIDATION_FAILED: required_for_driver) لتذكرة مفتوحة (المغلقة ← TICKET_NOT_FOUND)؛ تذكرة أو حفل من موقع غير venue_id ← VALIDATION_FAILED (venue_mismatch أو ticket_event_mismatch)؛ حفل خارج النطاق ← RESOURCE_NOT_FOUND (resource=event)؛ event_id افتراضيًا حفل التذكرة (DEC-237). الأثر: incident.opened؛ وWS incident.updated (وticket.updated للمرتبطة) من مخطِّط الاتصال الفوري (DEC-238)'
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -7329,7 +7350,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
@@ -7354,9 +7375,9 @@ paths:
       x-permission: incident.create
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [SCOPE_VENUE_DENIED, TICKET_NOT_FOUND]
+      x-error-codes: [RESOURCE_NOT_FOUND, SCOPE_VENUE_DENIED, TICKET_NOT_FOUND]
       x-domain-events: [incident.opened]
-      x-ws-events: [alert.raised]
+      x-ws-events: [incident.updated, ticket.updated]
   /v1/incidents/{incidentId}:
     get:
       operationId: getIncident
@@ -7398,7 +7419,7 @@ paths:
       operationId: updateIncident
       summary: تحديث/حل واقعة
       tags: [Alerts & Incidents]
-      description: 'الشروط: resolved/closed يتطلب resolution'
+      description: 'الشروط: resolved/closed يتطلب resolution (VALIDATION_FAILED: resolution required، وكذلك مسحه عن محلولة)؛ closed نهائية (INVALID_STATE_TRANSITION: incident_closed)؛ owner_id موظف نشط بنطاق الموقع (غير معروف ← RESOURCE_NOT_FOUND بـresource=user، وغير مؤهل ← VALIDATION_FAILED: not_eligible). الأثر: حدث واحد لكل تغيير (incident.resolved حين تصير محلولة، وإلا incident.updated بـchanged)؛ إعادة الفتح resolved ← in_review تمسح resolution وresolved_by وresolved_at؛ PATCH بلا تغيير لا يرفع الإصدار ولا يصدر حدثًا ويُدقَّق noop (DEC-239)'
       parameters:
       - $ref: '#/components/parameters/incidentId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7468,14 +7489,16 @@ paths:
       x-permission: incident.manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [incident.updated, incident.resolved]
+      x-ws-events: [incident.updated, ticket.updated]
   /v1/reports/events/{eventId}/summary:
     get:
       operationId: getEventSummaryReport
       summary: تقرير الحفل
       tags: [Reports & Exports]
-      description: تقرير الحفل
+      description: |-
+        تقرير الحفل (DEC-288): tickets_total يشمل الملغاة (وتُعد أيضًا في voided)؛ الأزمنة KPI-01 (claimed_at − queued_at) وKPI-02 (started_at − accepted_at) وKPI-03 (الدورات المسلّمة والمعاد صفها) وKPI-04 (المسلّمة)؛ الدورات الملغاة في canceled_requests وحدها. الحفل خارج النطاق ← RESOURCE_NOT_FOUND (event، DEC-276).
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -7506,13 +7529,14 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/reports/drivers:
     get:
       operationId: getDriversReport
       summary: أداء السائقين
       tags: [Reports & Exports]
-      description: أداء السائقين
+      description: |-
+        أداء السائقين (DEC-288): صف لكل (سائق، موقع) بنسبة الحدث لوقته (FR-RPT-06)؛ الأعداد بزمن الإتمام في [from, to)، وساعات المناوبة مقصوصة على الفترة؛ ترقيم keyset بالمؤشر (employee_code, user_id, venue_id) موقّعًا HMAC مع المرشحات، وغيره ← PAGINATION_CURSOR_INVALID؛ from بعد to ← VALIDATION_FAILED (from، after_to)؛ venue_id خارج النطاق ← SCOPE_VENUE_DENIED.
       parameters:
       - name: venue_id
         in: query
@@ -7574,13 +7598,14 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: [PAGINATION_CURSOR_INVALID, SCOPE_VENUE_DENIED]
   /v1/reports/payments:
     get:
       operationId: getPaymentsReport
       summary: تقرير التحصيل
       tags: [Reports & Exports]
-      description: تقرير التحصيل
+      description: |-
+        تقرير التحصيل (DEC-288؛ 07 يغلب 13 §13 على السلك): صف لكل حفل أُقيم في الفترة (يوم event_date بتوقيت الرياض [00:00، 00:00 التالي) يتقاطع مع [from, to) نصف المفتوحة كبقية التقارير، فيوم الرياض المرسل [from, to+1) لا يجلب حفلات اليوم التالي) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ قائمة التحصيلات المفصلة هي تصدير payments. from بعد to ← VALIDATION_FAILED (from، after_to)؛ venue_id خارج النطاق ← SCOPE_VENUE_DENIED.
       parameters:
       - name: venue_id
         in: query
@@ -7637,7 +7662,8 @@ paths:
       operationId: getMessagesReport
       summary: صحة رسائل واتساب
       tags: [Reports & Exports]
-      description: صحة رسائل واتساب
+      description: |-
+        صحة رسائل واتساب (DEC-288): إجماليات بالحالة الحالية للرسائل المنشأة في [from, to)، وstatus يضيّق الإجماليات والقائمة (القائمة افتراضيًا الفاشلة)؛ الرسائل بلا موقع لأصحاب نطاق المؤسسة دون venue_id فقط؛ بلا معرّف مستلم أو مرسل ولا جوال كامل. from بعد to ← VALIDATION_FAILED (from، after_to).
       parameters:
       - name: venue_id
         in: query
@@ -7693,7 +7719,10 @@ paths:
       operationId: createExport
       summary: طلب ملف تصدير CSV
       tags: [Reports & Exports]
-      description: 'الأثر: exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read'
+      description: |-
+        الأثر: exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read
+
+        قواعد التصدير (DEC-289، DEC-292): يرد 202 بالتصدير pending؛ job.export_generate يعيد حساب نطاق الطالب (غير نشط ← failed بـerror = requester_inactive، وموقع أو حفل سُحب ← scope_revoked)، ويقرأ في معاملة REPEATABLE READ READ ONLY واحدة، ويرفع الملف خارج أي معاملة (يبقى 24 ساعة)، ويفشل too_many_rows فوق 50 000 صف، ويعيد محاولة انقطاع التخزين (storage_unavailable، storage_error)؛ المرشحات تُجمع بـAND (drivers مع event_id = موقع الحفل في الفترة؛ بلا to = حتى وقت التوليد)؛ النوع audit يتطلب audit.read (PERMISSION_DENIED بـaudit_read_required)؛ حفل المرشح خارج النطاق ← RESOURCE_NOT_FOUND، وvenue_id المسمّى ← SCOPE_VENUE_DENIED؛ لا رمز ولا موضع مفتاح ولا كعب ولا صورة ولا جوال كامل في أي ملف. حد المعدل: فئة export (5 في الساعة لكل مستخدم).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -7763,13 +7792,16 @@ paths:
       x-permission: export.create
       x-idempotency: required
       x-rate-limit-class: export
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: [PERMISSION_DENIED, RESOURCE_NOT_FOUND, SCOPE_VENUE_DENIED]
   /v1/exports/{exportId}:
     get:
       operationId: getExport
       summary: حالة التصدير ورابط التنزيل
       tags: [Reports & Exports]
-      description: 'الشروط: طالب التصدير فقط'
+      description: |-
+        الشروط: طالب التصدير فقط
+
+        لطالبه وحده (غيره أو غير موجود ← RESOURCE_NOT_FOUND بـexport)؛ download_url عند ready وقبل الانتهاء، موقّع لمدة min(EXPORT_URL_TTL_S، المتبقي) مع Cache-Control: private, no-store، وكل رابط يُصدر يُدقَّق (export.create، metadata.download_link_issued) (DEC-289).
       parameters:
       - $ref: '#/components/parameters/exportId'
       responses:
@@ -7800,7 +7832,7 @@ paths:
       x-permission: export.create
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/admin/whatsapp/channel:
     get:
       operationId: getWhatsAppChannel
@@ -9322,20 +9354,22 @@ components:
         raw:
           type: string
           description: إلزامي عندما country != SA
-      description: 'SA: digits + letters_ar إلزاميان؛ غير ذلك raw. الخطأ PLATE_INVALID'
+      description: 'SA: digits + letters_ar إلزاميان؛ غير ذلك raw. اللوحة غير السعودية مجهولة الدولة: country = XX (رمز ISO المخصص للمستخدم) مع raw (DEC-349). الخطأ PLATE_INVALID'
       additionalProperties: false
     VehicleInfo:
       type: object
       properties:
         make:
           type: [string, 'null']
-          examples: [تويوتا]
+          examples: [toyota]
+          description: مفتاح 02 §8.4 (مثل toyota)، أو النص المكتوب لـ«أخرى» (DEC-350)
         model:
           type: [string, 'null']
           examples: [كامري]
         color:
           type: [string, 'null']
-          examples: [أبيض]
+          examples: [white]
+          description: مفتاح 02 §8.4 (مثل white)، أو النص المكتوب لـ«أخرى» (DEC-350)
         type:
           anyOf:
           - $ref: '#/components/schemas/VehicleType'
@@ -9395,7 +9429,7 @@ components:
         collected_by:
           type: string
           format: uuid
-          description: الموظف الذي حصّل فعلًا (السائق المكلّف أو من في السجل الورقي)
+          description: الموظف الذي حصّل فعلًا وبعهدته النقد — في التسليم الاستثنائي مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4، وإلا VALIDATION_FAILED بـnot_eligible)، وفي المطابقة اليدوية من في السجل الورقي
       required: [method, amount_halalas, collected_by]
       description: تحصيل منسوب لمحصّل محدد (التسليم الاستثنائي والمطابقة اليدوية) — الملف 13
       additionalProperties: false
@@ -10068,6 +10102,8 @@ components:
           type: [object, 'null']
           properties: {}
           additionalProperties: true
+          description: |-
+            يُكتب عند الإغلاق ولا يتغير بعده (DEC-287): {closed_at, closed_by, note, tickets, finance: {currency, amounts, drivers, discrepancies}, warnings: {open_incidents, failed_messages, cash_discrepancies}}؛ null قبل الإغلاق
         version:
           type: integer
           minimum: 1
@@ -10582,6 +10618,12 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ClaimCodeState'
           - type: 'null'
+        badges:
+          type: array
+          items:
+            type: string
+            enum: [not_collected, long_wait]
+          description: 'في لوحة التشغيل فقط: not_collected (جاهزة منذ ready.uncollected_alert_min أو أكثر)، long_wait (مهمة تالية محجوزة ≥ dispatch.next_task_wait_alert_s) (DEC-241)'
       required: [task, ticket]
       description: بطاقة مهمة السائق الحالية أو التالية (D-04 / D-10)
     TaskOffer:
@@ -10678,7 +10720,8 @@ components:
           description: eligible_as = reserve_next
         safety_note_ar:
           type: [string, 'null']
-          examples: [احجز فقط وأنت متوقف؛ لا تستخدم الجوال أثناء القيادة]
+          examples: [احجزه فقط وأنت متوقف. لا تستخدم الجوال أثناء القيادة.]
+          description: النص الثابت من 02 D-09 و03 لبطاقة الحجز كمهمة تالية (DEC-361)
       required: [offer_id, task_id, mode, eligible_as, server_time, ticket, requested_at, waiting_seconds, can_accept, can_reserve_next]
       description: 'بطاقة العرض الوحيدة الظاهرة للسائق: أقدم طلب قابل للقبول (D-09)'
     ClaimCodeState:
@@ -10714,7 +10757,7 @@ components:
           - $ref: '#/components/schemas/WaMessageStatus'
           - type: 'null'
       required: [issued_at, expires_at, attempts, max_attempts, attempts_left, resend_no]
-      description: حالة رمز التسليم الحالي؛ الرمز نفسه لا يُعاد في أي استجابة
+      description: 'حالة رمز التسليم الحالي؛ الرمز نفسه لا يُعاد في أي استجابة. sent_status = حالة رسالة W-05 وإلا حالة إشعارها (failed أو skipped أو queued)؛ TicketDetail.claim_code = أحدث رمز للدورة النشطة وnull دونه (DEC-208)'
     CustodyEvent:
       type: object
       properties:
@@ -11107,6 +11150,8 @@ components:
                 type: [string, 'null']
                 format: uuid
             required: [type]
+          description: |-
+            cash_difference: فرق تسليم نقد غير صفري مع واقعته؛ delivered_due: تذكرة مسلّمة صارت due؛ reversed_without_replacement: تحصيل معكوس على تذكرة مسلّمة بلا تحصيل مسجل، ويبقى تاريخًا بعد الإعفاء (DEC-291)
         close_blockers:
           type: object
           properties:
@@ -11296,7 +11341,12 @@ components:
         duty_started_at:
           type: [string, 'null']
           format: date-time
+        duty_session_id:
+          type: [string, 'null']
+          format: uuid
+          description: المناوبة المفتوحة (معرّف مسار force-end في S-05 وS-06)؛ في GET /v1/drivers وdriver.state_changed، ولا ترسله لوحة التشغيل بعد (DEC-217)
       required: [driver, driver_state]
+      description: 'الحالة الحية للسائق؛ في driver.state_changed بـaggregate {type: user, id, version: null} (DEC-220)'
     DriverListItem:
       type: object
       properties:
@@ -11341,6 +11391,11 @@ components:
               format: date-time
             recipients:
               type: integer
+            recipient:
+              anyOf:
+              - $ref: '#/components/schemas/UserRef'
+              - type: 'null'
+              description: مستلم الجولة الفردية («معروض على {سائق}» في S-02)؛ null للبث (DEC-241)
         escalated_at:
           type: [string, 'null']
           format: date-time
@@ -11348,7 +11403,14 @@ components:
           anyOf:
           - $ref: '#/components/schemas/UserRef'
           - type: 'null'
+        badges:
+          type: array
+          items:
+            type: string
+            enum: [late, long_wait]
+          description: 'شارات S-02: late (تصعيد أو انتظار ≥ dispatch.unaccepted_escalation_s منذ queued_at)، long_wait (مهمة تالية محجوزة ≥ dispatch.next_task_wait_alert_s) (DEC-241)'
       required: [task_id, ticket, status, requested_at, waiting_seconds]
+      description: 'عنصر طابور لوحة التشغيل: ما لا يحركه أحد بعد — الطلب غير المقبول في v_pool_queue والمهام التالية المحجوزة (assigned_waiting)، الأقدم أولًا (DEC-241)'
     OperationsBoard:
       type: object
       properties:
@@ -11359,18 +11421,23 @@ components:
           properties:
             open_requests:
               type: integer
+              description: تذاكر الحفل requested أو assigned أو assigned_waiting أو retrieving
             oldest_wait_seconds:
               type: [integer, 'null']
+              description: من v_pool_queue وحده (15 §11.1، DEC-241)
             avg_accept_seconds_30m:
               type: [number, 'null']
+              description: KPI-01 (claimed_at − queued_at) لمهام الإحضار المحجوزة في آخر 30 دقيقة بدقة 0.1 ث؛ null دونها (DEC-242)
             drivers_available:
               type: integer
             drivers_busy:
               type: integer
+              description: intake_parking + retrieving + busy_with_next (DEC-242)
             drivers_on_break:
               type: integer
             drivers_on_duty:
               type: integer
+              description: كل مناوبة مفتوحة في مجموعة الحفل ومنها الاستراحة (DEC-242)
             vehicles_parked:
               type: integer
             ready_waiting:
@@ -11379,15 +11446,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QueueItem'
-          description: الأقدم أولًا (priority_at ثم seq)
+          description: 'ما لا يحركه أحد بعد: الطلب غير المقبول والمهام التالية المحجوزة، الأقدم أولًا (priority_at ثم seq) (DEC-241)'
         active_tasks:
           type: array
           items:
             $ref: '#/components/schemas/TaskCard'
+          description: المهام accepted وin_progress من كل نوع، مع badges
         next_tasks:
           type: array
           items:
             $ref: '#/components/schemas/TaskCard'
+          description: المهام assigned_waiting، مع badges
         drivers:
           type: array
           items:
@@ -11396,10 +11465,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Alert'
+          description: تنبيهات الموقع الحية التي event_id فيها فارغ أو هذا الحفل، الحرجة ثم التحذير ثم المعلومة ثم الأحدث (حتى 200) (DEC-243)
         failed_messages:
           type: array
           items:
             $ref: '#/components/schemas/WhatsAppMessage'
+          description: الصادرة failed للحفل في آخر 30 دقيقة (failed_at وإلا created_at)، حتى 100 (DEC-243)
         custody_issues:
           type: array
           items:
@@ -11414,8 +11485,11 @@ components:
               since:
                 type: string
                 format: date-time
+                description: آخر حدث عهدة لهذا العنصر
+          description: 'S-02 «العهدة»: مركبة أو مفتاح لتذكرة مفتوحة حائزه unknown أو supervisor، أو سائق خارج المناوبة أو اتصاله غير online، أو سائق بلا مهمة مفتوحة على التذكرة، أو منشئ مسودة تجاوزت intake.draft_abandoned_alert_min (DEC-244)'
         channel_health:
           $ref: '#/components/schemas/WaHealthStatus'
+          description: صحة القناة الفعالة، وdown دونها (DEC-243)
       required: [event, kpis, queue, active_tasks, next_tasks, drivers, alerts, failed_messages, custody_issues, channel_health]
     Reconciliation:
       type: object
@@ -11433,20 +11507,26 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/TicketSummary'
-              description: تذاكر غير delivered/voided
+              description: |-
+                تذاكر غير delivered ولا voided (DEC-286)
             keys_not_in_slots:
               type: array
               items:
                 $ref: '#/components/schemas/TicketSummary'
-              description: تذاكر مفتوحة مفتاحها مع شخص أو مجهول
+              description: |-
+                تذاكر مفتوحة حائز مفتاحها ليس خانة: سائق أو مشرف أو unknown، أو مفتاح مسودة ما زال مع العميل (DEC-286)
             open_requests:
               type: array
               items:
                 $ref: '#/components/schemas/QueueItem'
+              description: |-
+                مهام إحضار queued أو offered أو broadcast بجولتها الحية (DEC-286)
             open_tasks:
               type: array
               items:
                 $ref: '#/components/schemas/Task'
+              description: |-
+                كل مهمة مفتوحة أخرى: صف، إحضار accepted أو in_progress، مهمة تالية محجوزة، إعادة صف (DEC-286)
             unsettled_payments:
               type: array
               items:
@@ -11493,6 +11573,8 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/WhatsAppMessage'
+              description: |-
+                رسائل الحفل الصادرة الفاشلة، أحدث 200، مقنّعة (DEC-286)
             cash_discrepancies:
               type: array
               items:
@@ -12158,7 +12240,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Incident'
-      required: [ticket, events, custody, cycles, tasks, messages, payments, incidents]
+        media:
+          type: array
+          items:
+            allOf:
+            - $ref: '#/components/schemas/Media'
+            - type: object
+              properties:
+                read_url:
+                  anyOf:
+                  - $ref: '#/components/schemas/SignedUrl'
+                  - type: 'null'
+                  description: رابط عرض توقّعه وحدة الوسائط كما في GET /v1/media/{mediaId}/url (≤ 300 ث، يُسجَّل هناك)؛ null لصورة غير مكتملة أو لا يحق للقارئ فتحها
+          description: صور التذكرة (DEC-245)
+      required: [ticket, events, custody, cycles, tasks, messages, payments, incidents, media]
+      description: 'الأقسام الأقدم أولًا؛ أحداث العهدة في اللحظة نفسها تتبع أسطر خطها الزمني (DEC-245)؛ رؤية السائق مقيدة (DEC-246)'
     DriverStateResult:
       type: object
       properties:

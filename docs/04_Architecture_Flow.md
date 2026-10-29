@@ -152,7 +152,7 @@ flowchart TB
 
 - المسؤولية: التذكرة ومراحل الاستلام، الخط الزمني، دورات الاسترجاع، الفحص والصور، تخصيص المواقف وخانات المفاتيح، سلسلة العهدة، رموز التسليم.
 - الجداول: `tickets`, `ticket_events`, `retrieval_cycles`, `vehicle_inspections`, `media_assets`, `spot_allocations`, `key_slot_allocations`, `custody_events`, `claim_codes`.
-- الواجهة: `TicketLifecycle.transition(tx, ticket, to, ctx)` (يتحقق من آلة الحالة في الملف 11)، `IntakeService`، `CycleService.open / close`، `CustodyService.move(tx, subject, from, to, reason)`، `AllocationService.allocateSpot / allocateKeySlot / release`، `ClaimCodeService.issue / verify / resend / revoke`، `MediaService.presignUpload / complete / presignRead`.
+- الواجهة: `TicketLifecycle.transition(tx, ticket, to, ctx)` (يتحقق من آلة الحالة في الملف 11)، `IntakeService`، `CycleService.open / close`، `CustodyService.move(tx, subject, from, to, reason)`، `AllocationService.allocateSpot / allocateKeySlot / release`، `ClaimCodeService.issue / verify / resend / revoke` (ومعه `revokeLiveClaimCode`)، `MediaService.presignUpload / complete / presignRead`، وإسقاط `TaskCard` (`loadTaskCard`) الذي تشترك فيه القراءات وردود الأوامر ورسالة `task.updated`، لأن dispatch لا يستورد use-cases (DEC-233).
 - يُصدر: كل `ticket.*`، `custody.changed`، كل `handover.*`.
 - يبطل رموز الربط الحية عند التحويل إلى الورق أو الإلغاء (`revoke_reason = channel_paper` أو `ticket_voided`) رغم أن `link_codes` جدول whatsapp؛ ويجوز أن ينقله PNT-044 إلى whatsapp خلف خطاف (DEC-188).
 - معالجات العامل: `job.ready_uncollected_check`, `job.claim_code_expire`.
@@ -178,13 +178,15 @@ flowchart TB
 - المسؤولية: تعريف Outbox وحلقة توزيعه، تخطيط الإشعارات (من الحدث إلى قنوات ومستلمين وفق الملف 14)، إرسال Web Push، النشر الفوري، سجل المحاولات.
 - الجداول: `outbox_events`, `notifications`, `notification_attempts`.
 - الواجهة: `OutboxWriter.append(tx, row)`، `NotificationPlanner.plan(event) → rows` (دالة نقية بلا شبكة تُستدعى داخل المعاملة)، `OutboxDispatcher` (حلقة العامل)، `PushSender`، `RealtimePublisher.publish(tx, room, event)`.
+- مخطِّطات داخل معاملة الأمر: مخطِّط Push للموظفين (عمود «Push» في 14 §3 ← `notifications` بقناة `push` + `job.push_send` لكل جهاز ووسم، DEC-256…DEC-264)، ومخطِّط الاتصال الفوري لغير التوزيع: `ticket.updated` مدمجًا لكل تذكرة يُبنى قبل الالتزام بإسقاط `TicketSummary` تسجّله `use-cases` (فلا تستورد الإشعارات وحدة التذاكر)، و`sync.required` للحفل والوردية، و`channel.status`، و`incident.updated` (DEC-265…DEC-268، DEC-272).
 - معالجات العامل: `job.push_send`, `job.ws_publish`.
 
 **7) Incidents — `incidents`**
 
 - المسؤولية: الوقائع الداخلية للمشرف وتنبيهات المشرف الآلية وإغلاقها التلقائي عند زوال السبب.
 - الجداول: `incidents`, `alerts`.
-- الواجهة: `AlertService.acknowledge / resolve` ومسارات `/v1/alerts`، `IncidentService.open / update / resolve`. الرفع والحل الآلي (`raiseAlert`، `raiseAlertForAffectedVenues`، `autoResolveAlerts`) في `core/alerts` لتستعمله كل الوحدات دون استيراد `incidents` (DEC-79).
+- الواجهة: `AlertService.acknowledge / resolve` ومسارات `/v1/alerts`، `IncidentService.open / update / resolve`، و`openIncident()` للوقائع النظامية (TT-19، TT-20، عكس دفع بعد التسليم؛ `opened_by` صاحب الأمر، ومع `resolution` تُنشأ محلولة، DEC-240). الرفع والحل الآلي (`raiseAlert`، `raiseAlertForAffectedVenues`، `autoResolveAlerts`) في `core/alerts` لتستعمله كل الوحدات دون استيراد `incidents` (DEC-79)؛ والحل الآلي من الأحداث يجريه المُسقِط `AlertAutoResolver` في العامل للتنبيهات المرفوعة قبل الحدث أو معه فقط (DEC-236). الوحدة لا تنشر اتصالًا فوريًا: `incident.*` يحوّله مخطِّط الإشعارات إلى `incident.updated` (DEC-238).
+- معالجات العامل: المُسقِط `alert_auto_resolver`.
 - يُصدر: `alert.raised`, `alert.acknowledged`, `alert.resolved`, `incident.opened`, `incident.updated`, `incident.resolved`.
 
 **8) Payments & Reports — `payments-reports`**
@@ -244,12 +246,12 @@ flowchart BT
 | `RequestRetrieval` | ضغطة الزر عبر `job.wa_process_inbound` أو `POST /v1/tickets/{ticketId}/retrievals` | tickets-custody + dispatch + notifications (W-02) | نعم |
 | `AcceptOffer` | `POST /v1/task-offers/{offerId}/accept` | dispatch + tickets-custody + notifications (W-03 عند الحجز التالي) | نعم |
 | `KeyPickup` / `StartRetrieval` / `MarkReady` | `/v1/tasks/{taskId}/...` | dispatch + tickets-custody + notifications (W-04، W-05) | لا |
-| `Handover` | `POST /v1/tickets/{ticketId}/handover` | tickets-custody + payments-reports + dispatch (تحرير أو ترقية) + notifications (W-06) | نعم |
+| `Handover` | `POST /v1/tickets/{ticketId}/handover` | tickets-custody + payments-reports (خطاف التحصيل المضمّن: `check` بلا أثر قبل الرمز، ثم `collect` بعد التحقق، DEC-277) + dispatch (تحرير أو ترقية) + notifications (W-06) | نعم (ثم الحفل `FOR SHARE` L2 حين تكون التذكرة `due` أو يُرسل `payment`) |
 | `CancelRetrieval` | `POST /v1/retrieval-cycles/{cycleId}/cancel` | tickets-custody + dispatch + notifications (W-07) | نعم |
 | `ReassignTask` | `POST /v1/tasks/{taskId}/reassign` | dispatch + tickets-custody + incidents | نعم |
 | `Repark` | `POST /v1/tickets/{ticketId}/repark` | tickets-custody + dispatch + notifications (W-08) | نعم |
-| `ActivateTransfer` | `job.transfer_activate` | identity-access + dispatch + incidents | نعم (مجموعتا الموقعين) |
-| `CloseEvent` | `POST /v1/events/{eventId}/close` | venues-events + tickets-custody + payments-reports + incidents | لا (L2) |
+| `ActivateTransfer` | `POST /v1/drivers/{driverId}/transfers` (فوري) و`job.transfer_activate`؛ ويعيد تقييم المحجوب مخطِّط معاملة يجدول التفعيل حين تنهي معاملة مهمة السائق أو تنقل العهدة منه (DEC-223) | identity-access + dispatch + venues-events + incidents | نعم (كل مجموعات الموقعين تصاعديًا، DEC-225) |
+| `CloseEvent` | `POST /v1/events/{eventId}/close` و`GET /v1/events/{eventId}/reconciliation` (`use-cases/close-event.ts`؛ أما `start-closing` فانتقال وحدة واحدة في venues-events، DEC-290) | venues-events + tickets-custody + payments-reports + incidents | لا (L2 `FOR NO KEY UPDATE`) |
 | `ProcessInbound` | `job.wa_process_inbound` | whatsapp + (`RequestRetrieval` أو `LinkConfirm` أو الردود) | حسب الفرع |
 | `ManualReconcile` | `POST /v1/tickets/{ticketId}/manual-reconcile` | tickets-custody + dispatch + incidents | نعم |
 
@@ -506,9 +508,9 @@ RETURNING e.*;
 
 ### 7.2 النشر عبر `LISTEN/NOTIFY`
 
-- أي معاملة (في `api` أو `worker`) تنشر حدثًا فوريًا بـ`pg_notify('point_realtime', json)` حيث الحمولة `{ "room": "...", "event": <غلاف مختصر> }` أقل من 8000 بايت (معرّفات ونسخ وحقول عرض دنيا).
+- أي معاملة (في `api` أو `worker`) تنشر حدثًا فوريًا بـ`pg_notify('point_realtime', json)` حيث الحمولة `{ "org_id": "...", "rooms": [...], "message": <غلاف مختصر> }` أقل من 8000 بايت (معرّفات ونسخ وحقول عرض دنيا؛ حتى 60 غرفة لكل NOTIFY، DEC-269).
 - كل نسخة `api` تستمع للقناة وتبث للمقابس المتصلة بها محليًا؛ لأن كل النسخ تستقبل الإشعار نفسه، يصل الحدث للجميع **دون Redis** حتى مع عدة نسخ.
-- `job.ws_publish` يُستخدم فقط حين يتعذر النشر داخل معاملة (حمولة كبيرة أو نشر مؤجل)، ويحمل معرف الحدث ليجلب الـapi التفاصيل؛ الحدث الواحد لا يُنشر بالطريقين (DEC-48).
+- `job.ws_publish` يُستخدم فقط حين يتعذر النشر داخل معاملة (حمولة كبيرة)، ويحمل المعرّفات وحدها (`rooms`، `event`، `event_id`، `aggregate`)، فلا تُعاد بناء الرسالة: ينشر معالجه `sync.required` (`reason: publish_overflow`) للغرف نفسها في دفعات من 60 فيعيد العملاء جلب لقطتهم؛ وكل مخطِّط يقسم غرفه 60 لكل NOTIFY؛ الحدث الواحد لا يُنشر بالطريقين (DEC-48، DEC-269).
 - Redis adapter لـSocket.IO يُضاف فقط إذا قيس أن `NOTIFY` صار عنق زجاجة أو احتجنا بثًا من خارج المعاملات.
 - النشر الفوري «مرة على الأكثر» وغير دائم: الدوام في حالة القاعدة، والتعافي بالمزامنة (§7.3).
 

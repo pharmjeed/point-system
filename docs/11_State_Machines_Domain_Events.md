@@ -314,7 +314,7 @@ stateDiagram-v2
 - العميل: W-07.
 
 **TT-16 · `assigned` ← `retrieving` — `POST /v1/tasks/{taskId}/start-retrieval`**
-- الحراس: المكلّف (`NOT_TASK_ASSIGNEE`)؛ المهمة `accepted` (وهي `assigned_waiting` ← `TASK_NOT_STARTABLE`)؛ `key_picked_up_at` مضبوط (`KEY_NOT_PICKED_UP`). مفتاح صُف بلا خانة (حائزه `unknown`) لا يُستلم بـ`key-pickup` (`CUSTODY_HOLDER_MISMATCH`) بل يصل السائق بنقل عهدة رسمي `POST /v1/tickets/{ticketId}/custody-transfers` (DEC-187).
+- الحراس: المكلّف (`NOT_TASK_ASSIGNEE`)؛ المهمة `accepted` (وهي `assigned_waiting` ← `TASK_NOT_STARTABLE`)؛ `key_picked_up_at` مضبوط (`KEY_NOT_PICKED_UP`). مفتاح صُف بلا خانة (حائزه `unknown`) لا يُستلم بـ`key-pickup` (`CUSTODY_HOLDER_MISMATCH`) بل يصل السائق بنقل عهدة رسمي `POST /v1/tickets/{ticketId}/custody-transfers` (DEC-187)، وهذا النقل يضبط `key_picked_up_at` لمهمة الإحضار المفتوحة حين يصل المفتاح إلى مكلّفها — الحالي، أو السائق الذي ينقل إليه النقلُ المهمة — مع `task.key_picked_up` بـ`key_slot_id: null` (ما لم يكن الاستلام مضبوطًا قبله)، ويعيده `NULL` بلا حدث حين يغادر المكلّف قبل البدء، فلا يرد هذا الأمر بعده `KEY_NOT_PICKED_UP` (DEC-251).
 - الآثار: المهمة `in_progress` و`started_at`؛ الدورة `started_at` و`retrieved_by`؛ التذكرة `retrieving` و`retrieved_by` و`current_spot_id = NULL` و`current_spot_note = NULL`؛ تحرير `spot_allocations` بسبب `retrieval_start`؛ عهدة المركبة من `spot` إلى `driver` بسبب `retrieval_start`.
 - الأحداث: `task.started`، `ticket.retrieving`، `custody.changed`.
 - العميل: W-04. لا تُرسل W-04 قبل هذا الأمر أبدًا، ولو كانت المهمة محجوزة تالية.
@@ -334,21 +334,21 @@ stateDiagram-v2
 - العميل: W-06 (مرتبطة بـ`ticket.delivered` فقط لتفادي التكرار).
 
 **TT-19 · `ready` ← `delivered` — `POST /v1/tickets/{ticketId}/handover-exception`**
-- الحراس: التذكرة `ready`؛ سبب وأدلة تحقق هوية موثقة (الحقول في 07)؛ رقم اللوحة وحده لا يكفي (المعمارية §4ز)؛ قواعد الدفع كما في TT-18.
-- الآثار: كـTT-18 مع: الرمز الحي (إن وُجد، ولو مقفلًا) ← `revoked` بسبب `exception_handover`؛ `delivered_by` = المكلّف الذي سلّم فعليًا، والمشرف يظهر كمعتمد في الحدث والتدقيق؛ واقعة `manual_verification` (أو `lost_ticket` عند فقد الكعب الورقي) تُنشأ موثقة بحالة `resolved`.
-- الأحداث: `handover.exception_approved`، `handover.completed`، `ticket.delivered`، `task.completed`، `custody.changed` ×2، `incident.opened`، `incident.resolved`.
+- الحراس: التذكرة `ready`؛ سبب وأدلة تحقق هوية موثقة (الحقول في 07)؛ رقم اللوحة وحده لا يكفي (المعمارية §4ز)؛ بوابة الدفع بوابة TT-18 بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210): `due` بلا `payment` ← `PAYMENT_PENDING`، ومع `payment` قواعد 13 §5.2 على `payment.*` (`PAYMENT_AMOUNT_MISMATCH`، `PAYMENT_METHOD_NOT_ALLOWED`)؛ `collected` مع `payment` ← `PAYMENT_ALREADY_RECORDED`؛ `not_required` أو `waived` مع `payment` ← `VALIDATION_FAILED` (`not_applicable`)؛ و`payment.collected_by` مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4، وإلا `VALIDATION_FAILED` بـ`not_eligible`)؛ ويُقفل الحفل `FOR SHARE` (L2) حين تكون التذكرة `due` أو يُرسل `payment`.
+- الآثار: كـTT-18 مع: الرمز الحي (إن وُجد، ولو مقفلًا) ← `revoked` بسبب `exception_handover`؛ `delivered_by` = المكلّف الذي سلّم فعليًا، والمشرف يظهر كمعتمد في الحدث والتدقيق؛ واقعة `manual_verification` (أو `lost_ticket` عند فقد الكعب الورقي) تُنشأ موثقة بحالة `resolved` (`auto_created: true`)؛ والتحصيل المضمّن يُسجَّل بـ`collected_by` من الجسم و`source = exception` فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22).
+- الأحداث: `handover.exception_approved`، `handover.completed`، `ticket.delivered`، `task.completed`، `custody.changed` ×2، `incident.opened`، `incident.resolved`، و`payment.recorded` عند التحصيل.
 - العميل: W-06.
 
 **TT-20 · `ready` ← `reparking` — `POST /v1/tickets/{ticketId}/repark`**
-- الحراس: التذكرة `ready`؛ سبب إلزامي؛ حائز المركبة سائق (وإلا نقل عهدة رسمي أولًا، `CUSTODY_HOLDER_MISMATCH`).
-- الآثار بالترتيب: مهمة `retrieve` ← `canceled` (`cancel_reason = repark_customer_absent`)؛ الدورة مغلقة `outcome = reparked` (`reparked_at`)؛ الرمز الحي ← `revoked` بسبب `reparked`؛ إنشاء مهمة `repark` بحالة `in_progress` لحائز المركبة؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ واقعة `customer_absent` موثقة؛ حل `ready_not_collected`. السائق يبقى مشغولًا، وتاليته (إن وُجدت) تبقى محجوزة.
-- الأحداث: `ticket.reparking` (`cause = customer_absent`)، `task.canceled`، `task.created`.
+- الحراس: التذكرة `ready` ومهمة الإحضار `in_progress`؛ سبب إلزامي؛ المركبة والمفتاح مع سائق المهمة الجارية (نقل العهدة الرسمي ينقل المهمة معهما)، وإلا `CUSTODY_HOLDER_MISMATCH` (`subject`، `current_holder_type`) دون أثر (DEC-226).
+- الآثار بالترتيب: مهمة `retrieve` ← `canceled` (`cancel_reason = repark_customer_absent`)؛ الدورة مغلقة `outcome = reparked` (`reparked_at`) بأزمنتها؛ الرمز الحي ← `revoked` بسبب `reparked`؛ إنشاء مهمة `repark` بحالة `in_progress` لحائز المركبة؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ واقعة `customer_absent` محلولة فورًا بشدة `low` (`incident.opened` ثم `incident.resolved` بـ`auto_created: true`) عبر الخطاف `IncidentRecorder` (DEC-222)؛ حل `ready_not_collected` و`handover_code_locked` للدورة. السائق يبقى مشغولًا، وتاليته (إن وُجدت) تبقى محجوزة.
+- الأحداث: `ticket.reparking` (`cause = customer_absent`)، `task.canceled`، `task.created`، `incident.opened`، `incident.resolved`.
 - العميل: W-08 (DEC-42: يُرسل هنا فقط، حيث تُغلق الدورة `reparked`).
 - إلغاء الطلب بعد بدء الحركة يمر عبر TT-20b لا عبر هذا الأمر.
 
 **TT-20b · `retrieving` أو `ready` ← `reparking` — `POST /v1/retrieval-cycles/{cycleId}/cancel` (المشرف، DEC-30)**
-- الحراس: مشرف بنطاق الموقع؛ سبب إلزامي؛ الدورة مفتوحة؛ حائز المركبة سائق.
-- الآثار: مهمة `retrieve` ← `canceled` (`cancel_reason = supervisor_cancel`)؛ الدورة مغلقة `outcome = canceled` (`canceled_at`، `canceled_by`، `cancel_reason`)؛ الرمز الحي (إن وُجد) ← `revoked` بسبب `canceled`؛ إنشاء مهمة `repark` بحالة `in_progress` للسائق نفسه؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ حل `ready_not_collected` إن وُجد. السائق لا يعود متاحًا ولا تُمحى العهدة حتى «إتمام الصف» (TT-21)، فيتحقق AC-11.
+- الحراس: مشرف بنطاق الموقع؛ سبب إلزامي؛ الدورة مفتوحة؛ المركبة والمفتاح مع سائق المهمة الجارية، وإلا `CUSTODY_HOLDER_MISMATCH` دون أثر (DEC-226).
+- الآثار: مهمة `retrieve` ← `canceled` (`cancel_reason = supervisor_cancel`)؛ الدورة مغلقة `outcome = canceled` (`canceled_at`، `canceled_by`، `cancel_reason`)؛ الرمز الحي (إن وُجد) ← `revoked` بسبب `canceled` مع مسح نسخته المشفرة؛ إنشاء مهمة `repark` بحالة `in_progress` للسائق نفسه؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ لا حدث عهدة و`available_since` يبقى `NULL`؛ حل `ready_not_collected` و`handover_code_locked` للدورة إن وُجدا. السائق لا يعود متاحًا ولا تُمحى العهدة حتى «إتمام الصف» (TT-21)، فيتحقق AC-11.
 - الأحداث: `ticket.retrieval_canceled`، `ticket.reparking` (`cause = supervisor_cancel`)، `task.canceled`، `task.created`.
 - العميل: W-07 فقط (لا W-08، DEC-42).
 
@@ -358,8 +358,9 @@ stateDiagram-v2
 **TT-22 · أي حالة مفتوحة ← `parked` أو `delivered` أو `voided` — `POST /v1/tickets/{ticketId}/manual-reconcile`**
 - الاستخدام: بعد انقطاع كلي (سجل ورقي مرقّم) أو لتصحيح تسجيل مكرر. سبب ودليل إلزاميان (رقم السجل الورقي أو التذكرة المكررة).
 - الآثار: إغلاق المهام المفتوحة `canceled` (`cancel_reason` يذكر المطابقة اليدوية)، إغلاق الدورة المفتوحة (`delivered` أو `canceled`)، سحب الجولات (`task_canceled`)، إبطال الرموز، ضبط التخصيصات والعهدة حسب الهدف (`custody_events` بسبب `manual_reconcile`؛ إن جُهل الحائز يُستخدم `unknown`)، وتحرير السائقين المعنيين (TT-11 أو متاح).
-- الأحداث: `ticket.manually_reconciled` (البيانات: `target_status`، `paper_log_ref`) بدل أحداث الحالة العادية (لا `ticket.parked` ولا `ticket.delivered` ولا `ticket.voided`)، و`custody.changed`، و`task.canceled` للمهام المغلقة، و`payment.recorded` عند تسجيل تحصيل موثق. **لا مستهلك لواتساب أو Push لهذا الحدث** ولا رسالة للعميل: لا تُعاد الأوامر المؤجلة ولا تُرسل حالات قديمة (المعمارية §14).
-- الدفع لا يُختلق: يُسجّل فقط تحصيل فعلي موثق (الحقل `payment` في الطلب، أو أمر الدفع أو الإعفاء)، وإلا تُفتح له واقعة.
+- الأحداث: `ticket.manually_reconciled` (البيانات: `target_status`، `paper_log_ref`، `manual: true`) بدل أحداث الحالة العادية (لا `ticket.parked` ولا `ticket.delivered` ولا `ticket.voided`)، و`custody.changed`، و`task.canceled` للمهام المغلقة، و`payment.recorded` عند تسجيل تحصيل موثق. **لا مستهلك لواتساب أو Push لهذا الحدث** ولا رسالة للعميل: لا تُعاد الأوامر المؤجلة ولا تُرسل حالات قديمة (المعمارية §14).
+- الدفع لا يُختلق (DEC-252، 13 §8.5 يتقدم على «تفتح له واقعة»): يُسجّل فقط تحصيل فعلي موثق (الحقل `payment` بـ`collected_by`، أو أمر الدفع أو الإعفاء السابق)؛ المطابقة إلى `delivered` لتذكرة `due` دونه ← `PAYMENT_PENDING`؛ `payment` لـ`delivered` ولتذكرة `due` فقط (`VALIDATION_FAILED` بـ`not_applicable`) مع `PAYMENT_ALREADY_RECORDED` وقواعد 13 §5؛ والتحصيل المسجل يمنع `voided` (`INVALID_STATE_TRANSITION` بـ`reason = payment_recorded`)؛ و`payment.recorded` بـ`source = reconcile` مع صف تدقيق ثانٍ `payment.record`.
+- التفاصيل (DEC-253): من أي حالة مفتوحة ومنها `parked` ← `parked` للتصحيح (الموقف والخانة نفساهما يبقيان مخصصين)، والنهائية ← `INVALID_STATE_TRANSITION` (`reason = ticket_closed`)؛ الموقف والملاحظة والخانة لـ`parked` فقط (موقف أو ملاحظة ← حائز `spot`، ودونهما `unknown`؛ خانة ← `key_slot`، وإلا `unknown`)؛ `delivered_by` = مكلّف مهمة الإحضار، وإلا `retrieved_by` أو `accepted_by` للدورة، وإلا الفاعل؛ `parked_by` = مكلّف مهمة الصف أو إعادة الصف المفتوحة؛ سائق الحركة الملغاة يُسوّى (ترقية أو متاح)، والمهمة التالية المحجوزة الملغاة تترك سائقها على حركته (`driver.availability_changed` فقط)؛ الطلب المبكر المعلّق يُسقط ولا يُعاد تشغيله؛ رموز التسليم الحية `canceled` مع مسح نسختها المشفرة، ورموز الربط والإجراء تُبطل لـ`voided` فقط؛ إشعارات واتساب المعلّقة للتذكرة (بلا محاولة جارية) تُتخطى `superseded` مع رسائلها في الطابور؛ تُحل التنبيهات الحية للحالة السابقة (ويبقى `inspection_incomplete` لـ`parked`)؛ التذكرة الورقية بلا رقم كعب إلى `voided` فقط؛ `incident_id` من موقع التذكرة وليس لتذكرة أخرى؛ وملاحظة أحداث العهدة = `paper_log_ref`.
 
 ### 2.4 أوامر لا تغيّر حالة التذكرة
 
@@ -368,18 +369,18 @@ stateDiagram-v2
 | `PATCH /v1/tickets/{ticketId}/intake` | `ticket.intake` (منشئ التذكرة) | `received` (كل حقول المسودة)؛ أو `parking` للحقلين `channel = paper` و`paper_serial` فقط ما دامت التذكرة غير مربوطة (DEC-40، §2.6) | تحديث حقول المسودة؛ `expected_version` إلزامي؛ التحويل للورقي: `wa_link_status = none`، `link_version + 1`، إبطال رمز الربط الحي (`channel_paper`)، `ticket.wa_link_changed` |
 | `POST /v1/tickets/{ticketId}/media` و`POST /v1/media/{mediaId}/complete` | `ticket.intake` (منشئ التذكرة، والإتمام لرافع الصورة) | الطلب: `received` أو `parking` (في `parking` لإكمال رفع صور التُقطت أثناء الاستلام)؛ الإتمام: أي حالة، فالرفع أُذن به عند إصدار الرابط ومدته تحد النافذة (DEC-104) | `media_assets`، وعند الإتمام سطر `ticket_events` من النوع `ticket.photo_uploaded` بلا حدث نطاقي (DEC-95)؛ قد ينقل `inspection_status` من `incomplete` إلى `complete` مع `ticket.inspection_completed` (§6.3) |
 | `POST /v1/tickets/{ticketId}/whatsapp-link` (مباشر) | `wa.link` | أي حالة مفتوحة | موافقة `verbal_staff_confirmed`، `link_version + 1` (الإرسال اليدوي أو إعادة الربط تبطل أزرار W-01 السابقة)، `wa_link_status = pending_send`، W-01 |
-| `POST /v1/tickets/{ticketId}/whatsapp-link` (QR) | `wa.link` | `received` أو `parking` أو `parked` | إبطال أي رمز ربط حي سابق ثم `link_codes` جديد `active` |
+| `POST /v1/tickets/{ticketId}/whatsapp-link` (QR) | `wa.link` | `received` أو `parking` أو `parked`، والربط `none` أو `failed` أو `opted_out` أو `pending_send` (DEC-196) | إبطال أي رمز ربط حي سابق (`regenerated`) ثم `link_codes` جديد `active`؛ لا تغيير في التذكرة ولا إصدارها |
 | `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` | `wa.link` | رمز ربط `pending_confirmation` | تطابق: موافقة `customer_initiated` + `linked` (+ `link_version + 1` عند إعادة الربط) + W-01؛ عدم تطابق: إبطال الرمز وعودة `none` (§6.2) |
-| `PATCH /v1/tickets/{ticketId}/customer-phone` | `ticket.change_phone` | أي حالة مفتوحة | `link_version + 1`، إبطال كل `action_tokens` للتذكرة، `pending_send` + W-01 للرقم الجديد، سبب وتدقيق |
-| `POST /v1/tickets/{ticketId}/reveal-phone` | `ticket.reveal_phone` | أي حالة | تدقيق فقط (`audit_log` بالسبب) |
-| `POST /v1/tickets/{ticketId}/inspection-exception` | `ticket.inspection_exception` | مفتوحة و`inspection_status = incomplete` | `exception_approved`، حل التنبيه |
+| `PATCH /v1/tickets/{ticketId}/customer-phone` | `ticket.change_phone` | أي حالة مفتوحة عدا `received` (تُعدَّل المسودة بـ`PATCH .../intake`)، ولغير الورقية (DEC-211) | `link_version + 1`، إبطال كل `action_tokens` للتذكرة ورموز الربط الحية (`linked_direct`، DEC-201)، `pending_send` + W-01 للرقم الجديد، سبب وتدقيق |
+| `POST /v1/tickets/{ticketId}/reveal-phone` | `ticket.reveal_phone` | أي حالة | تدقيق فقط (`audit_log` بالسبب)؛ الحد في الساعة من صفوف التدقيق (DEC-248) |
+| `POST /v1/tickets/{ticketId}/inspection-exception` | `ticket.inspection_exception` | مفتوحة و`inspection_status = incomplete` (وإلا `INVALID_STATE_TRANSITION` بـ`inspection_not_incomplete`، والنهائية بـ`ticket_closed`، DEC-249) | `exception_approved`، حل التنبيه آليًا، `missing_photos_count` في الحدث |
 | `POST /v1/tasks/{taskId}/key-pickup` | `task.execute` | المهمة `accepted` | تحرير `key_slot_allocations` بسبب `key_pickup`، عهدة المفتاح من `key_slot` إلى `driver`، `key_picked_up_at`، `current_key_slot_id = NULL`؛ خانة لا تطابق موضع المفتاح، أو مفتاح بلا خانة حائزه `unknown`، ← `CUSTODY_HOLDER_MISMATCH` (DEC-187) |
 | `POST /v1/tasks/{taskId}/release-custody` | `task.release_custody` | المهمة `accepted` و`key_picked_up_at` مضبوط | عهدة المفتاح من `driver` إلى `key_slot` بسبب `withdrawal_release`، تخصيص خانة (نفسها إن كانت شاغرة)، `key_picked_up_at = NULL`؛ لا يحرر السائق (المهمة تبقى `accepted` له) |
 | `POST /v1/tickets/{ticketId}/handover-code/resend` | `handover.resend_code` | `ready` | إبطال الرمز الحي (`resend`) وإصدار بديل + W-05 (§5.1) |
 | `POST /v1/tickets/{ticketId}/payments` | `payment.record` | `ready` (أو ضمن TT-18) | `payments` و`payment_status = collected` |
 | `POST /v1/tickets/{ticketId}/payment-waiver` | `payment.waive` | `payment_status = due` | `waived` بسبب |
 | `POST /v1/payments/{paymentId}/reverse` | `payment.reverse` | تحصيل `recorded` | `reversed` و`payment_status = due` (§6.1) |
-| `POST /v1/tickets/{ticketId}/custody-transfers` | `ticket.custody_transfer` | أي حالة مفتوحة | عهدة بسبب `official_transfer`. إن كانت للتذكرة مهمة `accepted` أو `in_progress` وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (`task.reassigned`، `trigger = custody_transfer`) بشرط ألا تكون لديه مهمة حركة نشطة (`MOVEMENT_IN_PROGRESS`)، ويُسوّى السابق (TT-11 أو متاح) تحت قفل المجموعة (L1) مع تمريرة توزيع؛ الأحداث `custody.changed` و`task.reassigned` ثم `task.promoted` أو `driver.availability_changed` للسابق |
+| `POST /v1/tickets/{ticketId}/custody-transfers` | `ticket.custody_transfer` | أي حالة مفتوحة؛ الأهداف في DEC-250 (لا `customer`؛ المركبة `parked` إلى `spot` أو `unknown` فقط؛ السائق الحائز في مناوبة `on_duty` بالمجموعة) | عهدة بسبب `official_transfer` (السبب `note` للحدث). إن كانت للتذكرة مهمة `accepted` أو `in_progress` وانتقلت العهدة (مركبة أو مفتاح) لسائق آخر: المهمة تنتقل إليه بنفس حالتها (`task.reassigned`، `trigger = custody_transfer`، مع `from_status` و`target = driver`) بشرط ألا تكون لديه مهمة حركة نشطة (`MOVEMENT_IN_PROGRESS`)، فيغادر التوفر وتُسحب عروضه الفردية الحية، ويُسوّى السابق (TT-11 أو متاح) تحت قفل المجموعة (L1، يؤخذ دائمًا) مع تمريرة توزيع؛ ومهمة صف المسودة تتبع أيضًا ويبقى الاستلام للمنشئ. وصول المفتاح إلى مكلّف إحضار `accepted` (الحالي، أو من تنتقل إليه المهمة بالنقل نفسه) يضبط `key_picked_up_at` مع `task.key_picked_up` بـ`key_slot_id: null` ما لم يكن مضبوطًا قبله، وخروجه من المكلّف قبل البدء يعيده `NULL` بلا حدث (DEC-187، DEC-251)؛ الأحداث `custody.changed` و`task.reassigned` (و`task.key_picked_up` عند الاستلام) ثم `task.promoted` أو `driver.availability_changed` للسابق |
 
 ### 2.5 أثر ضغط «طلب السيارة» حسب حالة التذكرة
 
@@ -611,10 +612,10 @@ stateDiagram-v2
 القواعد:
 
 1. الإصدار في TT-17: 6 أرقام عشوائية آمنة؛ `code_hash = HMAC-SHA256(CODE_PEPPER, cycle_id || ':' || code)`؛ `code_ciphertext` بتشفير AES-GCM؛ `expires_at = now() + handover.code_ttl_min`؛ `max_attempts = handover.max_attempts`. رمز حي واحد لكل دورة (`uq_claim_codes_live`).
-2. التحقق: مقارنة هاش بزمن ثابت. الخطأ يزيد `attempts` في معاملة الأمر نفسها ويلتزم مع رد الخطأ المحفوظ (TT-18)؛ عند البلوغ `locked_at = now()` وتنبيه `handover_code_locked` وحدث `handover.code_locked`.
+2. التحقق: مقارنة هاش بزمن ثابت. الخطأ يزيد `attempts` في معاملة الأمر نفسها ويلتزم مع رد الخطأ المحفوظ (TT-18)؛ عند بلوغ `max_attempts` صف الرمز (لحظة الإصدار) `locked_at = now()` وتنبيه `handover_code_locked` وحدث `handover.code_locked`. ترتيب الرفض (DEC-206): المستهلك `HANDOVER_CODE_CONSUMED`، ثم المقفل `HANDOVER_CODE_LOCKED` (ولو بعد تنظيف انتهائه)، ثم المنتهي أو المنظَّف `HANDOVER_CODE_EXPIRED`؛ ودورة بلا رمز ← `VALIDATION_FAILED` (`verification.method`، `not_applicable`).
 3. الإرسال: مهمة `job.wa_send` لـW-05 تقرأ `claim_codes.code_ciphertext` وتفك تشفيره في الذاكرة لحظة بناء الطلب وترسل؛ بعد قبول المزود تُمسح النسخة المشفرة، ويحفظ `whatsapp_messages.body_redacted` مع الرمز مقنّعًا. لا يمر الرمز عبر `outbox_events` إطلاقًا (DEC-38).
-4. إعادة الإرسال (`POST /v1/tickets/{ticketId}/handover-code/resend`): للمكلّف أو المشرف ما دام `resend_no < handover.max_resends` (وإلا `RESEND_LIMIT_REACHED`)؛ الرمز الحي يُبطل (`resend`) ويصدر بديل بـ`resend_no + 1` ومحاولات جديدة. إن كان الرمز `locked` فإعادة الإرسال للمشرف فقط (المكلّف يحصل على `HANDOVER_CODE_LOCKED`).
-5. الإبطال: `reparked` (TT-20)، `canceled` (إلغاء المشرف بعد الحركة TT-20b أو مطابقة)، `exception_handover` (TT-19)، `expired_cleanup` (`job.claim_code_expire` بعد `expires_at`، مع مسح النسخة المشفرة).
+4. إعادة الإرسال (`POST /v1/tickets/{ticketId}/handover-code/resend`): للمكلّف أو المشرف ما دام `resend_no < handover.max_resends` (وإلا `RESEND_LIMIT_REACHED` بـ`max_resends`)؛ الرمز الحي يُبطل (`resend`) ويصدر بديل بـ`resend_no + 1` ومحاولات جديدة، ودورة بلا رمز تأخذ أول رمز لها (`resend_no = 0`). إن كان الرمز `locked` فإعادة الإرسال للمشرف فقط (المكلّف يحصل على `HANDOVER_CODE_LOCKED` ولو بعد تنظيف الرمز). ترتيب الفحوص (DEC-207): `HANDOVER_NOT_READY` ← `NOT_TASK_ASSIGNEE` ← `WA_CUSTOMER_OPTED_OUT` ← `WA_NOT_LINKED`، وW-05 غير المعتمد يُرفض فقط والنافذة 24 ساعة مغلقة (الملف 12 §8.4).
+5. الإبطال: `reparked` (TT-20)، `canceled` (إلغاء المشرف بعد الحركة TT-20b أو مطابقة)، `exception_handover` (TT-19)، `expired_cleanup` (`job.claim_code_expire` بعد `expires_at`، مع مسح النسخة المشفرة؛ ويبطل الرمز المقفل أيضًا ويبقى `locked_at`، DEC-207).
 6. الرمز لا يُعرض للسائق في أي رد أو حدث أو سجل، ولا يُعاد ضمن W-09.
 
 ### 5.2 رمز الربط `link_codes`
@@ -636,8 +637,8 @@ stateDiagram-v2
 1. الإصدار: `code` من 6 خانات بأبجدية واضحة بلا I وO و0 و1 (`^[A-HJ-NP-Z2-9]{6}$`)، `expires_at = now() + link.qr_ttl_min`، رمز حي واحد للتذكرة وللقيمة.
 2. QR يفتح محادثة رقم مصاف برسالة جاهزة تحتوي الرمز؛ **مسح QR وحده ليس إرسالًا**؛ لا شيء يتغير حتى تصل رسالة فعلية.
 3. وصول رسالة نصية تحتوي رمزًا حيًا: الرمز `pending_confirmation`، حفظ `inbound_message_id` و`inbound_wa_id` و`inbound_phone_e164`، رد W-11، وWS `ticket.updated` للسائق (D-07: «هل هذا العميل أمامك؟»).
-4. التأكيد بالمطابقة: الرمز `consumed`، `confirmed_by`، موافقة `customer_initiated` بدليل الرسالة، `wa_link_status = linked`، وإرسال W-01. الرفض: الرمز `revoked` ويعود `wa_link_status` إلى `none` ويمكن إصدار رمز جديد.
-5. رسالة برمز منتهٍ أو غير معروف: لا ربط؛ رد W-11 بصيغة «انتهى الرمز، اطلب رمزًا جديدًا من السائق».
+4. التأكيد بالمطابقة: الرمز `consumed`، `confirmed_by`، موافقة `customer_initiated` بدليل الرسالة (`captured_by` = المؤكِّد)، `wa_link_status = linked`، وإرسال W-01؛ والمرسل غير عميل التذكرة الحالي يصير عميلها: تُبطل موافقات السابق لهذه التذكرة (`staff`) ورموز الإجراء ويزيد `link_version` (DEC-199). الرفض: الرمز `revoked` ويعود `wa_link_status` إلى `none` ويمكن إصدار رمز جديد؛ وكذلك انتهاء رمز `pending_confirmation`، ولو كان الربط قبل رسالة QR `failed` أو `opted_out` (DEC-200).
+5. رسالة برمز منتهٍ (ولو لم يعلّمه مؤقته بعد) أو غير معروف: لا ربط؛ رد W-11 بصيغة «انتهى الرمز، اطلب رمزًا جديدًا من السائق». ورسالة رمز لتذكرة رُبطت في الأثناء تبطل الرمز (`linked_direct`) وترد W-11 «غير صالح» (DEC-197).
 
 ### 5.3 رمز الإجراء `action_tokens`
 
@@ -676,6 +677,8 @@ stateDiagram-v2
   linked --> failed: فشل لاحق لرسالة W-01
   failed --> pending_send: رقم مصحح أو إعادة محاولة
   failed --> pending_confirmation: ربط QR
+  pending_send --> pending_confirmation: ربط QR (DEC-196)
+  opted_out --> pending_confirmation: ربط QR برسالة العميل (DEC-196)
   linked --> pending_send: تغيير الجوال
   none --> opted_out: عميل أوقف الرسائل
   pending_send --> opted_out: إيقاف
@@ -686,7 +689,8 @@ stateDiagram-v2
 
 - «قبول المزود» = رد ناجح من واجهة الإرسال بمعرّف رسالة (`whatsapp_messages.status = sent`).
 - `failed` يظهر للسائق في D-07 وللمشرف في S-02 مع تنبيه `wa_send_failed`؛ البديل QR أو الورق.
-- `opted_out` يسري على كل التذاكر المفتوحة للعميل (`wa.customer_opted_out` ← `ticket.wa_link_changed` لكل تذكرة). ضغط العميل «طلب السيارة» بعد الإيقاف يستأنف الموافقة لهذه التذكرة (`customer_initiated`، ويُمسح `wa_opted_out_at`، وتعود `linked`) ثم يُعالج الطلب ورسائله عادة (الملف 12)؛ رموز الإجراء لا تُبطل بالإيقاف (§5.3).
+- `opted_out` يسري على كل التذاكر المفتوحة للعميل (`wa.customer_opted_out` ← `ticket.wa_link_changed` لكل تذكرة). ضغط العميل «طلب السيارة» بعد الإيقاف يستأنف الموافقة لهذه التذكرة (`customer_initiated`، ويُمسح `wa_opted_out_at`، وتعود `linked`) ثم يُعالج الطلب ورسائله عادة (الملف 12)؛ وتبقى تذاكره المفتوحة الأخرى `opted_out` حتى يُعاد ربطها (DEC-205)؛ رموز الإجراء لا تُبطل بالإيقاف (§5.3).
+- إصدار رمز QR يجوز من `none` أو `failed` أو `opted_out` أو `pending_send`، ولا يغيّر التذكرة ولا إصدارها؛ رسالة العميل بالرمز هي التي تنقلها إلى `pending_confirmation` وترفع إصدارها (DEC-196).
 
 ### 6.3 حالة الفحص `tickets.inspection_status`
 
@@ -787,19 +791,24 @@ stateDiagram-v2
 | `next_task_waiting_long`، `idle_driver_while_next_waiting` | ترقية المهمة أو سحبها أو إلغاؤها |
 | `ready_not_collected` | التسليم أو إعادة الصف أو إلغاء الطلب |
 | `inspection_incomplete` | `complete` أو `exception_approved` |
-| `draft_abandoned` | خروج المسودة من `received` بالإرسال أو الإلغاء (DEC-174)؛ ويرفعه `SystemMonitor` لمسودة أقدم من `intake.draft_abandoned_alert_min`، بلا نوع مهمة |
+| `draft_abandoned` | خروج المسودة من `received` بالإرسال أو الإلغاء (DEC-174)؛ ويرفعه `SystemMonitor` كل دورة لمسودة أقدم من `intake.draft_abandoned_alert_min` من `tickets.created_at`، مرة واحدة دون استبدال تنبيه حي، بلا نوع مهمة (DEC-254) |
 | `handover_code_locked` | التسليم أو إعادة الإرسال بمشرف أو الاستثناء |
 | `wa_channel_down` | عودة القناة `healthy` |
 | `transfer_blocked` | اكتمال النقل أو إلغاؤه |
 | `driver_connection_lost_with_custody` | عودة الاتصال `online` أو زوال العهدة |
 | `task_stuck` | تقدم المهمة أو إغلاقها (بدء، جاهزية، تسليم، إتمام صف، إلغاء، سحب) |
 | `wa_webhook_silent` | وصول طلب Webhook جديد |
-| `wa_send_failed`، `push_failed_repeatedly` | حل يدوي، أو نجاح لاحق للكيان نفسه |
+| `wa_send_failed`، `push_failed_repeatedly` | حل يدوي، أو نجاح لاحق للكيان نفسه؛ و`wa_send_failed:{ticket}:*` بإغلاق التذكرة (`ticket.delivered`، `ticket.voided`، `ticket.manually_reconciled` إلى `delivered` أو `voided`، DEC-236) |
 | `outbox_lag` | عودة التأخر تحت `ops.outbox_lag_alert_s` لمدة دقيقتين مع عدم وجود صفوف `dead` (الملف 14 §8) |
+
+الحل الآلي يجريه في العامل مُسقِط `AlertAutoResolver` يقرأ أحداث النطاق ويحل التنبيهات المرفوعة قبل الحدث أو معه فقط، ويبقى المنتجون الذين يحلون داخل معاملتهم على ذلك (الحل متكرر الأثر بلا ضرر)؛ و`driver_connection_lost_with_custody` يحله `custody.changed` حين يزول ما بعهدة السائق، وعودة الاتصال يحلها `job.heartbeat_sweep` (DEC-236).
 
 ### 6.11 الوقائع `incidents.status`
 
 `open` ← `in_review` ← `resolved` ← `closed`، مع `open` ← `resolved` مباشرة و`resolved` ← `in_review` لإعادة الفتح. `resolved` يشترط `resolution` و`resolved_at` (قيد المخطط). `closed` نهائية. الأوامر: `POST /v1/incidents` و`PATCH /v1/incidents/{incidentId}`، أو إنشاء نظامي موثق (TT-19، TT-20، عكس دفع بعد التسليم).
+
+- `PATCH` (DEC-239): حدث واحد لكل تغيير (`incident.resolved` حين تصير محلولة، وإلا `incident.updated` بـ`changed`)؛ الحل يتطلب `resolution` (`VALIDATION_FAILED`، وكذلك مسحه عن محلولة)؛ إعادة الفتح تمسح `resolution` و`resolved_by` و`resolved_at` ويحفظها التدقيق؛ أي أمر على `closed` ← `INVALID_STATE_TRANSITION` (`reason = incident_closed`)؛ `owner_id` موظف نشط بنطاق الموقع (غير معروف ← `RESOURCE_NOT_FOUND`، وغير مؤهل ← `VALIDATION_FAILED` بـ`not_eligible`)؛ و`PATCH` بلا تغيير لا يرفع `version` ولا يصدر حدثًا ويُدقَّق `noop`.
+- الإنشاء النظامي عبر `openIncident()` في وحدة الوقائع: `opened_by` هو المستخدم صاحب الأمر، ومع `resolution` تُنشأ محلولة بـ`incident.opened` ثم `incident.resolved` (DEC-240).
 
 ### 6.12 صندوق الأحداث `outbox_events.status`
 
@@ -813,9 +822,11 @@ stateDiagram-v2
   processing --> failed: خطأ دائم
   processing --> dead: استنفاد المحاولات
   pending --> canceled: إلغاء مؤقت لم يعد له معنى
+  failed --> pending: إعادة إدارية (retry)
+  dead --> pending: إعادة إدارية (retry)
+  failed --> canceled: إعادة لمهمة قديمة أو مكررة (DEC-150)
+  dead --> canceled: إعادة لمهمة قديمة أو مكررة (DEC-150)
   done --> [*]
-  failed --> [*]
-  dead --> [*]
   canceled --> [*]
 ```
 
@@ -823,7 +834,7 @@ stateDiagram-v2
 - التأجير: `status = processing`، `locked_by`، `locked_until = now() + مدة`، `attempts + 1`. انتهاء `locked_until` دون إنهاء يجعله قابلًا للالتقاط من عامل آخر.
 - الإعادة: `available_at = now() + تأخير أسي محدود`؛ عند `attempts >= max_attempts` ← `dead` مع تنبيه للإدارة. `failed` للخطأ الدائم (مثل قالب غير معتمد). `canceled` لمؤقت أُلغي صراحةً (مثل `offer_expire:<offer_id>` بعد القبول) — إلغاء اختياري لأن إعادة التحقق تضمن الأمان.
 - `dedupe_key` فريد ما دام الحدث `pending` أو `processing`.
-- `POST /v1/admin/outbox/{outboxId}/retry` يعيد `failed` أو `dead` إلى `pending` بقرار إداري مُدقّق؛ عدا صف `job.*` تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، فيُغلق `canceled` بالسبب في `last_error` دون إعادة تشغيل (DEC-150).
+- `failed` و`dead` ليستا نهائيتين: `POST /v1/admin/outbox/{outboxId}/retry` يعيد `failed` أو `dead` إلى `pending` بقرار إداري مُدقّق؛ عدا صف `job.*` تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، فيُغلق `canceled` بالسبب في `last_error` دون إعادة تشغيل (DEC-150).
 
 ---
 
@@ -956,7 +967,8 @@ interface TicketRetrievalRequested {
 interface TicketRetrievalRequestedEarly {   // من زر واتساب فقط (DEC-25)؛ لا حقول موظف
   ticket: TicketRef; pending_retrieval_at: ISODateTime; request_source: 'whatsapp';
   requested_by_customer_id: UUID | null;
-  parking_task_assignee_id: UUID | null;
+  parking_task_assignee_id: UUID | null;            // مكلّف مهمة الصف أو إعادة الصف المفتوحة (DEC-204)
+  status_at_request: 'received' | 'parking' | 'reparking';   // DEC-227؛ الضغطة المكررة (already_pending) لا تصدره
 }
 interface TicketAssigned {
   ticket: TicketRef; cycle_id: UUID; task_id: UUID; assignee_id: UUID;
@@ -985,14 +997,15 @@ interface TicketVoided { ticket: TicketRef; voided_by: UUID; reason: string; via
 interface TicketCustomerPhoneChanged { ticket: TicketRef; changed_by: UUID; reason: string; link_version: number }
 interface TicketWaLinkChanged {
   ticket: TicketRef; from: WaLinkStatus; to: WaLinkStatus;
-  method: 'direct' | 'qr' | 'phone_change' | 'opt_out' | 'button_resume' | 'provider_error' | 'provider_accepted' | 'qr_rejected' | 'channel_paper';   // button_resume: ضغط «طلب السيارة» بعد الإيقاف يستأنف الموافقة (الملف 12 §7.6)
+  method: 'direct' | 'qr' | 'phone_change' | 'opt_out' | 'button_resume' | 'provider_error' | 'provider_accepted' | 'qr_rejected' | 'channel_paper';   // button_resume: ضغط «طلب السيارة» بعد الإيقاف يستأنف الموافقة (الملف 12 §7.6)؛ انتهاء رمز QR معلّق يُبلَّغ بـqr (DEC-200)
   link_version: number; notification_id: UUID | null;
 }
 interface TicketInspectionCompleted { ticket: TicketRef; media_id: UUID }   // آخر صورة إلزامية اكتمل رفعها
-interface TicketInspectionExceptionApproved { ticket: TicketRef; approved_by: UUID; reason: string }
+interface TicketInspectionExceptionApproved { ticket: TicketRef; approved_by: UUID; reason: string; missing_photos_count: number }   // DEC-249
 interface TicketManuallyReconciled {
   ticket: TicketRef; previous_status: TicketStatus; target_status: 'parked' | 'delivered' | 'voided';
   reconciled_by: UUID; reason: string; paper_log_ref: string;
+  manual: true;                     // سطره في الخط الزمني data.manual = true (DEC-253)
 }
 ```
 
@@ -1040,9 +1053,10 @@ interface TaskWithdrawn {
 }
 interface TaskReassigned {
   task_id: UUID; ticket_id: UUID; from_assignee_id: UUID | null; to_assignee_id: UUID;
+  from_status: TaskStatus; target: 'driver';                  // للتحليل (DEC-215)
   result_status: 'accepted' | 'assigned_waiting' | 'in_progress';
   reason: string; priority_override: boolean; trigger: 'reassign' | 'custody_transfer';
-}
+}   // الإسناد لسائق يصدر معه ticket.assigned أو ticket.assigned_waiting بـvia = supervisor، ولا task.claimed (DEC-215)
 interface TaskEscalated { task_id: UUID; ticket_id: UUID; queued_at: ISODateTime; waited_s: number; on_duty_count: number }
 ```
 
@@ -1120,8 +1134,11 @@ interface CustodyChanged {
   reason: CustodyReason; task_id: UUID | null;
 }
 interface HandoverCodeIssued { ticket_id: UUID; cycle_id: UUID; claim_code_id: UUID; expires_at: ISODateTime; resend_no: number }
-interface HandoverCodeAttemptFailed { ticket_id: UUID; claim_code_id: UUID; attempts: number; attempts_left: number }
-interface HandoverCodeLocked { ticket_id: UUID; claim_code_id: UUID }
+interface HandoverCodeAttemptFailed {   // للرمز ولكعب الورق (DEC-176، DEC-206)
+  ticket_id: UUID; cycle_id: UUID; method: 'code' | 'paper_stub'; claim_code_id: UUID | null;
+  attempts: number; attempts_left: number;
+}
+interface HandoverCodeLocked { ticket_id: UUID; cycle_id: UUID; method: 'code' | 'paper_stub'; claim_code_id: UUID | null }
 interface HandoverCompleted { ticket_id: UUID; cycle_id: UUID; method: HandoverMethod; delivered_by: UUID; approved_by: UUID | null }
 interface HandoverExceptionApproved { ticket_id: UUID; cycle_id: UUID; approved_by: UUID; reason: string; incident_id: UUID }
 ```
@@ -1133,12 +1150,28 @@ interface HandoverExceptionApproved { ticket_id: UUID; cycle_id: UUID; approved_
 | `payment.recorded` | `POST /v1/tickets/{ticketId}/payments`، أو تحصيل مضمّن في TT-18 أو TT-19 أو TT-22 | المشرفون ← `ticket.updated` | — |
 | `payment.reversed` | `POST /v1/payments/{paymentId}/reverse` | المشرفون | واقعة `payment_discrepancy` إن كانت التذكرة مُسلّمة |
 | `payment.waived` | `POST /v1/tickets/{ticketId}/payment-waiver` | المشرفون | — |
+| `cash.handover_recorded` | `POST /v1/cash-handovers` | — | واقعة `payment_discrepancy` للحفل إن كان الفرق غير صفري (DEC-284) |
 
 ```ts
-interface PaymentRecorded { payment_id: UUID; ticket_id: UUID; method: 'cash' | 'pos'; amount_halalas: Halalas; collected_by: UUID }
-interface PaymentReversed { payment_id: UUID; ticket_id: UUID; reversed_by: UUID; reason: string; ticket_delivered: boolean; incident_id: UUID | null }
-interface PaymentWaived { ticket_id: UUID; waived_by: UUID; reason: string }
+// DEC-285: الحمولات كما يصدرها الخادم (13 §14)
+interface PaymentRecorded {
+  ticket_id: UUID; payment_id: UUID; cycle_id: UUID | null; method: 'cash' | 'pos'; amount_halalas: Halalas;
+  collected_by: UUID; source: 'separate' | 'handover' | 'exception' | 'reconcile' | 'replacement';
+  replaces_payment_id?: UUID;                          // للبديل وحده
+}
+interface PaymentReversed {
+  payment_id: UUID; ticket_id: UUID; method: 'cash' | 'pos'; amount_halalas: Halalas; reversed_by: UUID; reason: string;
+  with_replacement: boolean; replacement_payment_id: UUID | null; after_cash_handover: boolean;
+  ticket_delivered: boolean; incident_id: UUID | null;
+}
+interface PaymentWaived { ticket_id: UUID; amount_halalas: Halalas; waived_by: UUID; reason: string }
+interface CashHandoverRecorded {
+  cash_handover_id: UUID; event_id: UUID; driver_id: UUID; received_by: UUID; amount_halalas: Halalas;
+  expected_halalas: Halalas; difference_halalas: number; linked_payments_count: number; incident_id: UUID | null;
+}
 ```
+
+صف التدقيق `payment.record` يكتب `after.ticket_payment_status` (13 §5.5)؛ والواقعة التلقائية تصدر `incident.opened` بـ`auto_created: true` (DEC-284).
 
 ### 8.8 التنبيهات والوقائع
 
@@ -1147,7 +1180,7 @@ interface PaymentWaived { ticket_id: UUID; waived_by: UUID; reason: string }
 | `alert.raised` | أي رفع تنبيه (§6.10) | `venue:{venueId}:supervisors` ← `alert.raised` (صوت `escalation` للحرجة)؛ وللأنواع التي تمس أكثر من موقع (`wa_channel_down`، `outbox_lag`، `wa_webhook_silent`، `transfer_blocked`؛ صف لكل موقع متأثر، DEC-46) `org:{orgId}:admins` أيضًا | `escalation` للحرجة |
 | `alert.acknowledged` | الإقرار | المشرفون ← `alert.updated` | — |
 | `alert.resolved` | الحل اليدوي أو الآلي | المشرفون ← `alert.updated` | — |
-| `incident.opened` | `POST /v1/incidents` أو إنشاء نظامي | المشرفون ← `incident.updated`، و`ticket.updated` إن ارتبطت بتذكرة | — |
+| `incident.opened` | `POST /v1/incidents` أو إنشاء نظامي | المشرفون ← `incident.updated` (ينشره مخطِّط الإشعارات بقراءة طازجة مع `cause`، DEC-272)، و`ticket.updated` للمشرفين وحدهم إن ارتبطت بتذكرة (DEC-266) | — |
 | `incident.updated` | `PATCH /v1/incidents/{incidentId}` | كذلك | — |
 | `incident.resolved` | الحل | كذلك | — |
 
@@ -1163,17 +1196,17 @@ interface IncidentChanged {
 }   // incident.opened و incident.updated و incident.resolved
 ```
 
-توضيح: أحداث الوقائع الثلاثة تصل المشرفين عبر حدث WS `incident.updated` (canon §7.3، الحمولة `Incident` في 07) فتتحدث S-12؛ والمرتبطة بتذكرة تطلق أيضًا `ticket.updated` لتحديث سجلها في S-03.
+توضيح: أحداث الوقائع الثلاثة تصل المشرفين عبر حدث WS `incident.updated` (canon §7.3، الحمولة `Incident` + `cause` في 07) فتتحدث S-12؛ والمرتبطة بتذكرة تطلق أيضًا `ticket.updated` للمشرفين وحدهم لتحديث سجلها في S-03. وحدة الوقائع تصدر الأحداث ولا تنشر شيئًا؛ ينشر الرسالتين مخطِّط الاتصال الفوري للإشعارات (DEC-238، DEC-272).
 
 ### 8.9 الحفل والوردية
 
 | الحدث | المنتج | WS |
 |---|---|---|
-| `event.opened` | فتح أو إعادة فتح | المشرفون + `pool:{poolId}:drivers` ← `sync.required` (`scope = events`) |
+| `event.opened` | فتح أو إعادة فتح | مشرفو الموقع + `pool:{poolId}:drivers` لمجموعة الحفل ← `sync.required` (`reason = event_status_changed`، `scope = events`، `event_id`، `dispatch_pool_id`) |
 | `event.closing_started` | بدء الإغلاق | كذلك |
 | `event.closed` | الإغلاق | كذلك |
-| `shift.opened` | فتح الوردية | `pool:{poolId}:drivers` ← `sync.required` (`scope = home`) |
-| `shift.closed` | إغلاق الوردية | كذلك + `driver.state_changed` للمناوبات المنتهية |
+| `shift.opened` | فتح الوردية | مشرفو الموقع + `pool:{poolId}:drivers` + غرف `user:` للسائقين ذوي التعيين النشط في الموقع (غرفة المجموعة فارغة عند الفتح؛ D-03 ينتظر الوردية) ← `sync.required` (`reason = shift_status_changed`، `scope = home`، `shift_id`، `dispatch_pool_id`) (DEC-267) |
+| `shift.closed` | إغلاق الوردية | مشرفو الموقع + `pool:{poolId}:drivers` + غرف `user:` للمناوبات المنتهية (تغادر مقابسهم غرفة المجموعة فورًا) ← `sync.required` كذلك + `driver.state_changed` للمناوبات المنتهية |
 
 ```ts
 interface VenueEventStatusChanged { event_id: UUID; status: 'open' | 'closing' | 'closed'; by: UUID; reopened?: boolean }
@@ -1187,7 +1220,7 @@ interface ShiftStatusChanged { shift_id: UUID; dispatch_pool_id: UUID; status: '
 | `wa.inbound_received` | `job.wa_process_inbound` لكل رسالة واردة جديدة | تحديث `customers.last_inbound_at` و`wa_id`؛ التحليل |
 | `wa.button_pressed` | نفسه لرسالة زر | تنفيذ TT-06/TT-07 أو رد W-09/W-10 |
 | `wa.message_status_changed` | `job.wa_process_inbound` لتحديث حالة، أو `job.wa_send` | WS `ticket.updated` (سجل الرسائل في S-03)؛ `wa_send_failed` عند الفشل؛ `ticket.wa_link_changed` لـW-01 |
-| `wa.channel_health_changed` | مراقبة القناة في العامل | WS `channel.status` لكل الموظفين؛ رفع/حل `wa_channel_down` |
+| `wa.channel_health_changed` | مراقبة القناة في العامل | WS `channel.status` لكل الموظفين (ينشره مخطِّط الإشعارات وحده، DEC-268)؛ رفع/حل `wa_channel_down` |
 | `wa.customer_opted_out` | رسالة إيقاف من العميل | `ticket.wa_link_changed` لكل تذكرة مفتوحة؛ W-12 |
 
 ```ts
@@ -1198,9 +1231,10 @@ interface WaInboundReceived {
   matched: 'action_token' | 'link_code' | 'opt_out' | 'none'; link_result: 'received' | 'invalid' | null;   // DEC-141
 }
 interface WaButtonPressed {
-  whatsapp_message_id: UUID; ticket_id: UUID | null; customer_id: UUID | null;
+  whatsapp_message_id: UUID; ticket_id: UUID | null;   // null عند sender_mismatch؛ صف التدقيق يحفظ action_token_id وticket_id (DEC-202)
+  customer_id: UUID | null;
   outcome: 'request_created' | 'early_request' | 'status_reply' | 'rejected';
-  reject_reason?: 'unknown_token' | 'sender_mismatch' | 'stale_link_version' | 'expired' | 'revoked';
+  reject_reason?: 'unknown_token' | 'sender_mismatch' | 'stale_link_version' | 'expired' | 'revoked';   // revoked أيضًا لتذكرة voided ولرسالة W-01 مقتبسة لتذكرة أخرى (دليل إيجابي فقط، DEC-202)
 }
 interface WaMessageStatusChanged {
   whatsapp_message_id: UUID; notification_id: UUID | null; ticket_id: UUID | null; purpose: string | null;
@@ -1217,26 +1251,26 @@ interface WaCustomerOptedOut {
 
 ### 8.11 المهام المؤجلة `job.*`
 
-قاعدة إعادة التحقق: كل مهمة تحمل `aggregate_version` أو **علامة حلقة** (`queued_at`، `assigned_waiting_at`، `ready_at`)؛ عند التنفيذ يأخذ المعالج الأقفال اللازمة ويعيد فحص الشرط؛ إن تغيّر الكيان تنتهي المهمة `done` بلا أثر وتُحسب في مقياس «مهام قديمة».
+قاعدة إعادة التحقق: كل مهمة تحمل `aggregate_version` أو **علامة حلقة** (`queued_at`، `assigned_waiting_at`، `ready_at`)، ومؤقتات الجولات تحمل `offer_id` (DEC-228)؛ عند التنفيذ يأخذ المعالج الأقفال اللازمة ويعيد فحص الشرط؛ إن تغيّر الكيان أو قدمت العلامة تنتهي المهمة `done` بلا أثر وتُحسب في مقياس «مهام قديمة».
 
 | النوع | يُجدول | الحمولة | الشرط عند التنفيذ | الأثر |
 |---|---|---|---|---|
 | `job.dispatch_pass` | عند تغيّر عرض/طلب خارج معاملة تحمل القفل؛ `dedupe_key = dispatch_pass:<pool_id>` | `{ dispatch_pool_id, reason }` | المجموعة نشطة | تمريرة توزيع (10) |
 | `job.dispatch_sweep` | دوري كل 5 ثوانٍ (DEC-08)؛ `dedupe_key = dispatch_sweep`؛ سلسلة عامة واحدة تجدول تاليتها، ويبذرها عند الحاجة كل أمر ينشئ طلبًا أو جولة (DEC-179) | `{}` | — | تمريرة لكل مجموعة لديها طلب مفتوح أو جولة حية أو متجاوزة لمهلتها أو مهمة تالية، كل مجموعة في معاملتها الخاصة؛ إصلاح `claimed_elsewhere` |
-| `job.offer_remind` | `reminder_at` لجولة `single` | `{ offer_id, task_id, aggregate_version }` | الجولة `active` و`reminded_at` فارغ | OF-02، `offer.reminded` |
-| `job.offer_expire` | `expires_at + dispatch.accept_grace_ms` (DEC-47) | `{ offer_id, task_id }` | الجولة `active` و`expires_at + dispatch.accept_grace_ms <= now()` | OF-04، RT-04، تدوير المستلم (`available_since = now()` إن بقي متاحًا، DEC-26)، تمريرة توزيع |
-| `job.broadcast_remind` | `reminder_at` لجولة `broadcast` | `{ offer_id, task_id }` | الجولة `active` و`reminded_at` فارغ | تذكير واحد للمهمة المفتوحة فقط |
+| `job.offer_remind` | `reminder_at` لجولة `single`؛ `dedupe_key = offer_remind:<offer_id>` | `{ offer_id, task_id, pool_id }` مع `aggregate_version` الجولة على الصف (DEC-228) | الجولة `active` و`single` وبالإصدار نفسه و`reminded_at` فارغ؛ ويصل المستلم ما دام `available` | OF-02، `offer.reminded` |
+| `job.offer_expire` | `expires_at + dispatch.accept_grace_ms` (DEC-47)؛ `dedupe_key = offer_expire:<offer_id>` | `{ offer_id, task_id, pool_id }` مع `aggregate_version` الجولة (DEC-228) | الجولة `active` وبالإصدار نفسه و`expires_at + dispatch.accept_grace_ms <= now()`؛ المؤقت المبكر يعيد جدولة نفسه | OF-04، RT-04، تدوير المستلم (`available_since = now()` إن بقي متاحًا، DEC-26)، تمريرة توزيع |
+| `job.broadcast_remind` | `reminder_at` لجولة `broadcast`؛ `dedupe_key = broadcast_remind:<offer_id>` | `{ offer_id, task_id, pool_id }` (DEC-228) | الجولة `active` و`broadcast` و`reminded_at` فارغ | تذكير واحد للمستلمين المناوبين القادرين على التصرف الآن فقط |
 | `job.escalate_unaccepted` | `queued_at + dispatch.unaccepted_escalation_s` | `{ task_id, cycle_id, queued_at }` | المهمة `queued`/`offered`/`broadcast` و`queued_at` مطابق و`escalated_at` فارغ | `escalated_at`، `task.escalated`، تنبيه `request_unaccepted`؛ الطلب لا يسقط |
 | `job.next_task_wait_check` | `assigned_waiting_at + dispatch.next_task_wait_alert_s` | `{ task_id, assigned_waiting_at }` | ما زالت `assigned_waiting` بنفس العلامة | تنبيه `next_task_waiting_long` دون إعادة إسناد |
-| `job.ready_uncollected_check` | `ready_at + ready.uncollected_alert_min` | `{ ticket_id, cycle_id, ready_at }` | التذكرة `ready` بنفس الدورة والعلامة | تنبيه `ready_not_collected` |
+| `job.ready_uncollected_check` | `ready_at + ready.uncollected_alert_min`؛ `dedupe_key = ready_uncollected:{cycle_id}`، والكيان `retrieval_cycle` (DEC-255) | `{ ticket_id, cycle_id, ready_at }` | التذكرة `ready` بنفس الدورة والعلامة؛ الانطلاق المبكر (انحراف ساعة أو عتبة رُفعت) يعيد الجدولة | تنبيه `ready_not_collected`؛ صف تدقيق بفاعل النظام |
 | `job.claim_code_expire` | `expires_at` للرمز | `{ claim_code_id }` | الرمز غير مستهلك ولا مبطل | `revoked_at` (`expired_cleanup`)، مسح النسخة المشفرة |
 | `job.link_code_expire` | `expires_at` لرمز الربط | `{ link_code_id }` | `active` أو `pending_confirmation` | ← `expired`؛ `wa_link_status` يعود `none` إن كان `pending_confirmation` |
 | `job.transfer_activate` | `scheduled_at`، ثم عند الحجب: لحظة انتهاء مهمة السائق أو تحرير عهدته | `{ transfer_id, aggregate_version }` | النقل `pending` أو `blocked` | §6.7 |
 | `job.wa_send` | يخطّطه `NotificationPlanner` داخل معاملة الأمر من أحداثها (DEC-41)؛ `ordering_key = 'wa:<ticket_id>'` | `{ notification_id }` ومعه حسب الغرض `cycle_id`، `claim_code_id`، `link_version`، `variant` (`status`/`inactive` لـW-09، `received`/`invalid` لـW-11)، `inbound_message_id`، `early` — معرّفات وأعلام فقط (`WaSendJobPayloadSchema`، DEC-133)؛ W-05 يقرأ الرمز من `claim_codes` | الإشعار `pending`؛ قاعدة التجاوز §6.9؛ موافقة سارية والعميل لم يوقف الرسائل؛ `link_version` مطابق؛ القناة غير `down` | إرسال، `whatsapp_messages`، `notification_attempts` |
 | `job.wa_process_inbound` | بعد حفظ الطلب الخام وإرسال 200 | `{ inbound_event_id }` | `whatsapp_inbound_events.status = pending` | تحليل الرسائل والحالات، أحداث §8.10 |
-| `job.push_send` | من حدث يطلق Push؛ بلا `ordering_key` (منع التكرار فقط) | `{ notification_id }` | الإشعار `pending`؛ لعروض المهام: الجولة ما زالت نشطة، وإلا يُرسل البديل الهادئ أو يُتجاوز | Web Push؛ اشتراك منتهٍ (410) يمسح حقول Push من الجهاز |
-| `job.ws_publish` | احتياطي فقط (DEC-48): حين يتعذر النشر داخل المعاملة (حمولة أكبر من حد NOTIFY أو نشر مؤجل)؛ الأصل `pg_notify` داخل المعاملة نفسها | `{ outbox_event_id, rooms }` | — | نشر عبر `pg_notify` لعمليات الـAPI؛ لا إعادة للعميل غير المتصل |
-| `job.heartbeat_sweep` | دوري كل `heartbeat.interval_s` | `{}` | — | `connection_state` من `last_heartbeat_at` حسب `heartbeat.uncertain_after_s` و`heartbeat.offline_after_s`؛ `driver.connection_changed` |
+| `job.push_send` | يخطّطه مخطِّط Push للموظفين داخل معاملة الحدث (14 §3، §6.1)؛ بلا `ordering_key` (منع التكرار فقط)؛ حتى 20 محاولة للصف (يشمل الانتظار) | `{ notification_id }` | الإشعار `pending`؛ الجهاز ما زال قابلًا للدفع بجلسة حية (وإلا `skipped` بـ`no_subscription`، DEC-256)؛ `offer` جولته الفردية نشطة غير منتهية، و`broadcast`/`reminder` جولة نشطة، و`reminder` بلا `seen_at` (وإلا `superseded`)، و`next_due` المهمة ما زالت حالية للسائق، و`escalation` التنبيه ما زال `open`، و`closed` الاستبدالي طلب جولته `sent` ولا جولة أحدث للجهاز (DEC-258)؛ الموعد النهائي لم يفت (DEC-261)؛ وإلا `skipped` بـ`stale` أو `superseded` | معاملة قصيرة تكتب المحاولة، ثم الإرسال خارج أي معاملة، ثم معاملة النتيجة (14 §6.6): 2xx ← `sent` وتصفير `push_failed_count` و`notified_push_at` (L7 قبل L9، DEC-273)؛ 404/410 ← `failed` ومسح حقول Push من الجهاز؛ 429/5xx/فشل نقل ← إعادة عند +2 و+5 و+15 ث بحد 4 محاولات (DEC-261)؛ الإخفاقات المتتالية ← `push_failed_repeatedly` (DEC-260) |
+| `job.ws_publish` | احتياطي فقط (DEC-48): حين يتعذر النشر داخل المعاملة (حمولة أكبر من حد NOTIFY)؛ الأصل `pg_notify` داخل المعاملة نفسها، وكل مخطِّط يقسم غرفه 60 لكل NOTIFY | `{ rooms, event, event_id, aggregate }` (معرّفات فقط) | — | الرسالة لا تُعاد بناؤها: `sync.required` (`reason: publish_overflow`، `cause: job.ws_publish`) للغرف نفسها في دفعات من 60 عبر `pg_notify`، فيعيد العملاء جلب لقطتهم (§9.4، DEC-269)؛ لا إعادة للعميل غير المتصل |
+| `job.heartbeat_sweep` | دوري كل `heartbeat.interval_s`؛ سلسلة عامة واحدة (`dedupe_key = heartbeat_sweep`) يبذرها بدء المناوبة (DEC-232) | `{}` | — | لكل مناوبة مفتوحة في معاملتها (L8 وحده، بلا رفع إصدار): `connection_state` من `last_heartbeat_at` (أو `started_at`) حسب `heartbeat.uncertain_after_s` و`heartbeat.offline_after_s`؛ `driver.connection_changed`؛ رفع/حل `driver_connection_lost_with_custody` (DEC-219) |
 | `job.retention_purge` | يومي عند `RETENTION_PURGE_CRON_UTC`: صف واحد لكل المؤسسات بمفتاح `retention:<date>`، تُعاد جدولته بعد كل تشغيل فعلي ويُنشئه المراقب إن غاب (DEC-161) | `{ scope: 'all' }` (واختياريًا `org_id`، `dry_run`، `reschedule`) | سياسة `retention.*` لكل مؤسسة | حذف/إخفاء وفق 06؛ لا يمس بيانات واقعة مفتوحة |
 | `job.export_generate` | `POST /v1/exports` | `{ export_id }` | التصدير `pending` | ملف مؤقت، `ready` أو `failed` |
 
@@ -1263,17 +1297,17 @@ interface WaCustomerOptedOut {
 |---|---|---|---|
 | `task.offered` | `user:{recipientId}` | `OfferCard` (mode=single) | تعرض البطاقة، صوت `offer`، عداد من `expires_at` مقابل `server_time` |
 | `task.broadcast` | `user:{recipientId}` لكل مستلم | `OfferCard` (mode=broadcast، `eligible_as` خاص بكل سائق) | تعرض البطاقة إن كانت أقدم طلب قابل للقبول، صوت `broadcast` |
-| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by}` | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
-| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
+| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by: {id, full_name}}` — `offer_ids` الجولة المقبولة؛ يسبقه `task.updated` للفائز بإصدار المهمة نفسه فيتجاهل جهازه الحجز (DEC-220) | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
+| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
-| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task`؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
-| `ticket.updated` | المشرفون + السائق المعني (المكلّف/المنشئ أثناء التسجيل) | `TicketSummary` + `cause` (+ `wa_link_pending` للسائق في ربط QR) | تحدّث البطاقات والقوائم |
-| `driver.state_changed` | `user:{driverId}` + المشرفون | `DriverLive` | تحدّث شريط الحالة ولوحة السائقين |
+| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
+| `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265) | تحدّث البطاقات والقوائم |
+| `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |
 | `alert.updated` | نفس الغرف | `Alert` | يوقف صوت التصعيد عند الإقرار أو الحل |
-| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
-| `channel.status` | كل الغرف في المؤسسة | `{whatsapp: WaHealthStatus, changed_at}` | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
-| `sync.required` | `user:{userId}` | `{reason}` | تجلب `GET /v1/me/home` (السائق) أو `GET /v1/events/{eventId}/operations` (المشرف) |
+| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` + `cause` (`incident.opened` أو `incident.updated` أو `incident.resolved`) بقراءة طازجة؛ ينشره مخطِّط الإشعارات لا وحدة الوقائع (DEC-272) | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
+| `channel.status` | كل غرف الموظفين في المؤسسة: `org:{orgId}:admins` ومشرفو كل موقع وسائقو كل مجموعة | `{whatsapp: WaHealthStatus, changed_at}` + `cause` (`wa.channel_health_changed`) بـ`aggregate {type: whatsapp_channel, id, version: null}`؛ ناشر واحد هو مخطِّط الإشعارات (DEC-268) | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
+| `sync.required` | حسب `reason` (DEC-267): `duty_force_ended` أو `duty_ended` (`scope: home`) لغرفة السائق عند إنهاء مناوبته قسرًا أو ذاتيًا (لأجهزته الأخرى)، أما النقل والتعطيل فيكتفيان بـ`session.revoked` (DEC-221)؛ `shift_status_changed` (`scope: home`، `shift_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة المجموعة، ومعها عند الفتح غرف `user:` للسائقين ذوي التعيين النشط في الموقع وعند الإغلاق غرف المناوبات المنتهية؛ `event_status_changed` (`scope: events`، `event_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة مجموعة الحفل؛ `settings_changed` (`scope: me`) لكل مستخدم نشط عند تغيير `heartbeat.*`؛ `scope_changed` لغرفة المستخدم عند تغيير نطاقه؛ `publish_overflow` (`cause: job.ws_publish`) لغرف رسالة تعذر نشرها (DEC-269) | `{reason}` (+ `scope` و`cause` والمعرّفات أعلاه حين تنطبق) | تجلب `GET /v1/me/home` (السائق؛ و`scope: events` يحدّث `open_events` فيها، و`scope: me` يجلب `GET /v1/me`) أو `GET /v1/events/{eventId}/operations` (المشرف) |
 | `session.revoked` | `user:{userId}` | `{reason: SessionRevokedReason}` | تمسح البيانات المحلية وتعود لشاشة الدخول |
 
 
@@ -1300,7 +1334,7 @@ interface ClientOfferSeen { offer_id: UUID }   // يضبط offer_recipients.seen
 2. العميل يطلب لقطة كاملة فورًا: السائق `GET /v1/me/home`، والمشرف `GET /v1/events/{eventId}/operations`. اللقطة تتضمن `server_time` و`last_event_id` وكل ما تحتاجه الشاشة (الحالة، المهمة الحالية والتالية، أقدم عرض قابل للقبول، لافتة القناة).
 3. رسائل WS التي تصل أثناء جلب اللقطة تُخزن مؤقتًا وتُطبّق بعدها بقاعدة الإصدار (§9.2).
 4. لا تُنفذ أوامر قبل اكتمال المزامنة (المعمارية §7): أزرار القبول والتسليم معطلة حتى وصول اللقطة.
-5. `sync.required` يعني: أعد جلب اللقطة للنطاق المحدد. يُرسل عند تغيّر حالة الحفل أو الوردية، أو عند استعادة الخادم بعد انقطاع.
+5. `sync.required` يعني: أعد جلب اللقطة للنطاق المحدد (`scope`). يُرسل عند تغيّر حالة الحفل أو الوردية، وعند إنهاء المناوبة، وتغيير إعدادات النبض أو النطاق، وحين تتعذر رسالة أكبر من حد NOTIFY (`publish_overflow`)؛ قيم `reason` وغرفها في 07 §4.3 (DEC-267، DEC-269).
 6. `session.revoked` يعني: امسح البيانات المخزنة محليًا لهذا الحساب، أغلق الاتصال، وارجع إلى D-01 مع رسالة السبب (D-15).
 7. انقطاع نبضات القلب لأكثر من `heartbeat.uncertain_after_s` يظهر على الجهاز كـ«الاتصال غير مؤكد» وعند المشرف كذلك؛ البيانات المعروضة تُعلّم كقديمة ولا يُعرض «تم القبول» دون رد الخادم.
 8. لا إعادة تشغيل لأحداث فائتة: المصدر الوحيد بعد الانقطاع هو اللقطة. `last_event_id` للتشخيص فقط.

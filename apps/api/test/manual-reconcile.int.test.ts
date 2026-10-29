@@ -428,6 +428,7 @@ describe('manual reconcile after an outage', () => {
       {
         payment_id: p.id,
         ticket_id: a.ticketId,
+        cycle_id: a.cycleId, // 11 §8.7 PaymentRecorded, as the row (DEC-285)
         method: 'pos',
         amount_halalas: 2000,
         collected_by: U.DRV1,
@@ -441,6 +442,36 @@ describe('manual reconcile after an outage', () => {
       source: 'reconcile',
       ticket_id: a.ticketId,
     });
+  });
+
+  it('a collected ticket: PAYMENT_ALREADY_RECORDED with the recorded payment (13 §16), never voided; delivered without payment', async () => {
+    const r = await readyRetrieval(t, { eventId: EVT_R2 }); // per_vehicle 2000, DRV1 at the handover point
+    const paid = ok(
+      await t.command('post', `/v1/tickets/${r.ticketId}/payments`, {
+        as: r.driver,
+        body: { method: 'cash', amount_halalas: 2000 },
+      }),
+      201,
+    );
+    expect(
+      err(
+        await reconcile('SUP-R', r.ticketId, {
+          target_status: 'delivered',
+          payment: { method: 'cash', amount_halalas: 2000, collected_by: U.DRV1 },
+        }),
+        'PAYMENT_ALREADY_RECORDED',
+        409,
+      ),
+    ).toEqual({ payment_id: paid.payment.id, method: 'cash', collected_by: U.DRV1 });
+    expect(
+      err(await reconcile('SUP-R', r.ticketId, { target_status: 'voided' }), 'INVALID_STATE_TRANSITION', 409),
+    ).toMatchObject({ reason: 'payment_recorded' });
+    ok(await reconcile('SUP-R', r.ticketId, { target_status: 'delivered' }));
+    expect(await one(t.db, `SELECT status, payment_status FROM tickets WHERE id = $1`, [r.ticketId])).toEqual(
+      { status: 'delivered', payment_status: 'collected' },
+    );
+    expect(await rows(t.db, `SELECT id FROM payments WHERE ticket_id = $1`, [r.ticketId])).toHaveLength(1);
+    await expectConsistent(t.db);
   });
 
   it('refusals: occupied spot or slot, version, closed tickets, reason, evidence, scope, permissions', async () => {
