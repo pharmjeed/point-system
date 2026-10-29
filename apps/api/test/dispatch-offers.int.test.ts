@@ -524,6 +524,16 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     await t.db.transaction((tx) =>
       requestDispatchPass(tx, { id: POOL_R, org_id: SEED_IDS.org, venue_id: RMS }, 'requeued'),
     );
+    // 11 §8.11: payload {dispatch_pool_id, reason}, dedupe dispatch_pass:<pool_id>
+    expect(
+      await one(
+        t.db,
+        `SELECT payload, dedupe_key FROM outbox_events WHERE type = 'job.dispatch_pass' AND status = 'pending'`,
+      ),
+    ).toEqual({
+      payload: { dispatch_pool_id: POOL_R, reason: 'requeued' },
+      dedupe_key: `dispatch_pass:${POOL_R}`,
+    });
     await worker.drain();
     expect((await liveOffer(t.db, U.DRV2))?.task_id).toBe(r.task.id);
     // the sweep: pending, done after its interval, followed by a new pending one
@@ -541,5 +551,42 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     expect(after.filter((x) => x.status === 'done').length).toBeGreaterThanOrEqual(1);
     expect(after.filter((x) => x.status === 'pending').length).toBe(1);
     await expectConsistent(t.db);
+  });
+
+  it('11 §3.3 claimed_elsewhere: the sweep closes a live round whose task can no longer be offered (offer.revoked)', async () => {
+    await threeDrivers(t);
+    const r = await requested(t);
+    const offer = (await liveOffer(t.db, U.DRV3))!;
+    expect(offer.task_id).toBe(r.retrieveTaskId);
+    // an inconsistent state no command leaves: the task closed while its round stayed active
+    await t.db.query(
+      `UPDATE tasks SET status = 'canceled', canceled_at = $2, cancel_reason = 'supervisor_cancel' WHERE id = $1`,
+      [r.retrieveTaskId, t.clock.now()],
+    );
+    const revoked = async () =>
+      (await metrics.dispatchOffers.get()).values.find(
+        (v) => v.labels.mode === 'single' && v.labels.outcome === 'revoked',
+      )?.value ?? 0;
+    const before = await revoked();
+    t.clock.advanceSeconds(6); // the next job.dispatch_sweep (its offer_expire timer is not due yet)
+    await worker.drain();
+    expect(await one(t.db, `SELECT status, close_reason FROM task_offers WHERE id = $1`, [offer.id])).toEqual(
+      {
+        status: 'revoked',
+        close_reason: 'claimed_elsewhere',
+      },
+    );
+    expect(
+      (await outboxEvents(t.db, 'offer.revoked'))
+        .map((e) => e.payload.payload)
+        .filter((p) => p.offer_id === offer.id),
+    ).toEqual([
+      expect.objectContaining({
+        offer_id: offer.id,
+        task_id: r.retrieveTaskId,
+        close_reason: 'claimed_elsewhere',
+      }),
+    ]);
+    expect(await revoked()).toBe(before + 1);
   });
 });

@@ -1,6 +1,7 @@
 import { autoResolveAlerts, raiseAlert } from '../../../core/alerts/alerts.js';
 import { lockOffers, lockTasks } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
+import type { Logger } from '../../../core/logging/logger.js';
 import { metrics } from '../../../core/metrics/metrics.js';
 import type { EventActor } from '../../tickets-custody/index.js';
 import { idleCandidates, pickCandidate } from '../domain/driver-state.js';
@@ -33,6 +34,8 @@ export interface PassResult {
   offersCreated: number;
   broadcastsOpened: number;
   expired: number;
+  /** live rounds closed `claimed_elsewhere` because their task could no longer be offered (sweep only, 11 §3.3) */
+  orphansClosed?: number;
   /** the pass gate (test seam) skipped this pass */
   skipped?: boolean;
 }
@@ -184,12 +187,13 @@ export async function runDispatchPass(
   tx: Tx,
   poolId: string,
   reason: PassReason,
-  opts: { excludeUserIds?: readonly string[] } = {},
+  opts: { excludeUserIds?: readonly string[]; logger?: Logger } = {},
 ): Promise<PassResult> {
   if (gate && !gate(reason, poolId))
     return { reason, demand: 0, onDuty: 0, offersCreated: 0, broadcastsOpened: 0, expired: 0, skipped: true };
   const started = process.hrtime.bigint();
   const pool = await ensurePoolLocked(tx, poolId);
+  const lockWaitMs = Number(process.hrtime.bigint() - started) / 1e6;
   const cfg = await dispatchSettings(tx, pool.venue_id);
   const exclude = new Set(opts.excludeUserIds ?? []);
 
@@ -212,6 +216,9 @@ export async function runDispatchPass(
     );
     for (const o of overdue) if (await expireSingleRound(tx, o, pool.venue_id, cfg, null)) expired++;
   }
+  // A'. the sweep's defensive repair (11 §3.3 `claimed_elsewhere`): a live round whose task can no longer be offered
+  // is an inconsistent state no command should leave — closed, and logged as a monitoring error
+  const orphansClosed = reason === 'sweep' ? await closeOrphanRounds(tx, pool, opts.logger) : 0;
 
   // B. snapshot under the lock
   const demand = await lockOpenDemand(tx, poolId);
@@ -231,13 +238,14 @@ export async function runDispatchPass(
         open_requests: demand.length,
       },
     });
-    return finish(tx, pool, started, {
+    return finish(tx, pool, started, lockWaitMs, opts.logger, {
       reason,
       demand: demand.length,
       onDuty: 0,
       offersCreated: 0,
       broadcastsOpened: 0,
       expired,
+      orphansClosed,
     });
   }
   if (onDuty.length > 0)
@@ -282,22 +290,92 @@ export async function runDispatchPass(
 
   // E. advisory alerts (never reassign silently)
   await advisor(tx, { pool, idle, cfg });
-  return finish(tx, pool, started, {
+  return finish(tx, pool, started, lockWaitMs, opts.logger, {
     reason,
     demand: demand.length,
     onDuty: onDuty.length,
     offersCreated,
     broadcastsOpened,
     expired,
+    orphansClosed,
   });
 }
 
-async function finish(tx: Tx, pool: PoolRow, started: bigint, r: PassResult): Promise<PassResult> {
+/**
+ * 11 §3.3 `claimed_elsewhere`: the live rounds of the pool whose task is no longer `queued`, `offered` or
+ * `broadcast` are revoked with that reason (offer.revoked → ws offer.closed) and each logged as an error with the
+ * 10 §12.3 fields. The caller holds L1; tasks (L4) and offers (L7) are re-locked here (the L1 exception, canon §14ب).
+ */
+async function closeOrphanRounds(tx: Tx, pool: PoolRow, logger?: Logger): Promise<number> {
+  const orphans = await tx.rows<{ id: string; task_id: string; task_status: string }>(
+    `SELECT o.id, o.task_id, k.status AS task_status FROM task_offers o JOIN tasks k ON k.id = o.task_id
+      WHERE o.dispatch_pool_id = $1 AND o.status = 'active' AND k.status NOT IN ('queued','offered','broadcast')
+      ORDER BY o.task_id`,
+    [pool.id],
+  );
+  if (!orphans.length) return 0;
+  await lockTasks(
+    tx,
+    orphans.map((o) => o.task_id),
+  );
+  await lockOffers(
+    tx,
+    orphans.map((o) => o.id),
+  );
+  let closed = 0;
+  for (const o of orphans) {
+    const now = await tx.maybeOne<{ status: string }>(`SELECT status FROM tasks WHERE id = $1`, [o.task_id]);
+    if (!now || ['queued', 'offered', 'broadcast'].includes(now.status)) continue;
+    const revoked = await revokeRound(tx, o.id, pool.venue_id, 'claimed_elsewhere', SYSTEM);
+    if (!revoked) continue;
+    closed++;
+    logger?.error(
+      {
+        pool_id: pool.id,
+        venue_id: pool.venue_id,
+        offer_id: o.id,
+        task_id: o.task_id,
+        from_status: 'active',
+        to_status: 'revoked',
+        outcome: 'claimed_elsewhere',
+        task_status: now.status,
+      },
+      'dispatch sweep closed a live round whose task can no longer be offered',
+    );
+  }
+  return closed;
+}
+
+async function finish(
+  tx: Tx,
+  pool: PoolRow,
+  started: bigint,
+  lockWaitMs: number,
+  logger: Logger | undefined,
+  r: PassResult,
+): Promise<PassResult> {
   // descriptive counters: no version bump (10 §2.7)
   await tx.query(`UPDATE dispatch_pools SET last_pass_at = $2, pass_count = pass_count + 1 WHERE id = $1`, [
     pool.id,
     tx.now,
   ]);
-  metrics.dispatchPassDuration.observe({ reason: r.reason }, Number(process.hrtime.bigint() - started) / 1e9);
+  const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+  metrics.dispatchPassDuration.observe({ reason: r.reason }, seconds);
+  // 10 §12.3 fields (the passes of the worker's sweep carry a logger; a command's pass is in its command line)
+  logger?.debug(
+    {
+      pool_id: pool.id,
+      venue_id: pool.venue_id,
+      pass_reason: r.reason,
+      offers_created: r.offersCreated,
+      broadcasts_opened: r.broadcastsOpened,
+      expired: r.expired,
+      demand: r.demand,
+      on_duty: r.onDuty,
+      lock_wait_ms: Math.round(lockWaitMs * 10) / 10,
+      duration_ms: Math.round(seconds * 10_000) / 10,
+    },
+    'dispatch pass',
+  );
   return r;
 }

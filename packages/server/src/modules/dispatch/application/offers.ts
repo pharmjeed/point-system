@@ -32,7 +32,10 @@ export async function ensureDispatchSweep(tx: Tx, orgId: string): Promise<void> 
   });
 }
 
-/** A pass for a pool whose lock this transaction does not hold (10 §3: `dispatch_pass:<pool_id>`). */
+/**
+ * A pass for a pool whose lock this transaction does not hold (10 §3, 11 §8.11: `dispatch_pass:<pool_id>`, payload
+ * `{dispatch_pool_id, reason}`). No V1 command needs it: each holds the L1 lock of the pools it changes.
+ */
 export async function requestDispatchPass(
   tx: Tx,
   pool: { id: string; org_id: string; venue_id: string },
@@ -43,7 +46,7 @@ export async function requestDispatchPass(
     venueId: pool.venue_id,
     dedupeKey: `dispatch_pass:${pool.id}`,
     aggregate: { type: 'dispatch_pool', id: pool.id, version: null },
-    payload: { pool_id: pool.id, reason },
+    payload: { dispatch_pool_id: pool.id, reason },
   });
 }
 

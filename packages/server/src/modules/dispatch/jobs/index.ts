@@ -241,16 +241,26 @@ export const nextTaskWaitCheckHandler: JobHandler = {
   },
 };
 
-/** `job.dispatch_pass` for a pool a command could not lock itself (dedupe `dispatch_pass:<pool_id>`). */
+/**
+ * `job.dispatch_pass` for a pool a command could not lock itself (11 §8.11: payload `{dispatch_pool_id, reason}`,
+ * dedupe `dispatch_pass:<pool_id>`, guard «the pool is active»). Every command of V1 holds the L1 lock of the
+ * pools it changes and runs the pass inline (10 §4.1, DEC-08), so no command produces it today: the handler is
+ * the path 10 §8.2 keeps for one that cannot (`requestDispatchPass`).
+ */
 export const dispatchPassHandler: JobHandler = {
   type: 'job.dispatch_pass',
   mode: 'tx',
   async handle({ row, tx: maybeTx }) {
     const tx = requireTx(maybeTx);
-    const poolId = (row.payload?.pool_id as string | undefined) ?? row.aggregate_id;
+    const poolId =
+      (row.payload?.dispatch_pool_id as string | undefined) ??
+      (row.payload?.pool_id as string | undefined) ?? // rows written before 11 §8.11's name
+      row.aggregate_id;
     if (!poolId) return;
-    const exists = await tx.maybeOne(`SELECT 1 FROM dispatch_pools WHERE id = $1`, [poolId]);
-    if (!exists) return;
+    const active = await tx.maybeOne(`SELECT 1 FROM dispatch_pools WHERE id = $1 AND status = 'active'`, [
+      poolId,
+    ]);
+    if (!active) return;
     await ensurePoolLocked(tx, poolId);
     await runDispatchPass(
       tx,
@@ -281,7 +291,7 @@ export const dispatchSweepHandler: JobHandler = {
       try {
         await db.transaction(async (ptx) => {
           await ensurePoolLocked(ptx, p.id);
-          await runDispatchPass(ptx, p.id, 'sweep');
+          await runDispatchPass(ptx, p.id, 'sweep', { logger });
         });
       } catch (e) {
         logger.warn(
