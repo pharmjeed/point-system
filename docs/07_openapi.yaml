@@ -1640,9 +1640,9 @@ paths:
       summary: اعتماد استثناء الفحص الناقص
       tags: [Intake & Tickets]
       description: |-
-        الشروط: inspection_status=incomplete
+        الشروط: inspection_status=incomplete (وإلا INVALID_STATE_TRANSITION بـreason=inspection_not_incomplete)؛ التذكرة النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed، لا TICKET_CLOSED) (DEC-249)
 
-        الأثر: inspection_status=exception_approved
+        الأثر: inspection_status=exception_approved؛ حل inspection_incomplete آليًا (resolved_by فارغ)؛ الحمولة مع missing_photos_count؛ التدقيق missing_photos وself_approved (DEC-249)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1943,7 +1943,7 @@ paths:
       operationId: revealCustomerPhone
       summary: كشف جوال العميل كاملًا
       tags: [Intake & Tickets]
-      description: 'الأثر: audit_log(action=ticket.reveal_phone, reason) فقط'
+      description: 'الأثر: audit_log(action=ticket.reveal_phone, reason) فقط، والرد Cache-Control: private, no-store. الشروط (DEC-248): أي حالة للتذكرة؛ تذكرة بلا جوال (ورقية أو عميل بمعرّف BSUID فقط) ← RESOURCE_NOT_FOUND (resource=customer)؛ security.reveal_phone_per_hour يعد صفوف تدقيق ticket.reveal_phone للمستخدم في ساعة متحركة ← RATE_LIMITED (retry_after_s) مع Retry-After حتى يخرج أقدم كشف من النافذة، ولا يُحفظ 429 مع المفتاح؛ والرد المحفوظ مع المفتاح يحمل الرقم مقنّعًا فالإعادة ترد المقنّع'
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1990,7 +1990,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
@@ -2015,7 +2015,7 @@ paths:
       x-permission: ticket.reveal_phone
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [REASON_REQUIRED, TICKET_NOT_FOUND]
+      x-error-codes: [REASON_REQUIRED, RESOURCE_NOT_FOUND, TICKET_NOT_FOUND]
   /v1/tickets/{ticketId}:
     get:
       operationId: getTicket
@@ -2058,7 +2058,7 @@ paths:
       operationId: getTicketTimeline
       summary: السجل الزمني الكامل للتذكرة (S-03)
       tags: [Intake & Tickets]
-      description: السجل الزمني الكامل للتذكرة (S-03)
+      description: 'السجل الزمني الكامل للتذكرة (S-03)، الأقسام الأقدم أولًا. الموظفون في النطاق يرون كله؛ والسائق فقط مكلّفًا بالمهمة المفتوحة أو منشئًا أثناء الاستلام (وإلا TICKET_NOT_FOUND)، ثم خطواته وحدها بلا wa.* ولا وقائع، وحالة W-01 وW-05 بلا نص (DEC-246). لا SCOPE_VENUE_DENIED (DEC-191). النص الوارد يُخفى فيه كل 6 أرقام فأكثر وكل ما يشبه رمز الربط (DEC-247).'
       parameters:
       - $ref: '#/components/parameters/ticketId'
       responses:
@@ -3224,7 +3224,9 @@ paths:
       summary: نقل عهدة رسمي
       tags: [Retrieval & Handover]
       description: |-
-        توثيق تسليم مركبة أو مفتاح من حائزه الحالي (يستنتجه الخادم من التذكرة) إلى حائز جديد. إن كانت للتذكرة مهمة accepted أو in_progress وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (task.reassigned، trigger=custody_transfer) بشرط ألا تكون لديه حركة نشطة (MOVEMENT_IN_PROGRESS)، ويُسوّى السائق السابق (ترقية مهمته التالية أو يصبح متاحًا) مع تمريرة توزيع تحت قفل المجموعة (الملف 11 §2.4).
+        توثيق تسليم مركبة أو مفتاح من حائزه الحالي (يستنتجه الخادم من التذكرة) إلى حائز جديد. إن كانت للتذكرة مهمة accepted أو in_progress وانتقلت العهدة لسائق آخر: المهمة تنتقل إليه بنفس حالتها (task.reassigned، trigger=custody_transfer، مع from_status وtarget=driver) بشرط ألا تكون لديه حركة نشطة (MOVEMENT_IN_PROGRESS)، فيغادر التوفر وتُسحب عروضه الفردية الحية، ويُسوّى السائق السابق (ترقية مهمته التالية أو يصبح متاحًا) مع تمريرة توزيع تحت قفل المجموعة (الملف 11 §2.4، DEC-251). وصول المفتاح إلى مكلّف مهمة إحضار accepted يضبط key_picked_up_at (task.key_picked_up بـkey_slot_id=null) وخروجه منه قبل البدء يعيده null، فلا يرد start-retrieval بـKEY_NOT_PICKED_UP بعد مفتاح حائزه unknown وصل بهذا النقل (DEC-187، DEC-251).
+
+        الشروط (DEC-250): لا customer (VALIDATION_FAILED بـuse_handover) · المركبة إلى driver/spot/supervisor/unknown والمفتاح إلى driver/key_slot/supervisor/unknown (not_allowed_for_subject) · المركبة parked إلى spot أو unknown فقط (parked_vehicle_spot_or_unknown) · الحائز السائق نشط في مناوبة on_duty بمجموعة التذكرة (driver_not_on_duty، not_a_driver)، والمشرف نشط بنطاق الموقع · السبب note لحدث العهدة · قفل المجموعة دائمًا
 
         الأثر: custody_events(official_transfer) + حقول الحائز الحالي (+ نقل المهمة وتسوية السائق السابق عند الحاجة)
       parameters:
@@ -3292,7 +3294,7 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [CUSTODY_HOLDER_MISMATCH, KEY_SLOT_OCCUPIED, MOVEMENT_IN_PROGRESS, PARKING_SPOT_OCCUPIED, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND]
-      x-domain-events: [custody.changed, task.reassigned, driver.availability_changed]
+      x-domain-events: [custody.changed, task.reassigned, driver.availability_changed, task.key_picked_up, task.promoted, offer.revoked]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
   /v1/tickets/{ticketId}/manual-reconcile:
     post:
@@ -3302,7 +3304,9 @@ paths:
       description: |-
         بعد عودة النظام من تعطل كلي: يضبط الحالة النهائية من السجل الورقي المرقّم. لا تُشغّل أوامر مؤجلة ولا تُرسل رسائل عميل قديمة.
 
-        الأثر: حالة نهائية + custody_events(manual_reconcile) + ticket_events(data.manual=true) + كبت رسائل واتساب
+        الشروط: أي حالة مفتوحة ومنها parked ← parked للتصحيح؛ النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed)؛ الموقف والملاحظة والخانة لـparked فقط؛ الورقية بلا كعب إلى voided فقط؛ incident_id من موقع التذكرة وليس لتذكرة أخرى (DEC-253) · الدفع (DEC-252): delivered لتذكرة due يتطلب payment (بـcollected_by) أو إعفاءً سابقًا وإلا PAYMENT_PENDING؛ payment لـdelivered ولـdue فقط (not_applicable) وقواعد 13 §5؛ التحصيل المسجل يمنع voided (reason=payment_recorded)
+
+        الأثر: حالة نهائية + custody_events(manual_reconcile، note = paper_log_ref) + ticket_events(data.manual=true) + كبت رسائل واتساب (المعلّقة بلا محاولة جارية ← skipped superseded) + رموز التسليم الحية canceled مع مسح نسختها، ورموز الربط والإجراء لـvoided فقط + تسوية سائق الحركة الملغاة + إسقاط الطلب المبكر المعلّق + حل تنبيهات الحالة السابقة (DEC-253)؛ payment.recorded بـsource=reconcile مع تدقيق payment.record (DEC-252)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3371,10 +3375,10 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | VERSION_CONFLICT
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | VERSION_CONFLICT
         '422':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+          description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
         '428':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REQUIRED
@@ -3393,7 +3397,7 @@ paths:
       x-permission: ticket.manual_reconcile
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, KEY_SLOT_OCCUPIED, PARKING_SPOT_OCCUPIED, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, KEY_SLOT_OCCUPIED, PARKING_SPOT_OCCUPIED, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [ticket.manually_reconciled, custody.changed, task.canceled, payment.recorded]
       x-ws-events: [ticket.updated]
   /v1/tickets/{ticketId}/payments:
@@ -5544,7 +5548,7 @@ paths:
       operationId: getOperationsBoard
       summary: لوحة التشغيل الحية (S-02)
       tags: [Events & Shifts]
-      description: لقطة كاملة لمزامنة لوحة المشرف؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors.
+      description: 'لقطة كاملة لمزامنة لوحة المشرف (REPEATABLE READ ولحظة واحدة)؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors. الأقسام والمؤشرات في OperationsBoard (DEC-241…DEC-244).'
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -7005,7 +7009,7 @@ paths:
       operationId: listAlerts
       summary: تنبيهات المشرف
       tags: [Alerts & Incidents]
-      description: تنبيهات المشرف
+      description: 'تنبيهات المشرف، الأحدث أولًا (raised_at ثم id)؛ status يُقبل مكررًا أو مفصولًا بفواصل؛ دون venue_id كل مواقع نطاق المستدعي، وvenue_id خارجه ← SCOPE_VENUE_DENIED (DEC-235)'
       parameters:
       - name: venue_id
         in: query
@@ -7060,7 +7064,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '429':
           $ref: '#/components/responses/RateLimited'
           description: RATE_LIMITED
@@ -7073,13 +7077,13 @@ paths:
       x-permission: alert.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [SCOPE_VENUE_DENIED]
   /v1/alerts/{alertId}/acknowledge:
     post:
       operationId: acknowledgeAlert
       summary: إقرار تنبيه
       tags: [Alerts & Incidents]
-      description: 'الأثر: يوقف تكرار صوت التصعيد لهذا التنبيه'
+      description: 'الأثر: يوقف تكرار صوت التصعيد لهذا التنبيه؛ open ← acknowledged. لا عمود للملاحظة في alerts، فتُحفظ note في صف التدقيق (metadata.note) (DEC-234)'
       parameters:
       - $ref: '#/components/parameters/alertId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7142,7 +7146,7 @@ paths:
       operationId: resolveAlert
       summary: حل تنبيه
       tags: [Alerts & Incidents]
-      description: حل تنبيه
+      description: 'حل تنبيه: open أو acknowledged ← resolved، وnote تُحفظ في resolution_note (DEC-234)'
       parameters:
       - $ref: '#/components/parameters/alertId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7205,7 +7209,7 @@ paths:
       operationId: listIncidents
       summary: الوقائع
       tags: [Alerts & Incidents]
-      description: الوقائع
+      description: 'الوقائع، الأحدث أولًا (created_at ثم id)؛ status يُقبل مكررًا أو مفصولًا بفواصل؛ دون venue_id كل مواقع نطاق المستدعي، وvenue_id خارجه ← SCOPE_VENUE_DENIED (DEC-235)'
       parameters:
       - name: venue_id
         in: query
@@ -7266,7 +7270,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '429':
           $ref: '#/components/responses/RateLimited'
           description: RATE_LIMITED
@@ -7279,12 +7283,12 @@ paths:
       x-permission: incident.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [SCOPE_VENUE_DENIED]
     post:
       operationId: createIncident
       summary: فتح واقعة
       tags: [Alerts & Incidents]
-      description: 'الشروط: السائق: لتذاكر موقعه فقط'
+      description: 'الشروط: السائق: لتذاكر موقعه فقط — ticket_id إلزامي له (VALIDATION_FAILED: required_for_driver) لتذكرة مفتوحة (المغلقة ← TICKET_NOT_FOUND)؛ تذكرة أو حفل من موقع غير venue_id ← VALIDATION_FAILED (venue_mismatch أو ticket_event_mismatch)؛ حفل خارج النطاق ← RESOURCE_NOT_FOUND (resource=event)؛ event_id افتراضيًا حفل التذكرة (DEC-237). الأثر: incident.opened؛ وWS incident.updated (وticket.updated للمرتبطة) من مخطِّط الاتصال الفوري (DEC-238)'
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -7328,7 +7332,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
@@ -7353,9 +7357,9 @@ paths:
       x-permission: incident.create
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [SCOPE_VENUE_DENIED, TICKET_NOT_FOUND]
+      x-error-codes: [RESOURCE_NOT_FOUND, SCOPE_VENUE_DENIED, TICKET_NOT_FOUND]
       x-domain-events: [incident.opened]
-      x-ws-events: [alert.raised]
+      x-ws-events: [incident.updated, ticket.updated]
   /v1/incidents/{incidentId}:
     get:
       operationId: getIncident
@@ -7397,7 +7401,7 @@ paths:
       operationId: updateIncident
       summary: تحديث/حل واقعة
       tags: [Alerts & Incidents]
-      description: 'الشروط: resolved/closed يتطلب resolution'
+      description: 'الشروط: resolved/closed يتطلب resolution (VALIDATION_FAILED: resolution required، وكذلك مسحه عن محلولة)؛ closed نهائية (INVALID_STATE_TRANSITION: incident_closed)؛ owner_id موظف نشط بنطاق الموقع (غير معروف ← RESOURCE_NOT_FOUND بـresource=user، وغير مؤهل ← VALIDATION_FAILED: not_eligible). الأثر: حدث واحد لكل تغيير (incident.resolved حين تصير محلولة، وإلا incident.updated بـchanged)؛ إعادة الفتح resolved ← in_review تمسح resolution وresolved_by وresolved_at؛ PATCH بلا تغيير لا يرفع الإصدار ولا يصدر حدثًا ويُدقَّق noop (DEC-239)'
       parameters:
       - $ref: '#/components/parameters/incidentId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7467,8 +7471,9 @@ paths:
       x-permission: incident.manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [incident.updated, incident.resolved]
+      x-ws-events: [incident.updated, ticket.updated]
   /v1/reports/events/{eventId}/summary:
     get:
       operationId: getEventSummaryReport
@@ -10581,6 +10586,12 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ClaimCodeState'
           - type: 'null'
+        badges:
+          type: array
+          items:
+            type: string
+            enum: [not_collected, long_wait]
+          description: 'في لوحة التشغيل فقط: not_collected (جاهزة منذ ready.uncollected_alert_min أو أكثر)، long_wait (مهمة تالية محجوزة ≥ dispatch.next_task_wait_alert_s) (DEC-241)'
       required: [task, ticket]
       description: بطاقة مهمة السائق الحالية أو التالية (D-04 / D-10)
     TaskOffer:
@@ -11345,6 +11356,11 @@ components:
               format: date-time
             recipients:
               type: integer
+            recipient:
+              anyOf:
+              - $ref: '#/components/schemas/UserRef'
+              - type: 'null'
+              description: مستلم الجولة الفردية («معروض على {سائق}» في S-02)؛ null للبث (DEC-241)
         escalated_at:
           type: [string, 'null']
           format: date-time
@@ -11352,7 +11368,14 @@ components:
           anyOf:
           - $ref: '#/components/schemas/UserRef'
           - type: 'null'
+        badges:
+          type: array
+          items:
+            type: string
+            enum: [late, long_wait]
+          description: 'شارات S-02: late (تصعيد أو انتظار ≥ dispatch.unaccepted_escalation_s منذ queued_at)، long_wait (مهمة تالية محجوزة ≥ dispatch.next_task_wait_alert_s) (DEC-241)'
       required: [task_id, ticket, status, requested_at, waiting_seconds]
+      description: 'عنصر طابور لوحة التشغيل: ما لا يحركه أحد بعد — الطلب غير المقبول في v_pool_queue والمهام التالية المحجوزة (assigned_waiting)، الأقدم أولًا (DEC-241)'
     OperationsBoard:
       type: object
       properties:
@@ -11363,18 +11386,23 @@ components:
           properties:
             open_requests:
               type: integer
+              description: تذاكر الحفل requested أو assigned أو assigned_waiting أو retrieving
             oldest_wait_seconds:
               type: [integer, 'null']
+              description: من v_pool_queue وحده (15 §11.1، DEC-241)
             avg_accept_seconds_30m:
               type: [number, 'null']
+              description: KPI-01 (claimed_at − queued_at) لمهام الإحضار المحجوزة في آخر 30 دقيقة بدقة 0.1 ث؛ null دونها (DEC-242)
             drivers_available:
               type: integer
             drivers_busy:
               type: integer
+              description: intake_parking + retrieving + busy_with_next (DEC-242)
             drivers_on_break:
               type: integer
             drivers_on_duty:
               type: integer
+              description: كل مناوبة مفتوحة في مجموعة الحفل ومنها الاستراحة (DEC-242)
             vehicles_parked:
               type: integer
             ready_waiting:
@@ -11383,15 +11411,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QueueItem'
-          description: الأقدم أولًا (priority_at ثم seq)
+          description: 'ما لا يحركه أحد بعد: الطلب غير المقبول والمهام التالية المحجوزة، الأقدم أولًا (priority_at ثم seq) (DEC-241)'
         active_tasks:
           type: array
           items:
             $ref: '#/components/schemas/TaskCard'
+          description: المهام accepted وin_progress من كل نوع، مع badges
         next_tasks:
           type: array
           items:
             $ref: '#/components/schemas/TaskCard'
+          description: المهام assigned_waiting، مع badges
         drivers:
           type: array
           items:
@@ -11400,10 +11430,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Alert'
+          description: تنبيهات الموقع الحية التي event_id فيها فارغ أو هذا الحفل، الحرجة ثم التحذير ثم المعلومة ثم الأحدث (حتى 200) (DEC-243)
         failed_messages:
           type: array
           items:
             $ref: '#/components/schemas/WhatsAppMessage'
+          description: الصادرة failed للحفل في آخر 30 دقيقة (failed_at وإلا created_at)، حتى 100 (DEC-243)
         custody_issues:
           type: array
           items:
@@ -11418,8 +11450,11 @@ components:
               since:
                 type: string
                 format: date-time
+                description: آخر حدث عهدة لهذا العنصر
+          description: 'S-02 «العهدة»: مركبة أو مفتاح لتذكرة مفتوحة حائزه unknown أو supervisor، أو سائق خارج المناوبة أو اتصاله غير online، أو سائق بلا مهمة مفتوحة على التذكرة، أو منشئ مسودة تجاوزت intake.draft_abandoned_alert_min (DEC-244)'
         channel_health:
           $ref: '#/components/schemas/WaHealthStatus'
+          description: صحة القناة الفعالة، وdown دونها (DEC-243)
       required: [event, kpis, queue, active_tasks, next_tasks, drivers, alerts, failed_messages, custody_issues, channel_health]
     Reconciliation:
       type: object
@@ -12162,7 +12197,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Incident'
-      required: [ticket, events, custody, cycles, tasks, messages, payments, incidents]
+        media:
+          type: array
+          items:
+            allOf:
+            - $ref: '#/components/schemas/Media'
+            - type: object
+              properties:
+                read_url:
+                  anyOf:
+                  - $ref: '#/components/schemas/SignedUrl'
+                  - type: 'null'
+                  description: رابط عرض توقّعه وحدة الوسائط كما في GET /v1/media/{mediaId}/url (≤ 300 ث، يُسجَّل هناك)؛ null لصورة غير مكتملة أو لا يحق للقارئ فتحها
+          description: صور التذكرة (DEC-245)
+      required: [ticket, events, custody, cycles, tasks, messages, payments, incidents, media]
+      description: 'الأقسام الأقدم أولًا؛ أحداث العهدة في اللحظة نفسها تتبع أسطر خطها الزمني (DEC-245)؛ رؤية السائق مقيدة (DEC-246)'
     DriverStateResult:
       type: object
       properties:

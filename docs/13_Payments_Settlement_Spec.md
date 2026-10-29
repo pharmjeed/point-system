@@ -264,8 +264,8 @@ COMMIT;
 | 8.2 إلغاء طلب الإحضار ميدانيًا | لا تغيير |
 | 8.3 سحب المهمة أو إعادة إسنادها أو نقل السائق | لا تغيير على التذكرة. النقد يبقى منسوبًا إلى `collected_by` وبعهدته حتى تسليمه، ولو أكمل التسليمَ سائق آخر |
 | 8.4 التسليم الاستثنائي بالمشرف `POST /v1/tickets/{ticketId}/handover-exception` | إن كانت `due`: يجب أن يتضمن الجسم كائن `payment` مع الحقل الإضافي `collected_by` (الافتراضي: المكلّف بمهمة الإحضار؛ ويجوز أن يكون المشرف نفسه إن استلم المال)، أو أن يسبقه إعفاء؛ وإلا `PAYMENT_PENDING`. التدقيق: `handover.exception` ثم `payment.record` بفاعل المشرف و`metadata.collected_by` |
-| 8.5 المطابقة اليدوية بعد انقطاع `POST /v1/tickets/{ticketId}/manual-reconcile` إلى `delivered` | كالبند 8.4: كائن `payment` بـ`collected_by` المسجل في السجل الورقي، أو إعفاء سابق؛ وإلا `PAYMENT_PENDING`. لا تُنفذ أوامر مؤجلة تلقائيًا |
-| 8.6 إلغاء التذكرة `void` | لا يُسمح بإلغاء تذكرة عليها تحصيل `recorded`؛ يُعكس أولًا. عمليًا التحصيل لا يحدث قبل `ready` فلا يتقاطع مع المسودات |
+| 8.5 المطابقة اليدوية بعد انقطاع `POST /v1/tickets/{ticketId}/manual-reconcile` إلى `delivered` | كالبند 8.4: كائن `payment` بـ`collected_by` المسجل في السجل الورقي، أو إعفاء سابق؛ وإلا `PAYMENT_PENDING` (يتقدم على «فتح واقعة» في 11 TT-22، DEC-252). `payment` لـ`delivered` ولتذكرة `due` فقط (`VALIDATION_FAILED` بـ`not_applicable`)، و`PAYMENT_ALREADY_RECORDED` وقواعد §5.2 و§5.6؛ `payment.recorded` بالمصدر `reconcile` وصف تدقيق ثانٍ `payment.record`. لا تُنفذ أوامر مؤجلة تلقائيًا |
+| 8.6 إلغاء التذكرة `void` | لا يُسمح بإلغاء تذكرة عليها تحصيل `recorded`؛ يُعكس أولًا. عمليًا التحصيل لا يحدث قبل `ready` فلا يتقاطع مع المسودات. والمطابقة اليدوية إلى `voided` لتذكرة عليها تحصيل مسجل ← `INVALID_STATE_TRANSITION` بـ`reason = payment_recorded` (DEC-252) |
 | 8.7 إنهاء المناوبة أو النقل أو التعطيل والسائق بعهدته نقد | غير ممنوع (موانع `DUTY_END_BLOCKED_CUSTODY` و`TRANSFER_BLOCKED_CUSTODY` تخص المركبة والمفتاح والمهمة فقط). النقد يبقى بندًا مفتوحًا في تسوية حفله ويمنع إغلاقه حتى التسليم. تعرض D-14 تنبيهًا للسائق قبل إنهاء الوردية |
 
 ---

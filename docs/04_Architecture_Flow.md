@@ -184,7 +184,8 @@ flowchart TB
 
 - المسؤولية: الوقائع الداخلية للمشرف وتنبيهات المشرف الآلية وإغلاقها التلقائي عند زوال السبب.
 - الجداول: `incidents`, `alerts`.
-- الواجهة: `AlertService.acknowledge / resolve` ومسارات `/v1/alerts`، `IncidentService.open / update / resolve`. الرفع والحل الآلي (`raiseAlert`، `raiseAlertForAffectedVenues`، `autoResolveAlerts`) في `core/alerts` لتستعمله كل الوحدات دون استيراد `incidents` (DEC-79).
+- الواجهة: `AlertService.acknowledge / resolve` ومسارات `/v1/alerts`، `IncidentService.open / update / resolve`، و`openIncident()` للوقائع النظامية (TT-19، TT-20، عكس دفع بعد التسليم؛ `opened_by` صاحب الأمر، ومع `resolution` تُنشأ محلولة، DEC-240). الرفع والحل الآلي (`raiseAlert`، `raiseAlertForAffectedVenues`، `autoResolveAlerts`) في `core/alerts` لتستعمله كل الوحدات دون استيراد `incidents` (DEC-79)؛ والحل الآلي من الأحداث يجريه المُسقِط `AlertAutoResolver` في العامل للتنبيهات المرفوعة قبل الحدث أو معه فقط (DEC-236). الوحدة لا تنشر اتصالًا فوريًا: `incident.*` يحوّله مخطِّط الإشعارات إلى `incident.updated` (DEC-238).
+- معالجات العامل: المُسقِط `alert_auto_resolver`.
 - يُصدر: `alert.raised`, `alert.acknowledged`, `alert.resolved`, `incident.opened`, `incident.updated`, `incident.resolved`.
 
 **8) Payments & Reports — `payments-reports`**
