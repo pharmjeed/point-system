@@ -83,9 +83,16 @@ function AlertRow({ me, alert, onResolve }: { me: Me; alert: Alert; onResolve: (
       ) : (
         <ReadOnlyAlert alert={alert} title={title} context={alertContext(alert)} time={time} />
       )}
+      {/* 02 S-04 «رابط التذكرة أو السائق»: the ticket, else the driver the alert is about (S-06) */}
       {alert.ticket_id ? (
         <div className="st-row-actions">
           <Link className="pt-link" to={staffPaths.ticket(alert.ticket_id)}>
+            {buttons.open}
+          </Link>
+        </div>
+      ) : alert.user_id && can(me, 'driver.read') ? (
+        <div className="st-row-actions">
+          <Link className="pt-link" to={staffPaths.driver(alert.user_id)}>
             {buttons.open}
           </Link>
         </div>

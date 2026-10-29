@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
 import {
+  alertFixture,
   EVENT_ID,
   eventFixture,
   MockApi,
   mockStaffApi,
   ok,
   roleMe,
+  SAAD,
   secondsAgo,
   STAFF_USER_ID,
   VENUE_ID,
@@ -15,7 +17,8 @@ import { FakeRealtime } from './support/fake/realtime';
 
 /**
  * The staff-gaps sweep of 02 S-01 … S-13 (docs/progress/notes/staff-gaps.md): S-05 rows with the connection and
- * «منذ» and the live update over `driver.state_changed`; S-10 custody rows with «نقل عهدة» «فتح» «فتح واقعة».
+ * «منذ» and the live update over `driver.state_changed`; S-10 custody rows with «نقل عهدة» «فتح» «فتح واقعة»;
+ * S-04 «رابط التذكرة أو السائق».
  */
 runOnlyAt390();
 
@@ -127,4 +130,32 @@ test('S-10: a key not in its slot has «نقل عهدة», «فتح» and «فت
 
   await custody.getByRole('button', { name: 'فتح', exact: true }).click();
   await expect(page).toHaveURL(/\/ops\/tickets\/t-39$/);
+});
+
+test('S-04: an alert about a driver (no ticket) links to the driver (S-06)', async ({ page }) => {
+  const api = new MockApi(page, roleMe('supervisor'));
+  mockStaffApi(api, {
+    alerts: [
+      alertFixture(),
+      alertFixture({
+        id: 'al-60',
+        type: 'driver_connection_lost_with_custody',
+        severity: 'warning',
+        ticket_id: null,
+        task_id: null,
+        user_id: SAAD.id,
+        details: {},
+      }),
+    ],
+  });
+  await api.install();
+  await page.goto('/ops/alerts');
+  // a ticket alert keeps its ticket link
+  await expect(page.locator('li[data-alert-id="al-47"]').getByRole('link', { name: 'فتح' })).toHaveAttribute(
+    'href',
+    '/ops/tickets/t-47',
+  );
+  await page.locator('li[data-alert-id="al-60"]').getByRole('link', { name: 'فتح' }).click();
+  await expect(page).toHaveURL(new RegExp(`/drivers/${SAAD.id}$`));
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(SAAD.full_name);
 });
