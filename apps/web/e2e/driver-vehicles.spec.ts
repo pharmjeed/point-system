@@ -77,9 +77,10 @@ test('PNT-069: the digits search runs once 300 ms after typing; the chips filter
   browser,
 }) => {
   const fake = createFake();
-  const [a, b] = parkedCars(fake, 2);
-  ticketOf(fake, a!.ticketId).plate_digits = '1234';
-  ticketOf(fake, b!.ticketId).plate_digits = '5521';
+  const [a, b] = parkedCars(fake, 2); // tickets #1 and #2
+  // plates without the digits of any ticket number here, so each search below has one answer
+  ticketOf(fake, a!.ticketId).plate_digits = '7777';
+  ticketOf(fake, b!.ticketId).plate_digits = '5590';
   startDuty(fake, 'DRV1');
   requestRetrieval(fake, b!.ticketId);
   startDuty(fake, 'DRV2');
@@ -87,19 +88,22 @@ test('PNT-069: the digits search runs once 300 ms after typing; the chips filter
   const { page } = await actorPage(browser, fake, 'DRV1');
   await page.goto('/d/vehicles');
   await expect(rows(page)).toHaveCount(3);
+  const lastQuery = (name: string) => () => fake.callsTo('GET /v1/tickets').at(-1)?.query?.get(name) ?? null;
 
   const search = page.getByRole('searchbox', { name: 'ابحث برقم اللوحة أو رقم التذكرة' });
-  await search.pressSequentially('5521', { delay: 40 });
+  await search.pressSequentially('5590', { delay: 40 });
+  await expect.poll(lastQuery('q')).toBe('5590');
   await expect(rows(page)).toHaveCount(1);
   await expect(rows(page).first()).toContainText(`#${b!.displayNumber}`);
   const searched = fake
     .callsTo('GET /v1/tickets')
     .map((c) => c.query?.get('q'))
     .filter(Boolean);
-  expect(searched).toEqual(['5521']); // one request, after the typing stopped
+  expect(searched).toEqual(['5590']); // one request, after the typing stopped
 
   // the ticket number, typed with Arabic-Indic digits, matches exactly
   await search.fill(String(a!.displayNumber).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)] as string));
+  await expect.poll(lastQuery('q')).toBe(String(a!.displayNumber));
   await expect(rows(page)).toHaveCount(1);
   await expect(rows(page).first()).toContainText(`#${a!.displayNumber}`);
 
@@ -107,22 +111,22 @@ test('PNT-069: the digits search runs once 300 ms after typing; the chips filter
   const before = fake.callsTo('GET /v1/tickets').length;
   await search.fill('abc');
   await expect(page.getByText('لا توجد مركبات مطابقة.')).toBeVisible();
+  await page.waitForTimeout(500);
   expect(fake.callsTo('GET /v1/tickets').length).toBe(before);
 
   await search.fill('');
   await expect(rows(page)).toHaveCount(3);
   const chips = page.getByRole('group', { name: 'تصفية' });
   await chips.getByRole('button', { name: 'مطلوبة' }).click();
+  await expect.poll(lastQuery('status')).toBe('requested,assigned,assigned_waiting');
   await expect(rows(page)).toHaveCount(1);
   await expect(rows(page).first()).toContainText(`#${b!.displayNumber}`);
-  expect(fake.callsTo('GET /v1/tickets').at(-1)?.query?.get('status')).toBe(
-    'requested,assigned,assigned_waiting',
-  );
   await chips.getByRole('button', { name: 'قيد التسجيل والصف' }).click();
+  await expect.poll(lastQuery('status')).toBe('received,parking,reparking');
   await expect(rows(page)).toHaveCount(1);
   await expect(rows(page).first()).toContainText(`#${draft.ticket.display_number}`);
-  expect(fake.callsTo('GET /v1/tickets').at(-1)?.query?.get('status')).toBe('received,parking,reparking');
   await chips.getByRole('button', { name: 'جاهزة' }).click();
+  await expect.poll(lastQuery('status')).toBe('ready');
   await expect(page.getByText('لا توجد مركبات مطابقة.')).toBeVisible();
   // a second tap on the chosen chip goes back to «الكل»
   await chips.getByRole('button', { name: 'جاهزة' }).click();

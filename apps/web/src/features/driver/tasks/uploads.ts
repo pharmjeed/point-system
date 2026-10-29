@@ -78,8 +78,12 @@ async function uploadCompressed(
   const src = current?.src ?? URL.createObjectURL(blob);
   store.putPhoto(ticketId, { slot, kind, state: 'uploading', progress: 0, src });
   await savePhoto(ticketId, { slot, kind, blob, capturedAt, state: 'uploading', retriable: true, intent });
+  // the media request's key stays with the photo until the server confirmed the bytes (not only until the
+  // request answered): a reload during the PUT asks again with it and gets the same media row back
   const request = new CommandSession<MediaRequest>({
-    onIntent: (next) => void updatePhoto(ticketId, slot, { intent: next }),
+    onIntent: (next) => {
+      if (next) void updatePhoto(ticketId, slot, { intent: next });
+    },
   });
   request.restore(intent);
   for (let attempt = 0; ; attempt += 1) {

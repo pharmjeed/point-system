@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { chromium, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { fakeOnly } from './support/backend';
 import { runOnlyAt390 } from './support/checks';
 import { startDuty } from './support/driver';
@@ -43,11 +43,24 @@ async function driverPage(browser: Browser, fake: FakeServer) {
   return { context, page, session };
 }
 
-test('PNT-070 AC1: installable — the brand manifest, a controlling Service Worker, no installability error', async ({
-  browser,
-}) => {
+test('PNT-070 AC1: installable — the brand manifest, a controlling Service Worker, no installability error', async () => {
+  // a persistent profile: Playwright's ordinary contexts are off the record, where Chrome never installs
   const fake = createFake();
-  const { context, page } = await driverPage(browser, fake);
+  const use = test.info().project.use;
+  const context = await chromium.launchPersistentContext(test.info().outputPath('profile'), {
+    ...(use.launchOptions ?? {}),
+    baseURL: use.baseURL,
+    viewport: use.viewport,
+    userAgent: use.userAgent,
+    deviceScaleFactor: use.deviceScaleFactor,
+    isMobile: use.isMobile,
+    hasTouch: use.hasTouch,
+    locale: use.locale,
+    timezoneId: use.timezoneId,
+    serviceWorkers: 'allow',
+  });
+  const page = context.pages()[0] ?? (await context.newPage());
+  await fake.attach(page, 'DRV1', { context: true });
   await page.goto('/login');
   expect(await controlled(page)).toMatch(/\/sw\.js$/);
   const cdp = await context.newCDPSession(page);

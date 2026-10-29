@@ -87,14 +87,18 @@ sw.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== sw.location.origin || PASS_THROUGH.some((re) => re.test(url.pathname))) return;
+  // `ignoreVary`: a module script is a CORS request with an `Origin` header the precache request did not have,
+  // and the server answers `Vary: Origin` — the hashed file is the same either way
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(async () => (await caches.match('/index.html')) ?? Response.error()),
+      fetch(request).catch(
+        async () => (await caches.match('/index.html', { ignoreVary: true })) ?? Response.error(),
+      ),
     );
     return;
   }
   if (!PRECACHE.has(url.pathname)) return;
-  event.respondWith(caches.match(request).then((hit) => hit ?? fetch(request)));
+  event.respondWith(caches.match(request, { ignoreVary: true }).then((hit) => hit ?? fetch(request)));
 });
 
 async function focusedVisibleWindow(): Promise<boolean> {
