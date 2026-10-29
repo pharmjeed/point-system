@@ -1,7 +1,16 @@
 import { api } from '@/api/client';
 import { isDefinitiveError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
-import type { DriverHome, OfferCard, Task, TaskCard, TicketDetail, TicketSummary } from '@/api/types';
+import type {
+  DriverHome,
+  OfferCard,
+  Task,
+  TaskCard,
+  TicketDetail,
+  TicketSummary,
+  WaLinkPending,
+} from '@/api/types';
+import { useLinkStore } from '@/features/driver/linkStore';
 import { announcePromotion } from '@/features/driver/promotion';
 import { homeRegistry, loadHomeSnapshot, updateHome } from '@/features/driver/useDriverHome';
 import { d09 } from '@/i18n/ar';
@@ -53,6 +62,29 @@ function notice(kind: NoticeKind, card: Pick<TaskCard, 'task' | 'ticket'>): void
     ticketId: card.ticket.id,
     ticketNumber: card.ticket.display_number,
   });
+}
+
+/** The delivery state a `ticket.updated` may carry (drivers see W-01 and W-05 only, 09 §5.1). */
+interface MessageState {
+  purpose: string | null;
+  status: string;
+}
+
+/**
+ * The WhatsApp notices of a ticket this driver created or holds (the API sends `ticket.updated` to the creator
+ * and the assignee): W-01 failed (02 D-07 «بعد المغادرة»; D-07 itself clears it while open) — gone once the link
+ * is no longer `failed` —, and the customer who stopped the messages (14 §5.1).
+ */
+export function waNotices(summary: TicketSummary, cause: string | undefined, message?: MessageState): void {
+  const store = useFieldStore.getState();
+  const base = { taskId: summary.id, ticketId: summary.id, ticketNumber: summary.display_number };
+  const w01Failed =
+    (cause === 'ticket.wa_link_changed' && summary.wa_link_status === 'failed') ||
+    (message?.purpose === 'W-01' && message.status === 'failed');
+  if (w01Failed) store.addNotice({ kind: 'waFailed', ...base });
+  else if (summary.wa_link_status !== 'failed') store.dismissNotice(`waFailed:${summary.id}`);
+  if (cause === 'ticket.wa_link_changed' && summary.wa_link_status === 'opted_out')
+    store.addNotice({ kind: 'optedOut', ...base });
 }
 
 export function driverEvents(options: AcquireOptions) {
@@ -163,7 +195,10 @@ export function driverEvents(options: AcquireOptions) {
         return;
       }
       case 'ticket.updated': {
-        const { cause, ...summary } = event.payload;
+        const { cause, wa_link_pending, message, ...summary } = event.payload as typeof event.payload & {
+          wa_link_pending?: WaLinkPending | null;
+          message?: MessageState;
+        };
         // 14 §3.1 ticket.retrieval_requested_early: the parking driver's banner and `reminder`
         const parking = home()?.current_task;
         if (
@@ -176,8 +211,12 @@ export function driverEvents(options: AcquireOptions) {
           void playSound('reminder', { key: `task:${parking.task.id}` });
         }
         updateHome(qc, (h) => applyTicketSummary(h, summary as TicketSummary, homeRegistry, now));
+        // 09 §5.1: the pending QR confirmation reaches the privileged viewer only; D-07's dialog keeps it
+        if (wa_link_pending !== undefined) useLinkStore.getState().notePending(summary.id, wa_link_pending);
+        waNotices(summary as TicketSummary, cause, message);
         const detail = qc.getQueryData<TicketDetail>(queryKeys.ticket(summary.id));
-        if (detail && detail.version < summary.version)
+        // a message state (W-05 failed on D-10 / D-11) does not move the ticket's version: read it again
+        if (detail && (detail.version < summary.version || message))
           void qc.invalidateQueries({ queryKey: queryKeys.ticket(summary.id) });
         qc.setQueriesData<VehiclePages>({ queryKey: queryKeys.vehicles }, (data) =>
           patchVehicles(data, summary as TicketSummary),

@@ -43,11 +43,19 @@ export function unassignedRetrieval(ticket: TicketDetail): { cycleId: string } |
  * - «إلغاء طلب الإحضار» while the request is not assigned (`retrieval.cancel`);
  * - «تغيير رقم الجوال» for the creator or the assignee (the full projection) of a WhatsApp ticket after the
  *   intake (07: the draft's number is edited in D-05, a paper ticket has no conversation to move);
+ * - «إعادة الربط بواتساب» on a WhatsApp ticket after the intake whose link is `none` or `failed` (`wa.link`):
+ *   it opens D-07, which offers what the server takes now (02 D-13);
  * - «إبلاغ عن واقعة» always (`incident.create`).
  */
 export function vehicleActions(me: Me, ticket: TicketDetail) {
   const open = ticket.status !== 'delivered' && ticket.status !== 'voided';
   return {
+    relink:
+      open &&
+      ticket.channel === 'whatsapp' &&
+      ticket.status !== 'received' &&
+      (ticket.wa_link_status === 'none' || ticket.wa_link_status === 'failed') &&
+      hasPermission(me, 'wa.link'),
     onBehalf: open && ticket.status === 'parked' && hasPermission(me, 'retrieval.request_on_behalf'),
     cancel:
       open && !!unassignedRetrieval(ticket) && hasPermission(me, 'retrieval.cancel')
