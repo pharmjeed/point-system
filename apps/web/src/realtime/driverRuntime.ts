@@ -228,8 +228,9 @@ export function driverEvents(options: AcquireOptions) {
           // 09 §5.1: the pending QR confirmation reaches the privileged viewer only; D-07's dialog keeps it. The
           // API leaves the field out when nothing waits, so any other link state clears the one kept
           const links = useLinkStore.getState();
-          if (summary.wa_link_status !== 'pending_confirmation') links.notePending(summary.id, null);
-          else if (wa_link_pending !== undefined) links.notePending(summary.id, wa_link_pending);
+          if (summary.wa_link_status !== 'pending_confirmation') {
+            if (links.pending[summary.id]) links.notePending(summary.id, null);
+          } else if (wa_link_pending !== undefined) links.notePending(summary.id, wa_link_pending);
           waNotices(summary as TicketSummary, cause, message);
         }
         const detail = qc.getQueryData<TicketDetail>(queryKeys.ticket(summary.id));
