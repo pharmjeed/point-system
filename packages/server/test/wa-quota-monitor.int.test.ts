@@ -1,8 +1,12 @@
 import { SEED_IDS } from '@point/db/seed';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { Clock } from '../src/core/clock/clock.js';
+import { Database } from '../src/core/db/database.js';
+import { createLogger } from '../src/core/logging/logger.js';
 import { metrics } from '../src/core/metrics/metrics.js';
-import { SystemMonitor } from '../src/modules/audit-monitoring/jobs/system-monitor.js';
+import { emitEvent } from '../src/core/outbox/outbox-writer.js';
+import { SystemMonitor, type QuotaReport } from '../src/modules/audit-monitoring/jobs/system-monitor.js';
 import { LYL, ORG, RMS, U, seededDb } from './audit-monitoring-fixtures.js';
 import { silentLogger, type TestContext } from './helpers.js';
 
@@ -99,6 +103,29 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
   const quota = () => t.db.transaction((tx) => monitor.waQuota(tx));
   const setTier = (tier: string | null) =>
     t.db.query(`UPDATE whatsapp_channel SET messaging_limit_tier = $2 WHERE id = $1`, [CH, tier]);
+  /** the api and the worker tick in turn every 5 s; each decides at most once a minute on its own cadence */
+  const alternate = async (
+    first: SystemMonitor,
+    second: SystemMonitor,
+    seconds: number,
+    onStep?: (s: number) => Promise<void>,
+  ): Promise<QuotaReport[]> => {
+    const reports: QuotaReport[] = [];
+    for (let s = 0; s < seconds; s += 5) {
+      await onStep?.(s);
+      reports.push((await (s % 10 === 0 ? first : second).tick()).quota);
+      t.clock.advanceSeconds(5);
+    }
+    return reports;
+  };
+  const quotaEvents = async (type: 'alert.raised' | 'alert.resolved') =>
+    (
+      await t.db.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM outbox_events
+          WHERE type = $1 AND payload->'payload'->>'type' = 'wa_send_failed'`,
+        [type],
+      )
+    ).rows[0]!.n;
 
   beforeAll(async () => {
     t = await seededDb();
@@ -202,7 +229,7 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
   it('AC (12 §13): 800 service messages raise wa_send_failed for each venue with an open event; a resolution holds for the month', async () => {
     await serviceMessages(799, at('2026-10-27T08:00:00Z'));
     let r = await monitor.tick();
-    expect(r.quota).toEqual({ raised: [], resolved: [] });
+    expect(r.quota).toEqual({ evaluated: true, raised: [], resolved: [] });
     expect(await quotaAlerts()).toEqual([]);
 
     await serviceMessages(1, at('2026-10-27T15:00:00Z'));
@@ -254,8 +281,17 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
     expect(r.quota.raised).toEqual([]);
     expect((await quotaAlerts()).map((a) => a.venue_id)).toEqual([LYL]);
 
-    // the month changes (midnight in Riyadh): the count starts again and the live alert resolves by itself
+    // the month changes (midnight in Riyadh): the count starts again; the live alert resolves by itself once the
+    // condition stayed false for two minutes (the instant it turned false is kept in the row)
     t.clock.set('2026-10-31T21:00:05.000Z');
+    r = await monitor.tick();
+    expect(r.quota).toEqual({ evaluated: true, raised: [], resolved: [] });
+    expect((await quotaAlerts()).map((a) => [a.venue_id, a.details.below_since])).toEqual([
+      [LYL, '2026-10-31T21:00:05.000Z'],
+    ]);
+    t.clock.set('2026-10-31T21:02:04.000Z');
+    expect((await monitor.tick()).quota.resolved).toEqual([]);
+    t.clock.set('2026-10-31T21:02:05.000Z');
     r = await monitor.tick();
     expect(r.quota.resolved).toEqual([{ venue_id: LYL, dedupe_key: SERVICE_KEY('2026-10') }]);
     expect(await quotaAlerts()).toEqual([]);
@@ -289,15 +325,18 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
       window_h: 24,
     });
 
-    // the business is verified: 2,000 a day — the condition ends
+    // the business is verified: 2,000 a day — the condition ends; the rows resolve two minutes later
     await setTier('TIER_2K');
+    r = await monitor.tick();
+    expect(r.quota.resolved).toEqual([]);
+    expect((await quotaAlerts()).map((a) => a.details.below_since)).toEqual([
+      t.clock.now().toISOString(),
+      t.clock.now().toISOString(),
+    ]);
+    t.clock.advanceSeconds(120);
     r = await monitor.tick();
     expect(r.quota.resolved.map((x) => x.venue_id)).toEqual([RMS, LYL].sort());
     expect(await quotaAlerts()).toEqual([]);
-
-    // an unlimited tier never alerts
-    await setTier('TIER_UNLIMITED');
-    expect((await monitor.tick()).quota.raised).toEqual([]);
 
     // no limit stored on the channel: the F-18 starting limit is assumed (and said so)
     await setTier(null);
@@ -311,12 +350,49 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
       threshold: 200,
     });
 
-    // the 24 h window slides past the first 199 sends: under the threshold, resolved by itself
+    // the limit becomes unlimited while the alert is live: it resolves, and an unlimited tier never alerts
+    await setTier('TIER_UNLIMITED');
+    expect((await monitor.tick()).quota).toEqual({ evaluated: true, raised: [], resolved: [] });
+    t.clock.advanceSeconds(120);
+    r = await monitor.tick();
+    expect(r.quota.resolved.map((x) => x.venue_id)).toEqual([RMS, LYL].sort());
+    t.clock.advanceSeconds(60);
+    expect((await monitor.tick()).quota).toEqual({ evaluated: true, raised: [], resolved: [] });
+    expect(await quotaAlerts()).toEqual([]);
+
+    // the assumed limit again, then the 24 h window slides past the first 199 sends: under the threshold
+    await setTier(null);
+    expect((await monitor.tick()).quota.raised).toHaveLength(2);
     t.clock.set(at(T0, 23 * 3600 + 1));
+    r = await monitor.tick();
+    expect(r.quota.resolved).toEqual([]);
+    expect(await gauge(metrics.waUniqueUsers24h)).toBe(1);
+    t.clock.advanceSeconds(120);
     r = await monitor.tick();
     expect(r.quota.resolved).toHaveLength(2);
     expect(await quotaAlerts()).toEqual([]);
-    expect(await gauge(metrics.waUniqueUsers24h)).toBe(1);
+  });
+
+  it('a condition that holds again inside the two minutes keeps its row (no second alert.raised)', async () => {
+    await setTier('TIER_50'); // threshold 40
+    const ids = await customers(40);
+    await outbound({ kind: 'template', customerIds: ids, queuedAt: at(T0, -86_400 + 30) });
+    await monitor.tick();
+    const first = (await quotaAlerts()).map((a) => a.id);
+    expect(first).toHaveLength(2);
+    // 40 s later the 40 sends have left the 24 h window: false, the window starts
+    t.clock.advanceSeconds(40);
+    expect((await monitor.tick()).quota.resolved).toEqual([]);
+    expect((await quotaAlerts()).every((a) => typeof a.details.below_since === 'string')).toBe(true);
+    // the same 40 customers get a new template (a busy evening near the threshold): true again a minute later
+    await outbound({ kind: 'template', customerIds: ids, queuedAt: at(t.clock.now().toISOString(), -5) });
+    t.clock.advanceSeconds(60);
+    const r = await monitor.tick();
+    expect(r.quota).toEqual({ evaluated: true, raised: [], resolved: [] });
+    const live = await quotaAlerts();
+    expect(live.map((a) => a.id)).toEqual(first);
+    expect(live.every((a) => a.details.below_since === undefined && a.details.count === 40)).toBe(true);
+    expect(await quotaEvents('alert.raised')).toBe(2);
   });
 
   it('a resolved messaging-limit alert stays quiet for 24 h; venues without an open event get no row', async () => {
@@ -336,6 +412,9 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
     // a day later a new crossing raises it again at RMS (and at LYL, whose row resolved when the window slid)
     t.clock.set(at(T0, 24 * 3600 + 60));
     let r = await monitor.tick();
+    expect(r.quota.resolved).toEqual([]);
+    t.clock.advanceSeconds(120);
+    r = await monitor.tick();
     expect(r.quota.resolved).toEqual([{ venue_id: LYL, dedupe_key: LIMIT_KEY }]);
     await outbound({
       kind: 'template',
@@ -369,5 +448,162 @@ describe('SystemMonitor — WhatsApp quotas (GAP-9)', () => {
     t.clock.advanceSeconds(1);
     await cached.refreshGauges();
     expect(await gauge(metrics.waServiceMessagesMonth)).toBe(5);
+  });
+
+  it('two processes on the default cadence never undo each other: one row per venue and key, one resolution', async () => {
+    const worker = new SystemMonitor(t.db, t.clock, silentLogger, { retentionCron: null });
+    const api = new SystemMonitor(t.db, t.clock, silentLogger, { retentionCron: null });
+    await setTier('TIER_250');
+    await serviceMessages(799, at('2026-10-27T08:00:00Z'));
+    const ids = await customers(200);
+    await outbound({ kind: 'template', customerIds: ids.slice(0, 199), queuedAt: at(T0, -3600) });
+
+    // between the two processes' first counts (the worker counted at 0 s, the api counts at 5 s): the 800th service
+    // message and the 200th user outside the window — the worker's next decision must not undo the api's raise
+    const up = await alternate(worker, api, 240, async (s) => {
+      if (s !== 5) return;
+      await serviceMessages(1, at(t.clock.now().toISOString(), -2)); // queued 1 s before the api counts
+      await outbound({ kind: 'template', customerIds: ids.slice(199), queuedAt: t.clock.now() });
+    });
+    const decisions = up.filter((q) => q.evaluated).length;
+    expect(decisions).toBeGreaterThanOrEqual(8); // both processes, every minute
+    expect(decisions).toBeLessThanOrEqual(10);
+    expect(up.flatMap((q) => q.resolved)).toEqual([]);
+    expect(up.flatMap((q) => q.raised).map((x) => x.dedupe_key)).toEqual([
+      ...[SERVICE_KEY('2026-10'), SERVICE_KEY('2026-10')],
+      ...[LIMIT_KEY, LIMIT_KEY],
+    ]);
+    const venues = [RMS, LYL].sort();
+    expect((await quotaAlerts('all')).map((a) => [a.dedupe_key, a.venue_id, a.status])).toEqual([
+      ...venues.map((v) => [SERVICE_KEY('2026-10'), v, 'open']),
+      ...venues.map((v) => [LIMIT_KEY, v, 'open']),
+    ]);
+    expect(await quotaEvents('alert.raised')).toBe(4);
+    expect(await quotaEvents('alert.resolved')).toBe(0);
+
+    // the 24 h window slides past the 199 sends: the limit alert resolves once per venue, the month's alert stays
+    t.clock.set(at(T0, 23 * 3600 + 1));
+    const down = await alternate(worker, api, 300);
+    expect(down.flatMap((q) => q.raised)).toEqual([]);
+    expect(down.flatMap((q) => q.resolved).map((x) => x.dedupe_key)).toEqual([LIMIT_KEY, LIMIT_KEY]);
+    expect((await quotaAlerts('all')).map((a) => [a.dedupe_key, a.venue_id, a.status])).toEqual([
+      ...venues.map((v) => [SERVICE_KEY('2026-10'), v, 'open']),
+      ...venues.map((v) => [LIMIT_KEY, v, 'resolved']),
+    ]);
+    expect(await quotaEvents('alert.raised')).toBe(4);
+    expect(await quotaEvents('alert.resolved')).toBe(2);
+  });
+
+  it('at midnight in Riyadh, processes whose clocks differ by 20 s resolve the ended month once and never raise it again', async () => {
+    // the api's clock runs 20 s ahead of the worker's: it reaches November first
+    const ahead: Clock = { now: () => new Date(t.clock.now().getTime() + 20_000) };
+    const aheadDb = new Database({ connectionString: t.testDb.url, poolMax: 4 }, ahead);
+    try {
+      const worker = new SystemMonitor(t.db, t.clock, silentLogger, { retentionCron: null });
+      const api = new SystemMonitor(aheadDb, ahead, silentLogger, { retentionCron: null });
+      await serviceMessages(800, at('2026-10-31T08:00:00Z'));
+      // the api decides at :45 (its clock :05), the worker at :50 — at 20:59:45 the api is in November, the worker
+      // decides in October 5 s later
+      t.clock.set('2026-10-31T20:57:45.000Z');
+      const reports = await alternate(api, worker, 600);
+      expect(reports.flatMap((q) => q.raised)).toEqual(
+        [RMS, LYL].sort().map((venue_id) => ({ venue_id, dedupe_key: SERVICE_KEY('2026-10') })),
+      );
+      expect(reports.flatMap((q) => q.resolved).map((x) => x.dedupe_key)).toEqual([
+        SERVICE_KEY('2026-10'),
+        SERVICE_KEY('2026-10'),
+      ]);
+      const all = await quotaAlerts('all');
+      expect(all.map((a) => [a.dedupe_key, a.status, a.resolved_by])).toEqual([
+        [SERVICE_KEY('2026-10'), 'resolved', null],
+        [SERVICE_KEY('2026-10'), 'resolved', null],
+      ]);
+      expect(await quotaEvents('alert.raised')).toBe(2);
+      expect(await quotaEvents('alert.resolved')).toBe(2);
+    } finally {
+      await aheadDb.close();
+    }
+  });
+
+  it("a live alert of a number no longer active resolves; the new number's key is raised while the condition holds", async () => {
+    await setTier('TIER_50'); // threshold 40
+    await outbound({ kind: 'template', customerIds: await customers(40), queuedAt: at(T0, -60) });
+    await monitor.tick();
+    expect((await quotaAlerts()).map((a) => a.dedupe_key)).toEqual([LIMIT_KEY, LIMIT_KEY]);
+    const next = randomUUID();
+    const nextKey = `wa_send_failed:unique_users_24h:${next}`;
+    await t.db.query(`UPDATE whatsapp_channel SET is_active = false WHERE id = $1`, [CH]);
+    try {
+      await t.db.query(
+        `INSERT INTO whatsapp_channel (id, org_id, business_account_id, phone_number_id, access_token_secret_ref,
+                app_secret_ref, verify_token_secret_ref, api_version, mode, is_active, health_status, messaging_limit_tier)
+         VALUES ($1, $2, 'NEW-WABA', 'NEW-PHONE', 'env://X', 'env://Y', 'env://Z', 'v26.0', 'simulator', true, 'healthy',
+                 'TIER_50')`,
+        [next, ORG],
+      );
+      // the limit is per business portfolio: the same 40 users count under the new number's key
+      let r = await monitor.tick();
+      expect(r.quota.raised.map((x) => x.dedupe_key)).toEqual([nextKey, nextKey]);
+      expect(r.quota.resolved).toEqual([]);
+      t.clock.advanceSeconds(120);
+      r = await monitor.tick();
+      expect(r.quota.resolved.map((x) => x.dedupe_key)).toEqual([LIMIT_KEY, LIMIT_KEY]);
+      expect((await quotaAlerts()).map((a) => a.dedupe_key)).toEqual([nextKey, nextKey]);
+    } finally {
+      await t.db.query(`DELETE FROM whatsapp_channel WHERE id = $1`, [next]);
+      await t.db.query(`UPDATE whatsapp_channel SET is_active = true WHERE id = $1`, [CH]);
+    }
+  });
+
+  it('a failing quota count is logged and never rolls back the tick: outbox_lag is still raised', async () => {
+    const lines: string[] = [];
+    const logger = createLogger({ level: 'warn', destination: { write: (l: string) => void lines.push(l) } });
+    const failing = new SystemMonitor(t.db, t.clock, logger, { retentionCron: null, quotaRefreshMs: 0 });
+    failing.waQuota = async () => {
+      throw new Error('canceling statement due to statement timeout');
+    };
+    await t.db.transaction((tx) =>
+      emitEvent(tx, {
+        type: 'driver.enabled',
+        orgId: ORG,
+        aggregate: { type: 'user', id: U.DRV1, version: 1 },
+        actor: { type: 'user', id: U.ADM1 },
+        payload: { user_id: U.DRV1, enabled_by: U.ADM1 },
+      }),
+    );
+    t.clock.advanceSeconds(60);
+    const r = await failing.tick();
+    expect(r.evaluated).toBe(true);
+    expect(r.outbox[0]).toMatchObject({ lagging: true });
+    expect(r.quota).toEqual({ evaluated: false, raised: [], resolved: [] });
+    const lag = await t.db.query<{ venue_id: string }>(
+      `SELECT venue_id FROM alerts WHERE type = 'outbox_lag' AND status <> 'resolved' ORDER BY venue_id`,
+    );
+    expect(lag.rows.map((x) => x.venue_id)).toEqual([RMS, LYL].sort());
+    expect(lines.map((l) => JSON.parse(l).msg)).toContain('system monitor whatsapp quota failed');
+  });
+
+  it('a live quota row is rewritten only when its counts change', async () => {
+    await serviceMessages(800, at('2026-10-27T08:00:00Z'));
+    await monitor.tick();
+    const rows = async () =>
+      (
+        await t.db.query<{ venue_id: string; v: string; count: number }>(
+          `SELECT venue_id, xmin::text AS v, (details->>'count')::int AS count FROM alerts
+            WHERE dedupe_key = $1 ORDER BY venue_id`,
+          [SERVICE_KEY('2026-10')],
+        )
+      ).rows;
+    const before = await rows();
+    expect(before.map((x) => x.count)).toEqual([800, 800]);
+    t.clock.advanceSeconds(10);
+    expect((await monitor.tick()).quota.evaluated).toBe(true);
+    expect(await rows()).toEqual(before);
+    await serviceMessages(1, at(T0, 5));
+    t.clock.advanceSeconds(10);
+    await monitor.tick();
+    const after = await rows();
+    expect(after.map((x) => x.count)).toEqual([801, 801]);
+    expect(after.map((x) => x.v)).not.toEqual(before.map((x) => x.v));
   });
 });

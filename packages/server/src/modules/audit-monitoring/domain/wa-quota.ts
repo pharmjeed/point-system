@@ -29,8 +29,18 @@ export const WA_SERVICE_WINDOW_HOURS = 24;
  * sources; re-verify at implementation), which for the customer channel's account is Saudi time.
  */
 export const WA_QUOTA_MONTH_TIME_ZONE = 'Asia/Riyadh';
-/** The counts move slowly: each process refreshes them at most once a minute. */
+/**
+ * The counts move slowly: each process counts them at most once a minute — for its gauges, and for the alert
+ * decisions, which are always taken on a count made in the deciding transaction.
+ */
 export const WA_QUOTA_REFRESH_MS = 60_000;
+/**
+ * A live quota alert resolves once its condition has stayed false this long (as `outbox_lag`, 14 §8). The instant it
+ * turned false is kept in the row (`details.below_since`), so every process continues the same window, and two
+ * processes whose clocks differ by less than this never undo each other's decision (a count near the threshold, the
+ * month change at midnight in Riyadh).
+ */
+export const WA_QUOTA_RESOLVE_AFTER_MS = 2 * 60_000;
 /** A manual resolution of the messaging-limit alert keeps it quiet for its window (24 h). */
 export const WA_MESSAGING_LIMIT_SILENCE_MS = WA_SERVICE_WINDOW_HOURS * 3_600_000;
 

@@ -26,6 +26,7 @@ import {
   WA_MESSAGING_LIMIT_SILENCE_MS,
   WA_QUOTA_MONTH_TIME_ZONE,
   WA_QUOTA_REFRESH_MS,
+  WA_QUOTA_RESOLVE_AFTER_MS,
   WA_SERVICE_WINDOW_HOURS,
   waQuotaConditions,
   type WaQuotaCondition,
@@ -35,6 +36,12 @@ import { ensureRetentionScheduled } from './retention-purge.js';
 
 /** Only one process evaluates the alert conditions per tick (api and worker both run the monitor). */
 const MONITOR_LOCK = 'point_system_monitor';
+/**
+ * The WhatsApp quota decisions take a lock of their own, in a transaction of their own: a tick of another process
+ * holding MONITOR_LOCK never makes them skip, and a failing count never rolls back `outbox_lag`, `task_stuck` or
+ * `draft_abandoned`.
+ */
+const QUOTA_LOCK = 'point_system_monitor_wa_quota';
 
 export interface SystemMonitorOptions {
   /** loop interval (MONITOR_INTERVAL_S, default 10 s) */
@@ -43,8 +50,13 @@ export interface SystemMonitorOptions {
   lagResolveAfterMs?: number;
   /** RETENTION_PURGE_CRON_UTC: the monitor keeps one job.retention_purge scheduled; null disables that */
   retentionCron?: string | null;
-  /** the WhatsApp quota counts (12 §13) are recomputed at most this often per process (default 60 s; 0 = every tick) */
+  /**
+   * the WhatsApp quota counts (12 §13) are taken at most this often per process — for the gauges and for the alert
+   * decisions (default 60 s; 0 = every tick)
+   */
   quotaRefreshMs?: number;
+  /** a live quota alert resolves once its condition stayed false this long (default 2 minutes) */
+  quotaResolveAfterMs?: number;
 }
 
 export interface OrgLagReport extends OutboxHealth {
@@ -84,9 +96,20 @@ export interface MonitorReport {
   stuck: { raised: string[]; resolved: string[] };
   /** `draft_abandoned` raised (ticket ids) and resolved because the draft left `received` (PNT-075) */
   drafts: { raised: string[]; resolved: string[] };
-  /** WhatsApp quota alerts (12 §13, raised as `wa_send_failed`, GAP-9) created and resolved by this tick */
-  quota: { raised: QuotaAlertRef[]; resolved: QuotaAlertRef[] };
+  /**
+   * WhatsApp quota alerts (12 §13, raised as `wa_send_failed`, GAP-9) created and resolved by this tick; `evaluated`
+   * is false when no decision was due in this process, another process was deciding, or the count failed
+   */
+  quota: QuotaReport;
 }
+
+export interface QuotaReport {
+  evaluated: boolean;
+  raised: QuotaAlertRef[];
+  resolved: QuotaAlertRef[];
+}
+
+const NO_QUOTA_DECISION: QuotaReport = { evaluated: false, raised: [], resolved: [] };
 
 export interface AbandonedDraft {
   ticket_id: string;
@@ -111,7 +134,8 @@ export interface AbandonedDraft {
  *  - raises `draft_abandoned` (`draft_abandoned:{ticket_id}`) for intake drafts left in `received` beyond
  *    `intake.draft_abandoned_alert_min`, and resolves the live ones whose draft left `received` (14 §8);
  *  - counts the WhatsApp quotas of 12 §13 (`point_wa_service_messages_month`,
- *    `point_wa_unique_users_24h_outside_window`) and raises/resolves their alerts at its thresholds (GAP-9);
+ *    `point_wa_unique_users_24h_outside_window`) at most once a minute per process, and raises/resolves their
+ *    alerts at its thresholds from that count, in a transaction and under a lock of their own (GAP-9);
  *  - keeps the daily job.retention_purge scheduled.
  * It runs in the worker and in the api (a stopped worker is still detected); a transaction-scoped advisory
  * lock lets one process evaluate per tick. Time comes from the injected clock; `tick()` is public for tests.
@@ -123,7 +147,10 @@ export class SystemMonitor {
   readonly intervalMs: number;
   private readonly lagResolveAfterMs: number;
   private readonly quotaRefreshMs: number;
+  private readonly quotaResolveAfterMs: number;
   private quotaCache: { atMs: number; rows: WaQuotaSnapshot[] } | null = null;
+  /** the clock instant of this process's last quota decision (or failed attempt) */
+  private lastQuotaDecisionMs: number | null = null;
 
   constructor(
     private readonly db: Database,
@@ -134,6 +161,7 @@ export class SystemMonitor {
     this.intervalMs = opts.intervalMs ?? 10_000;
     this.lagResolveAfterMs = opts.lagResolveAfterMs ?? OUTBOX_LAG_RESOLVE_AFTER_MS;
     this.quotaRefreshMs = opts.quotaRefreshMs ?? WA_QUOTA_REFRESH_MS;
+    this.quotaResolveAfterMs = opts.quotaResolveAfterMs ?? WA_QUOTA_RESOLVE_AFTER_MS;
   }
 
   start(): void {
@@ -159,34 +187,44 @@ export class SystemMonitor {
   }
 
   async tick(): Promise<MonitorReport> {
-    await this.refreshGauges().catch((err) =>
+    const quotaDue = this.quotaDecisionDue();
+    // a due quota decision counts afresh and sets the quota gauges itself: no second count for the gauges
+    await this.refreshGauges({ quota: !quotaDue }).catch((err) =>
       this.logger.warn({ err: (err as Error).message }, 'system monitor gauges failed'),
     );
-    const report = await this.db.transaction(async (tx): Promise<MonitorReport | null> => {
-      const lock = await tx.one<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext($1)) AS ok`, [
-        MONITOR_LOCK,
-      ]);
-      if (!lock.ok) return null;
-      const outbox = await this.evaluateOutboxLag(tx);
-      const stuck = await this.evaluateStuckTasks(tx);
-      const drafts = await this.evaluateAbandonedDrafts(tx);
-      const quota = await this.evaluateWaQuota(tx);
-      if (this.opts.retentionCron !== null)
-        await ensureRetentionScheduled(
-          tx,
-          this.opts.retentionCron ?? process.env.RETENTION_PURGE_CRON_UTC ?? '0 2 * * *',
-        );
-      return { evaluated: true, outbox, stuck, drafts, quota };
-    });
-    return (
-      report ?? {
+    let failure: unknown = null;
+    const report = await this.db
+      .transaction(async (tx): Promise<Omit<MonitorReport, 'quota'> | null> => {
+        const lock = await tx.one<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext($1)) AS ok`, [
+          MONITOR_LOCK,
+        ]);
+        if (!lock.ok) return null;
+        const outbox = await this.evaluateOutboxLag(tx);
+        const stuck = await this.evaluateStuckTasks(tx);
+        const drafts = await this.evaluateAbandonedDrafts(tx);
+        if (this.opts.retentionCron !== null)
+          await ensureRetentionScheduled(
+            tx,
+            this.opts.retentionCron ?? process.env.RETENTION_PURGE_CRON_UTC ?? '0 2 * * *',
+          );
+        return { evaluated: true, outbox, stuck, drafts };
+      })
+      .catch((err: unknown) => {
+        failure = err;
+        return null;
+      });
+    // the quotas are decided whatever the tick did, and their failure never undoes it
+    const quota = quotaDue ? await this.decideWaQuota() : NO_QUOTA_DECISION;
+    if (failure) throw failure;
+    return {
+      ...(report ?? {
         evaluated: false,
         outbox: [],
         stuck: { raised: [], resolved: [] },
         drafts: { raised: [], resolved: [] },
-        quota: { raised: [], resolved: [] },
-      }
-    );
+      }),
+      quota,
+    };
   }
 
   // ------------------------------------------------------------------ outbox_lag
@@ -516,33 +554,79 @@ export class SystemMonitor {
   }
 
   /**
-   * The quota counts, recomputed at most every `quotaRefreshMs` in this process (in `tx`, or in a short transaction
-   * of their own), and the two gauges of 05 §12.2 (the highest organization's value: one active channel per
-   * organization, one organization in V1).
+   * The quota counts for the gauges of 05 §12.2, recounted at most every `quotaRefreshMs` in this process (in a
+   * short transaction of their own) — the last count of this process otherwise, whether a gauge refresh or a quota
+   * decision made it. Never used to decide an alert: a decision counts afresh in its own transaction.
    */
-  async waQuotaSnapshot(tx?: Tx): Promise<WaQuotaSnapshot[]> {
-    const at = (tx?.now ?? this.clock.now()).getTime();
+  async waQuotaSnapshot(): Promise<WaQuotaSnapshot[]> {
+    const at = this.clock.now().getTime();
     const cached = this.quotaCache;
     if (cached && at >= cached.atMs && at - cached.atMs < this.quotaRefreshMs) return cached.rows;
-    const rows = tx ? await this.waQuota(tx) : await this.db.transaction((t) => this.waQuota(t));
-    this.quotaCache = { atMs: at, rows };
-    metrics.waServiceMessagesMonth.set(rows.reduce((m, r) => Math.max(m, r.serviceMessagesMonth), 0));
-    metrics.waUniqueUsers24h.set(rows.reduce((m, r) => Math.max(m, r.uniqueUsers24hOutsideWindow), 0));
+    const rows = await this.db.transaction((t) => this.waQuota(t));
+    this.keepQuotaSnapshot(at, rows);
     return rows;
   }
 
+  /** The gauges carry the highest organization's value (one active channel per organization, one in V1). */
+  private keepQuotaSnapshot(atMs: number, rows: WaQuotaSnapshot[]): void {
+    this.quotaCache = { atMs, rows };
+    metrics.waServiceMessagesMonth.set(rows.reduce((m, r) => Math.max(m, r.serviceMessagesMonth), 0));
+    metrics.waUniqueUsers24h.set(rows.reduce((m, r) => Math.max(m, r.uniqueUsers24hOutsideWindow), 0));
+  }
+
+  /** At most one quota decision per `quotaRefreshMs` in this process (a clock moved back decides again). */
+  private quotaDecisionDue(): boolean {
+    if (this.lastQuotaDecisionMs === null) return true;
+    const now = this.clock.now().getTime();
+    return now < this.lastQuotaDecisionMs || now - this.lastQuotaDecisionMs >= this.quotaRefreshMs;
+  }
+
   /**
-   * 12 §13 thresholds → alerts (DEC-PROPOSED-1 of docs/progress/notes/server-gaps.md). A condition that holds is
-   * raised as `wa_send_failed` (warning, ticket-less) for every venue with an open or closing event plus the venues
-   * already alerted (DEC-46), its details refreshed while it lasts; a condition that ended (the month changed, the
-   * 24 h count fell under the threshold, the limit rose, the channel changed) is resolved automatically. A
+   * One quota decision: a transaction of its own under QUOTA_LOCK, the counts taken in it (READ COMMITTED: they see
+   * everything committed before, including the previous decision of any process), the alerts raised and resolved
+   * from them, the gauges set from the same counts. The api and the worker both decide, each at most once a
+   * minute; the lock orders their decisions, each on a newer count than the one before, so a process never acts
+   * on an older snapshot than the decision it follows. A failure is logged and retried at the next due tick.
+   */
+  private async decideWaQuota(): Promise<QuotaReport> {
+    try {
+      const done = await this.db.transaction(async (tx) => {
+        const lock = await tx.one<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext($1)) AS ok`, [
+          QUOTA_LOCK,
+        ]);
+        if (!lock.ok) return null;
+        const snapshots = await this.waQuota(tx);
+        const decided = await this.evaluateWaQuota(tx, snapshots);
+        return { atMs: tx.now.getTime(), snapshots, decided };
+      });
+      // another process is deciding at this instant: this one tries again at its next tick
+      if (!done) return NO_QUOTA_DECISION;
+      this.lastQuotaDecisionMs = done.atMs;
+      this.keepQuotaSnapshot(done.atMs, done.snapshots);
+      return { evaluated: true, ...done.decided };
+    } catch (err) {
+      this.lastQuotaDecisionMs = this.clock.now().getTime();
+      this.logger.warn({ err: (err as Error).message }, 'system monitor whatsapp quota failed');
+      return NO_QUOTA_DECISION;
+    }
+  }
+
+  /**
+   * 12 §13 thresholds → alerts (DEC-PROPOSED-1 of docs/progress/notes/server-gaps.md), from `snapshots` counted in
+   * `tx`. A condition that holds is raised as `wa_send_failed` (warning, ticket-less) for every venue with an open or
+   * closing event plus the venues already alerted (DEC-46); a live row is rewritten only when its details changed. A
+   * condition that ended (the month changed, the 24 h count fell under the threshold, the limit rose or became
+   * unlimited, the channel changed) resolves automatically once it stayed false for `quotaResolveAfterMs`; the
+   * instant it turned false is kept in the row's `details.below_since`, and a condition holding again clears it. A
    * supervisor's resolution is kept: the service-message alert stays resolved for the rest of its month (the month
    * is part of its key), the messaging-limit alert for its 24 h window.
    */
-  private async evaluateWaQuota(tx: Tx): Promise<MonitorReport['quota']> {
+  private async evaluateWaQuota(
+    tx: Tx,
+    snapshots: WaQuotaSnapshot[],
+  ): Promise<Pick<QuotaReport, 'raised' | 'resolved'>> {
     const raised: QuotaAlertRef[] = [];
     const resolved: QuotaAlertRef[] = [];
-    const snapshots = await this.waQuotaSnapshot(tx);
     const live = await tx.rows<AlertRow>(
       `SELECT * FROM alerts WHERE type = 'wa_send_failed' AND status <> 'resolved'
           AND (starts_with(dedupe_key, $1) OR starts_with(dedupe_key, $2))
@@ -554,9 +638,19 @@ export class SystemMonitor {
       for (const condition of waQuotaConditions(s))
         holding.set(condition.dedupeKey, { orgId: s.orgId, condition });
 
+    // ended conditions: the window starts at the first false observation and is kept in the row
     const ended = new Map<string, Set<string>>();
     for (const a of live) {
       if (!a.dedupe_key || holding.has(a.dedupe_key)) continue;
+      const since = typeof a.details?.below_since === 'string' ? new Date(a.details.below_since) : null;
+      if (!since || Number.isNaN(since.getTime())) {
+        await tx.query(
+          `UPDATE alerts SET details = details || jsonb_build_object('below_since', $2::text) WHERE id = $1`,
+          [a.id, tx.now.toISOString()],
+        );
+        continue;
+      }
+      if (tx.now.getTime() - since.getTime() < this.quotaResolveAfterMs) continue;
       const keys = ended.get(a.org_id) ?? new Set<string>();
       keys.add(a.dedupe_key);
       ended.set(a.org_id, keys);
@@ -571,9 +665,22 @@ export class SystemMonitor {
     }
 
     for (const [key, { orgId, condition }] of holding) {
-      const liveVenues = new Set(live.filter((a) => a.dedupe_key === key).map((a) => a.venue_id));
-      const venues = [...new Set([...(await affectedVenueIds(tx, orgId)), ...liveVenues])].sort();
-      if (!venues.length) continue;
+      const liveRows = live.filter((a) => a.dedupe_key === key);
+      // the live rows follow the count (and lose a `below_since`): rewritten only when the details changed
+      for (const a of liveRows) {
+        if (sameJson(a.details, condition.details)) continue;
+        await raiseAlert(tx, {
+          orgId,
+          venueId: a.venue_id,
+          type: 'wa_send_failed',
+          dedupeKey: key,
+          details: condition.details,
+        });
+      }
+      const liveVenues = new Set(liveRows.map((a) => a.venue_id));
+      const missing = (await affectedVenueIds(tx, orgId)).filter((v) => !liveVenues.has(v)).sort();
+      if (!missing.length) continue;
+      // a supervisor's resolution holds (ix_alerts_manual_resolved, migration 0007)
       const silentSince = key.startsWith(SERVICE_QUOTA_KEY_PREFIX)
         ? new Date(0)
         : new Date(tx.now.getTime() - WA_MESSAGING_LIMIT_SILENCE_MS);
@@ -582,13 +689,13 @@ export class SystemMonitor {
           await tx.rows<{ venue_id: string }>(
             `SELECT DISTINCT venue_id FROM alerts
               WHERE org_id = $1 AND dedupe_key = $2 AND status = 'resolved' AND resolved_by IS NOT NULL
-                AND resolved_at > $3`,
-            [orgId, key, silentSince],
+                AND resolved_at > $3 AND venue_id = ANY($4::uuid[])`,
+            [orgId, key, silentSince, missing],
           )
         ).map((r) => r.venue_id),
       );
-      for (const venueId of venues) {
-        if (silenced.has(venueId) && !liveVenues.has(venueId)) continue;
+      for (const venueId of missing) {
+        if (silenced.has(venueId)) continue;
         const { created } = await raiseAlert(tx, {
           orgId,
           venueId,
@@ -618,7 +725,8 @@ export class SystemMonitor {
 
   // ------------------------------------------------------------------ gauges (05 §12.2)
 
-  async refreshGauges(): Promise<void> {
+  /** The gauges of 05 §12.2; `quota: false` leaves the two quota gauges to the quota decision of the same tick. */
+  async refreshGauges(opts: { quota?: boolean } = {}): Promise<void> {
     const now = this.clock.now();
     const outbox = await this.db.rows<{ type: string; due: number; oldest: Date | null; dead: number }>(
       `SELECT type,
@@ -697,6 +805,21 @@ export class SystemMonitor {
 
     metrics.dbPoolInUse.set(Math.max(0, this.db.pool.totalCount - this.db.pool.idleCount));
 
-    await this.waQuotaSnapshot();
+    if (opts.quota ?? true) await this.waQuotaSnapshot();
   }
+}
+
+/** Equal JSON values whatever the key order (jsonb stores its keys in its own order). */
+function sameJson(a: unknown, b: unknown): boolean {
+  return canonicalJson(a) === canonicalJson(b);
+}
+
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
+  if (v && typeof v === 'object')
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v ?? null);
 }

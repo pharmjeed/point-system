@@ -48,6 +48,7 @@ export async function migrate(
       }
       log(`applying ${m.name}`);
       await client.query(m.sql);
+      await refuseInvalidIndexes(client, m.name);
       await client.query('INSERT INTO schema_migrations (name, checksum) VALUES ($1, $2)', [
         m.name,
         m.checksum,
@@ -59,6 +60,30 @@ export async function migrate(
     await client.query(`SELECT pg_advisory_unlock(hashtext('point_schema_migrations'))`).catch(() => {});
     await client.end();
   }
+}
+
+/**
+ * Later indexes on large tables are built `CONCURRENTLY` (06 ERD §9.2 rule 5), one statement alone in its file. A
+ * build that is interrupted (cancel, deadlock, a duplicate in a unique index) leaves an INVALID index behind, and
+ * `IF NOT EXISTS` would then skip it on the next run and record the migration as applied with an index that is
+ * never used. So no migration is recorded while an invalid index exists in the schema.
+ */
+export async function refuseInvalidIndexes(
+  client: Pick<pg.Client, 'query'>,
+  migration: string,
+): Promise<void> {
+  const invalid = await client.query<{ name: string }>(
+    `SELECT c.relname AS name FROM pg_index i
+       JOIN pg_class c ON c.oid = i.indexrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE NOT i.indisvalid AND n.nspname = current_schema()
+      ORDER BY c.relname`,
+  );
+  if (invalid.rows.length)
+    throw new Error(
+      `Migration ${migration} left invalid indexes (${invalid.rows.map((r) => r.name).join(', ')}): ` +
+        `an interrupted CREATE INDEX CONCURRENTLY — run DROP INDEX CONCURRENTLY on each, then migrate again`,
+    );
 }
 
 /** Drops and recreates the public schema. Refuses in production. */
