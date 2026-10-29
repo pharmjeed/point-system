@@ -68,6 +68,10 @@ export function driverEvents(options: AcquireOptions) {
     const before = home();
     const wasCurrent = before?.current_task?.task.id === card.task.id;
     const wasNext = before?.next_task?.task.id === card.task.id;
+    // this driver's live task even when a newer card took its slot meanwhile (events of one commit can arrive
+    // in any order: a repark card before the cancel of the retrieval it replaces)
+    const seen = homeRegistry.tasks.get(card.task.id);
+    const wasLive = wasCurrent || wasNext || (!!seen && !seen.gone);
     const result = { applied: false };
     updateHome(qc, (h) => {
       const r = applyTaskCard(h, card, homeRegistry, now);
@@ -76,7 +80,7 @@ export function driverEvents(options: AcquireOptions) {
     });
     if (!result.applied) return;
     const status = card.task.status;
-    if (status === 'canceled' && (wasCurrent || wasNext)) {
+    if (status === 'canceled' && wasLive) {
       // 14 §3.1 ticket.retrieval_canceled / §3.2 task.canceled: «أُلغي طلب الإحضار — تذكرة n», no sound
       notice('canceled', card);
       return;

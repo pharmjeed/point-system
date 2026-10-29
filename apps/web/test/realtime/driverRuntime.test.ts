@@ -12,7 +12,7 @@ import type { ServerEvent } from '@/realtime/protocol';
 import { resetSync, useSyncStore } from '@/realtime/syncStore';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
-import { applyOffer } from '@/realtime/driverHome';
+import { applyOffer, mergeSnapshot } from '@/realtime/driverHome';
 import { FakeEnv, FakeTransport } from './engineFakes';
 import { home, IDS, offerCard, taskCard } from './fixtures';
 
@@ -221,6 +221,43 @@ describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
     expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
   });
 
+  it('a withdrawal whose snapshot arrived first (read between the commit and the event) still says so', () => {
+    const before = home({ current_task: taskCard(IDS.taskA, 'accepted', 3) });
+    qc.setQueryData(queryKeys.home, mergeSnapshot(undefined, before, homeRegistry, 0));
+    // the snapshot read after the withdrawal no longer lists the task
+    qc.setQueryData(
+      queryKeys.home,
+      mergeSnapshot(qc.getQueryData<DriverHome>(queryKeys.home), home({}), homeRegistry, Date.now()),
+    );
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task).toBeNull();
+    onEvent(
+      event('task.updated', {
+        cause: 'task.withdrawn',
+        id: IDS.taskA,
+        ticket_id: IDS.ticketA,
+        type: 'retrieve',
+        status: 'queued',
+        version: 4,
+        assignee: null,
+      }),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'withdrawn', ticketNumber: 125 }]);
+    expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
+    // once: the same view again changes nothing
+    onEvent(
+      event('task.updated', {
+        cause: 'task.withdrawn',
+        id: IDS.taskA,
+        ticket_id: IDS.ticketA,
+        type: 'retrieve',
+        status: 'queued',
+        version: 4,
+        assignee: null,
+      }),
+    );
+    expect(playSound).toHaveBeenCalledTimes(1);
+  });
+
   it('the promotion of the reserved next task is announced on any screen (next_due via the dialog)', () => {
     qc.setQueryData(
       queryKeys.home,
@@ -265,6 +302,28 @@ describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
     expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['canceled', 'repark']);
     expect(playSound).toHaveBeenCalledWith('next_due', { key: `task:${IDS.taskC}` });
     expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.type).toBe('repark');
+  });
+
+  it('the repark card may arrive before the cancel it follows (07 §4.5 best-effort order): both notices, the repark stays current', () => {
+    // the snapshot read before: the retrieval in progress (its card is known live)
+    qc.setQueryData(
+      queryKeys.home,
+      mergeSnapshot(
+        undefined,
+        home({ current_task: taskCard(IDS.taskA, 'in_progress', 5) }),
+        homeRegistry,
+        0,
+      ),
+    );
+    const repark = taskCard(IDS.taskC, 'in_progress', 1);
+    repark.task.type = 'repark';
+    onEvent(event('task.updated', { cause: 'ticket.reparking', ...repark }));
+    // one movement per driver: the card learned last takes the slot, whatever the versions of two tasks
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.id).toBe(IDS.taskC);
+    onEvent(event('task.updated', { cause: 'task.canceled', ...card(IDS.taskA, 'canceled', 6) }));
+    expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['repark', 'canceled']);
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.id).toBe(IDS.taskC);
+    expect(playSound).toHaveBeenCalledTimes(1); // next_due for the repark; the cancel has no sound
   });
 
   it('an early request during parking: 02 D-08 notice and `reminder` for the parking driver only', () => {
