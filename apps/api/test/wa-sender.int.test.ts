@@ -76,6 +76,22 @@ describe('WhatsApp sender (job.wa_send)', () => {
     (await w.db.query(`SELECT health_status FROM whatsapp_channel WHERE org_id = $1 AND is_active`, [ORG]))
       .rows[0].health_status as string;
 
+  it('W-01 {{3}}: the make and colour stored as 02 §8.4 keys reach the customer as their Arabic labels (DEC-350)', async () => {
+    const t = await createTicket(w, { status: 'parking', waLinkStatus: 'pending_send' });
+    await w.db.query(`UPDATE tickets SET vehicle_make = 'toyota', vehicle_color = 'white' WHERE id = $1`, [
+      t.id,
+    ]);
+    await emit(w, 'ticket.intake_submitted', t, {
+      channel: 'whatsapp',
+      inspection_status: 'complete',
+      payment_status: 'not_required',
+      wa_link_status: 'pending_send',
+    });
+    await w.flush();
+    const [m] = await sentFor(t);
+    expect(m!.bodyParams).toEqual(['قاعة ريماس', String(t.displayNumber), 'تويوتا كامري أبيض — لوحة 4821']);
+  });
+
   it('W-01: one template with the «طلب السيارة» token, accepted → linked; only sha256(token) is stored', async () => {
     const t = await createTicket(w, { status: 'parking', waLinkStatus: 'pending_send' });
     await emit(w, 'ticket.intake_submitted', t, {

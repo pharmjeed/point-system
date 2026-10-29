@@ -270,10 +270,11 @@ describe('PNT-089 — POST /v1/exports and GET /v1/exports/{exportId}', () => {
 
   it('every kind builds; tickets mask the phone and carry no stub, key or spot; messages carry no recipient', async () => {
     const a = await deliveredWith(t, 'DRV1', CASH);
-    await t.db.query(`UPDATE tickets SET customer_id = $2 WHERE id = $1`, [
-      a.ticketId,
-      SEED_IDS.customers.CUS1,
-    ]);
+    // the make and the colour as the driver app stores them: the 02 §8.4 keys (DEC-350)
+    await t.db.query(
+      `UPDATE tickets SET customer_id = $2, vehicle_make = 'toyota', vehicle_color = 'white' WHERE id = $1`,
+      [a.ticketId, SEED_IDS.customers.CUS1],
+    );
     await t.db.query(
       `INSERT INTO whatsapp_messages (org_id, channel_id, direction, kind, purpose, status, recipient_wa_id, body_redacted,
                                       ticket_id, venue_id, event_id)
@@ -299,6 +300,9 @@ describe('PNT-089 — POST /v1/exports and GET /v1/exports/{exportId}', () => {
     expect(masked).not.toContain('551234567');
     const tk = await one(t.db, `SELECT paper_serial, key_tag FROM tickets WHERE id = $1`, [a.ticketId]);
     for (const secret of [tk.paper_serial, tk.key_tag]) expect(files.tickets).not.toContain(secret);
+    // the file carries the Arabic labels of the stored keys
+    expect(tickets[1]![tickets[0]!.indexOf('vehicle_make')]).toBe('تويوتا');
+    expect(tickets[1]![tickets[0]!.indexOf('vehicle_color')]).toBe('أبيض');
 
     const summary = parseCsv(files.event_summary!);
     expect(summary[1]![summary[0]!.indexOf('event_id')]).toBe(EVT_R2);

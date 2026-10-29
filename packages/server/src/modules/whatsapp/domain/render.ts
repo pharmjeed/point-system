@@ -1,4 +1,10 @@
-import { renderWaText, waTemplateById, type WaMessageId } from '@point/shared';
+import {
+  renderWaText,
+  vehicleColorLabelAr,
+  vehicleMakeLabelAr,
+  waTemplateById,
+  type WaMessageId,
+} from '@point/shared';
 
 /** What `whatsapp_messages.body_redacted` / `payload_redacted` show instead of the handover code (12 §5.10). */
 export const CODE_MASK = '••••••';
@@ -24,10 +30,14 @@ const PLATE_WORD = 'لوحة';
 
 /**
  * W-01 `{{3}}` (14 §4): make + model when present + color + « — لوحة » + the plate digits when present,
- * at most 60 characters; never the plate letters or anything else.
+ * at most 60 characters; never the plate letters or anything else. The make and the colour are stored as the
+ * 02 §8.4 keys (DEC-350): the customer reads their Arabic labels («toyota» → «تويوتا»), typed text as is.
  */
 export function vehicleSummary(v: VehicleFacts): string {
-  const desc = [v.vehicle_make, v.vehicle_model, v.vehicle_color].map(cleanParam).filter(Boolean).join(' ');
+  const desc = [vehicleMakeLabelAr(v.vehicle_make), v.vehicle_model, vehicleColorLabelAr(v.vehicle_color)]
+    .map(cleanParam)
+    .filter(Boolean)
+    .join(' ');
   const digits = cleanParam(v.plate_digits);
   if (!digits) return desc ? desc.slice(0, 60).trim() : '—';
   const plate = `${PLATE_WORD} ${digits}`;

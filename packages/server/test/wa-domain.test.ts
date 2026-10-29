@@ -199,6 +199,31 @@ describe('12 §5.11 rendering', () => {
         plate_digits: '4821',
       }),
     ).toBe('تويوتا كامري بيضاء — لوحة 4821');
+    // the make and the colour are stored as the 02 §8.4 keys (DEC-350): the customer reads Arabic labels
+    expect(
+      vehicleSummary({
+        vehicle_make: 'toyota',
+        vehicle_model: 'كامري',
+        vehicle_color: 'white',
+        plate_digits: '4821',
+      }),
+    ).toBe('تويوتا كامري أبيض — لوحة 4821');
+    expect(
+      vehicleSummary({
+        vehicle_make: 'land_rover',
+        vehicle_model: null,
+        vehicle_color: null,
+        plate_digits: null,
+      }),
+    ).toBe('لاند روفر');
+    expect(
+      vehicleSummary({
+        vehicle_make: 'بروتون',
+        vehicle_model: null,
+        vehicle_color: 'عنابي',
+        plate_digits: '7',
+      }),
+    ).toBe('بروتون عنابي — لوحة 7');
     expect(
       vehicleSummary({ vehicle_make: null, vehicle_model: null, vehicle_color: null, plate_digits: null }),
     ).toBe('—');

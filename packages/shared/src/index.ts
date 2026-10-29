@@ -20,3 +20,4 @@ export * from './phone.js';
 export * from './analytics.js';
 export * from './canon/push.js';
 export * from './canon/realtime.js';
+export * from './vehicle.js';

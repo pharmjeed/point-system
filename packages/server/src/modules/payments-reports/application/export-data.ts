@@ -1,4 +1,4 @@
-import type { ExportKind } from '@point/shared';
+import { vehicleColorLabelAr, vehicleMakeLabelAr, type ExportKind } from '@point/shared';
 import { maskPhone, redact } from '../../../core/logging/redact.js';
 import { plateView, type TicketQueryable } from '../../tickets-custody/index.js';
 import { formatRiyadh, formatSar } from '../domain/payment-rules.js';
@@ -151,8 +151,9 @@ const TICKET_COLUMNS: CsvColumn<TicketExportRow>[] = [
   { name: 'channel', value: (r) => r.channel },
   { name: 'wa_link_status', value: (r) => r.wa_link_status },
   { name: 'plate', value: (r) => plateView(r).display, text: true },
-  { name: 'vehicle_make', value: (r) => r.vehicle_make, text: true },
-  { name: 'vehicle_color', value: (r) => r.vehicle_color, text: true },
+  // stored as the 02 §8.4 keys (DEC-350): the file carries their Arabic labels, typed text as is
+  { name: 'vehicle_make', value: (r) => vehicleMakeLabelAr(r.vehicle_make), text: true },
+  { name: 'vehicle_color', value: (r) => vehicleColorLabelAr(r.vehicle_color), text: true },
   { name: 'customer_phone_masked', value: (r) => maskPhone(r.customer_phone) },
   { name: 'payment_status', value: (r) => r.payment_status },
   { name: 'fee_sar', value: (r) => formatSar(r.fee_halalas) },
