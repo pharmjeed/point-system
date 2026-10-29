@@ -88,6 +88,11 @@ export class CommandInterceptor implements NestInterceptor {
         req.tx = undefined;
       }
     };
+    // 08 §5.4: a foreign key the request named maps to RESOURCE_NOT_FOUND, one the server filled to INTERNAL_ERROR
+    const pgContext = {
+      operation: meta.operation,
+      input: { params: req.params, query: req.query, body: req.body ?? null },
+    };
     let run: Promise<CommandResponse>;
     // keys are scoped per user (idempotency_keys.user_id): public commands (login, MFA verify) run without one
     if ((meta.idempotent || header) && (req.actor?.userId || meta.idempotent)) {
@@ -103,11 +108,10 @@ export class CommandInterceptor implements NestInterceptor {
           requestId: req.requestId,
         },
         handlerFn as any,
+        { pgContext },
       );
     } else {
-      run = runInTransaction(this.db, req.requestId, handlerFn as any, {
-        pgContext: { operation: meta.operation },
-      });
+      run = runInTransaction(this.db, req.requestId, handlerFn as any, { pgContext });
     }
     return from(run).pipe(
       map((r) => {

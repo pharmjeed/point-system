@@ -528,7 +528,7 @@
 |---|---|
 | `23505` unique_violation | حسب اسم القيد (§5.1، §5.2)؛ غير المعروف ← `INTERNAL_ERROR` |
 | `23514` check_violation | حسب §5.3 |
-| `23503` foreign_key_violation | `RESOURCE_NOT_FOUND` (`details.resource`) إذا كان العمود من مدخلات الطلب؛ وإلا `INTERNAL_ERROR` |
+| `23503` foreign_key_violation | `RESOURCE_NOT_FOUND` (`details.resource`) إذا كان العمود من مدخلات الطلب (قيمة المفتاح في `detail` موجودة في معاملات المسار أو الاستعلام أو الجسم)؛ وإلا `INTERNAL_ERROR` (يُسجل خطأً باسم القيد) |
 | `23502` not_null_violation | `INTERNAL_ERROR` (التحقق في zod فاته الحقل) |
 | `40001` serialization_failure، `40P01` deadlock_detected | إعادة المعاملة كاملة تلقائيًا حتى 3 مرات بتأخير عشوائي 20–80 ms (القاموس §14ب)، ثم `SERVICE_UNAVAILABLE` (`retryable: true`) |
 | `55P03` lock_not_available (`lock_timeout` = 3s) | لا يُعاد على الخادم: عند L0 (صف `idempotency_keys`) ← `IDEMPOTENCY_IN_PROGRESS`؛ غير ذلك ← `SERVICE_UNAVAILABLE` (`retryable: true`) |
