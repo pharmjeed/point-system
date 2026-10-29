@@ -1,11 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { IncidentSeverity, IncidentStatus, IncidentType } from '@point/shared';
 import { assertExplicitVenue, type ActorContext } from '../../../core/actor-context/actor-context.js';
-import { audit } from '../../../core/audit/audit-writer.js';
+import { appendTicketEvent, audit } from '../../../core/audit/audit-writer.js';
 import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
+import type { OpenIncidentInput } from '../../../core/hooks/incident-writer.js';
 import { emitEvent } from '../../../core/outbox/outbox-writer.js';
 import { DATABASE } from '../../../http/tokens.js';
 import { ListCursorCodec, pageOf } from '../../venues-events/index.js';
@@ -66,33 +67,23 @@ const incidentNotFound = () => new AppError('RESOURCE_NOT_FOUND', { resource: 'i
 const fieldError = (field: string, issue: string) =>
   new AppError('VALIDATION_FAILED', { fields: [{ field, issue }] });
 
-export interface OpenIncidentInput {
-  orgId: string;
-  venueId: string;
-  eventId?: string | null;
-  ticketId?: string | null;
-  type: IncidentType;
-  severity?: IncidentSeverity;
-  description: string;
-  /** the user recorded as `opened_by` (06: NOT NULL), also for incidents opened by a system flow */
-  openedBy: string;
-  /** who caused it: the user of the command, or the system for an automatic incident */
-  actor?: { type: 'user' | 'system'; id: string | null };
-  /** created already resolved (e.g. TT-19 documents an exception handover): `incident.resolved` follows */
-  resolution?: string | null;
-}
+export type { OpenIncidentInput };
 
 /**
- * Writes an incident (L10 with the command's other appends) and `incident.opened` — the seam for the flows that
- * open incidents themselves (TT-19, TT-20, a payment reversal after delivery; 11 §6.11). No realtime here:
- * the WS `incident.updated` is published by the realtime planner from the domain events (11 §8.8).
+ * The single incident writer (L10 with the command's other appends) and `incident.opened` (+ `incident.resolved`
+ * for an incident documented as already resolved) — used by `POST /v1/incidents` and by every flow that opens
+ * incidents itself: TT-19 (exception handover), TT-20 (repark for an absent customer), a payment reversal after
+ * delivery and a cash handover with a difference (11 §6.11, 13 §7.1, §10.2; the latter two through the core seam
+ * `openIncidentViaHook`, registered by this module's index). The options keep each flow's events as it documents
+ * them: owner, envelope pool, `auto_created`, the status `incident.opened` reports, the ticket timeline. No realtime
+ * here: the WS `incident.updated` is published by the realtime planner from the domain events (11 §8.8).
  */
 export async function openIncident(tx: Tx, i: OpenIncidentInput): Promise<IncidentRow> {
   const resolution = i.resolution?.trim() || null;
   const row = await tx.one<IncidentRow>(
     `INSERT INTO incidents (id, org_id, venue_id, event_id, ticket_id, type, status, severity, description, opened_by,
-                            resolution, resolved_by, resolved_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+                            owner_id, resolution, resolved_by, resolved_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
      RETURNING *`,
     [
       newId(),
@@ -105,6 +96,7 @@ export async function openIncident(tx: Tx, i: OpenIncidentInput): Promise<Incide
       i.severity ?? 'medium',
       i.description,
       i.openedBy,
+      i.ownerId ?? null,
       resolution,
       resolution ? i.openedBy : null,
       resolution ? tx.now : null,
@@ -112,28 +104,50 @@ export async function openIncident(tx: Tx, i: OpenIncidentInput): Promise<Incide
     ],
   );
   const actor = i.actor ?? { type: 'user' as const, id: i.openedBy };
-  const auto = actor.type === 'system';
-  await emitIncidentEvent(tx, 'incident.opened', { ...row, status: 'open' }, actor, { auto_created: auto });
-  if (resolution) await emitIncidentEvent(tx, 'incident.resolved', row, actor, { auto_created: auto });
+  const auto = i.autoCreated === undefined ? actor.type === 'system' : i.autoCreated;
+  const extra = auto === null ? {} : { auto_created: auto };
+  const place: EventPlacement = { dispatchPoolId: i.dispatchPoolId ?? null, timeline: i.timeline ?? null };
+  const opened = i.openedStatus === 'stored' ? row : { ...row, status: 'open' as const };
+  await emitIncidentEvent(tx, 'incident.opened', opened, actor, extra, place);
+  if (resolution) await emitIncidentEvent(tx, 'incident.resolved', row, actor, extra, place);
   return row;
 }
 
-function emitIncidentEvent(
+interface EventPlacement {
+  dispatchPoolId: string | null;
+  timeline: { ticketVersion: number } | null;
+}
+
+async function emitIncidentEvent(
   tx: Tx,
   type: 'incident.opened' | 'incident.updated' | 'incident.resolved',
   row: IncidentRow,
   actor: { type: 'user' | 'system'; id: string | null },
   extra: Record<string, unknown> = {},
+  place: EventPlacement = { dispatchPoolId: null, timeline: null },
 ) {
-  return emitEvent(tx, {
+  const payload = { ...incidentChanged(row), ...extra };
+  await emitEvent(tx, {
     type,
     orgId: row.org_id,
     venueId: row.venue_id,
+    dispatchPoolId: place.dispatchPoolId,
     eventId: row.event_id,
     aggregate: { type: 'incident', id: row.id, version: row.version },
     actor,
-    payload: { ...incidentChanged(row), ...extra },
+    payload,
   });
+  // the ticket timeline row of 11 §1.6, as tickets-custody's emitForTicket writes it (core writer, no import)
+  if (place.timeline && row.ticket_id)
+    await appendTicketEvent(tx, {
+      orgId: row.org_id,
+      venueId: row.venue_id,
+      ticketId: row.ticket_id,
+      type,
+      actor,
+      ticketVersion: place.timeline.ticketVersion,
+      data: payload,
+    });
 }
 
 /**
