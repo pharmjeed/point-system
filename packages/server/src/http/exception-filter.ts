@@ -9,6 +9,7 @@ import type { Logger } from '../core/logging/logger.js';
 import { LOGGER } from './tokens.js';
 import { resolveRequestId } from './request-id.js';
 import { zodToFields } from './zod-pipe.js';
+import { requestLogFields } from './middleware.js';
 
 /** One envelope for every non-2xx response (canon §8, 08 §9.2). */
 @Catch()
@@ -22,14 +23,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const { error, unexpected } = toHttpAppError(err);
     const def = ERROR_CATALOG[error.code];
     sendError(res, error, requestId);
+    // 05 §7.6 fields; an unmatched route also logs its path (never the query: it may carry tokens)
     const fields = {
+      ...requestLogFields(req, def.http),
       request_id: requestId,
       code: error.code,
-      http: def.http,
-      user_id: req.actor?.userId,
-      role: req.actor?.role,
-      venue_id: req.actor?.venueId,
-      route: req.route?.path ?? req.path,
+      ...(req.route ? {} : { path: req.path }),
     };
     if (unexpected || def.http >= 500) this.logger.error({ ...fields, err: describe(err) }, 'request failed');
     else if (def.log === 'warn') this.logger.warn(fields, 'request rejected');

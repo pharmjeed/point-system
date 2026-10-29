@@ -17,6 +17,30 @@ export function httpRouteLabel(
   return `${req.method} ${fromExpressPath(`${req.baseUrl ?? ''}${path}`) || '/'}`;
 }
 
+/** What the request pipeline adds to an Express request (the actor once the session guard ran). */
+export type PipelineRequest = Request & {
+  requestId?: string;
+  /** `performance.now()` when the request entered the pipeline */
+  startedAt?: number;
+  actor?: { userId?: string; role?: string; venueId?: string | null };
+};
+
+/**
+ * 05 §7.6: the fields every log line of a request carries — `request_id`, `user_id`, `role`, `venue_id`, `route` (the
+ * canon template, as the metric's label), `status` and `duration_ms` (since the request entered the pipeline).
+ */
+export function requestLogFields(req: PipelineRequest, status: number) {
+  return {
+    request_id: req.requestId,
+    user_id: req.actor?.userId,
+    role: req.actor?.role,
+    venue_id: req.actor?.venueId ?? undefined,
+    route: httpRouteLabel(req),
+    status,
+    duration_ms: req.startedAt === undefined ? undefined : Math.round(performance.now() - req.startedAt),
+  };
+}
+
 /** The `status` label of a request whose client closed the connection before the response was sent. */
 export const HTTP_ABORTED_STATUS = 'aborted';
 
@@ -27,12 +51,9 @@ export const HTTP_ABORTED_STATUS = 'aborted';
  * `finish` when the client gave up first (the PWA aborts after 10 s) — at `close` with the status `aborted`, so the
  * slowest requests, the tail behind the target, stay in the histogram.
  */
-export function requestContextMiddleware(
-  req: Request & { requestId?: string },
-  res: Response,
-  next: NextFunction,
-) {
+export function requestContextMiddleware(req: PipelineRequest, res: Response, next: NextFunction) {
   const started = performance.now();
+  req.startedAt = started;
   const id = resolveRequestId(req.headers['x-request-id']);
   req.requestId = id;
   res.setHeader('X-Request-Id', id);
