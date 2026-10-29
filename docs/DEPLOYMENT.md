@@ -455,8 +455,9 @@ pc up -d --no-deps web            # ثم الواجهة؛ يظهر «تحديث 
    GRANT CONNECT ON DATABASE point TO point_api, point_worker;
    ```
 
-7. `pc run --rm migrate` (يجب أن يقول «database is up to date» أو يطبق ما بعد النسخة)، ثم `pc up -d`.
-8. طابق القيود الورقية مع `POST /v1/tickets/{ticketId}/manual-reconcile`، وسجّل نقطة الاستعادة والزمن الفعلي والفروقات ومن نفّذ في `docs/test-evidence/restore/<date>.md` (17 §13).
+7. `pc run --rm migrate` (يجب أن يقول «database is up to date» أو يطبق ما بعد النسخة)، ثم `pc up -d api web` والعامل موقوف (DEC-406): الـWebhooks تُحفظ ولا تُعالج، ولا يُرسل شيء، ولا مؤقتات، والموقع يبقى على الورق؛ وتنبيه `outbox_lag` الحرج الذي يرفعه مراقب الـAPI حينها متوقع.
+8. طابق القيود الورقية مع `POST /v1/tickets/{ticketId}/manual-reconcile` (S-03 «مطابقة يدوية بعد انقطاع»)، وسجّل نقطة الاستعادة والزمن الفعلي والفروقات ومن نفّذ في `docs/test-evidence/restore/<date>.md` (17 §13).
+9. `pc up -d worker` بعد انتهاء المطابقة، ثم أنهِ الإجراء الورقي. إن طالت المطابقة أكثر من 15 دقيقة، أو كان الانقطاع في إنترنت القاعة وحدها، شغّل العامل قبلها وطابق أولًا الطلبات المعلقة لمركبات سُلّمت ورقيًا قبل أن يقبلها سائق (الضغطات المحفوظة تُعالج من الـWebhooks المعادة بقواعد التخطي، 12 §14).
 
 ### 12.4 التمرين
 

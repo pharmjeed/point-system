@@ -20,7 +20,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 | # | File | Use it for |
 |---|---|---|
 | 01 | `01_PRD.md` | requirements `FR-*`/`NFR-*`, acceptance `AC-01…AC-22` |
-| 02 | `02_Wireframes_Spec.md` | every screen `D-01…D-15`, `S-01…S-13`, WhatsApp `W-01…W-12`, Arabic copy (§8 → `apps/web/src/i18n/ar.ts`) |
+| 02 | `02_Wireframes_Spec.md` | every screen `D-01…D-15`, `S-01…S-13`, WhatsApp `W-01…W-12`, Arabic copy (§8 → `apps/web/src/i18n/ar.ts` for the driver and shared screens, `ar.staff.ts` for the staff screens, DEC-401) |
 | 03 | `03_Design_System.md` | components, tokens usage, RTL, sound, accessibility |
 | 04 | `04_Architecture_Flow.md` | modules, command & worker pipelines, sequence diagrams, failure modes |
 | 05 | `05_Tech_Stack_Environment.md` | repo layout, libraries, `.env.example`, environments, CI/CD, PWA |

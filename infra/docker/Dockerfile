@@ -39,7 +39,7 @@ RUN --mount=type=secret,id=build_ca,required=false \
  && pnpm --filter @point/worker deploy --prod /out/worker \
  && pnpm --filter @point/db deploy --prod /out/db \
  && for d in /out/*; do \
-      rm -rf "$d/src" "$d/test" "$d"/tsconfig*.json "$d/scripts" "$d/drizzle.config.ts"; \
+      rm -rf "$d/src" "$d/test" "$d/rehearsal" "$d"/tsconfig*.json "$d/scripts" "$d/drizzle.config.ts"; \
       for p in "$d"/node_modules/.pnpm/@point+*/node_modules/@point/*; do \
         rm -rf "$p/src" "$p/test" "$p"/tsconfig*.json "$p/scripts" "$p/drizzle.config.ts"; \
       done; \

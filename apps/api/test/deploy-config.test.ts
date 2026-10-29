@@ -98,3 +98,14 @@ describe('production compose (infra/compose/docker-compose.prod.yml)', () => {
     expect(compose).not.toMatch(/^\s+expose:/m);
   });
 });
+
+describe('backend image (infra/docker/Dockerfile)', () => {
+  const dockerfile = read('infra/docker/Dockerfile');
+
+  it('ships no sources, tests or rehearsal tooling of the workspace packages (DEC-366)', () => {
+    const cleanup = dockerfile.match(/for d in \/out\/\*; do \\\n\s+rm -rf ([^;]+);/);
+    expect(cleanup?.[1]).toBeDefined();
+    for (const dir of ['"$d/src"', '"$d/test"', '"$d/rehearsal"', '"$d/scripts"'])
+      expect(cleanup![1]).toContain(dir);
+  });
+});
