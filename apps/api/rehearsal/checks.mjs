@@ -84,6 +84,43 @@ export const DURATION_QUERIES = {
      WHERE f.submitted_at IS NOT NULL AND f.first_parked_at IS NOT NULL`,
 };
 
+/**
+ * One histogram of a Prometheus text exposition (`/metrics`): its cumulative buckets (`le` ascending, `+Inf` as
+ * Infinity), `sum` and `count`. Label sets other than `le` are summed (the catalog has none on these, 05 §12.2).
+ */
+export function promHistogram(text, name) {
+  const byLe = new Map();
+  let sum = 0;
+  let count = 0;
+  for (const line of String(text ?? '').split('\n')) {
+    if (line.startsWith('#')) continue;
+    const m = /^([a-zA-Z_:][\w:]*)(\{([^}]*)\})? (\S+)$/.exec(line.trim());
+    if (!m) continue;
+    const [, metric, , labels = '', raw] = m;
+    const value = Number(raw);
+    if (metric === `${name}_bucket`) {
+      const le = /(?:^|,)le="([^"]+)"/.exec(labels)?.[1];
+      if (le === undefined) continue;
+      const key = le === '+Inf' ? Infinity : Number(le);
+      byLe.set(key, (byLe.get(key) ?? 0) + value);
+    } else if (metric === `${name}_sum`) sum += value;
+    else if (metric === `${name}_count`) count += value;
+  }
+  const buckets = [...byLe.entries()].sort((a, b) => a[0] - b[0]).map(([le, n]) => ({ le, count: n }));
+  return { buckets, sum, count };
+}
+
+/**
+ * The upper bound of the bucket that holds the nearest-rank q-th percentile of a `promHistogram` (`p95 ≤ x`), or
+ * null when it is empty: a bucketed histogram only bounds a percentile, it never gives the exact value.
+ */
+export function bucketQuantile(h, q) {
+  if (!h?.count) return null;
+  const rank = Math.min(h.count, Math.max(1, Math.ceil((q / 100) * h.count)));
+  for (const b of h.buckets) if (b.count >= rank) return b.le;
+  return Infinity;
+}
+
 /** Nearest-rank percentile of a list of numbers (null for an empty list). */
 export function percentile(values, p) {
   const xs = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);

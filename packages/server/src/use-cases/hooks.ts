@@ -80,6 +80,12 @@ export interface InlinePaymentHook {
       collectedBy?: string;
       source?: 'handover' | 'exception';
       operation?: string;
+      /**
+       * 13 §8.4: the exceptional handover's audit reads `handover.exception`, then `payment.record`. With this
+       * callback the `payment.record` row is not written by `collect`: its writer is handed over, and the caller
+       * runs it after its own row (same transaction and request).
+       */
+      deferAudit?: (writeAudit: () => Promise<void>) => void;
     },
   ): Promise<Record<string, unknown>>;
 }

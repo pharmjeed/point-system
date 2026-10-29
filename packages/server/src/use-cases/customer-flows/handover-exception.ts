@@ -136,7 +136,8 @@ const OPERATION = 'POST /v1/tickets/{ticketId}/handover-exception';
  * payment (PAYMENT_ALREADY_RECORDED), `not_required` / `waived` refuse one (`not_applicable`). The collector
  * `collected_by` is the retrieval's assignee or the approving supervisor himself (13 §8.4; anyone else →
  * VALIDATION_FAILED `payment.collected_by` `not_eligible`): the cash stays in his custody until it is handed over
- * (13 §9), recorded with `source = exception` (PAY-TC-22).
+ * (13 §9), recorded with `source = exception` (PAY-TC-22). Audit: `handover.exception`, then `payment.record`
+ * (13 §8.4).
  */
 @Injectable()
 export class HandoverExceptionUseCase {
@@ -203,16 +204,25 @@ export class HandoverExceptionUseCase {
     const ea = eventActor(actor);
     const revokedCodes = await revokeClaimCodes(tx, cycle.id, 'exception_handover');
     let payment: Record<string, unknown> | null = null;
+    // 13 §8.4: the audit reads handover.exception, then payment.record — the collection's row is written last
+    const deferred: { writeAudit?: () => Promise<void> } = {};
     if (t.payment_status === 'due' && input && pay) {
       payment = await pay.collect(tx, {
         ticket: t,
         cycle,
-        payment: input,
+        payment: {
+          method: input.method,
+          amount_halalas: input.amount_halalas,
+          pos_reference: input.pos_reference ?? null,
+        },
         actor,
         requestId,
         collectedBy: input.collected_by,
         source: 'exception',
         operation: OPERATION,
+        deferAudit: (writeAudit) => {
+          deferred.writeAudit = writeAudit;
+        },
       });
     }
 
@@ -340,6 +350,7 @@ export class HandoverExceptionUseCase {
         settled: settled.outcome,
       },
     });
+    await deferred.writeAudit?.();
     return {
       ticket: await loadTicketDetail(tx, t.id, { userId: actor.userId, role: actor.role }),
       cycle: cycleView(closed),

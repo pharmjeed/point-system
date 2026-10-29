@@ -124,18 +124,24 @@ export interface RecordCollectionArgs {
   /** the id of the new row when the caller needs it before the insert (a replacement, 13 §7.2) */
   paymentId?: string;
   replacesPaymentId?: string;
+  /**
+   * 13 §8.4: the exceptional handover writes its own `handover.exception` row first and the `payment.record` row
+   * after it. With `deferAudit` the row is not written here: `writeAudit` writes it (same transaction and request).
+   */
+  deferAudit?: boolean;
 }
 
 /**
  * The atomic collection of 13 §5.5. The caller holds L2 (event FOR SHARE) → L4 (task) → L5 (ticket) and ran
  * `assertCollectable`. Writes the `payments` row (L9; `uq_payments_ticket_recorded` is the last line of defence
  * → PAYMENT_ALREADY_RECORDED), the ticket `collected` with `version + 1` (a replacement leaves it to the
- * reversal), `payment.recorded` (timeline + outbox) and the `payment.record` audit row.
+ * reversal), `payment.recorded` (timeline + outbox) and the `payment.record` audit row (or, with `deferAudit`,
+ * returns its writer as `writeAudit` for the caller to run after its own row).
  */
 export async function recordCollection(
   tx: Tx,
   a: RecordCollectionArgs,
-): Promise<{ payment: PaymentRow; ticket: TicketRow }> {
+): Promise<{ payment: PaymentRow; ticket: TicketRow; writeAudit: (() => Promise<void>) | null }> {
   const p = await tx.one<PaymentRow>(
     `INSERT INTO payments (id, org_id, venue_id, event_id, ticket_id, cycle_id, method, amount_halalas, currency,
                            pos_reference, collected_by, collected_at, status, created_at)
@@ -180,7 +186,7 @@ export async function recordCollection(
       ...(a.replacesPaymentId ? { replaces_payment_id: a.replacesPaymentId } : {}),
     },
   });
-  await audit(tx, {
+  const entry = {
     orgId: a.actor.orgId,
     actor: userActor(a.actor),
     action: 'payment.record',
@@ -204,8 +210,10 @@ export async function recordCollection(
       ...(a.collectedBy !== a.actor.userId ? { collected_by: a.collectedBy } : {}),
       ...(a.replacesPaymentId ? { replaces_payment_id: a.replacesPaymentId } : {}),
     },
-  });
-  return { payment: p, ticket };
+  };
+  if (a.deferAudit) return { payment: p, ticket, writeAudit: () => audit(tx, entry) };
+  await audit(tx, entry);
+  return { payment: p, ticket, writeAudit: null };
 }
 
 export interface ReverseBody {
