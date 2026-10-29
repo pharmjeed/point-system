@@ -154,7 +154,7 @@ sequenceDiagram
 - الجوال يُقبل بأي صيغة سعودية (`0551234567`، `551234567`، `+966551234567`، `966551234567`) أو E.164 دولي، ويُطبّع إلى E.164. الرد يعرض `phone_masked` بصيغة `05•••••123`؛ الرقم الكامل فقط عبر `POST /v1/tickets/{ticketId}/reveal-phone` المدقق أو لصاحب الحساب. صيغة خاطئة: `422 PHONE_INVALID`.
 - اللوحة السعودية: `digits` حتى 4 أرقام + `letters_ar` ثلاثة أحرف من المجموعة المستخدمة في اللوحات، ويُشتق `letters_en` آليًا بالمقابل الشائع: ا=A، ب=B، ح=J، د=D، ر=R، س=S، ص=X، ط=T، ع=E، ق=G، ك=K، ل=L، م=Z، ن=N، ه=H، و=U، ى=V (تُراجع القائمة عند التنفيذ). اللوحات الأخرى في `raw` مع `country`. الخطأ `422 PLATE_INVALID`. البحث `q` يطابق الأرقام فقط أو الرقم الظاهر للتذكرة.
 - الأرقام لاتينية `0-9` في كل الحقول والنصوص (DEC-17). المعرّفات `uuid`.
-- رمز التسليم لا يظهر في أي رد أو سجل أو حدث WebSocket؛ فقط `ClaimCodeState` (المحاولات، الصلاحية، حالة الإرسال).
+- رمز التسليم لا يظهر في أي رد أو سجل أو حدث WebSocket؛ فقط `ClaimCodeState` (المحاولات، الصلاحية، حالة الإرسال) بحقوله في `07_openapi.yaml` بالضبط: `sent_status` = حالة رسالة W-05 وإلا حالة إشعارها (`failed` أو `skipped` أو `queued`)، و`TicketDetail.claim_code` = أحدث رمز للدورة النشطة و`null` دونه (DEC-208).
 
 ### 1.9 حدود المعدل
 
@@ -387,9 +387,9 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يتطلب موافقة سارية)؛ يُستخدم آليًا عند submit-intake ويدويًا لإعادة المحاولة. qr: يصدر link_code صالح link.qr_ttl_min ويعيد رابط wa.me برسالة معبأة؛ العميل يضغط إرسال ثم يؤكد السائق المطابقة.
 
 - الصلاحية: `wa.link` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: تذكرة مفتوحة في موقع السائق · qr: status ∈ {received, parking, parked}
-- الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ qr: link_codes(active) + job.link_code_expire
-- أحداث: `ticket.wa_link_changed` · WS: `ticket.updated` · واتساب: W-01
+- الشروط: تذكرة مفتوحة في موقع السائق (ومناوبته فيه، `DUTY_REQUIRED`) · الورقية ← INVALID_STATE_TRANSITION (reason=paper_channel) · قناة فعالة غير down، وإلا WA_CHANNEL_UNAVAILABLE (DEC-195) · direct (إعادة المحاولة من D-07، DEC-193): wa_link_status ∈ {none, failed, pending_send}؛ received ← INVALID_STATE_TRANSITION (submit_intake_links_directly، فالإرسال يربط مباشرة)، linked (already_linked)، رسالة QR بانتظار التأكيد (qr_pending_confirmation)؛ بلا جوال ← PHONE_INVALID {field: customer_phone, issue: missing} (DEC-194) · qr: status ∈ {received, parking, parked} وwa_link_status ∈ {none, failed, opted_out, pending_send} (linked وpending_confirmation يرفضان رمزًا جديدًا)؛ بلا رقم عرض مضبوط ← WA_CHANNEL_UNAVAILABLE (reason=display_phone_not_configured) (DEC-196)
+- الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ link_version+1 إن وُجد إشعار W-01 للإصدار الحالي فتصير الأزرار السابقة غير نشطة (DEC-193). qr: link_codes(active) + job.link_code_expire، ولا يتغير شيء في التذكرة ولا إصدارها ولا يصدر حدث نطاقي؛ رسالة العميل لاحقًا ترفع إصدار التذكرة (DEC-196)
+- أحداث: `ticket.wa_link_changed` (direct) · WS: `ticket.updated` · واتساب: W-01
 - أخطاء خاصة: `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PHONE_INVALID`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `WA_CHANNEL_UNAVAILABLE`, `WA_CONSENT_MISSING`, `WA_CUSTOMER_OPTED_OUT`, `WA_TEMPLATE_NOT_APPROVED`
 
 #### `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` — تأكيد مطابقة مرسل QR للمركبة
@@ -397,20 +397,20 @@ direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يت�
 بعد وصول رسالة الربط يرى السائق الرقم المقنّع ويسأل «هل هذا العميل أمامك؟». matches=false يرفض الربط ويُبطل الرمز.
 
 - الصلاحية: `wa.link` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: link_codes.status=pending_confirmation لنفس التذكرة
-- الأثر: matches=true: موافقة customer_initiated + ticket.customer_id + linked + W-01؛ false: revoked
+- الشروط: link_codes.status=pending_confirmation لنفس التذكرة (وإلا INVALID_STATE_TRANSITION؛ رمز ليس للتذكرة ← RESOURCE_NOT_FOUND بـresource=link_code؛ المنتهي ← WA_LINK_CODE_EXPIRED بـexpired_at) · السائق منشئ الرمز (وإلا PERMISSION_DENIED بـreason=not_link_code_creator)، ويجوز لمشرفي الموقع؛ لا فحص مناوبة (DEC-198)
+- الأثر: matches=true: موافقة customer_initiated (captured_by = المؤكِّد) + ticket.customer_id + linked + W-01؛ مرسل غير عميل التذكرة الحالي: تُبطل موافقات السابق للتذكرة ورموز الإجراء ويزيد link_version (DEC-199). false: revoked (driver_rejected_match) وwa_link_status=none (DEC-200)
 - أحداث: `ticket.wa_link_changed` · WS: `ticket.updated` · واتساب: W-01
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `TICKET_NOT_FOUND`, `WA_LINK_CODE_EXPIRED`
+- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `TICKET_NOT_FOUND`, `WA_LINK_CODE_EXPIRED`
 
 #### `PATCH /v1/tickets/{ticketId}/customer-phone` — تعديل جوال العميل
 
 يبطل كل رموز الإجراء السابقة (link_version+1) ويتطلب تحققًا ميدانيًا وسببًا وموافقة جديدة، ثم يرسل W-01 للرقم الجديد.
 
 - الصلاحية: `ticket.change_phone` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: تذكرة مفتوحة · السائق: منشئ التذكرة أو المكلّف بمهمة مفتوحة عليها
-- الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + سجل تدقيق
+- الشروط (DEC-211): تذكرة مفتوحة ليست في received (INVALID_STATE_TRANSITION بـreason=draft_use_intake؛ المسودة تُعدَّل بـPATCH /intake) وليست ورقية (paper_channel) · السائق: مناوبة في الموقع (DUTY_REQUIRED) ومنشئ التذكرة أو المكلّف بمهمة مفتوحة عليها (وإلا PERMISSION_DENIED بـreason=not_creator_or_assignee)؛ المشرف والإدارة بلا قيد المنشئ · الرقم نفسه ← VALIDATION_FAILED (customer_phone، unchanged) · لا فحص لقالب W-01 (يظهر الفشل في D-07)
+- الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + رموز الربط الحية revoked (linked_direct، DEC-201) + سجل تدقيق
 - أحداث: `ticket.customer_phone_changed`, `ticket.wa_link_changed` · WS: `ticket.updated` · واتساب: W-01
-- أخطاء خاصة: `CONSENT_REQUIRED`, `PHONE_INVALID`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`, `WA_CUSTOMER_OPTED_OUT`
+- أخطاء خاصة: `CONSENT_REQUIRED`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `PHONE_INVALID`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`, `WA_CUSTOMER_OPTED_OUT`
 
 #### `POST /v1/tickets/{ticketId}/reveal-phone` — كشف جوال العميل كاملًا
 
@@ -518,19 +518,20 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 يولّد رمزًا جديدًا ويبطل السابق (revoke_reason=resend) ضمن handover.max_resends. الرمز المقفل يعيد إصداره المشرف فقط.
 
 - الصلاحية: `handover.resend_code` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready · المكلّف أو المشرف
+- الشروط (DEC-207): ticket.status=ready مع مهمة إحضار (وإلا HANDOVER_NOT_READY) · المكلّف (سائق غيره ← NOT_TASK_ASSIGNEE) أو المشرف · الفحص بالترتيب: WA_CUSTOMER_OPTED_OUT ثم WA_NOT_LINKED ثم WA_CHANNEL_UNAVAILABLE (لا قناة فعالة أو down) · W-05 غير معتمد يُرفض (WA_TEMPLATE_NOT_APPROVED) فقط ونافذة الخدمة 24 ساعة مغلقة (12 §8.4) · الرمز المقفل يبقى مقفلًا للمكلّف ولو بعد تنظيف انتهائه (HANDOVER_CODE_LOCKED) · RESEND_LIMIT_REACHED بـmax_resends
+- الأثر: الرمز الحي revoked (resend) ورمز جديد بـresend_no+1 ومحاولات جديدة؛ دورة بلا رمز تأخذ أول رمز لها (resend_no=0)؛ إعادة المشرف لرمز مقفل تحل تنبيه handover_code_locked
 - أحداث: `handover.code_issued` · WS: `ticket.updated` · واتساب: W-05
-- أخطاء خاصة: `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `RESEND_LIMIT_REACHED`, `TICKET_NOT_FOUND`, `WA_CHANNEL_UNAVAILABLE`, `WA_CUSTOMER_OPTED_OUT`, `WA_NOT_LINKED`, `WA_TEMPLATE_NOT_APPROVED`
+- أخطاء خاصة: `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `RESEND_LIMIT_REACHED`, `TICKET_NOT_FOUND`, `WA_CHANNEL_UNAVAILABLE`, `WA_CUSTOMER_OPTED_OUT`, `WA_NOT_LINKED`, `WA_TEMPLATE_NOT_APPROVED`
 
 #### `POST /v1/tickets/{ticketId}/handover-exception` — تسليم استثنائي باعتماد المشرف
 
 للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
 - الصلاحية: `handover.exception` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready
-- الأثر: كالتسليم + claim code revoked (exception_handover) + incident manual_verification اختياري
-- أحداث: `handover.exception_approved`, `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `driver.availability_changed`, `task.promoted` · WS: `ticket.updated`, `task.updated`, `driver.state_changed` · واتساب: W-06
-- أخطاء خاصة: `HANDOVER_NOT_READY`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو تذكرة بلا جوال ← VALIDATION_FAILED على identity_checks.phone_last4 بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (identity_checks: insufficient_checks) (DEC-209) · بوابة الدفع كالتسليم (13)
+- الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة `manual_verification` (أو `lost_ticket` للورقية) تُنشأ دائمًا بحالة resolved وحلها `handover_exception: <methods>` + العهدة من حائزيها الحاليين (سائق أو مشرف) إلى العميل + حل handover_code_locked وready_not_collected (DEC-210)
+- أحداث: `handover.exception_approved`, `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `incident.opened`, `incident.resolved`, `payment.recorded`, `driver.availability_changed`, `task.promoted` · WS: `ticket.updated`, `task.updated`, `driver.state_changed` · واتساب: W-06
+- أخطاء خاصة: `HANDOVER_NOT_READY`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tasks/{taskId}/reassign` — إعادة إسناد آمنة قبل بدء الحركة
 

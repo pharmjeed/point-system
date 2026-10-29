@@ -759,8 +759,8 @@ erDiagram
 #### 31) `link_codes`
 - **الغرض:** ربط محادثة العميل بالتذكرة عبر QR يفتح واتساب برسالة جاهزة فيها رمز قصير؛ المسح وحده ليس إرسالًا (المعمارية §4د).
 - **أعمدة أساسية:** `code` (6 رموز من أبجدية بلا التباس `^[A-HJ-NP-Z2-9]{6}$`)، `status` (Canon §5.7)، `created_by`، `expires_at`، `inbound_message_id`، `inbound_wa_id`، `inbound_user_id` (BSUID حين يُخفي المرسل رقمه، DEC-35)، `inbound_phone_e164`، `confirmed_by/at`.
-- **القيود:** `link_codes_code_check`، `uq_link_codes_live_code` (لا يتكرر رمز حي)، `uq_link_codes_live_ticket` (رمز حي واحد للتذكرة؛ يُبطل القديم قبل إصدار جديد).
-- **الكتابة/القراءة:** `POST /v1/tickets/{ticketId}/whatsapp-link` بطريقة QR، المعالجة الواردة (`pending_confirmation`)، `.../whatsapp-link/confirm` (`consumed`)، `job.link_code_expire`. يُقرأ في D-07.
+- **القيود:** `link_codes_code_check`، `uq_link_codes_live_code` (لا يتكرر رمز حي)، `uq_link_codes_live_ticket` (رمز حي واحد للتذكرة؛ يُبطل القديم قبل إصدار جديد)، وقيمة `revoke_reason` من `driver_rejected_match` أو `regenerated` أو `linked_direct` أو `ticket_voided` أو `channel_paper`؛ ولا قيمة لتغيير الجوال فيبطل رموزه الحية بـ`linked_direct` (DEC-201)، وكذلك رسالة رمز لتذكرة رُبطت في الأثناء (DEC-197).
+- **الكتابة/القراءة:** `POST /v1/tickets/{ticketId}/whatsapp-link` بطريقة QR، المعالجة الواردة (`pending_confirmation`)، `.../whatsapp-link/confirm` (`consumed`)، `PATCH /v1/tickets/{ticketId}/customer-phone` (`revoked`)، `job.link_code_expire`. يُقرأ في D-07.
 
 #### 32) `action_tokens`
 - **الغرض:** قيمة `payload` المعتمة لزر «طلب السيارة» في W-01؛ تربط الزر بالعميل والتذكرة وإصدار الربط.

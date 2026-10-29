@@ -611,10 +611,10 @@ stateDiagram-v2
 القواعد:
 
 1. الإصدار في TT-17: 6 أرقام عشوائية آمنة؛ `code_hash = HMAC-SHA256(CODE_PEPPER, cycle_id || ':' || code)`؛ `code_ciphertext` بتشفير AES-GCM؛ `expires_at = now() + handover.code_ttl_min`؛ `max_attempts = handover.max_attempts`. رمز حي واحد لكل دورة (`uq_claim_codes_live`).
-2. التحقق: مقارنة هاش بزمن ثابت. الخطأ يزيد `attempts` في معاملة الأمر نفسها ويلتزم مع رد الخطأ المحفوظ (TT-18)؛ عند البلوغ `locked_at = now()` وتنبيه `handover_code_locked` وحدث `handover.code_locked`.
+2. التحقق: مقارنة هاش بزمن ثابت. الخطأ يزيد `attempts` في معاملة الأمر نفسها ويلتزم مع رد الخطأ المحفوظ (TT-18)؛ عند بلوغ `max_attempts` صف الرمز (لحظة الإصدار) `locked_at = now()` وتنبيه `handover_code_locked` وحدث `handover.code_locked`. ترتيب الرفض (DEC-206): المستهلك `HANDOVER_CODE_CONSUMED`، ثم المقفل `HANDOVER_CODE_LOCKED` (ولو بعد تنظيف انتهائه)، ثم المنتهي أو المنظَّف `HANDOVER_CODE_EXPIRED`؛ ودورة بلا رمز ← `VALIDATION_FAILED` (`verification.method`، `not_applicable`).
 3. الإرسال: مهمة `job.wa_send` لـW-05 تقرأ `claim_codes.code_ciphertext` وتفك تشفيره في الذاكرة لحظة بناء الطلب وترسل؛ بعد قبول المزود تُمسح النسخة المشفرة، ويحفظ `whatsapp_messages.body_redacted` مع الرمز مقنّعًا. لا يمر الرمز عبر `outbox_events` إطلاقًا (DEC-38).
-4. إعادة الإرسال (`POST /v1/tickets/{ticketId}/handover-code/resend`): للمكلّف أو المشرف ما دام `resend_no < handover.max_resends` (وإلا `RESEND_LIMIT_REACHED`)؛ الرمز الحي يُبطل (`resend`) ويصدر بديل بـ`resend_no + 1` ومحاولات جديدة. إن كان الرمز `locked` فإعادة الإرسال للمشرف فقط (المكلّف يحصل على `HANDOVER_CODE_LOCKED`).
-5. الإبطال: `reparked` (TT-20)، `canceled` (إلغاء المشرف بعد الحركة TT-20b أو مطابقة)، `exception_handover` (TT-19)، `expired_cleanup` (`job.claim_code_expire` بعد `expires_at`، مع مسح النسخة المشفرة).
+4. إعادة الإرسال (`POST /v1/tickets/{ticketId}/handover-code/resend`): للمكلّف أو المشرف ما دام `resend_no < handover.max_resends` (وإلا `RESEND_LIMIT_REACHED` بـ`max_resends`)؛ الرمز الحي يُبطل (`resend`) ويصدر بديل بـ`resend_no + 1` ومحاولات جديدة، ودورة بلا رمز تأخذ أول رمز لها (`resend_no = 0`). إن كان الرمز `locked` فإعادة الإرسال للمشرف فقط (المكلّف يحصل على `HANDOVER_CODE_LOCKED` ولو بعد تنظيف الرمز). ترتيب الفحوص (DEC-207): `HANDOVER_NOT_READY` ← `NOT_TASK_ASSIGNEE` ← `WA_CUSTOMER_OPTED_OUT` ← `WA_NOT_LINKED`، وW-05 غير المعتمد يُرفض فقط والنافذة 24 ساعة مغلقة (الملف 12 §8.4).
+5. الإبطال: `reparked` (TT-20)، `canceled` (إلغاء المشرف بعد الحركة TT-20b أو مطابقة)، `exception_handover` (TT-19)، `expired_cleanup` (`job.claim_code_expire` بعد `expires_at`، مع مسح النسخة المشفرة؛ ويبطل الرمز المقفل أيضًا ويبقى `locked_at`، DEC-207).
 6. الرمز لا يُعرض للسائق في أي رد أو حدث أو سجل، ولا يُعاد ضمن W-09.
 
 ### 5.2 رمز الربط `link_codes`
@@ -636,8 +636,8 @@ stateDiagram-v2
 1. الإصدار: `code` من 6 خانات بأبجدية واضحة بلا I وO و0 و1 (`^[A-HJ-NP-Z2-9]{6}$`)، `expires_at = now() + link.qr_ttl_min`، رمز حي واحد للتذكرة وللقيمة.
 2. QR يفتح محادثة رقم مصاف برسالة جاهزة تحتوي الرمز؛ **مسح QR وحده ليس إرسالًا**؛ لا شيء يتغير حتى تصل رسالة فعلية.
 3. وصول رسالة نصية تحتوي رمزًا حيًا: الرمز `pending_confirmation`، حفظ `inbound_message_id` و`inbound_wa_id` و`inbound_phone_e164`، رد W-11، وWS `ticket.updated` للسائق (D-07: «هل هذا العميل أمامك؟»).
-4. التأكيد بالمطابقة: الرمز `consumed`، `confirmed_by`، موافقة `customer_initiated` بدليل الرسالة، `wa_link_status = linked`، وإرسال W-01. الرفض: الرمز `revoked` ويعود `wa_link_status` إلى `none` ويمكن إصدار رمز جديد.
-5. رسالة برمز منتهٍ أو غير معروف: لا ربط؛ رد W-11 بصيغة «انتهى الرمز، اطلب رمزًا جديدًا من السائق».
+4. التأكيد بالمطابقة: الرمز `consumed`، `confirmed_by`، موافقة `customer_initiated` بدليل الرسالة (`captured_by` = المؤكِّد)، `wa_link_status = linked`، وإرسال W-01؛ والمرسل غير عميل التذكرة الحالي يصير عميلها: تُبطل موافقات السابق لهذه التذكرة (`staff`) ورموز الإجراء ويزيد `link_version` (DEC-199). الرفض: الرمز `revoked` ويعود `wa_link_status` إلى `none` ويمكن إصدار رمز جديد؛ وكذلك انتهاء رمز `pending_confirmation`، ولو كان الربط قبل رسالة QR `failed` أو `opted_out` (DEC-200).
+5. رسالة برمز منتهٍ (ولو لم يعلّمه مؤقته بعد) أو غير معروف: لا ربط؛ رد W-11 بصيغة «انتهى الرمز، اطلب رمزًا جديدًا من السائق». ورسالة رمز لتذكرة رُبطت في الأثناء تبطل الرمز (`linked_direct`) وترد W-11 «غير صالح» (DEC-197).
 
 ### 5.3 رمز الإجراء `action_tokens`
 
@@ -676,6 +676,8 @@ stateDiagram-v2
   linked --> failed: فشل لاحق لرسالة W-01
   failed --> pending_send: رقم مصحح أو إعادة محاولة
   failed --> pending_confirmation: ربط QR
+  pending_send --> pending_confirmation: ربط QR (DEC-196)
+  opted_out --> pending_confirmation: ربط QR برسالة العميل (DEC-196)
   linked --> pending_send: تغيير الجوال
   none --> opted_out: عميل أوقف الرسائل
   pending_send --> opted_out: إيقاف
@@ -686,7 +688,8 @@ stateDiagram-v2
 
 - «قبول المزود» = رد ناجح من واجهة الإرسال بمعرّف رسالة (`whatsapp_messages.status = sent`).
 - `failed` يظهر للسائق في D-07 وللمشرف في S-02 مع تنبيه `wa_send_failed`؛ البديل QR أو الورق.
-- `opted_out` يسري على كل التذاكر المفتوحة للعميل (`wa.customer_opted_out` ← `ticket.wa_link_changed` لكل تذكرة). ضغط العميل «طلب السيارة» بعد الإيقاف يستأنف الموافقة لهذه التذكرة (`customer_initiated`، ويُمسح `wa_opted_out_at`، وتعود `linked`) ثم يُعالج الطلب ورسائله عادة (الملف 12)؛ رموز الإجراء لا تُبطل بالإيقاف (§5.3).
+- `opted_out` يسري على كل التذاكر المفتوحة للعميل (`wa.customer_opted_out` ← `ticket.wa_link_changed` لكل تذكرة). ضغط العميل «طلب السيارة» بعد الإيقاف يستأنف الموافقة لهذه التذكرة (`customer_initiated`، ويُمسح `wa_opted_out_at`، وتعود `linked`) ثم يُعالج الطلب ورسائله عادة (الملف 12)؛ وتبقى تذاكره المفتوحة الأخرى `opted_out` حتى يُعاد ربطها (DEC-205)؛ رموز الإجراء لا تُبطل بالإيقاف (§5.3).
+- إصدار رمز QR يجوز من `none` أو `failed` أو `opted_out` أو `pending_send`، ولا يغيّر التذكرة ولا إصدارها؛ رسالة العميل بالرمز هي التي تنقلها إلى `pending_confirmation` وترفع إصدارها (DEC-196).
 
 ### 6.3 حالة الفحص `tickets.inspection_status`
 
@@ -985,7 +988,7 @@ interface TicketVoided { ticket: TicketRef; voided_by: UUID; reason: string; via
 interface TicketCustomerPhoneChanged { ticket: TicketRef; changed_by: UUID; reason: string; link_version: number }
 interface TicketWaLinkChanged {
   ticket: TicketRef; from: WaLinkStatus; to: WaLinkStatus;
-  method: 'direct' | 'qr' | 'phone_change' | 'opt_out' | 'button_resume' | 'provider_error' | 'provider_accepted' | 'qr_rejected' | 'channel_paper';   // button_resume: ضغط «طلب السيارة» بعد الإيقاف يستأنف الموافقة (الملف 12 §7.6)
+  method: 'direct' | 'qr' | 'phone_change' | 'opt_out' | 'button_resume' | 'provider_error' | 'provider_accepted' | 'qr_rejected' | 'channel_paper';   // button_resume: ضغط «طلب السيارة» بعد الإيقاف يستأنف الموافقة (الملف 12 §7.6)؛ انتهاء رمز QR معلّق يُبلَّغ بـqr (DEC-200)
   link_version: number; notification_id: UUID | null;
 }
 interface TicketInspectionCompleted { ticket: TicketRef; media_id: UUID }   // آخر صورة إلزامية اكتمل رفعها
@@ -1120,8 +1123,11 @@ interface CustodyChanged {
   reason: CustodyReason; task_id: UUID | null;
 }
 interface HandoverCodeIssued { ticket_id: UUID; cycle_id: UUID; claim_code_id: UUID; expires_at: ISODateTime; resend_no: number }
-interface HandoverCodeAttemptFailed { ticket_id: UUID; claim_code_id: UUID; attempts: number; attempts_left: number }
-interface HandoverCodeLocked { ticket_id: UUID; claim_code_id: UUID }
+interface HandoverCodeAttemptFailed {   // للرمز ولكعب الورق (DEC-176، DEC-206)
+  ticket_id: UUID; cycle_id: UUID; method: 'code' | 'paper_stub'; claim_code_id: UUID | null;
+  attempts: number; attempts_left: number;
+}
+interface HandoverCodeLocked { ticket_id: UUID; cycle_id: UUID; method: 'code' | 'paper_stub'; claim_code_id: UUID | null }
 interface HandoverCompleted { ticket_id: UUID; cycle_id: UUID; method: HandoverMethod; delivered_by: UUID; approved_by: UUID | null }
 interface HandoverExceptionApproved { ticket_id: UUID; cycle_id: UUID; approved_by: UUID; reason: string; incident_id: UUID }
 ```
@@ -1198,9 +1204,10 @@ interface WaInboundReceived {
   matched: 'action_token' | 'link_code' | 'opt_out' | 'none'; link_result: 'received' | 'invalid' | null;   // DEC-141
 }
 interface WaButtonPressed {
-  whatsapp_message_id: UUID; ticket_id: UUID | null; customer_id: UUID | null;
+  whatsapp_message_id: UUID; ticket_id: UUID | null;   // null عند sender_mismatch؛ صف التدقيق يحفظ action_token_id وticket_id (DEC-202)
+  customer_id: UUID | null;
   outcome: 'request_created' | 'early_request' | 'status_reply' | 'rejected';
-  reject_reason?: 'unknown_token' | 'sender_mismatch' | 'stale_link_version' | 'expired' | 'revoked';
+  reject_reason?: 'unknown_token' | 'sender_mismatch' | 'stale_link_version' | 'expired' | 'revoked';   // revoked أيضًا لتذكرة voided ولرسالة W-01 مقتبسة لتذكرة أخرى (دليل إيجابي فقط، DEC-202)
 }
 interface WaMessageStatusChanged {
   whatsapp_message_id: UUID; notification_id: UUID | null; ticket_id: UUID | null; purpose: string | null;

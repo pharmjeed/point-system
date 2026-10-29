@@ -494,16 +494,18 @@ async function handleButton(m, contact) {
   if (token.revoked_at || token.expires_at < now()) return reply('W-09', inbound, { variant: 'inactive' });
 
   const t = await tickets.get(token.ticket_id);
-  if (m.context?.id && !(await isW01OfTicket(m.context.id, t.id))) {  // دفاع إضافي: الزر من رسالة تذكرة أخرى
+  if (m.context?.id && (await isW01OfAnotherTicket(m.context.id, t.id))) {  // دفاع إضافي بدليل إيجابي فقط؛ السياق المجهول (§5.13) لا يرفض (DEC-202)
     audit('wa.button_context_mismatch', { token_id: token.id });
-    return reply('W-09', inbound, { variant: 'inactive' });
+    return reply('W-09', inbound, { variant: 'inactive' });          // reject_reason = revoked
   }
   if (token.link_version !== t.link_version) return reply('W-09', inbound, { variant: 'inactive' });
-  if (['delivered', 'voided'].includes(t.status)) return reply('W-09', inbound, { variant: t.status });
+  if (t.status === 'voided') return reply('W-09', inbound, { variant: 'inactive' });   // الإلغاء يبطل الرموز: reject_reason = revoked (DEC-202)
+  if (t.status === 'delivered') return reply('W-09', inbound, { variant: t.status });
 
   if (customer.wa_opted_out_at) await consents.resumeByButton(customer, t, inbound);   // §7.6
-  const r = await retrieval.requestFromWhatsApp({                     // أمر موحد — قفل مجموعة التوزيع (الملف 10)
-    ticketId: t.id, customerId: customer.id, inboundMessageId: inbound.id, requestedAt: m.timestamp,
+  const r = await retrieval.requestFromWhatsApp({                     // أمر موحد — L1 للمجموعة قبل L5 للتذكرة دائمًا (الملف 10 §7.2، DEC-203)
+    ticketId: t.id, customerId: customer.id, inboundMessageId: inbound.id,
+    requestedAt: min(m.timestamp, now()),                             // طابع الرسالة ما لم يتجاوز الآن (DEC-203)
   });
   await actionTokens.touch(token.id);
   if (r.outcome === 'already_active') return reply('W-09', inbound, { variant: r.ticketStatus });
@@ -516,11 +518,11 @@ async function handleButton(m, contact) {
 | حالة التذكرة لحظة الضغط | النتيجة | الرسالة |
 |---|---|---|
 | `parked` بلا دورة مفتوحة | إنشاء `retrieval_cycles` (`request_source = 'whatsapp'`، `requested_at` = وقت الضغطة) ومهمة `retrieve` | W-02 عبر `ticket.retrieval_requested` |
-| `received` أو `parking` أو `reparking` دون طلب معلق | `tickets.pending_retrieval_at` = وقت الضغطة و`pending_retrieval_source = 'whatsapp'` (DEC-13) + إشعار السائق القائم بالصف والمشرف | W-02 عبر `ticket.retrieval_requested_early` |
+| `received` أو `parking` أو `reparking` دون طلب معلق | `tickets.pending_retrieval_at` = وقت الضغطة و`pending_retrieval_source = 'whatsapp'` (DEC-13) + إشعار السائق القائم بالصف والمشرف (`ticket.retrieval_requested_early` يحمل `parking_task_assignee_id`، DEC-204) | W-02 عبر `ticket.retrieval_requested_early` |
 | أي حالة بها دورة مفتوحة أو طلب معلق | `already_active` دون تغيير | W-09 بالحالة الحالية (مخنوق 20 ثانية) |
 | `delivered` / `voided` | لا شيء | W-09 بالمتغير المناسب |
 
-سباق ضغطتين متزامنتين من العميل نفسه تحسمه الفهارس `uq_retrieval_cycles_open` و`uq_tasks_open_per_ticket`: المعاملة الخاسرة تلتقط خرق التفرد وتعيد `already_active`. لا تنشأ حركتان متزامنتان (المعمارية §4هـ).
+سباق ضغطتين متزامنتين من العميل نفسه تحسمه الفهارس `uq_retrieval_cycles_open` و`uq_tasks_open_per_ticket`: المعاملة الخاسرة تلتقط خرق التفرد وتعيد `already_active`. لا تنشأ حركتان متزامنتان (المعمارية §4هـ). وكل ضغطة تأخذ L1 لمجموعة التذكرة قبل L5 لأن النتيجة المقروءة تحت L5 قد تفتح دورة، فتتسلسل الضغطات المتمايزة على القفلين (DEC-203). عدم تطابق المرسل يصدر `wa.button_pressed` بـ`ticket_id = null`، ويحفظ صف التدقيق `action_token_id` و`ticket_id` (DEC-202).
 
 ### 6.6 الرسائل النصية (`type = "text"`)
 
@@ -623,8 +625,12 @@ sequenceDiagram
 ```ts
 async function handleLinkCode(code, m, contact, inbound) {
   const lc = await linkCodes.lockLive(code);                       // status in ('active','pending_confirmation')
-  if (!lc || lc.status !== 'active' || lc.expires_at < now())
+  if (!lc || lc.status !== 'active' || lc.expires_at < now())      // المنتهي غير صالح قبل أن يعلّمه مؤقته (DEC-197)
     return reply('W-11', inbound, { variant: 'invalid' });         // رمز مستخدم أو منتهٍ أو مزيف
+  if (await tickets.isLinked(lc.ticket_id)) {                      // رُبطت التذكرة مباشرة في الأثناء (DEC-197)
+    await linkCodes.revoke(lc.id, 'linked_direct');
+    return reply('W-11', inbound, { variant: 'invalid' });
+  }
   await linkCodes.update(lc.id, { status: 'pending_confirmation', inbound_message_id: inbound.id,
                                   inbound_wa_id: contact.wa_id ?? null,
                                   inbound_phone_e164: m.from ? '+' + m.from : null });
@@ -635,9 +641,11 @@ async function handleLinkCode(code, m, contact, inbound) {
 
 5. D-07 يستقبل `ticket.updated` ويعرض: «وصلت رسالة من 05•••••123 — هل هذا العميل أمامك؟» (أو اسم الملف الشخصي في واتساب إذا لم يظهر الرقم، F-21). السائق يتأكد بصريًا أن الشخص أمامه هو من أرسل (يرى الرسالة المرسلة على جوال العميل) وأن المركبة له.
 6. التأكيد: `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` مع `matches`:
-   - `true`: معاملة واحدة: upsert `customers` (`wa_id`/`phone_e164`/BSUID) + `customer_consents` (`customer_initiated`، `evidence_message_id` = الرسالة الواردة؛ ويُمسح `customers.wa_opted_out_at` إن كان قد أوقف الرسائل، فرسالته بنفسه استئناف للموافقة) + `tickets.customer_id` و`wa_link_status = 'linked'` (و`link_version + 1` إن سبق إنشاء إشعار W-01 للتذكرة، أي إعادة ربط ولو للعميل نفسه، فلا يتكرر مفتاح W-01) + `link_codes.status = 'consumed'`، `confirmed_by`، `confirmed_at` + رمز إجراء جديد + الحدث `ticket.wa_link_changed` ← W-01.
-   - `false`: `link_codes.status = 'revoked'` و`wa_link_status = 'none'`؛ يمكن للسائق توليد رمز جديد.
-7. انتهاء الصلاحية دون رسالة: `job.link_code_expire` ← `expired` وتحديث D-07 («انتهى الرمز — أنشئ رمزًا جديدًا»).
+   - `true`: معاملة واحدة: upsert `customers` (`wa_id`/`phone_e164`/BSUID) + `customer_consents` (`customer_initiated`، `evidence_message_id` = الرسالة الواردة، `captured_by` = المؤكِّد؛ ويُمسح `customers.wa_opted_out_at` إن كان قد أوقف الرسائل، فرسالته بنفسه استئناف للموافقة) + `tickets.customer_id` و`wa_link_status = 'linked'` (و`link_version + 1` إن سبق إنشاء إشعار W-01 للتذكرة، أي إعادة ربط ولو للعميل نفسه، فلا يتكرر مفتاح W-01، أو تغيّر عميل التذكرة) + `link_codes.status = 'consumed'`، `confirmed_by`، `confirmed_at` + رمز إجراء جديد + الحدث `ticket.wa_link_changed` ← W-01. المرسل غير عميل التذكرة الحالي يصير عميلها: تُبطل موافقات العميل السابق لهذه التذكرة (`revoke_source = staff`) وكل رموز إجرائها (DEC-199).
+   - `false`: `link_codes.status = 'revoked'` (`driver_rejected_match`) و`wa_link_status = 'none'` ولو كانت قبل رسالة QR `failed` أو `opted_out` (DEC-200)؛ يمكن للسائق توليد رمز جديد.
+   - أخطاء التأكيد (DEC-198): رمز لا يخص التذكرة ← `RESOURCE_NOT_FOUND` (`resource: link_code`)، رمز ليس `pending_confirmation` ← `INVALID_STATE_TRANSITION`، المنتهي ← `WA_LINK_CODE_EXPIRED`، وسائق غير منشئ الرمز ← `PERMISSION_DENIED` (`not_link_code_creator`)؛ ولمشرفي الموقع التأكيد.
+7. انتهاء الصلاحية دون رسالة: `job.link_code_expire` ← `expired` وتحديث D-07 («انتهى الرمز — أنشئ رمزًا جديدًا»)؛ وانتهاء رمز `pending_confirmation` يعيد الربط إلى `none` بحدث `ticket.wa_link_changed` (`method: qr`، DEC-200).
+8. الإصدار يجوز من `none` أو `failed` أو `opted_out` أو `pending_send` ولا يغيّر التذكرة ولا إصدارها؛ و`linked` و`pending_confirmation` يرفضان رمزًا جديدًا (DEC-196). رقم العرض في الرابط من `whatsapp_channel.phone_display` وإلا `WA_DISPLAY_PHONE_E164`، وبلا أيهما ← `WA_CHANNEL_UNAVAILABLE` (`display_phone_not_configured`، DEC-195).
 
 ```mermaid
 sequenceDiagram
@@ -677,7 +685,7 @@ sequenceDiagram
 ### 7.4 تغيير الجوال
 
 `PATCH /v1/tickets/{ticketId}/customer-phone` (بتحقق ميداني وسبب، صلاحية `ticket.change_phone`):
-1. معاملة واحدة: upsert العميل الجديد، موافقة جديدة، `tickets.customer_id` جديد، `link_version = link_version + 1`، إبطال كل `action_tokens` للتذكرة (`revoked_at = now()`)، إبطال أي `link_codes` حيّ، سجل تدقيق بالسبب، الحدث `ticket.customer_phone_changed`.
+1. معاملة واحدة: upsert العميل الجديد، موافقة جديدة، `tickets.customer_id` جديد، `link_version = link_version + 1`، إبطال كل `action_tokens` للتذكرة (`revoked_at = now()`)، إبطال أي `link_codes` حيّ (`revoke_reason = linked_direct` لأن القيد بلا قيمة `phone_change`، DEC-201)، سجل تدقيق بالسبب، الحدث `ticket.customer_phone_changed`. القواعد والأخطاء في 07 (DEC-211).
 2. يُخطَّط W-01 جديد للرقم الجديد في معاملة التغيير نفسها (DEC-41) بمفتاح `lv{link_version}` الجديد.
 3. الرقم القديم لا يتلقى أي رسالة جديدة. ضغطه على زر قديم ← `link_version` لا يطابق ← W-09 (غير نشطة). إشعارات معلقة للرقم القديم تُتخطى (`stale`).
 
@@ -691,8 +699,8 @@ sequenceDiagram
 ### 7.6 الإيقاف واستئناف الموافقة
 
 - الإيقاف (`OPT_OUT`): في معاملة واحدة `customers.wa_opted_out_at = now()`، إبطال الموافقات (`revoked_at`، `revoke_source = 'customer_opt_out'`)، `wa_link_status = 'opted_out'` لكل تذاكر العميل المفتوحة، الحدث `wa.customer_opted_out` ← W-12، وحدث `ticket.updated` للسائقين المعنيين («العميل أوقف رسائل واتساب — سلّمه شفهيًا أو بالتذكرة الورقية»). بعدها كل إشعار له يُتخطى `opted_out`.
-- إن ضغط العميل «طلب السيارة» بعد الإيقاف: الضغطة نفسها طلب صريح منه للخدمة؛ يُسجل استئناف موافقة لهذه التذكرة (`customer_initiated`، دليلها رسالة الزر)، ويُمسح `wa_opted_out_at`، وتعود `wa_link_status = 'linked'` (حدث `ticket.wa_link_changed` بالطريقة `button_resume`)، ثم يُعالج الطلب ورسائله عادة، مع سجل تدقيق.
-- خلاف ذلك لا تعود الرسائل إلا بمبادرة العميل نفسه: رسالة ربط QR يرسلها ثم يؤكدها السائق (§7.2). الربط المباشر بموافقة شفهية لعميل أوقف الرسائل يُرفض بـ`WA_CUSTOMER_OPTED_OUT`، فيستخدم السائق QR أو التذكرة الورقية.
+- إن ضغط العميل «طلب السيارة» بعد الإيقاف: الضغطة نفسها طلب صريح منه للخدمة؛ يُسجل استئناف موافقة لهذه التذكرة (`customer_initiated`، دليلها رسالة الزر)، ويُمسح `wa_opted_out_at`، وتعود `wa_link_status = 'linked'` لهذه التذكرة وحدها (حدث `ticket.wa_link_changed` بالطريقة `button_resume`)، وتبقى تذاكره المفتوحة الأخرى `opted_out` حتى يُعاد ربطها، ثم يُعالج الطلب ورسائله عادة، مع سجل تدقيق (DEC-205).
+- خلاف ذلك لا تعود الرسائل إلا بمبادرة العميل نفسه: رسالة ربط QR يرسلها ثم يؤكدها السائق (§7.2)؛ ورد W-11 على رسالته يُتخطى (`opted_out`، فـW-12 الاستثناء الوحيد)، وتأكيد السائق يستأنف الموافقة ثم يتبعه W-01 (DEC-205). الربط المباشر بموافقة شفهية لعميل أوقف الرسائل يُرفض بـ`WA_CUSTOMER_OPTED_OUT`، فيستخدم السائق QR أو التذكرة الورقية.
 
 ---
 
@@ -926,7 +934,7 @@ W-05 يحمل رمز تسليم. صياغته معاملية (استلام مر�
 
 | الواجهة | السلوك |
 |---|---|
-| `POST /{version}/{phone_number_id}/messages` | يتحقق من البنية (اسم قالب موجود في الكتالوج المحلي، عدد المعاملات، `payload` للزر)، ويعيد `{messaging_product, contacts:[{input, wa_id}], messages:[{id: "wamid.SIM.<uuid>"}]}`، ثم يجدول Webhooks الحالة `sent` ← `delivered` ← `read` موقعة بسرّ التطبيق المهيأ |
+| `POST /{version}/{phone_number_id}/messages` | يتحقق من البنية (اسم قالب موجود في الكتالوج المحلي، عدد المعاملات، `payload` للزر)، ويعيد `{messaging_product, contacts:[{input, wa_id}], messages:[{id: "wamid.SIM.<uuid>"}]}` (بلا `wa_id` لأرقام BSUID المنتهية بـ`2222`، DEC-212)، ثم يجدول Webhooks الحالة `sent` ← `delivered` ← `read` موقعة بسرّ التطبيق المهيأ |
 | `POST /{version}/{waba_id}/message_templates` | يقبل التعريف ويعيد `APPROVED` بعد تأخير قابل للضبط، أو `REJECTED` بقاعدة اختبار |
 | `GET /{version}/{phone_number_id}` | حالة الرقم لفحص الصحة |
 
@@ -949,7 +957,7 @@ W-05 يحمل رمز تسليم. صياغته معاملية (استلام مر�
 | ترويسة `X-Sim-Fault: 130429` | خطأ السعة |
 | ترويسة `X-Sim-Fault: 190` | رمز منتهٍ (قناة `down`) |
 | اسم قالب غير معتمد | `132001` |
-| رقم ينتهي بـ`2222` | Webhook بلا `from` و`wa_id` ومع `user_id` فقط (محاكاة BSUID) |
+| رقم ينتهي بـ`2222` | Webhook بلا `from` و`wa_id` ومع `user_id` فقط (محاكاة BSUID)؛ ورد الإرسال لهذا الرقم بلا `contacts[].wa_id` أيضًا، فلا يعرف المرسل الرقم ويبقى يرسل إلى `recipient` (DEC-212) |
 
 ### 11.4 السيناريوهات
 

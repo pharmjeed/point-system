@@ -1711,9 +1711,9 @@ paths:
       description: |-
         direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يتطلب موافقة سارية)؛ يُستخدم آليًا عند submit-intake ويدويًا لإعادة المحاولة. qr: يصدر link_code صالح link.qr_ttl_min ويعيد رابط wa.me برسالة معبأة؛ العميل يضغط إرسال ثم يؤكد السائق المطابقة.
 
-        الشروط: تذكرة مفتوحة في موقع السائق · qr: status ∈ {received, parking, parked}
+        الشروط: تذكرة مفتوحة في موقع السائق ومناوبته فيه · الورقية ← INVALID_STATE_TRANSITION (paper_channel) · قناة فعالة غير down وإلا WA_CHANNEL_UNAVAILABLE (DEC-195) · direct (إعادة المحاولة من D-07، DEC-193): wa_link_status ∈ {none, failed, pending_send}؛ received ← INVALID_STATE_TRANSITION (submit_intake_links_directly)، linked (already_linked)، رسالة QR بانتظار التأكيد (qr_pending_confirmation)؛ بلا جوال ← PHONE_INVALID {field: customer_phone, issue: missing} (DEC-194) · qr: status ∈ {received, parking, parked} وwa_link_status ∈ {none, failed, opted_out, pending_send}؛ بلا رقم عرض ← WA_CHANNEL_UNAVAILABLE (reason=display_phone_not_configured) (DEC-196)
 
-        الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ qr: link_codes(active) + job.link_code_expire
+        الأثر: direct: wa_link_status=pending_send ثم linked عند قبول المزود أو failed؛ link_version+1 إن وُجد إشعار W-01 للإصدار الحالي (DEC-193). qr: link_codes(active) + job.link_code_expire، بلا تغيير في التذكرة ولا إصدارها ولا حدث نطاقي (DEC-196)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1791,9 +1791,9 @@ paths:
       description: |-
         بعد وصول رسالة الربط يرى السائق الرقم المقنّع ويسأل «هل هذا العميل أمامك؟». matches=false يرفض الربط ويُبطل الرمز.
 
-        الشروط: link_codes.status=pending_confirmation لنفس التذكرة
+        الشروط: link_codes.status=pending_confirmation لنفس التذكرة (وإلا INVALID_STATE_TRANSITION؛ رمز ليس للتذكرة ← RESOURCE_NOT_FOUND بـresource=link_code؛ المنتهي ← WA_LINK_CODE_EXPIRED بـexpired_at) · السائق منشئ الرمز (وإلا PERMISSION_DENIED بـreason=not_link_code_creator) أو مشرف الموقع؛ لا فحص مناوبة (DEC-198)
 
-        الأثر: matches=true: موافقة customer_initiated + ticket.customer_id + linked + W-01؛ false: revoked
+        الأثر: matches=true: موافقة customer_initiated (captured_by = المؤكِّد) + ticket.customer_id + linked + W-01؛ مرسل غير العميل الحالي: إبطال موافقات السابق للتذكرة ورموز الإجراء وlink_version+1 (DEC-199). false: revoked (driver_rejected_match) وwa_link_status=none (DEC-200)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1826,7 +1826,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
@@ -1854,7 +1854,7 @@ paths:
       x-permission: wa.link
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, TICKET_NOT_FOUND, WA_LINK_CODE_EXPIRED]
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, RESOURCE_NOT_FOUND, TICKET_NOT_FOUND, WA_LINK_CODE_EXPIRED]
       x-domain-events: [ticket.wa_link_changed]
       x-ws-events: [ticket.updated]
       x-whatsapp: [W-01]
@@ -1866,9 +1866,9 @@ paths:
       description: |-
         يبطل كل رموز الإجراء السابقة (link_version+1) ويتطلب تحققًا ميدانيًا وسببًا وموافقة جديدة، ثم يرسل W-01 للرقم الجديد.
 
-        الشروط: تذكرة مفتوحة · السائق: منشئ التذكرة أو المكلّف بمهمة مفتوحة عليها
+        الشروط (DEC-211): تذكرة مفتوحة ليست في received (INVALID_STATE_TRANSITION بـdraft_use_intake) وليست ورقية (paper_channel) · السائق: مناوبة في الموقع (DUTY_REQUIRED) ومنشئ التذكرة أو المكلّف بمهمة مفتوحة عليها (وإلا PERMISSION_DENIED بـnot_creator_or_assignee)؛ المشرف والإدارة بلا قيد المنشئ · الرقم نفسه ← VALIDATION_FAILED (customer_phone، unchanged) · لا فحص لقالب W-01
 
-        الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + سجل تدقيق
+        الأثر: customer جديد/موجود + link_version+1 + action tokens قديمة revoked + رموز الربط الحية revoked (linked_direct، DEC-201) + سجل تدقيق
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1912,7 +1912,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | TICKET_CLOSED | VERSION_CONFLICT | WA_CUSTOMER_OPTED_OUT
+          description: DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | TICKET_CLOSED | VERSION_CONFLICT | WA_CUSTOMER_OPTED_OUT
         '422':
           $ref: '#/components/responses/Error'
           description: CONSENT_REQUIRED | IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | REASON_REQUIRED | VALIDATION_FAILED
@@ -1934,7 +1934,7 @@ paths:
       x-permission: ticket.change_phone
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CONSENT_REQUIRED, PHONE_INVALID, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT, WA_CUSTOMER_OPTED_OUT]
+      x-error-codes: [CONSENT_REQUIRED, DUTY_REQUIRED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PHONE_INVALID, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT, WA_CUSTOMER_OPTED_OUT]
       x-domain-events: [ticket.customer_phone_changed, ticket.wa_link_changed]
       x-ws-events: [ticket.updated]
       x-whatsapp: [W-01]
@@ -2800,7 +2800,7 @@ paths:
       description: |-
         يولّد رمزًا جديدًا ويبطل السابق (revoke_reason=resend) ضمن handover.max_resends. الرمز المقفل يعيد إصداره المشرف فقط.
 
-        الشروط: ticket.status=ready · المكلّف أو المشرف
+        الشروط (DEC-207): ticket.status=ready مع مهمة إحضار (وإلا HANDOVER_NOT_READY) · المكلّف (سائق غيره ← NOT_TASK_ASSIGNEE) أو المشرف · WA_CUSTOMER_OPTED_OUT ثم WA_NOT_LINKED ثم WA_CHANNEL_UNAVAILABLE · W-05 غير معتمد يُرفض فقط ونافذة الخدمة مغلقة (12 §8.4) · الرمز المقفل يبقى مقفلًا للمكلّف ولو بعد تنظيفه · دورة بلا رمز تأخذ أول رمز (resend_no=0) · RESEND_LIMIT_REACHED بـmax_resends
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2816,7 +2816,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | NOT_TASK_ASSIGNEE | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: TICKET_NOT_FOUND
@@ -2847,8 +2847,7 @@ paths:
       x-permission: handover.resend_code
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, RESEND_LIMIT_REACHED, TICKET_NOT_FOUND, WA_CHANNEL_UNAVAILABLE, WA_CUSTOMER_OPTED_OUT, WA_NOT_LINKED,
-        WA_TEMPLATE_NOT_APPROVED]
+      x-error-codes: [HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, NOT_TASK_ASSIGNEE, RESEND_LIMIT_REACHED, TICKET_NOT_FOUND, WA_CHANNEL_UNAVAILABLE, WA_CUSTOMER_OPTED_OUT, WA_NOT_LINKED, WA_TEMPLATE_NOT_APPROVED]
       x-domain-events: [handover.code_issued]
       x-ws-events: [ticket.updated]
       x-whatsapp: [W-05]
@@ -2860,9 +2859,9 @@ paths:
       description: |-
         للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
-        الشروط: ticket.status=ready
+        الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو بلا جوال ← VALIDATION_FAILED بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (insufficient_checks) (DEC-209) · بوابة الدفع كالتسليم
 
-        الأثر: كالتسليم + claim code revoked (exception_handover) + incident manual_verification اختياري
+        الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة manual_verification (أو lost_ticket للورقية) تُنشأ دائمًا resolved بحل handover_exception: <methods> + العهدة من حائزيها الحاليين إلى العميل (DEC-210)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2938,10 +2937,10 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_PENDING | VERSION_CONFLICT
+          description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
         '422':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | REASON_REQUIRED | VALIDATION_FAILED
+          description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
         '428':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REQUIRED
@@ -2960,8 +2959,8 @@ paths:
       x-permission: handover.exception
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_AMOUNT_MISMATCH, PAYMENT_PENDING, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
-      x-domain-events: [handover.exception_approved, handover.completed, ticket.delivered, task.completed, custody.changed, driver.availability_changed, task.promoted]
+      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-domain-events: [handover.exception_approved, handover.completed, ticket.delivered, task.completed, custody.changed, driver.availability_changed, task.promoted, incident.opened, incident.resolved, payment.recorded]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
       x-whatsapp: [W-06]
   /v1/tasks/{taskId}/reassign:
@@ -6015,7 +6014,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -6320,7 +6319,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -10714,7 +10713,7 @@ components:
           - $ref: '#/components/schemas/WaMessageStatus'
           - type: 'null'
       required: [issued_at, expires_at, attempts, max_attempts, attempts_left, resend_no]
-      description: حالة رمز التسليم الحالي؛ الرمز نفسه لا يُعاد في أي استجابة
+      description: 'حالة رمز التسليم الحالي؛ الرمز نفسه لا يُعاد في أي استجابة. sent_status = حالة رسالة W-05 وإلا حالة إشعارها (failed أو skipped أو queued)؛ TicketDetail.claim_code = أحدث رمز للدورة النشطة وnull دونه (DEC-208)'
     CustodyEvent:
       type: object
       properties:

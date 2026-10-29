@@ -499,7 +499,7 @@ function requireDuty(a: ActorContext, poolId: string) {
 - العمر المطلق: 14 ساعة للسائق (`security.driver_session_hours`) و12 للموظفين (`security.staff_session_hours`)؛ يُحدَّث `last_seen_at` مع الاستخدام.
 - رمز جديد عند الدخول وعند إكمال MFA وعند تغيير السر (منع تثبيت الجلسة).
 - **CSRF:** كل `POST/PUT/PATCH/DELETE` عدا `/webhooks/whatsapp` — ومنها مسار الدخول لمنع login CSRF — يتطلب الترويسة `X-Requested-With: point-web` وترويسة `Origin` مطابقة لـ`APP_BASE_URL`، وإلا `403 PERMISSION_DENIED` (`reason = csrf`). الأوامر تقبل `application/json` فقط.
-- CSP صارمة في تطبيق الويب (لا سكربتات مضمنة ولا أطراف ثالثة) لتقليل أثر XSS على الجلسة. يضعها الخادم أو الوكيل العكسي ترويسةً `Content-Security-Policy` للتطبيق المبني، لا `<meta>` في `index.html` (خادم Vite للتطوير يحقن سكربتات مضمنة): `script-src 'self'`، و`img-src 'self' data:` ومضيف التخزين للروابط الموقعة للصور، و`connect-src 'self'` ومضيف التخزين للرفع المباشر؛ القيمة الكاملة في 05 §14.1 (DEC-94).
+- CSP صارمة في تطبيق الويب (لا سكربتات مضمنة ولا أطراف ثالثة) لتقليل أثر XSS على الجلسة. يضعها الخادم أو الوكيل العكسي ترويسةً `Content-Security-Policy` للتطبيق المبني، لا `<meta>` في `index.html` (خادم Vite للتطوير يحقن سكربتات مضمنة): `script-src 'self'`، و`style-src 'self'` مع `style-src-elem 'self' 'unsafe-inline'` (عناصر `<style>` المضمنة وحدها، لقفل التمرير الذي يحقنه Radix في النوافذ والأوراق؛ سمات `style` تبقى محجوبة، DEC-192)، و`img-src 'self' data:` ومضيف التخزين للروابط الموقعة للصور، و`connect-src 'self'` ومضيف التخزين للرفع المباشر؛ القيمة الكاملة في 05 §14.1 (DEC-94).
 
 ### 9.4 أسباب الإبطال
 
