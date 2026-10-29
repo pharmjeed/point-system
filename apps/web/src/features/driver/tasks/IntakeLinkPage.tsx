@@ -138,9 +138,10 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
   useEffect(() => {
     useFieldStore.getState().dismissNotice(`waFailed:${ticket.id}`);
   }, [ticket.id, ticket.version]);
-  // the panel never keeps a code the server already moved on from (confirmed, rejected, revoked)
+  // the panel never keeps a code the server moved on from: linked, or the paper conversion (the commands of
+  // this screen drop it themselves: a direct send revokes it, a confirmation uses or rejects it)
   useEffect(() => {
-    if (qr && (status === 'linked' || status === 'pending_send' || ticket.channel === 'paper'))
+    if (qr && (status === 'linked' || ticket.channel === 'paper'))
       useLinkStore.getState().setQr(ticket.id, null);
   }, [qr, status, ticket.channel, ticket.id]);
 
@@ -176,7 +177,9 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
     issue.reset();
     try {
       await direct.run({ method: 'direct' });
-      useLinkStore.getState().setMethod(ticket.id, 'direct');
+      const links = useLinkStore.getState();
+      links.setQr(ticket.id, null); // the direct link revokes the live code (`linked_direct`)
+      links.setMethod(ticket.id, 'direct');
       setConfirmedHere(false);
       afterCommand(); // pending_send: version + 1 — the ticket is read again
     } catch (error) {
@@ -242,8 +245,9 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
         />
       </>
     );
-  } else if (mode === 'direct' || SENDING.includes(status)) {
-    // الوضع أ — and the QR mode once the customer was confirmed (W-01 on its way)
+  } else if (mode === 'direct' || (SENDING.includes(status) && !qrLive)) {
+    // الوضع أ — and the QR mode once the customer was confirmed (W-01 on its way); a code issued while an
+    // earlier W-01 is still pending keeps the panel (12 §7.2: whichever links first wins)
     body = (
       <>
         <LinkStatusChip status={status} />

@@ -391,6 +391,29 @@ test('GAP-1 errors: an opted-out number and a channel down send the driver back 
   expectCommandContract(fake);
 });
 
+test('GAP-1 D-07 أ «العميل لم تصله الرسالة؟» while W-01 is still pending: «الربط عبر QR» shows the panel, then the confirmation', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: PHONE, linked: false });
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/link`);
+  await expect(page.getByText('جارٍ الإرسال…')).toBeVisible();
+  await page.getByRole('button', { name: 'العميل لم تصله الرسالة؟' }).click();
+  const sheet = page.getByRole('dialog', { name: 'العميل لم تصله الرسالة؟' });
+  for (const name of ['إعادة الإرسال', 'الربط عبر QR', 'تذكرة ورقية'])
+    await expect(sheet.getByRole('button', { name })).toBeVisible();
+  await sheet.getByRole('button', { name: 'الربط عبر QR' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.locator('[data-qr-panel] .pt-qr__code svg')).toBeVisible();
+  await expect(page.locator('[data-link-mode="qr"]')).toBeVisible();
+  fake.whatsapp.customerSends(ticketId, PHONE);
+  await expect(page.getByRole('alertdialog', { name: 'وصلت رسالة الربط من رقم ينتهي بـ 567.' })).toBeVisible({
+    timeout: 10_000,
+  });
+});
+
 test('GAP-1 D-13 «إعادة الربط بواتساب» opens D-07 for a parked ticket whose W-01 failed; «العودة» returns', async ({
   browser,
 }) => {
