@@ -24,6 +24,7 @@ import {
   type CycleRow,
   type TicketRow,
 } from '../../modules/tickets-custody/index.js';
+import { openIncident } from '../../modules/incidents/index.js';
 import { zodToFields } from '../../http/zod-pipe.js';
 import { inlinePaymentHook } from '../hooks.js';
 import { auditCommand, eventActor, openTaskIdOf } from '../shared.js';
@@ -185,42 +186,24 @@ export class HandoverExceptionUseCase {
       payment = await pay.collect(tx, { ticket: t, cycle, payment: input, actor });
     }
 
-    // the documented incident, resolved at once (TT-19)
+    // the documented incident, resolved at once (TT-19), on the ticket timeline: the incidents module's writer
     const reason = body.reason.trim();
-    const incidentType = t.channel === 'paper' ? 'lost_ticket' : 'manual_verification';
-    const incident = await tx.one<{ id: string; severity: string }>(
-      `INSERT INTO incidents (org_id, venue_id, event_id, ticket_id, type, status, severity, description, opened_by,
-              owner_id, resolution, resolved_by, resolved_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'resolved', 'medium', $6, $7, $7, $8, $7, $9, $9, $9) RETURNING id, severity`,
-      [
-        t.org_id,
-        t.venue_id,
-        t.event_id,
-        t.id,
-        incidentType,
-        reason,
-        actor.userId,
-        `handover_exception: ${methods.join(', ')}`,
-        tx.now,
-      ],
-    );
-    for (const [type, status] of [
-      ['incident.opened', 'open'],
-      ['incident.resolved', 'resolved'],
-    ] as const) {
-      await emitForTicket(tx, t, {
-        type,
-        actor: ea,
-        aggregate: { type: 'incident', id: incident.id, version: 1 },
-        payload: {
-          incident_id: incident.id,
-          type: incidentType,
-          status,
-          severity: incident.severity,
-          ticket_id: t.id,
-        },
-      });
-    }
+    const incident = await openIncident(tx, {
+      orgId: t.org_id,
+      venueId: t.venue_id,
+      eventId: t.event_id,
+      ticketId: t.id,
+      dispatchPoolId: t.dispatch_pool_id,
+      type: t.channel === 'paper' ? 'lost_ticket' : 'manual_verification',
+      severity: 'medium',
+      description: reason,
+      openedBy: actor.userId,
+      ownerId: actor.userId,
+      actor: { type: 'user', id: actor.userId },
+      resolution: `handover_exception: ${methods.join(', ')}`,
+      autoCreated: null,
+      timeline: { ticketVersion: t.version },
+    });
 
     const done = await tx.one<TaskRow>(
       `UPDATE tasks SET status = 'completed', completed_at = $2, version = version + 1 WHERE id = $1 RETURNING *`,
