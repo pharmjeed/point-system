@@ -66,6 +66,11 @@ export const metrics = {
   dispatchEscalations: c('point_dispatch_escalations_total', 'Escalations to the supervisor'),
   dispatchOpenTasks: g('point_dispatch_open_tasks', 'Open retrieval tasks per pool', ['pool']),
   dispatchBroadcastOpen: g('point_dispatch_broadcast_open', 'Open broadcast rounds per pool', ['pool']),
+  dispatchOldestOpenRequest: g(
+    'point_dispatch_oldest_open_request_seconds',
+    'Age of the oldest open retrieval request not ready yet, per active pool (15 §12)',
+    ['pool'],
+  ),
   timerLag: h('point_timer_lag_seconds', 'Timer execution lag behind available_at', ['job'], FAST),
   outboxDue: g('point_outbox_due', 'Due unprocessed outbox rows', ['type']),
   outboxOldestPending: g('point_outbox_oldest_pending_seconds', 'Age of the oldest due row', ['type']),
@@ -114,6 +119,11 @@ export const metrics = {
     'pool',
   ]),
   tasksStuck: g('point_tasks_stuck', 'Tasks past their task_stuck threshold (14 §8)', ['type']),
+  tasksStuckCritical: g(
+    'point_tasks_stuck_critical',
+    'Tasks past twice their task_stuck threshold (15 §12, monitoring only)',
+    ['type'],
+  ),
   analyticsRejected: c(
     'point_analytics_rejected_total',
     'Analytics events dropped by the allow-list (15 §9.2, §13.1)',

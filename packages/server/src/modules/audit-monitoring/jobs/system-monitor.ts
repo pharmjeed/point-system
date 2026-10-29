@@ -384,9 +384,13 @@ export class SystemMonitor {
       resolved.push(...r.map((x) => x.task_id ?? x.id));
     }
     const counts = new Map<string, number>();
+    // 15 §12 «مهام معلقة»: past twice the threshold is the monitoring-only critical level
+    const critical = new Map<string, number>();
     for (const s of stuck) {
       counts.set(s.type, (counts.get(s.type) ?? 0) + 1);
       const since = new Date(s.since);
+      if (tx.now.getTime() - since.getTime() >= 2 * TASK_STUCK_THRESHOLD_MIN[s.phase] * 60_000)
+        critical.set(s.type, (critical.get(s.type) ?? 0) + 1);
       const { created } = await raiseAlert(tx, {
         orgId: s.org_id,
         venueId: s.venue_id,
@@ -411,6 +415,8 @@ export class SystemMonitor {
     }
     metrics.tasksStuck.reset();
     for (const [type, n] of counts) metrics.tasksStuck.set({ type }, n);
+    metrics.tasksStuckCritical.reset();
+    for (const [type, n] of critical) metrics.tasksStuckCritical.set({ type }, n);
     return { raised, resolved };
   }
 
@@ -823,22 +829,32 @@ export class SystemMonitor {
     const pools = await this.db.rows<{
       pool: string;
       open_tasks: number;
+      oldest_open: Date | null;
       broadcasts: number;
       eligible: number;
     }>(
       `SELECT p.id AS pool,
               (SELECT count(*)::int FROM tasks k WHERE k.dispatch_pool_id = p.id AND k.type = 'retrieve'
                   AND k.status NOT IN ('completed','canceled')) AS open_tasks,
+              (SELECT min(k.priority_at) FROM tasks k JOIN retrieval_cycles c ON c.id = k.cycle_id
+                WHERE k.dispatch_pool_id = p.id AND k.type = 'retrieve' AND k.status NOT IN ('completed','canceled')
+                  AND c.ready_at IS NULL) AS oldest_open,
               (SELECT count(*)::int FROM task_offers o WHERE o.dispatch_pool_id = p.id AND o.status = 'active'
                   AND o.mode = 'broadcast') AS broadcasts,
               (SELECT count(*)::int FROM duty_sessions d WHERE d.dispatch_pool_id = p.id AND d.status = 'on_duty') AS eligible
          FROM dispatch_pools p WHERE p.status = 'active'`,
     );
     metrics.dispatchOpenTasks.reset();
+    metrics.dispatchOldestOpenRequest.reset();
     metrics.dispatchBroadcastOpen.reset();
     metrics.dispatchEligibleDrivers.reset();
     for (const p of pools) {
       metrics.dispatchOpenTasks.set({ pool: p.pool }, p.open_tasks);
+      // 15 §12 «تجاوز زمن الانتظار الكلي» (now − priority_at of the oldest request not ready yet); 0 without one
+      metrics.dispatchOldestOpenRequest.set(
+        { pool: p.pool },
+        p.oldest_open ? Math.max(0, (now.getTime() - new Date(p.oldest_open).getTime()) / 1000) : 0,
+      );
       metrics.dispatchBroadcastOpen.set({ pool: p.pool }, p.broadcasts);
       metrics.dispatchEligibleDrivers.set({ pool: p.pool }, p.eligible);
     }
@@ -848,8 +864,18 @@ export class SystemMonitor {
               count(*) FILTER (WHERE connection_state <> 'online')::int AS uncertain
          FROM duty_sessions WHERE status <> 'ended' GROUP BY venue_id`,
     );
+    // 15 §12 «غياب السائقين قبل الطلبات»: a venue with an open event and an open shift but no duty reads 0
+    const staffed = await this.db.rows<{ venue: string }>(
+      `SELECT DISTINCT e.venue_id AS venue FROM events e
+         JOIN shifts s ON s.venue_id = e.venue_id AND s.status = 'open'
+        WHERE e.status = 'open'`,
+    );
     metrics.driversOnDuty.reset();
     metrics.driversConnectionUncertain.reset();
+    for (const v of staffed) {
+      metrics.driversOnDuty.set({ venue: v.venue }, 0);
+      metrics.driversConnectionUncertain.set({ venue: v.venue }, 0);
+    }
     for (const v of venues) {
       metrics.driversOnDuty.set({ venue: v.venue }, v.on_duty);
       metrics.driversConnectionUncertain.set({ venue: v.venue }, v.uncertain);

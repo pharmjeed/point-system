@@ -230,6 +230,62 @@ describe('SystemMonitor', () => {
     }
   });
 
+  it('the 15 §12 monitoring-only sources: no driver before the requests, the oldest open request, tasks past twice the threshold', async () => {
+    const event = SEED_IDS.events['EVT-R1'];
+    const val = async (
+      g: { get(): Promise<{ values: { labels: Record<string, unknown>; value: number }[] }> },
+      label: string,
+      v: string,
+    ) => (await g.get()).values.find((x) => x.labels[label] === v)?.value;
+    const d1 = await insertDuty(t.db, { userId: U.DRV1 });
+    // a request 12 minutes old, not ready (15 §12 «تجاوز زمن الانتظار الكلي»: warning 10, critical 20)
+    const waiting = await insertTicket(t.db, { eventId: event, status: 'requested', submittedAt: T0 });
+    const queued = await insertRetrieveTask(t.db, {
+      ticketId: waiting,
+      eventId: event,
+      status: 'queued',
+      requestedAt: '2026-10-27T15:48:00Z',
+    });
+    // an accepted retrieval not started for 21 minutes: past twice its 10-minute threshold
+    const late = await insertTicket(t.db, { eventId: event, status: 'assigned', submittedAt: T0 });
+    const stuck = await insertRetrieveTask(t.db, {
+      ticketId: late,
+      eventId: event,
+      status: 'accepted',
+      assigneeId: U.DRV3,
+      acceptedAt: '2026-10-27T15:39:00Z',
+    });
+    try {
+      await monitor.tick();
+      // LYL has its event and its shift open and nobody on duty: an explicit 0 (RMS has DRV1)
+      expect(await val(metrics.driversOnDuty, 'venue', LYL)).toBe(0);
+      expect(await val(metrics.driversOnDuty, 'venue', RMS)).toBe(1);
+      expect(await val(metrics.dispatchOldestOpenRequest, 'pool', POOL_R)).toBe(30 * 60); // requested at 15:30
+      expect(await val(metrics.tasksStuckCritical, 'type', 'retrieve')).toBe(1);
+      expect(await val(metrics.tasksStuck, 'type', 'retrieve')).toBe(1);
+      // readiness takes a request out of the wait; the queued one remains
+      await t.db.query(`UPDATE retrieval_cycles SET ready_at = $2 WHERE id = $1`, [stuck.cycleId, T0]);
+      await t.db.query(`UPDATE tasks SET status = 'in_progress', started_at = $2 WHERE id = $1`, [
+        stuck.taskId,
+        T0,
+      ]);
+      await monitor.tick();
+      expect(await val(metrics.dispatchOldestOpenRequest, 'pool', POOL_R)).toBe(12 * 60);
+      expect(await val(metrics.tasksStuckCritical, 'type', 'retrieve')).toBeUndefined();
+      // the shift closes: LYL is no longer «open event and shift», its series goes
+      await t.db.query(`UPDATE shifts SET status = 'closed', closed_at = $2 WHERE venue_id = $1`, [LYL, T0]);
+      await monitor.refreshGauges();
+      expect(await val(metrics.driversOnDuty, 'venue', LYL)).toBeUndefined();
+    } finally {
+      await t.db.query(`UPDATE shifts SET status = 'open', closed_at = NULL WHERE venue_id = $1`, [LYL]);
+      await t.db.query(`DELETE FROM alerts WHERE task_id = ANY($1)`, [[queued.taskId, stuck.taskId]]);
+      await t.db.query(`DELETE FROM tasks WHERE id = ANY($1)`, [[queued.taskId, stuck.taskId]]);
+      await t.db.query(`DELETE FROM retrieval_cycles WHERE id = ANY($1)`, [[queued.cycleId, stuck.cycleId]]);
+      await t.db.query(`DELETE FROM tickets WHERE id = ANY($1)`, [[waiting, late]]);
+      await t.db.query(`DELETE FROM duty_sessions WHERE id = $1`, [d1]);
+    }
+  });
+
   it('gauges read from the database in every process: WhatsApp channel health and the last webhook (05 §12.2)', async () => {
     const value = async (g: typeof metrics.waChannelHealth) => (await g.get()).values[0]?.value;
     const health = (h: string) =>

@@ -364,6 +364,7 @@ pc up -d --no-deps web            # ثم الواجهة؛ يظهر «تحديث 
 - `/health/live` و`/health/ready` (بلا بيانات) عبر Caddy وفي فحوص سلامة الحاويات. لإبقائها داخلية أضف ملفًا في `infra/caddy/conf.d/` (المثال في `00-site.caddy`).
 - `/metrics` لا يمر عبر Caddy أبدًا (يرد 404). المقاييس على `api:9464` و`worker:9465` داخل شبكة compose؛ اجمعها بـPrometheus على الشبكة نفسها أو انشرها على `127.0.0.1` فقط بملف override. الكتالوج في 05 §12.2، وأهم ما يُراقَب: `point_outbox_oldest_pending_seconds`، `point_wa_webhook_last_received_timestamp_seconds`، `point_wa_channel_health`، `point_dispatch_time_to_claim_seconds`، `point_db_pool_in_use`، و`point_backup_last_success_timestamp_seconds` (§12).
 - التنبيهات داخل التطبيق (`outbox_lag`، `wa_webhook_silent`، `wa_channel_down`…) يرفعها مراقب النظام في العامل والـapi، وتُرى في لوحة المشرف والإدارة. فشل النسخ الاحتياطي تنبيه حرج خارج التطبيق (§12.2).
+- تنبيهات المشغّل خارج التطبيق (توجيه «مراقبة» في 15 §12، وعتبات 12 §13، وتأخر المؤقتات 10 §12.2، وفشل النسخ 05 §12.3) قواعد Prometheus في `infra/monitoring/prometheus-rules.yml`: حمّلها بـ`rule_files:` بجانب إعداد الجمع، وتحقق منها بـ`promtool check rules infra/monitoring/prometheus-rules.yml` قبل كل تحميل، ووجّه `severity=critical` إلى المالك والإدارة. يكتب سكربت النسخ `point_backup_last_success_timestamp_seconds` في ملف node_exporter النصي (DEC-303). ولا قاعدة لـ«اختبار الاستعادة» (آخر اختبار موثق أقدم من 90 يومًا): تاريخه في سجل دليل الاستعادة ويُراجع يدويًا.
 
 ### 11.3 الترويسات وحدود المعدل والكوكي
 
