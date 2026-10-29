@@ -368,9 +368,9 @@ stateDiagram-v2
 |---|---|---|---|
 | `PATCH /v1/tickets/{ticketId}/intake` | `ticket.intake` (منشئ التذكرة) | `received` (كل حقول المسودة)؛ أو `parking` للحقلين `channel = paper` و`paper_serial` فقط ما دامت التذكرة غير مربوطة (DEC-40، §2.6) | تحديث حقول المسودة؛ `expected_version` إلزامي؛ التحويل للورقي: `wa_link_status = none`، `link_version + 1`، إبطال رمز الربط الحي (`channel_paper`)، `ticket.wa_link_changed` |
 | `POST /v1/tickets/{ticketId}/media` و`POST /v1/media/{mediaId}/complete` | `ticket.intake` (منشئ التذكرة، والإتمام لرافع الصورة) | الطلب: `received` أو `parking` (في `parking` لإكمال رفع صور التُقطت أثناء الاستلام)؛ الإتمام: أي حالة، فالرفع أُذن به عند إصدار الرابط ومدته تحد النافذة (DEC-104) | `media_assets`، وعند الإتمام سطر `ticket_events` من النوع `ticket.photo_uploaded` بلا حدث نطاقي (DEC-95)؛ قد ينقل `inspection_status` من `incomplete` إلى `complete` مع `ticket.inspection_completed` (§6.3) |
-| `POST /v1/tickets/{ticketId}/whatsapp-link` (مباشر) | `wa.link` | أي حالة مفتوحة | موافقة `verbal_staff_confirmed`، `link_version + 1` (الإرسال اليدوي أو إعادة الربط تبطل أزرار W-01 السابقة)، `wa_link_status = pending_send`، W-01 |
+| `POST /v1/tickets/{ticketId}/whatsapp-link` (مباشر) | `wa.link` | إعادة محاولة D-07 (DEC-193): حالة مفتوحة غير `received` (فيها يربط `submit-intake` مباشرة: `INVALID_STATE_TRANSITION` بـ`submit_intake_links_directly`) والربط `none` أو `failed` أو `pending_send`؛ و`linked` ← `already_linked`، وانتظار رسالة QR تأكيدَ السائق ← `qr_pending_confirmation`، والورقية ← `paper_channel`، و`opted_out` ← `WA_CUSTOMER_OPTED_OUT`، وبلا جوال ← `PHONE_INVALID` (DEC-194) | موافقة `verbal_staff_confirmed`، و`link_version + 1` فقط إن وُجد إشعار W-01 للإصدار الحالي (فيأخذ W-01 الجديد مفتاحه وتبطل أزرار السابق)، إبطال رمز ربط حي (`linked_direct`)، `wa_link_status = pending_send`، W-01 |
 | `POST /v1/tickets/{ticketId}/whatsapp-link` (QR) | `wa.link` | `received` أو `parking` أو `parked`، والربط `none` أو `failed` أو `opted_out` أو `pending_send` (DEC-196) | إبطال أي رمز ربط حي سابق (`regenerated`) ثم `link_codes` جديد `active`؛ لا تغيير في التذكرة ولا إصدارها |
-| `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` | `wa.link` | رمز ربط `pending_confirmation` | تطابق: موافقة `customer_initiated` + `linked` (+ `link_version + 1` عند إعادة الربط) + W-01؛ عدم تطابق: إبطال الرمز وعودة `none` (§6.2) |
+| `POST /v1/tickets/{ticketId}/whatsapp-link/confirm` | `wa.link` | رمز ربط `pending_confirmation` للتذكرة (غيره ← `INVALID_STATE_TRANSITION`، والمنتهي ← `WA_LINK_CODE_EXPIRED`، ورمز لا يخصها ← `RESOURCE_NOT_FOUND`، وسائق غير منشئ الرمز ← `PERMISSION_DENIED`؛ DEC-198) | تطابق: موافقة `customer_initiated` (المؤكِّد في `captured_by`) + `linked` + `link_version + 1` حين يتغير العميل (تُبطل موافقات السابق ورموز الإجراء، DEC-199) أو يكون لإصداره الحالي إشعار W-01 (إعادة الربط، 12 §7.2) + W-01؛ عدم تطابق: إبطال الرمز وعودة `none` (§6.2، DEC-200) |
 | `PATCH /v1/tickets/{ticketId}/customer-phone` | `ticket.change_phone` | أي حالة مفتوحة عدا `received` (تُعدَّل المسودة بـ`PATCH .../intake`)، ولغير الورقية (DEC-211) | `link_version + 1`، إبطال كل `action_tokens` للتذكرة ورموز الربط الحية (`linked_direct`، DEC-201)، `pending_send` + W-01 للرقم الجديد، سبب وتدقيق |
 | `POST /v1/tickets/{ticketId}/reveal-phone` | `ticket.reveal_phone` | أي حالة | تدقيق فقط (`audit_log` بالسبب)؛ الحد في الساعة من صفوف التدقيق (DEC-248) |
 | `POST /v1/tickets/{ticketId}/inspection-exception` | `ticket.inspection_exception` | مفتوحة و`inspection_status = incomplete` (وإلا `INVALID_STATE_TRANSITION` بـ`inspection_not_incomplete`، والنهائية بـ`ticket_closed`، DEC-249) | `exception_approved`، حل التنبيه آليًا، `missing_photos_count` في الحدث |
@@ -792,7 +792,7 @@ stateDiagram-v2
 | `ready_not_collected` | التسليم أو إعادة الصف أو إلغاء الطلب |
 | `inspection_incomplete` | `complete` أو `exception_approved` |
 | `draft_abandoned` | خروج المسودة من `received` بالإرسال أو الإلغاء (DEC-174)؛ ويرفعه `SystemMonitor` كل دورة لمسودة أقدم من `intake.draft_abandoned_alert_min` من `tickets.created_at`، مرة واحدة دون استبدال تنبيه حي، بلا نوع مهمة (DEC-254) |
-| `handover_code_locked` | التسليم أو إعادة الإرسال بمشرف أو الاستثناء |
+| `handover_code_locked` | التسليم أو الاستثناء (TT-18، TT-19)، أو رمز جديد بإعادة إرسال المشرف، أو إعادة الصف (TT-20)، أو إلغاء الطلب بعد البدء (TT-20b)، أو المطابقة اليدوية (DEC-226، DEC-236، DEC-253) |
 | `wa_channel_down` | عودة القناة `healthy` |
 | `transfer_blocked` | اكتمال النقل أو إلغاؤه |
 | `driver_connection_lost_with_custody` | عودة الاتصال `online` أو زوال العهدة |
@@ -937,7 +937,7 @@ interface TicketRef { ticket_id: UUID; display_number: number; ticket_version: n
 | `ticket.retrieving` | TT-16 | المشرفون ← `ticket.updated` | W-04 | — | — |
 | `ticket.ready` | TT-17 | المشرفون ← `ticket.updated` | — (W-05 مرتبطة بـ`handover.code_issued`) | — | — |
 | `ticket.delivered` | TT-18، TT-19 | المشرفون ← `ticket.updated` | W-06 | — | يحل `ready_not_collected` |
-| `ticket.reparking` | TT-20 (`cause = customer_absent`)، TT-20b (`cause = supervisor_cancel`) | المشرفون ← `ticket.updated`؛ حائز المركبة ← `task.updated` (مهمة `repark`، صوت `next_due`) | W-08 عند `cause = customer_absent` فقط؛ لا شيء عند `supervisor_cancel` (W-07 عبر `ticket.retrieval_canceled`) | `next_due` للحائز خارج الصفحة | يحل `ready_not_collected` |
+| `ticket.reparking` | TT-20 (`cause = customer_absent`)، TT-20b (`cause = supervisor_cancel`) | المشرفون ← `ticket.updated`؛ حائز المركبة ← `task.updated` (مهمة `repark`، صوت `next_due`) | W-08 عند `cause = customer_absent` فقط؛ لا شيء عند `supervisor_cancel` (W-07 عبر `ticket.retrieval_canceled`) | `next_due` للحائز (يُدفع دائمًا، وهادئ إن كانت صفحته ظاهرة يقرره Service Worker، DEC-257) | يحل `ready_not_collected` و`handover_code_locked` للدورة (DEC-226) |
 | `ticket.retrieval_canceled` | TT-14، TT-15، TT-20b | المشرفون ← `ticket.updated` | W-07 | — (`closed` للمكلّف يصدر مرة واحدة من `task.canceled` المرافق) | يحل `request_unaccepted` |
 | `ticket.voided` | TT-04 | المشرفون ← `ticket.updated` | — | — | يحل `draft_abandoned` |
 | `ticket.customer_phone_changed` | تغيير الجوال | المشرفون ← `ticket.updated` | — (W-01 عبر `ticket.wa_link_changed`) | — | — |
@@ -1017,13 +1017,13 @@ interface TicketManuallyReconciled {
 | `task.offered` | تمريرة التوزيع | المستلم ← `task.offered` | — | `offer` للمستلم | — |
 | `task.broadcast_opened` | تمريرة التوزيع | كل مستلم ← `task.broadcast` | — | `broadcast` للمستلمين | — |
 | `task.broadcast_extended` | بداية مناوبة/نهاية استراحة | المضافون ← `task.broadcast` | — | `broadcast` للمضافين | — |
-| `task.claimed` | القبول (TT-09، TT-10) | المجموعة والمشرفون ← `task.claimed`؛ الفائز ← `task.updated` | — | إشعار هادئ بديل بنفس الوسم للآخرين (DEC-23) | يحل `request_unaccepted` |
+| `task.claimed` | القبول (TT-09، TT-10) | المجموعة والمشرفون ← `task.claimed`؛ الفائز ← `task.updated` | — | `closed` إشعار هادئ بديل بنفس الوسم للأجهزة التي دُفع إليها طلب الجولة نفسها فقط، بعد أن يصير `sent` (DEC-23، DEC-258) | يحل `request_unaccepted` |
 | `task.promoted` | TT-11 | المكلّف ← `task.updated` (صوت `next_due`) | — | `next_due` | يحل `next_task_waiting_long` |
-| `task.key_picked_up` | key-pickup | المكلّف، المشرفون ← `task.updated` | — | — | — |
+| `task.key_picked_up` | key-pickup، ونقل عهدة رسمي أوصل المفتاح إلى مكلّف إحضار `accepted` (DEC-187، DEC-251) | المكلّف، المشرفون ← `task.updated` | — | — | — |
 | `task.started` | TT-16 | المكلّف، المشرفون ← `task.updated` | — (W-04 عبر `ticket.retrieving`) | — | — |
 | `task.completed` | TT-05، TT-18، TT-19، TT-21 | المكلّف، المشرفون ← `task.updated` | — | — | — |
-| `task.canceled` | الإلغاءات، TT-20، TT-22 | المكلّف (إن وُجد)، المشرفون ← `task.updated` | — | `closed` للمكلّف خارج الصفحة (إشعار الإلغاء الوحيد للدورة الملغاة) | — |
-| `task.withdrawn` | TT-12، TT-13 | السائق السابق ← `task.updated` (صوت `reminder`)، المشرفون | — | `closed` للسائق السابق | — |
+| `task.canceled` | الإلغاءات، TT-20، TT-22 | المكلّف (إن وُجد)، المشرفون ← `task.updated` | — | `closed` «أُلغي طلب تذكرة N» لمكلّف مهمة `retrieve` ألغيت بـ`customer_field_cancel` أو `supervisor_cancel` وحدها، يصل أجهزته دائمًا (DEC-258)؛ ولا Push لإلغاء المهمة بـ`ticket_voided` أو `manual_reconcile` أو `repark_customer_absent` (DEC-264) | — |
+| `task.withdrawn` | TT-12، TT-13 | السائق السابق ← `task.updated` (صوت `reminder`)، المشرفون | — | `closed` للسائق السابق، إعلامي يصل أجهزته دائمًا (DEC-258) | — |
 | `task.reassigned` | RT-09 (`trigger = reassign`)، ونقل عهدة رسمي (`trigger = custody_transfer`؛ يتبعه للسائق السابق `task.promoted` أو `driver.availability_changed`، §2.4) | السابق والجديد ← `task.updated`، المشرفون | — | `next_due` للجديد إن صارت حالية، و`closed` للسابق | — |
 | `task.escalated` | `job.escalate_unaccepted` | المشرفون ← `alert.raised` (صوت `escalation`) | — | `escalation` للمشرفين | يرفع `request_unaccepted` |
 
@@ -1065,8 +1065,8 @@ interface TaskEscalated { task_id: UUID; ticket_id: UUID; queued_at: ISODateTime
 | الحدث | المنتج | WS | Push |
 |---|---|---|---|
 | `offer.reminded` | `job.offer_remind`، `job.broadcast_remind` | المستلمون ذوو `accept` أو `reserve_next` ← `offer.reminder` (صوت `reminder`) | `reminder` لمن لم يرَ البطاقة (لا `client.offer_seen` منه) |
-| `offer.expired` | `job.offer_expire` | المستلم ← `offer.closed` | إشعار هادئ بديل بنفس الوسم |
-| `offer.revoked` | الإلغاء، السحب، عدم التوفر، النقل، التحويل إلى فردي | المستلمون ← `offer.closed` | إشعار هادئ بديل |
+| `offer.expired` | `job.offer_expire` | المستلم ← `offer.closed` | إشعار هادئ بديل بنفس الوسم لما عُرض على الجهاز فقط (DEC-258) |
+| `offer.revoked` | الإلغاء، السحب، عدم التوفر، النقل، التحويل إلى فردي | المستلمون ← `offer.closed` | إشعار هادئ بديل لما عُرض على الجهاز فقط (DEC-258) |
 
 ```ts
 interface OfferReminded { offer_id: UUID; task_id: UUID; mode: OfferMode; recipient_ids: UUID[] }

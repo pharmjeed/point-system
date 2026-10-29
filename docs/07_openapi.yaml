@@ -6574,7 +6574,7 @@ paths:
       summary: إنهاء مناوبة سائق بالمشرف
       tags: [Drivers & Staff]
       description: |-
-        الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا؛ items = صفوف blockingCustody: type ∈ {vehicle, key, task} مع task_id وtask_type وtask_status للمهمة، DEC-229) · المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) · sessionId = DriverLive.duty_session_id (DEC-217)
+        الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا؛ items = {type, ticket_id, display_number, task_id?} لصفوف blockingCustody: type ∈ {vehicle, key, task} ومع المهمة task_id، كعناصر منع النقل؛ ولا task_type ولا task_status فهما في CUSTODY_OPEN للتعطيل وحده، DEC-229) · المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) · sessionId = DriverLive.duty_session_id (DEC-217)
 
         الأثر: end_reason=forced؛ وsync.required (reason=duty_force_ended، scope=home) لغرفة السائق (DEC-221)
       parameters:
