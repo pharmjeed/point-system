@@ -822,9 +822,11 @@ stateDiagram-v2
   processing --> failed: خطأ دائم
   processing --> dead: استنفاد المحاولات
   pending --> canceled: إلغاء مؤقت لم يعد له معنى
+  failed --> pending: إعادة إدارية (retry)
+  dead --> pending: إعادة إدارية (retry)
+  failed --> canceled: إعادة لمهمة قديمة أو مكررة (DEC-150)
+  dead --> canceled: إعادة لمهمة قديمة أو مكررة (DEC-150)
   done --> [*]
-  failed --> [*]
-  dead --> [*]
   canceled --> [*]
 ```
 
@@ -832,7 +834,7 @@ stateDiagram-v2
 - التأجير: `status = processing`، `locked_by`، `locked_until = now() + مدة`، `attempts + 1`. انتهاء `locked_until` دون إنهاء يجعله قابلًا للالتقاط من عامل آخر.
 - الإعادة: `available_at = now() + تأخير أسي محدود`؛ عند `attempts >= max_attempts` ← `dead` مع تنبيه للإدارة. `failed` للخطأ الدائم (مثل قالب غير معتمد). `canceled` لمؤقت أُلغي صراحةً (مثل `offer_expire:<offer_id>` بعد القبول) — إلغاء اختياري لأن إعادة التحقق تضمن الأمان.
 - `dedupe_key` فريد ما دام الحدث `pending` أو `processing`.
-- `POST /v1/admin/outbox/{outboxId}/retry` يعيد `failed` أو `dead` إلى `pending` بقرار إداري مُدقّق؛ عدا صف `job.*` تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، فيُغلق `canceled` بالسبب في `last_error` دون إعادة تشغيل (DEC-150).
+- `failed` و`dead` ليستا نهائيتين: `POST /v1/admin/outbox/{outboxId}/retry` يعيد `failed` أو `dead` إلى `pending` بقرار إداري مُدقّق؛ عدا صف `job.*` تغيّر إصدار كيانه أو زال كيانه، أو له توأم معلّق بمفتاح التكرار نفسه، فيُغلق `canceled` بالسبب في `last_error` دون إعادة تشغيل (DEC-150).
 
 ---
 
