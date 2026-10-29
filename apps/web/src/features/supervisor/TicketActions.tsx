@@ -842,7 +842,8 @@ export function IncidentDialog({
   presetType,
   onCreated,
 }: {
-  ticket?: TicketDetail | null;
+  /** the ticket of S-03, or a row of S-10 (02 S-10 «فتح واقعة» on a key not in its slot) */
+  ticket?: Pick<TicketDetail, 'id' | 'display_number' | 'venue_id' | 'event_id'> | null;
   onClose: () => void;
   venueId?: string;
   eventId?: string | null;

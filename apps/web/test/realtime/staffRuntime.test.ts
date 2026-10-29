@@ -80,12 +80,17 @@ describe('staff events → React Query keys (web-supervisor.md)', () => {
     ).toEqual([[...staffKeys.boards()], [...staffKeys.ticket(IDS.ticketA)]]);
   });
 
-  it('driver.state_changed: the boards, the driver lists, the driver', () => {
+  it('driver.state_changed: the boards, the driver lists, the driver, S-05 / S-06', () => {
     expect(
       invalidated((on) =>
         on(event('driver.state_changed', { driver: { id: IDS.other }, driver_state: 'available' })),
       ),
-    ).toEqual([[...staffKeys.boards()], ['staff', 'drivers'], [...staffKeys.driver(IDS.other)]]);
+    ).toEqual([
+      [...staffKeys.boards()],
+      ['staff', 'drivers'],
+      [...staffKeys.driver(IDS.other)],
+      [...queryKeys.drivers],
+    ]);
   });
 
   it('alert.raised: the alert lists and the boards', () => {
