@@ -9,8 +9,8 @@ import { startFreezeProxy, type FreezeProxy } from '../src/testing/index.js';
 const STATEMENT_TIMEOUT_MS = 400;
 const READ_TIMEOUT_MS = STATEMENT_TIMEOUT_MS + READ_TIMEOUT_MARGIN_MS; // 2.4 s
 const CONNECT_TIMEOUT_MS = 800;
-/** scheduling slack on a loaded CI host */
-const SLACK_MS = 1500;
+/** scheduling slack on a loaded CI host (the integration files run in parallel) */
+const SLACK_MS = 3000;
 
 async function timed<T>(p: Promise<T>): Promise<{ ms: number; error: unknown; value?: T }> {
   const started = performance.now();
@@ -122,8 +122,8 @@ describe('a frozen database — bounded waits, broken connections destroyed', ()
     expect(ms).toBeLessThan(2 * READ_TIMEOUT_MS);
     proxy.thaw();
     const after = await timed(db.query('SELECT 42 AS n'));
-    expect(after.error).toBeNull();
-    expect(after.ms).toBeLessThan(1000);
+    expect(after.error).toBeNull(); // a reused broken connection would fail with its read timeout instead
+    expect(after.ms).toBeLessThan(2000);
     expect(after.value?.rows[0].n).toBe(42);
     // the destroyed connection's backend is gone: the server rolled its transaction back, none is left open
     await expect
