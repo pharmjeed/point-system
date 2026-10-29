@@ -1,6 +1,6 @@
 import { SEED_CREDENTIALS, SEED_IDS, seed } from '@point/db/seed';
 import { createTestDatabase, type TestDatabase } from '@point/db/testing';
-import { Database, FakeClock, type Env } from '@point/server';
+import { Database, FakeClock, type DatabaseConfig, type Env } from '@point/server';
 import { createSessionCookie, setSupervisorMfaRequired } from '@point/server/testing';
 import pg from 'pg';
 import request from 'supertest';
@@ -44,12 +44,14 @@ export async function createTestApp(
     env?: Record<string, string>;
     extraModules?: Type[];
     supervisorMfa?: boolean;
+    /** the app's pool settings (e.g. a connection through startFreezeProxy); the seed connects directly */
+    dbConfig?: (url: string) => Partial<DatabaseConfig>;
   } = {},
 ): Promise<TestApp> {
   const tdb = await createTestDatabase();
   const clock = opts.clock ?? new FakeClock('2026-10-27T16:00:00.000Z');
   const env = testEnv({ DATABASE_URL: tdb.url, ...(opts.env ?? {}) });
-  const db = new Database({ connectionString: tdb.url, poolMax: 30 }, clock);
+  const db = new Database({ connectionString: tdb.url, poolMax: 30, ...opts.dbConfig?.(tdb.url) }, clock);
   if (opts.seed ?? true) {
     const pool = new pg.Pool({ connectionString: tdb.url, max: 2 });
     try {

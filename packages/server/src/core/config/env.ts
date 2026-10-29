@@ -37,6 +37,8 @@ export const envSchema = z.object({
   DATABASE_POOL_MAX: int(20),
   DATABASE_STATEMENT_TIMEOUT_MS: int(5000),
   DATABASE_LOCK_TIMEOUT_MS: int(3000),
+  // a pool slot or a new connection not obtained in time → SERVICE_UNAVAILABLE (DEC-PROPOSED-8, 17 §12); 0 = no bound
+  DATABASE_CONNECT_TIMEOUT_MS: int(5000),
   DATABASE_SSL: bool.default(false),
 
   SESSION_SECRET: secret('SESSION_SECRET', 32),

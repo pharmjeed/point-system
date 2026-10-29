@@ -34,6 +34,7 @@ pnpm ops:load --k6 off --warmup 10                                      # quick 
 | M4 outbox age | `processed_at − available_at` of the rows of the window (all, per kind) and the oldest due row sampled every 2 s | alert at `ops.outbox_lag_alert_s` (30 s) |
 | M5 resources | CPU % and RSS of api, worker and simulator from `/proc` every 2 s; database connections per application from `pg_stat_activity` | recorded |
 | AC-13 stuck work | after the drain: no open task, no due/failed/dead outbox row, no pending notification, no `task_stuck` / `outbox_lag` alert | none |
+| coverage | socket delivery is at most once with no replay (07 §4.5), so a lost sample would hide the slowest case: every press must be observed (stored, cycle created, commit seen) and every claimed task must reach every other connected driver of its pool; no socket may disconnect or fail to connect during the measured window | complete |
 
 ## Knobs
 

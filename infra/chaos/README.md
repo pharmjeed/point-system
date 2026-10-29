@@ -6,8 +6,8 @@ provider, the Push service, the worker — and checks what must still hold. Ever
 started from the production build as child processes on ports 4120–4199.
 
 ```bash
-PATH=/opt/node24/bin:$PATH pnpm ops:chaos                       # every scenario (~25 min)
-pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5            # the kill points (~5 min)
+PATH=/opt/node24/bin:$PATH pnpm ops:chaos                       # every scenario (~27 min)
+pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5            # the kill points (~4 min; CI on pushes to main)
 CHAOS_DB_OUTAGE_S=20 pnpm ops:chaos --only db_outage --no-build # a shorter outage while iterating
 ```
 
@@ -36,13 +36,17 @@ without the variable and verifies:
 
 | Scenario | How | Verified |
 |---|---|---|
-| `db_outage` | every backend of the database terminated, then `ALLOW_CONNECTIONS false` + terminated for `CHAOS_DB_OUTAGE_S` (60) — only the run's own database. This is 17 §12's «إيقاف الحاوية مؤقتًا» read as a stop and a start: a fast shutdown ends the sessions and the port refuses connections | reads, readiness and commands answer `503 SERVICE_UNAVAILABLE` (never 500); no key kept, the same key runs the command once afterwards; the press made during the outage is redelivered until stored (no request lost); the offer expiry and the escalation due during the outage run once afterwards; api and worker survive |
-| `db_freeze` (opt-in: `--only db_freeze`) | the same words read as `docker pause`: the api and the worker reach the database through a relay (`infra/harness/tcp-proxy.mjs`) that accepts connections and bytes and answers nothing for `CHAOS_DB_FREEZE_S` (60) | the `db_outage` expectations, with the answer due within the PWA's 10 s request timeout. Not in the default set: it records the gap of DEC-PROPOSED-8 (`docs/progress/notes/load-chaos.md`) — today reads, readiness and commands get no answer until the database returns (3 of 16 checks fail; nothing is lost or repeated) — until the pool gets bounded waits |
+| `db_outage` | every backend of the database terminated, then `ALLOW_CONNECTIONS false` + terminated for `CHAOS_DB_OUTAGE_S` (60) — only the run's own database. This is 17 §12's «إيقاف الحاوية مؤقتًا» read as a stop and a start: a fast shutdown ends the sessions and the port refuses connections | reads, readiness and commands answer `503 SERVICE_UNAVAILABLE` with `Retry-After: 2` (never 500); a connected socket's heartbeat acks `SERVICE_UNAVAILABLE` and the device keeps its session (no `session.revoked`, not disconnected); no key kept, the same key runs the command once afterwards; the press made during the outage is redelivered until stored (no request lost); the offer expiry and the escalation due during the outage run once afterwards; api and worker survive |
+| `db_freeze` | the same words read as `docker pause`: the api and the worker reach the database through a relay (`startFreezeProxy` of `@point/server/testing`) that accepts connections and bytes and answers nothing for `CHAOS_DB_FREEZE_S` (60) | the `db_outage` expectations, each answer within the PWA's 10 s request timeout: the bounded waits of DEC-PROPOSED-8 (connect `DATABASE_CONNECT_TIMEOUT_MS`, read = statement timeout + 2 s, readiness 2 s) |
 | `wa_outage` | the simulator's `channel_down` (Graph `190`) for `CHAOS_WA_OUTAGE_S` (600: the 10 minutes of 17 §12) | `wa_channel_down` raised at the first failure, internal operations go on (requests, accept, start, ready, exception handover); nothing reaches the customers meanwhile; after the recovery each ticket receives only its current state (ready → W-05, delivered → W-06, requested → W-02), the rest skipped `superseded`; the alert resolves itself (TC-WA-22) |
-| `wa_outage_temporary` | Graph `131016` for `CHAOS_WA_TEMP_OUTAGE_S` (180) while a request arrives every 20 s | `down` after the 2-minute failing streak, `wa_channel_down`, operations go on, only current states after the recovery; the W-02 of requests made before `down` that ran out of attempts are listed (see the notes of the run) |
+| `wa_outage_temporary` | Graph `131016` for `CHAOS_WA_TEMP_OUTAGE_S` (180) while a request arrives every 20 s | `down` after the 2-minute failing streak, `wa_channel_down`, operations go on; after the recovery **every** request — the earliest included — received exactly the message of its current state (ready → W-05, requested → W-02) and no status message ended `failed`: the W-02 that ran out of the 5 attempts before `down` were held while every attempt of the channel failed (DEC-PROPOSED-6) |
 | `push_outage` | the test Push service (17 §3.1, a local endpoint behind real VAPID web-push) stopped | `push_failed_repeatedly` after `push.max_consecutive_failures`, the failures counted on the device, the offer accepted meanwhile; after the restart a push succeeds, the counter resets and the alert resolves |
 | `worker_stop` | the worker stopped `CHAOS_WORKER_STOP_S` (120) | webhooks still acknowledged; `outbox_lag` raised by the api's monitor; after the restart the stored press becomes a request, the backlog drains and the escalation due meanwhile runs once |
 | `worker_x3` | two more workers on the same outbox, 4 drivers delivering 8 requests | every message sent once per customer, no lease lost at completion, the three workers shared the rows |
+
+Not covered here: the PWA side of 17 §12's database row («الواجهة غير متصل/قديم»). The staff board's stale banner
+on a 503 is an e2e case (`apps/web/e2e/staff-outage.spec.ts`); the driver screens' service-unavailable state
+(02 D-15 ح) belongs to the PWA.
 
 Test knobs: `WORKER_LEASE_SECONDS=10` (production 30) so a dead worker's rows come back sooner;
 `RATE_LIMIT_AUTH_PER_MIN=600` (one address signs every actor in); the simulator redelivers a failed webhook 8 times

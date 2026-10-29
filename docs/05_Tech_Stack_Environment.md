@@ -201,6 +201,7 @@ packages/server/src/
 - الأقفال عبر مساعدات مرتبة فقط وبترتيب Canon §14ب (L0…L10): `lockIdempotency` (L0، أول جملة في الأمر) ← `lockPools(tx, ids)` (L1) ← `lockEvents(tx, ids)` (L2؛ `FOR SHARE` للتحصيل وتسليم النقد) ← `lockTransfers` ← `lockAssignments` ← `lockUsers` (L3) ← `lockTasks(tx, ids)` (L4) ← `lockTickets(tx, ids)` (L5) ← `lockCycles` (L6) ← `lockOffers` (L7) ← `lockDutySessions(tx, userIds)` (L8)، ثم الصفوف التابعة (L9) والإلحاقيات (L10) آخر المعاملة؛ النمط `FOR NO KEY UPDATE`. المساعدات تفرض الترتيب وترمي خطأ برمجيًا إن خولف، مع الاستثناء الوحيد في Canon §14ب: معاملة تحمل L1 يجوز لها بعد أقفال أمرها قفل صفوف إضافية من L4–L8 **لنفس المجموعة** لتمريرة التوزيع و`settleDriverAfterTask`.
 - ممنوع أي استدعاء شبكي داخل المعاملة (Graph API، Push، رفع S3). يُراجع في مراجعة الكود ويُغطى بقاعدة lint مخصصة على مجلدات `use-cases`.
 - `SET LOCAL lock_timeout` و`statement_timeout` من المتغيرات `DATABASE_LOCK_TIMEOUT_MS` (3000) و`DATABASE_STATEMENT_TIMEOUT_MS` (5000).
+- الانتظار محدود في جهة العميل أيضًا (DEC-PROPOSED-8، 17 §12): مقعد في المجمّع أو اتصال جديد لا يُنال خلال `DATABASE_CONNECT_TIMEOUT_MS` (5000)، وجملة لا يصل ردها خلال مهلة الجملة + 2 ثانية (قاعدة متوقفة لا تطبق `statement_timeout` بنفسها) ← `SERVICE_UNAVAILABLE` (`Retry-After: 2`)؛ الاتصال الذي انتهت مهلته يُغلق ولا يعود إلى المجمّع، ولا يُرسل عليه `ROLLBACK` (الخادم يتراجع عن معاملة الاتصال المغلق).
 - سياسة الإعادة (Canon §14ب): المعاملة كلها تُعاد حتى 3 مرات عند `40001`/`40P01` بتأخير عشوائي 20–80 ms (`point_db_tx_retries_total`)؛ تجاوز `lock_timeout` (`55P03`) لا يُعاد على الخادم، ويرد `IDEMPOTENCY_IN_PROGRESS` إن حدث عند L0 وإلا `SERVICE_UNAVAILABLE` (`retryable: true`).
 
 ### 7.5 الوقت
@@ -262,6 +263,7 @@ DATABASE_URL=postgres://point:point@localhost:5432/point
 DATABASE_POOL_MAX=20
 DATABASE_STATEMENT_TIMEOUT_MS=5000
 DATABASE_LOCK_TIMEOUT_MS=3000
+DATABASE_CONNECT_TIMEOUT_MS=5000     # pool slot / new connection; client read timeout = statement + 2 s
 DATABASE_SSL=false                   # true in staging/production
 
 # ---------- Sessions & crypto ----------

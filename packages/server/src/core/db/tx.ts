@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { Clock } from '../clock/clock.js';
 import { InvariantViolation } from '../errors/app-error.js';
+import { markDbError } from '../errors/pg-constraint-map.js';
 import { LockTracker } from './lock-tracker.js';
 
 export type SqlParam = unknown;
@@ -20,8 +21,28 @@ export interface EventEnvelope<P = Record<string, unknown>> {
 }
 
 /**
+ * One statement on a transaction's client, waiting at most `readTimeoutMs` for the answer (0 = no client bound);
+ * its errors are marked as database errors (`markDbError`) for the SERVICE_UNAVAILABLE mapping.
+ */
+export async function queryOn<R extends pg.QueryResultRow = any>(
+  client: pg.PoolClient | pg.Client,
+  text: string,
+  readTimeoutMs: number,
+  params?: unknown[],
+): Promise<pg.QueryResult<R>> {
+  try {
+    if (!readTimeoutMs) return await client.query<R>(text, params);
+    const config: pg.QueryConfig & { query_timeout: number } = { text, query_timeout: readTimeoutMs };
+    return await client.query<R>(config, params);
+  } catch (e) {
+    throw markDbError(e);
+  }
+}
+
+/**
  * One database transaction. `now` is taken once from the Clock when the transaction starts and is passed to
- * every time comparison, so a command sees a single consistent instant (16 §2.12).
+ * every time comparison, so a command sees a single consistent instant (16 §2.12). Every statement waits at
+ * most `readTimeoutMs` (the transaction's statement timeout + 2 s, DEC-PROPOSED-8) for the server's answer.
  */
 export class Tx {
   readonly locks = new LockTracker();
@@ -33,13 +54,14 @@ export class Tx {
     readonly client: pg.PoolClient | pg.Client,
     readonly now: Date,
     readonly clock: Clock,
+    readonly readTimeoutMs = 0,
   ) {}
 
   async query<R extends pg.QueryResultRow = any>(
     text: string,
     params: SqlParam[] = [],
   ): Promise<pg.QueryResult<R>> {
-    return this.client.query<R>(text, params as unknown[]);
+    return queryOn<R>(this.client, text, this.readTimeoutMs, params as unknown[]);
   }
 
   async rows<R extends pg.QueryResultRow = any>(text: string, params: SqlParam[] = []): Promise<R[]> {
@@ -76,10 +98,10 @@ export class Tx {
   }
 
   async savepoint(name: string): Promise<void> {
-    await this.client.query(`SAVEPOINT ${name}`);
+    await this.query(`SAVEPOINT ${name}`);
   }
 
   async rollbackTo(name: string): Promise<void> {
-    await this.client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+    await this.query(`ROLLBACK TO SAVEPOINT ${name}`);
   }
 }

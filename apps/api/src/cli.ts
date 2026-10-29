@@ -42,6 +42,7 @@ async function main(argv: string[]): Promise<number> {
       ssl: env.DATABASE_SSL,
       lockTimeoutMs: env.DATABASE_LOCK_TIMEOUT_MS,
       statementTimeoutMs: env.DATABASE_STATEMENT_TIMEOUT_MS,
+      connectTimeoutMs: env.DATABASE_CONNECT_TIMEOUT_MS,
       applicationName: 'point-cli',
     },
     new SystemClock(),

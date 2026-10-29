@@ -2,6 +2,7 @@ import { testAdminUrl } from '@point/db/testing';
 import pg from 'pg';
 import { io } from 'socket.io-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { realtimeOf } from '../src/bootstrap.js';
 import { SEED_IDS, createTestApp, newKey, type TestApp } from './harness.js';
 import { ORIGIN } from './test-env.js';
 
@@ -94,6 +95,72 @@ describe('database outage — SERVICE_UNAVAILABLE, then recovery with the same k
     expect(replay.status).toBe(201);
     expect(replay.headers['idempotent-replayed']).toBe('true');
     expect(await handshake()).toEqual({ ok: true });
+  });
+
+  it('a connected socket keeps its session through the outage: the heartbeat acks SERVICE_UNAVAILABLE, no session.revoked', async () => {
+    const s = io(url, {
+      path: '/ws',
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { origin: ORIGIN, cookie: await t.sessionFor('DRV2') },
+    });
+    const events: { ev: string; payload?: unknown }[] = [];
+    s.onAny((ev: string, payload: unknown) => events.push({ ev, payload }));
+    s.on('disconnect', (reason) => events.push({ ev: 'disconnect', payload: reason }));
+    const beat = () =>
+      s
+        .timeout(10_000)
+        .emitWithAck('client.heartbeat', { visible: true, audio_unlocked: true })
+        .catch((e: Error) => ({ transport: e.message }));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        s.once('connect', () => resolve());
+        s.once('connect_error', reject);
+      });
+      expect(await beat()).toMatchObject({ data: { server_time: expect.any(String) } });
+
+      await cut();
+      expect(await beat()).toEqual({ error: { code: 'SERVICE_UNAVAILABLE' } });
+      // the 60 s re-check of every socket cannot decide either: the socket is kept as it is
+      const sweep = await realtimeOf(t.app)!.revalidateAll();
+      expect(sweep.undecided).toBeGreaterThanOrEqual(1);
+      expect(s.connected).toBe(true);
+      expect(events.map((e) => e.ev)).not.toContain('session.revoked');
+      expect(events.map((e) => e.ev)).not.toContain('disconnect');
+
+      await restore();
+      expect(await beat()).toMatchObject({ data: { server_time: expect.any(String) } });
+      expect((await realtimeOf(t.app)!.revalidateAll()).undecided).toBe(0);
+      expect(s.connected).toBe(true);
+      expect(events.map((e) => e.ev)).not.toContain('session.revoked');
+    } finally {
+      s.close();
+    }
+  });
+
+  it('a revoked session is still revoked on its socket once the database answers (AUTH_* only)', async () => {
+    const cookie = await t.sessionFor('DRV3');
+    const s = io(url, {
+      path: '/ws',
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { origin: ORIGIN, cookie },
+    });
+    const revoked = new Promise<unknown>((resolve) => s.once('session.revoked', resolve));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        s.once('connect', () => resolve());
+        s.once('connect_error', reject);
+      });
+      await t.db.query(
+        `UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'admin' WHERE user_id = $1 AND revoked_at IS NULL`,
+        [SEED_IDS.users.DRV3],
+      );
+      await realtimeOf(t.app)!.revalidateAll();
+      expect(await revoked).toMatchObject({ type: 'session.revoked', payload: { reason: 'admin' } });
+    } finally {
+      s.close();
+    }
   });
 
   it('terminated backends alone (no refusal) cost at most the requests in flight: the pool reconnects', async () => {

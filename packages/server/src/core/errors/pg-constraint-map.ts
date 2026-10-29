@@ -211,7 +211,11 @@ function internal(constraint: string): MappedPgError {
   return { error: new AppError('INTERNAL_ERROR', {}, { cause: constraint }), unexpected: true };
 }
 
-/** Socket errors of a database connection that could not be opened or was cut. */
+/**
+ * Socket errors of a database connection that could not be opened or was cut. They are read as a database
+ * outage only on errors raised by the database layer (`markDbError`): the same errno from an HTTP request body
+ * (raw-body's «request aborted» is ECONNABORTED) or from another dependency is not the database.
+ */
 const CONNECTION_ERRNO = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -223,32 +227,69 @@ const CONNECTION_ERRNO = new Set([
   'ENOTFOUND',
   'EAI_AGAIN',
 ]);
-/** node-postgres / pg-pool messages for a connection lost mid-query or never obtained. */
+/**
+ * node-postgres / pg-pool messages for a connection lost mid-query or never obtained, and the client read
+ * timeout of a server that stopped answering (`query_timeout`, «Query read timeout»; DEC-PROPOSED-8).
+ */
 const CONNECTION_MESSAGES = [
   /connection terminated/i,
   /connection ended unexpectedly/i,
   /is not queryable/i,
   /timeout exceeded when trying to connect/i,
   /not currently accepting connections/i,
+  /query read timeout/i,
 ];
+/** pg's own connect timeout of a client («timeout expired»): too generic a phrase outside the database layer. */
+const DB_CONNECTION_MESSAGES = [/^timeout expired$/i];
+
+const DB_ORIGIN = Symbol.for('point.db_error');
 
 /**
- * A database that cannot be reached right now (stopped or restarting server, failover, terminated backends, a
- * network cut). 08 §5 maps SQLSTATE class 08 (connection) to SERVICE_UNAVAILABLE; when the server is gone the
- * driver reports the same situation without any SQLSTATE — a socket error, «Connection terminated unexpectedly»,
- * a pool connect timeout — or as 55000 «not currently accepting connections». All of them answer
- * SERVICE_UNAVAILABLE (retryable, Retry-After) instead of INTERNAL_ERROR (17 §12: database outage).
+ * Marks an error raised by the database layer (`Database`, `Tx`: pool, connection, query), so that its socket
+ * errno can be read as a database outage. Returns the same value; non-objects and frozen errors are left alone.
+ */
+export function markDbError<E>(e: E): E {
+  if (e && typeof e === 'object' && !(DB_ORIGIN in e)) {
+    try {
+      Object.defineProperty(e, DB_ORIGIN, { value: true, enumerable: false });
+    } catch {
+      // a frozen object keeps its message/SQLSTATE classification
+    }
+  }
+  return e;
+}
+
+/**
+ * A database that cannot be reached right now (stopped, paused or restarting server, failover, terminated
+ * backends, a network cut). 08 §5 maps SQLSTATE class 08 (connection) to SERVICE_UNAVAILABLE; when the server is
+ * gone the driver reports the same situation without any SQLSTATE — a socket error, «Connection terminated
+ * unexpectedly», a pool connect timeout, a client read timeout — or as 55000 «not currently accepting
+ * connections». All of them answer SERVICE_UNAVAILABLE (retryable, Retry-After) instead of INTERNAL_ERROR (17 §12:
+ * database outage). An HTTP error object (http-errors: a numeric `status`) is never a database error.
  */
 export function isDbUnavailableError(e: unknown): boolean {
+  return classify(e, false);
+}
+
+function classify(e: unknown, fromDb: boolean): boolean {
   if (!e || typeof e !== 'object') return false;
-  const err = e as { code?: unknown; message?: unknown; errors?: unknown };
-  if (typeof err.code === 'string' && CONNECTION_ERRNO.has(err.code)) return true;
+  const err = e as {
+    code?: unknown;
+    message?: unknown;
+    errors?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+  };
+  if (typeof err.status === 'number' || typeof err.statusCode === 'number') return false;
+  const db = fromDb || DB_ORIGIN in e;
+  if (db && typeof err.code === 'string' && CONNECTION_ERRNO.has(err.code)) return true;
   // the server's own words: class 08 connection exception, 53 resources, 57P0x shutdown / terminated backend
   if (typeof err.code === 'string' && /^(08[0-9A-Z]{3}|53[0-9A-Z]{3}|57P0[0-9])$/.test(err.code)) return true;
   const message = typeof err.message === 'string' ? err.message : '';
   if (CONNECTION_MESSAGES.some((r) => r.test(message))) return true;
+  if (db && DB_CONNECTION_MESSAGES.some((r) => r.test(message))) return true;
   // dual-stack connect attempts fail as one AggregateError (ECONNREFUSED on ::1 and on 127.0.0.1)
-  if (Array.isArray(err.errors) && err.errors.length > 0) return err.errors.every(isDbUnavailableError);
+  if (Array.isArray(err.errors) && err.errors.length > 0) return err.errors.every((x) => classify(x, db));
   return false;
 }
 

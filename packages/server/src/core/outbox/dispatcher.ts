@@ -291,21 +291,27 @@ export class OutboxDispatcher {
   }
 
   private async connectListener(): Promise<void> {
+    // bounded like the pool (DEC-PROPOSED-8): a database that does not answer must not hold the start
+    const c = new pg.Client(this.db.listenClientConfig('listen'));
+    let ready = false;
+    c.on('error', (err) => {
+      if (!ready) return; // reported by connect/LISTEN below
+      this.logger.warn({ err: err.message }, 'outbox listener error; reconnecting');
+      this.listener = null;
+      if (this.running) setTimeout(() => void this.connectListener(), 1000);
+    });
     try {
-      const c = new pg.Client({ connectionString: this.db.config.connectionString });
       await c.connect();
       await c.query(`LISTEN ${OUTBOX_NOTIFY_CHANNEL}`);
-      c.on('notification', () => this.wake?.());
-      c.on('error', (err) => {
-        this.logger.warn({ err: err.message }, 'outbox listener error; reconnecting');
-        this.listener = null;
-        if (this.running) setTimeout(() => void this.connectListener(), 1000);
-      });
-      this.listener = c;
     } catch (err) {
+      void c.end().catch(() => {});
       this.logger.warn({ err: (err as Error).message }, 'outbox listener unavailable; polling only');
       if (this.running) setTimeout(() => void this.connectListener(), 2000);
+      return;
     }
+    ready = true;
+    c.on('notification', () => this.wake?.());
+    this.listener = c;
   }
 
   private async loop(): Promise<void> {

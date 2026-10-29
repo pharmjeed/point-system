@@ -36,6 +36,7 @@ export class CoreModule {
           poolMax: opts.env.DATABASE_POOL_MAX,
           lockTimeoutMs: opts.env.DATABASE_LOCK_TIMEOUT_MS,
           statementTimeoutMs: opts.env.DATABASE_STATEMENT_TIMEOUT_MS,
+          connectTimeoutMs: opts.env.DATABASE_CONNECT_TIMEOUT_MS,
           ssl: opts.env.DATABASE_SSL,
           applicationName: 'point-api',
         },

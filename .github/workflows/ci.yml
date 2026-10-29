@@ -1,5 +1,6 @@
 # PNT-004: lint · typecheck · unit · db drift · db invariants · integration (Testcontainers, PostgreSQL 16) · build · e2e
-# (mocked API) · PNT-036: the G1 path in the browser against the real API on a seeded PostgreSQL.
+# (mocked API) · PNT-036: the G1 path in the browser against the real API on a seeded PostgreSQL · PNT-098: the kill
+# points of 17 H-03 (AC-06) against the production build, on pushes to main.
 # Private repository with limited minutes: runs on pull requests and on main only; superseded runs are cancelled.
 name: CI
 
@@ -71,6 +72,46 @@ jobs:
         run: pnpm ops:restore-drill
         env:
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+  chaos:
+    # PNT-098, 17 §5: AC-06 is automated chaos (TC-013 … TC-017, «ليلي»); 17 §15.1 #1 wants every automated TC-### green
+    # on main. The kill points run against the production build (~4 min) on pushes to main only (CI minutes, CLAUDE.md
+    # §8); the outages of 17 §12 take ~25 min and stay with `pnpm ops:chaos` before a release (infra/chaos/README.md).
+    name: chaos — kill points KP-1 … KP-5 (AC-06)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Build the backend (tsc → dist)
+        run: pnpm -r --filter @point/shared --filter @point/db --filter @point/server --filter @point/api --filter @point/worker --filter @point/wa-simulator build
+      - name: pnpm ops:chaos — KP-1 … KP-5 (TC-013 … TC-017)
+        run: pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5 --no-build --out chaos-report
+        env:
+          HARNESS_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-report
+          path: chaos-report
+          retention-days: 14
 
   e2e:
     name: e2e (Playwright 360/390/430, RTL · G1 on the real API)

@@ -37,3 +37,5 @@ export async function setSupervisorMfaRequired(
     [orgId, required],
   );
 }
+
+export { startFreezeProxy, type FreezeProxy } from './freeze-proxy.js';
