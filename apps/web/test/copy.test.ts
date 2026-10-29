@@ -53,6 +53,8 @@ const NOT_IN_02: Record<string, string[]> = {
     'emptyEvents',
     'emptyShifts',
     'noShift',
+    'reopen', // the reopen of a closing event (GAP-4) — docs/progress/notes/staff-gaps.md
+    'reopenBody',
   ],
   s09: [
     'newZone',

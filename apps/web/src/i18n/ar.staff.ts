@@ -119,6 +119,13 @@ export const s08 = {
   openEvents: 'الحفلات المفتوحة: {n}',
   shiftLine: 'الوردية: {status}',
   setup: 'إعداد الموقع',
+  // the way to S-10 / S-11 (GAP-4)
+  startClosing: 'بدء الإغلاق',
+  closeEvent: 'إغلاق الحفل والمطابقة',
+  viewReport: 'عرض التقرير',
+  // not in 02 (docs/progress/notes/staff-gaps.md): the reopen of a closing event (07 `openEvent`, 11 §6.4)
+  reopen: 'إعادة فتح الحفل',
+  reopenBody: 'يعود الحفل «مفتوحًا» ويُسمح بتسجيل مركبات جديدة فيه. ابدأ الإغلاق من جديد بعد الانتهاء.',
   // not in 02 (docs/progress/notes/pnt-023.md)
   editVenue: 'تعديل الموقع',
   venueCode: 'رمز الموقع',

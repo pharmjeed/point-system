@@ -1,5 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, CalendarPlus, Clock, Pencil, Plus, Settings2 } from 'lucide-react';
+import {
+  CalendarClock,
+  CalendarPlus,
+  ChartColumn,
+  ClipboardCheck,
+  Clock,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Settings2,
+} from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError, displayMessage } from '@/api/errors';
@@ -21,6 +31,8 @@ import { Button, Card, Dialog, EmptyState, FieldError, Header, SegmentedControl 
 import { QueryView } from '@/features/common/QueryView';
 import { EventStatusChip, ShiftStatusChip } from '@/features/common/StateChip';
 import { useStaffMe } from '@/features/ops/StaffLayout';
+import { can as canStaff } from '@/features/supervisor/permissions';
+import { staffPaths } from '@/features/supervisor/staffPaths';
 import { useCommand } from '@/hooks/useCommand';
 import { nav, ui } from '@/i18n/ar';
 import { s08 } from '@/i18n/ar.staff';
@@ -38,6 +50,9 @@ type Tab = 'events' | 'shifts';
 /**
  * S-08 venue page (`/venues/:venueId`): «الحفلات» (اليوم · القادمة · المغلقة) and «الورديات», with the
  * create/open/cancel/close actions for whoever holds `event.manage` / `shift.manage`, and the way to S-09.
+ * An event card leads to S-10 (GAP-4): «بدء الإغلاق» for an open event, «إغلاق الحفل والمطابقة» and «إعادة فتح
+ * الحفل» (`POST /v1/events/{eventId}/open`, closing → open, 11 §6.4) for a closing one, «عرض التقرير» (S-11)
+ * for a closed one.
  */
 export function VenuePage() {
   const { venueId = '' } = useParams();
@@ -157,6 +172,7 @@ function EventsTab({ me, venue, pools }: { me: Me; venue: Venue; pools: Dispatch
                   <EventCard
                     event={event}
                     manage={manage}
+                    reports={canStaff(me, 'report.read')}
                     venueId={venue.id}
                     pools={pools}
                     settings={settings.data?.settings}
@@ -183,20 +199,24 @@ function EventsTab({ me, venue, pools }: { me: Me; venue: Venue; pools: Dispatch
 function EventCard({
   event,
   manage,
+  reports,
   venueId,
   pools,
   settings,
 }: {
   event: VenueEvent;
   manage: boolean;
+  reports: boolean;
   venueId: string;
   pools: DispatchPool[];
   settings?: VenueSettings;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const pushToast = useUiStore((s) => s.pushToast);
   const [editing, setEditing] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [reason, setReason] = useState('');
   const [cancelError, setCancelError] = useState<string | null>(null);
   const open = useCommand((body: { expected_version: number }, key: string) =>
@@ -207,12 +227,14 @@ function EventCard({
   );
   const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.events(venueId) });
 
+  // draft → open, and closing → open (the reopen after a wrong start of the closing, 07; 11 §6.4)
   const onOpen = async () => {
     try {
       await open.run({ expected_version: event.version });
       pushToast({ message: ui.saved, tone: 'success' });
+      setReopening(false);
     } catch {
-      // shown under the actions
+      // shown under the actions, or in the reopen Dialog
     } finally {
       void refresh();
     }
@@ -237,6 +259,7 @@ function EventCard({
   };
 
   const editable = manage && (event.status === 'draft' || event.status === 'open');
+  const toClose = () => navigate(staffPaths.eventClose(event.id));
   return (
     <Card as="article" className="pt-record" aria-label={event.name_ar} data-event-id={event.id}>
       <div className="pt-record__head">
@@ -253,6 +276,11 @@ function EventCard({
               {s08.open}
             </Button>
           ) : null}
+          {event.status === 'open' ? (
+            <Button compact iconStart={ClipboardCheck} onClick={toClose}>
+              {s08.startClosing}
+            </Button>
+          ) : null}
           <Button compact variant="secondary" onClick={() => setEditing(true)}>
             {s08.edit}
           </Button>
@@ -261,7 +289,46 @@ function EventCard({
           </Button>
         </div>
       ) : null}
-      {open.error ? <FieldError role="alert">{displayMessage(open.error)}</FieldError> : null}
+      {manage && event.status === 'closing' ? (
+        <div className="pt-record__actions">
+          <Button compact iconStart={ClipboardCheck} onClick={toClose}>
+            {s08.closeEvent}
+          </Button>
+          <Button compact variant="secondary" iconStart={RotateCcw} onClick={() => setReopening(true)}>
+            {s08.reopen}
+          </Button>
+        </div>
+      ) : null}
+      {reports && event.status === 'closed' ? (
+        <div className="pt-record__actions">
+          <Button
+            compact
+            variant="secondary"
+            iconStart={ChartColumn}
+            onClick={() => navigate(staffPaths.reportsFor(event.id))}
+          >
+            {s08.viewReport}
+          </Button>
+        </div>
+      ) : null}
+      {open.error && !reopening ? <FieldError role="alert">{displayMessage(open.error)}</FieldError> : null}
+      {manage && event.status === 'closing' ? (
+        <Dialog
+          id={`reopen-${event.id}`}
+          open={reopening}
+          onOpenChange={setReopening}
+          title={s08.reopen}
+          body={s08.reopenBody}
+          confirmLabel={s08.reopen}
+          loading={open.pending}
+          error={open.error ? displayMessage(open.error) : undefined}
+          onConfirm={onOpen}
+          onCancel={() => {
+            open.reset();
+            setReopening(false);
+          }}
+        />
+      ) : null}
       {editable ? (
         <>
           <EventFormSheet

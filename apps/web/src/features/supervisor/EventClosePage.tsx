@@ -79,7 +79,9 @@ export function EventClosePage() {
         <ReadError error={event.error} onRetry={() => void event.refetch()} backTo={paths.venues} />
       </div>
     );
-  return <CloseFlow me={me} event={event.data} onBack={back} />;
+  // back to the venue page the event card led here from (S-08, GAP-4)
+  const venuePage = `${paths.venues}/${encodeURIComponent(event.data.venue_id)}`;
+  return <CloseFlow me={me} event={event.data} onBack={() => navigate(venuePage)} />;
 }
 
 function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: () => void }) {
