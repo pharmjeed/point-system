@@ -211,9 +211,11 @@ export function custodyTransferHolders(
 }
 
 /** Admin area sections (02 §2.2 table, 02 S-13) — read permission per section. */
-export type AdminSection = 'audit' | 'outbox' | 'channel' | 'templates' | 'retention' | 'org';
+export type AdminSection = 'staff' | 'audit' | 'outbox' | 'channel' | 'templates' | 'retention' | 'org';
 
 export const ADMIN_SECTIONS: ReadonlyArray<{ id: AdminSection; read: Permission }> = [
+  // «الموظفون»: the administration manages supervisors, the owner everyone (02 §2.2, canon §10 staff.manage)
+  { id: 'staff', read: 'staff.manage' },
   { id: 'channel', read: 'wa.channel_read' },
   { id: 'templates', read: 'wa.channel_read' },
   { id: 'outbox', read: 'outbox.manage' },

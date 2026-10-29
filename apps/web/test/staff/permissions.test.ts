@@ -261,8 +261,23 @@ describe('S-03 custody transfer holders (DEC-250, DEC-328)', () => {
 
 describe('S-13 sections per role (02 §2.2)', () => {
   it('owner: all; admin: no org settings; supervisor: none', () => {
-    expect(adminSectionsFor(owner)).toEqual(['channel', 'templates', 'outbox', 'audit', 'retention', 'org']);
-    expect(adminSectionsFor(admin)).toEqual(['channel', 'templates', 'outbox', 'audit', 'retention']);
+    expect(adminSectionsFor(owner)).toEqual([
+      'staff',
+      'channel',
+      'templates',
+      'outbox',
+      'audit',
+      'retention',
+      'org',
+    ]);
+    expect(adminSectionsFor(admin)).toEqual([
+      'staff',
+      'channel',
+      'templates',
+      'outbox',
+      'audit',
+      'retention',
+    ]);
     expect(adminSectionsFor(supervisor)).toEqual([]);
   });
 
