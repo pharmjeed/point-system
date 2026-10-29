@@ -3,7 +3,7 @@ import type { Database } from '../db/database.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, InvariantViolation, asAppError } from '../errors/app-error.js';
 import { errorEnvelope, successEnvelope } from '../errors/envelope.js';
-import { isPgError, mapPgError } from '../errors/pg-constraint-map.js';
+import { dbUnavailableError, isPgError, mapPgError } from '../errors/pg-constraint-map.js';
 
 export interface CommandContext {
   userId: string;
@@ -213,6 +213,9 @@ async function claimKey(tx: Tx, ctx: CommandContext): Promise<Claim> {
 export function toAppError(e: unknown, pgContext: { operation?: string }): AppError | null {
   const app = asAppError(e);
   if (app) return app;
+  // before isPgError: a socket errno such as EPIPE has the shape of a SQLSTATE
+  const unavailable = dbUnavailableError(e);
+  if (unavailable) return unavailable;
   if (isPgError(e)) return mapPgError(e, pgContext).error;
   return null;
 }

@@ -9,6 +9,7 @@ import type { Env } from '../core/config/env.js';
 import type { Database } from '../core/db/database.js';
 import type { Tx } from '../core/db/tx.js';
 import { asAppError } from '../core/errors/app-error.js';
+import { dbUnavailableError } from '../core/errors/pg-constraint-map.js';
 import type { Logger } from '../core/logging/logger.js';
 import { metrics } from '../core/metrics/metrics.js';
 import { REALTIME_NOTIFY_CHANNEL, type RealtimeMessage } from '../core/realtime/realtime-publisher.js';
@@ -108,7 +109,8 @@ export class RealtimeServer {
         (socket.data as SocketData) = { token: token!, actor, rooms: new Set() };
         next();
       } catch (e) {
-        next(authError(asAppError(e)?.code ?? 'AUTH_UNAUTHENTICATED'));
+        // an unreachable database is not a bad session: the client keeps it and retries (17 §12)
+        next(authError(asAppError(e)?.code ?? dbUnavailableError(e)?.code ?? 'AUTH_UNAUTHENTICATED'));
       }
     });
     io.on('connection', (socket) => this.onConnection(socket));
@@ -150,7 +152,7 @@ export class RealtimeServer {
             };
         ack?.({ data: result });
       } catch (e) {
-        ack?.({ error: { code: asAppError(e)?.code ?? 'INTERNAL_ERROR' } });
+        ack?.({ error: { code: asAppError(e)?.code ?? dbUnavailableError(e)?.code ?? 'INTERNAL_ERROR' } });
       }
     });
 
