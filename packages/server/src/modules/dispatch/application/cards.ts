@@ -3,7 +3,8 @@ import { plateView, type TicketQueryable } from '../../tickets-custody/index.js'
 
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
 
-export const SAFETY_NOTE_AR = 'احجز فقط وأنت متوقف؛ لا تستخدم الجوال أثناء القيادة';
+/** The fixed note of a `reserve_next` card: 02 D-09 and 03 §3 word for word (DEC-361). */
+export const SAFETY_NOTE_AR = 'احجزه فقط وأنت متوقف. لا تستخدم الجوال أثناء القيادة.';
 
 /**
  * What a recipient can do with a live round now (10 §2.2, §2.6) — the stored `eligible_as` is display-only and
