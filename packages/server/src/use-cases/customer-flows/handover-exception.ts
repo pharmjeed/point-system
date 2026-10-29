@@ -130,10 +130,12 @@ const OPERATION = 'POST /v1/tickets/{ticketId}/handover-exception';
  * assignee who actually delivered and the supervisor as approver (event + audit, `self_approved` when he is
  * the assignee, 09 §10 rule 2); a documented `manual_verification` incident (`lost_ticket` for a paper
  * ticket) created `resolved`; `handover_code_locked` and `ready_not_collected` resolved; the driver settled
- * and a dispatch pass. The payment gate is TT-18's: a due ticket needs `payment` or a waiver (PAYMENT_PENDING);
- * 13 §8.4: the payment passes the 13 §5.2 checks of the handover before any effect and is recorded with
- * `source = exception`, collected by its `collected_by` — the assignee or the approving supervisor
- * (`VALIDATION_FAILED payment.collected_by not_collector` otherwise), who then owes the cash (13 §10).
+ * and a dispatch pass. The payment gate is TT-18's (the hook's `check`): a due ticket needs `payment` or a waiver
+ * (PAYMENT_PENDING); a collected one takes none (PAYMENT_ALREADY_RECORDED, 13 §15 / §17.11); 13 §8.4: the payment
+ * passes the 13 §5.2 checks of the handover before any effect and is recorded with `source = exception`,
+ * collected by its `collected_by` — the assignee or the approving supervisor (`VALIDATION_FAILED
+ * payment.collected_by not_collector` otherwise), who then owes the cash (13 §10). Audit: `handover.exception`,
+ * then `payment.record` (13 §8.4).
  */
 @Injectable()
 export class HandoverExceptionUseCase {
@@ -171,52 +173,66 @@ export class HandoverExceptionUseCase {
       : null;
     const methods = identityMethods(body.identity_checks, stored?.phone_e164 ?? null);
 
-    // payment gate (TT-18 rules)
+    // the payment gate is TT-18's, before any effect
     const pay = inlinePaymentHook();
-    if (t.payment_status === 'due' && !(body.payment && pay)) {
-      const ev = await tx.one<{ allowed_payment_methods: string[] }>(
-        `SELECT allowed_payment_methods FROM events WHERE id = $1`,
-        [t.event_id],
-      );
-      throw new AppError('PAYMENT_PENDING', {
-        amount_halalas: Number(t.fee_halalas),
-        allowed_methods: ev.allowed_payment_methods,
+    const sent = body.payment
+      ? {
+          method: body.payment.method,
+          amount_halalas: body.payment.amount_halalas,
+          pos_reference: body.payment.pos_reference ?? null,
+        }
+      : null;
+    // 13 §8.4: the money of a due ticket was taken by the assignee (default) or by the approving supervisor himself
+    if (
+      t.payment_status === 'due' &&
+      body.payment &&
+      pay &&
+      body.payment.collected_by !== task.assignee_id &&
+      body.payment.collected_by !== actor.userId
+    )
+      throw new AppError('VALIDATION_FAILED', {
+        fields: [{ field: 'payment.collected_by', issue: 'not_collector' }],
       });
-    }
-    if (t.payment_status !== 'due' && body.payment)
-      throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
-    const collection =
-      t.payment_status === 'due' && body.payment && pay
-        ? {
-            method: body.payment.method,
-            amount_halalas: body.payment.amount_halalas,
-            pos_reference: body.payment.pos_reference ?? null,
-          }
-        : null;
-    if (collection && body.payment) {
-      // 13 §8.4: the money was taken by the assignee (default) or by the approving supervisor himself
-      if (body.payment.collected_by !== task.assignee_id && body.payment.collected_by !== actor.userId)
-        throw new AppError('VALIDATION_FAILED', {
-          fields: [{ field: 'payment.collected_by', issue: 'not_collector' }],
+    if (pay?.check) {
+      // 13 §5.3 step 5 as in TT-18: `due` → PAYMENT_PENDING without `payment`, else the 13 §5.2 checks (method,
+      // exact fee, POS reference); `collected` with a payment → PAYMENT_ALREADY_RECORDED (13 §15, §17.11: the
+      // exception of a collected ticket needs none); `not_required` / `waived` with one → not_applicable
+      await pay.check(tx, { ticket: t, payment: sent, actor });
+    } else {
+      // the S2 gate (no collecting hook registered)
+      if (t.payment_status === 'due' && !(body.payment && pay)) {
+        const ev = await tx.one<{ allowed_payment_methods: string[] }>(
+          `SELECT allowed_payment_methods FROM events WHERE id = $1`,
+          [t.event_id],
+        );
+        throw new AppError('PAYMENT_PENDING', {
+          amount_halalas: Number(t.fee_halalas),
+          allowed_methods: ev.allowed_payment_methods,
         });
-      // the 13 §5.2 checks of the handover (method, exact fee, POS reference), before any effect
-      await pay!.check?.(tx, { ticket: t, payment: collection, actor });
+      }
+      if (t.payment_status !== 'due' && body.payment)
+        throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
     }
 
     const assignee = task.assignee_id;
     const ea = eventActor(actor);
     const revokedCodes = await revokeClaimCodes(tx, cycle.id, 'exception_handover');
     let payment: Record<string, unknown> | null = null;
-    if (collection && body.payment && pay) {
+    // 13 §8.4: the audit reads handover.exception, then payment.record — the collection's row is written last
+    const deferred: { writeAudit?: () => Promise<void> } = {};
+    if (t.payment_status === 'due' && sent && body.payment && pay) {
       payment = await pay.collect(tx, {
         ticket: t,
         cycle,
-        payment: collection,
+        payment: sent,
         actor,
         requestId,
         collectedBy: body.payment.collected_by,
         source: 'exception',
         operation: OPERATION,
+        deferAudit: (writeAudit) => {
+          deferred.writeAudit = writeAudit;
+        },
       });
     }
 
@@ -343,6 +359,7 @@ export class HandoverExceptionUseCase {
         settled: settled.outcome,
       },
     });
+    await deferred.writeAudit?.();
     return {
       ticket: await loadTicketDetail(tx, t.id, { userId: actor.userId, role: actor.role }),
       cycle: cycleView(closed),
