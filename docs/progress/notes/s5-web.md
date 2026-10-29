@@ -13,7 +13,7 @@ the proposals below into `docs/DECISIONS.md`.
 | PNT-067 live D-09 card | 1. only the oldest actionable request · 2. a stale card press is handled gracefully (two contexts) | `e2e/driver-live.spec.ts` (two drivers: TASK_ALREADY_CLAIMED / OFFER_EXPIRED / OLDER_REQUEST_PENDING with the 08 texts, the card leaves, no stuck state), `test/realtime/driverHome.test.ts` |
 | PNT-068 D-04 + D-15 | 1. every banner reproducible in Playwright · 2. a failed wake lock shows no error | `e2e/driver-system.spec.ts` (offline, uncertain, WhatsApp down/up, session end, sound off; wake lock refused without an alert or a console error, held during the duty and released from D-14) |
 | PNT-069 D-12 / D-13 | 1. minimal projection for a driver who is not assigned (channel, link and payment status; no phone, slot or photos); masked phone and slot for the assignee/creator · 2. on-behalf errors with the 08 texts | `e2e/driver-vehicles.spec.ts` (9: list scope and order, digits search after 300 ms, chips, cursor pages, both projections on screen and on the wire, RETRIEVAL_ALREADY_ACTIVE / TICKET_NOT_PARKED / TICKET_CLOSED, cancel before/after assignment, phone change, incident report, offline) |
-| PNT-070 D-14 + PWA | 1. installable on Android Chrome · 2. iOS guide only outside standalone; no permission prompt without a tap | `e2e/pwa.spec.ts` (CDP `Page.getInstallabilityErrors` empty, manifest, controlling worker, precache without `/v1`, offline shell), `e2e/driver-account.spec.ts` (guide hidden in standalone, zero `requestPermission` calls on load, one after the tap) |
+| PNT-070 D-14 + PWA | 1. installable on Android Chrome · 2. iOS guide only outside standalone; no permission prompt without a tap | `e2e/pwa.spec.ts` (CDP `Page.getInstallabilityErrors` empty in a persistent Chromium profile — an ordinary Playwright context is off the record and reports only `in-incognito` —, the brand manifest, a controlling worker, precache without `/v1`, the app running offline from the cache), `e2e/driver-account.spec.ts` (guide hidden in standalone, zero `requestPermission` calls on load, one after the tap) |
 | PNT-071 persistence | AC-21 / TC-061: a cut at the submit keeps the inputs; one effect on return | `e2e/driver-persistence.spec.ts` (D-05 inputs after a reload; a photo cut mid-upload resumes after the reload with the same media row; four aborted submits and the resend after the reload all carry one Idempotency-Key, one 2xx, the ticket `parking` once; the draft rows gone after the intake; a session end keeps the draft; sign-out deletes this user's rows only), `test/intakePersistence.test.ts`, `test/command.test.ts` |
 | PNT-072 Web Push (web part) | 1. payload without phone/plate/slot/code (schema) · 2. replacement on reservation on Android Chrome · 3. refused permission keeps the in-page alert mode clear (AC-22) | `test/push.test.ts` (strict canon schema, a plate or a phone → the quiet ended text), `e2e/pwa.spec.ts` (push delivered through CDP: the ticket number only under `task:{id}`; `closed` replaces it under the same tag; a plate payload never shown; `push.click` → D-04 + resync; `push_subscription` stored on the device), `e2e/driver-account.spec.ts` (refused → «وضع التنبيه: داخل الصفحة فقط», the intake still works). Real-device checks remain (PNT-099). |
 
@@ -75,7 +75,9 @@ the server has no subscription (`checks.push_enabled = false`), with «إعدا�
 the precache list is every emitted asset (JS chunks including the lazy ones, CSS, fonts) plus the public files
 (icons, sounds, manifest) and `/index.html`, so a driver who loaded once can open any screen offline and every sound
 plays offline; source maps and the development gallery are excluded; `/v1`, `/ws`, `/webhooks`, `/health` are never
-cached; the cache name carries a hash of the list (a new build = a new worker = «تحديث متاح»). — affected files: 05 §15.2.
+cached; the cache name carries a hash of the list (a new build = a new worker = «تحديث متاح»); cached files are
+matched with `ignoreVary` (hashed names; a module script's `Origin` header must not miss the cache). — affected
+files: 05 §15.2.
 
 **DEC-PROPOSED-10 — the test tone is outside the 14 §7 ranking** — context: 14 §7 rule 4 ranks the alerts only;
 ranking the tap's test tone above them silenced a broadcast arriving during the test. — decision: the test tone
@@ -117,6 +119,21 @@ only); a session end writes the pending changes and keeps them. — affected fil
 worker posts `{type: 'push.click', url, kind, age_ms}` to the focused window (a same-origin path only, `/d`
 otherwise); the app navigates and resyncs; sending the analytics event is left to the analytics ticket. — affected
 files: 15 (event source).
+
+## Bundle
+
+`vite build` (e2e build of this branch): the entry chunk `index-*.js` 278 kB and the largest preloaded chunk 203 kB
+— no chunk reaches Vite's 500 kB warning; the realtime runtime (Socket.IO, the zod schemas), the staff copy, the
+task screens and D-12/D-13 are lazy chunks.
+
+## Observations for the lead
+
+- `pnpm lint` (`scripts/check-secrets.mjs`) scans `apps/web/dist` when it exists: the S-13 WhatsApp settings
+  (`src/features/admin/WhatsAppSections.tsx`, web-supervisor stream) show `env://WA_ACCESS_TOKEN`-style references,
+  which put server-only variable names into the bundle and fail the check after any local build. CI lints before
+  building, so it stays green there; either the placeholders or the check's dist rule needs a decision.
+- The Service Worker matches its cache with `ignoreVary` (DEC-PROPOSED-9): `vite preview` (and any server adding
+  `Vary: Origin`) otherwise misses every module script offline.
 
 ## Not in 02 (copy)
 
