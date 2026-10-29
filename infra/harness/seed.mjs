@@ -15,14 +15,17 @@ export const SUPERVISOR_PASSWORD = 'harness-supervisor-2026';
 
 /**
  * @param {string} url database URL (point_load* / point_chaos*)
- * @param {{ venues?: number, driversPerVenue?: number, env: Record<string,string>, spotsPerVenue?: number }} o
- *   `env` = the server environment of the run (keys, pepper, brand)
+ * @param {{ venues?: number, driversPerVenue?: number, env: Record<string,string>, spotsPerVenue?: number,
+ *           slotsPerVenue?: number }} o
+ *   `env` = the server environment of the run (keys, pepper, brand); every venue gets at least `spotsPerVenue`
+ *   parking spots (40) and `slotsPerVenue` key slots (60)
  */
 export async function seedWorld(url, o) {
   assertHarnessDb(new URL(url).pathname.slice(1));
   const venues = Math.max(2, o.venues ?? 5);
   const perVenue = Math.max(1, o.driversPerVenue ?? 10);
   const spotsPerVenue = Math.max(30, o.spotsPerVenue ?? 40);
+  const slotsPerVenue = Math.max(30, o.slotsPerVenue ?? 60);
   const devSeed = await importDist('packages/db/dist/seed/index.js');
   const pool = new pg.Pool({ connectionString: url, max: 2 });
   try {
@@ -115,7 +118,6 @@ export async function seedWorld(url, o) {
            VALUES ($1, $2, $3, $4, now(), 'open', now(), $5, $5)`,
           [org, venueId, poolId, `وردية الحمل ${k}`, admin],
         );
-        await addSlots(venueId, 60);
         // one supervisor per load hall (venue scope, no driving)
         const s = await c.query(
           `INSERT INTO users (org_id, employee_code, full_name, phone_e164, role, can_drive, status, secret_kind,
@@ -141,6 +143,15 @@ export async function seedWorld(url, o) {
         const have = await spotCount(v.id);
         if (have < spotsPerVenue)
           await addZone(v.id, `H${venueRows.indexOf(v) + 1}`, 9, spotsPerVenue - have);
+        const slots = Number(
+          (
+            await c.query(
+              `SELECT count(*)::int AS n FROM key_slots WHERE venue_id = $1 AND status = 'active'`,
+              [v.id],
+            )
+          ).rows[0].n,
+        );
+        if (slots < slotsPerVenue) await addSlots(v.id, slotsPerVenue - slots);
       }
 
       // drivers: up to `perVenue` with an active assignment in each venue

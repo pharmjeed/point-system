@@ -181,7 +181,14 @@ async function main() {
       RATE_LIMIT_AUTH_PER_MIN: String(K.authRate),
     },
   });
-  const world = await seedWorld(url, { venues: K.venues, driversPerVenue: K.driversPerVenue, env: srv });
+  const perVenueTickets = Math.ceil(K.tickets / K.venues);
+  const world = await seedWorld(url, {
+    venues: K.venues,
+    driversPerVenue: K.driversPerVenue,
+    env: srv,
+    spotsPerVenue: perVenueTickets + 2,
+    slotsPerVenue: perVenueTickets + 2,
+  });
   writeFileSync(join(OUT, 'world.json'), JSON.stringify(world, null, 2));
   log(
     `seeded ${world.venues.length} venues, ${world.venues.reduce((n, v) => n + v.drivers.length, 0)} drivers`,
