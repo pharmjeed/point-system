@@ -13,6 +13,8 @@ import type {
   DriverStateResult,
   DutySession,
   HandoverResult,
+  Incident,
+  IncidentType,
   Media,
   MediaContentType,
   MediaKind,
@@ -20,11 +22,14 @@ import type {
   NotificationPermissionState,
   PaymentMethod,
   PlateBody,
+  RetrievalCycle,
   SignedUrl,
   StartDutyResult,
+  Task,
   TaskCard,
   TicketChannel,
   TicketDetail,
+  TicketSummary,
   UploadInstruction,
   VehicleInfo,
 } from './types';
@@ -69,10 +74,20 @@ export async function recordAudioTest(
   return (await api.post<Device>('/v1/me/audio-test', { body, idempotencyKey: key })).data;
 }
 
-/** Permission and display mode only; the Web Push subscription is PNT-072. */
+/** A Web Push subscription as `PUT /v1/me/devices/{deviceId}` stores it (07 §2.1, 14 §6.4). */
+export interface PushSubscriptionBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+/** Permission, display mode and (PNT-072) the Web Push subscription; `null` removes it. */
 export async function updateDevice(
   deviceId: string,
-  body: { display_mode?: DisplayMode; notification_permission?: NotificationPermissionState },
+  body: {
+    display_mode?: DisplayMode;
+    notification_permission?: NotificationPermissionState;
+    push_subscription?: PushSubscriptionBody | null;
+  },
   key: string,
 ): Promise<Device> {
   return (await api.put<Device>(`/v1/me/devices/${enc(deviceId)}`, { body, idempotencyKey: key })).data;
@@ -90,6 +105,96 @@ export async function createTicket(
 
 export async function getTicket(ticketId: string, signal?: AbortSignal): Promise<TicketDetail> {
   return (await api.get<TicketDetail>(`/v1/tickets/${enc(ticketId)}`, { signal })).data;
+}
+
+// ---------------------------------------------------------------- vehicles (D-12 / D-13)
+
+/** One page of `GET /v1/tickets` (the D-12 infinite list; `ticket.updated` patches it in place). */
+export interface VehiclePage {
+  items: TicketSummary[];
+  nextCursor: string | null;
+}
+
+/**
+ * `GET /v1/tickets` for D-12: the open tickets of the driver's venue, minimal projection, newest first.
+ * `q` = digits only (plate digits or the ticket number), `status` = comma list (07 `listTickets`).
+ */
+export async function listVehicles(
+  filter: { q?: string; status?: readonly string[]; cursor?: string | null; limit?: number },
+  signal?: AbortSignal,
+): Promise<VehiclePage> {
+  const result = await api.get<TicketSummary[]>('/v1/tickets', {
+    query: {
+      q: filter.q || undefined,
+      status: filter.status?.length ? filter.status.join(',') : undefined,
+      limit: filter.limit ?? 50,
+      cursor: filter.cursor ?? undefined,
+    },
+    signal,
+  });
+  return { items: result.data ?? [], nextCursor: result.meta.next_cursor ?? null };
+}
+
+export interface RetrievalRequestResult {
+  ticket: TicketSummary;
+  cycle: RetrievalCycle;
+  task: Task;
+}
+
+/** D-13 «طلب الإحضار نيابة عن العميل» (07 `POST /v1/tickets/{ticketId}/retrievals`, reason required). */
+export async function requestOnBehalf(
+  ticketId: string,
+  body: { reason: string },
+  key: string,
+): Promise<RetrievalRequestResult> {
+  return (
+    await api.post<RetrievalRequestResult>(`/v1/tickets/${enc(ticketId)}/retrievals`, {
+      body,
+      idempotencyKey: key,
+    })
+  ).data;
+}
+
+/** D-13 «إلغاء طلب الإحضار» — the driver only before the assignment (07 `POST /retrieval-cycles/{id}/cancel`). */
+export async function cancelRetrieval(
+  cycleId: string,
+  body: { reason: string },
+  key: string,
+): Promise<{ ticket: TicketSummary; cycle: RetrievalCycle }> {
+  return (
+    await api.post<{ ticket: TicketSummary; cycle: RetrievalCycle }>(
+      `/v1/retrieval-cycles/${enc(cycleId)}/cancel`,
+      { body, idempotencyKey: key },
+    )
+  ).data;
+}
+
+/** D-13 «إبلاغ عن واقعة» / D-10 «إبلاغ عن مشكلة» (07 `POST /v1/incidents`, the ticket attached). */
+export async function reportIncident(
+  body: {
+    venue_id: string;
+    event_id?: string | null;
+    ticket_id?: string | null;
+    type: IncidentType;
+    description: string;
+  },
+  key: string,
+): Promise<Incident> {
+  return (await api.post<Incident>('/v1/incidents', { body, idempotencyKey: key })).data;
+}
+
+/** D-13 «تغيير رقم الجوال» (07 `PATCH /v1/tickets/{ticketId}/customer-phone`, with `expected_version`). */
+export async function changeCustomerPhone(
+  ticketId: string,
+  body: { expected_version: number; customer_phone: string; consent: ConsentInput; reason: string },
+  key: string,
+): Promise<TicketDetail> {
+  return (
+    await api.patch<TicketDetail>(`/v1/tickets/${enc(ticketId)}/customer-phone`, {
+      body,
+      idempotencyKey: key,
+    })
+  ).data;
 }
 
 export interface IntakePatch {

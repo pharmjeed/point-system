@@ -8,7 +8,8 @@ import { Banner, Button, Checkbox, FieldError, Select, TextField, Toggle } from 
 import { NO_ERRORS, toFormErrors, type FormErrors } from '@/features/common/formErrors';
 import { QueryView } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { buttons, components, mediaKind, paymentMethod, s08, s09, ui } from '@/i18n/ar';
+import { buttons, components, mediaKind, paymentMethod, ui } from '@/i18n/ar';
+import { s08, s09 } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { onlyDigits } from '@/lib/digits';
 import { halalasFromSar, sarFromHalalas } from '@/lib/riyadh';

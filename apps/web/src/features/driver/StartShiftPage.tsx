@@ -15,7 +15,7 @@ import {
 import { useState, type ReactNode } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { ApiError, displayMessage, isApiError } from '@/api/errors';
-import { recordAudioTest, startDuty, updateDevice } from '@/api/field';
+import { startDuty } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, Me } from '@/api/types';
 import { RequireDriver } from '@/app/guards';
@@ -26,21 +26,14 @@ import { StateChip, type ChipTone } from '@/features/common/StateChip';
 import { useLogout } from '@/features/session/useLogout';
 import { useCommand } from '@/hooks/useCommand';
 import { useBrand } from '@/hooks/useMe';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { useThemeArea } from '@/hooks/useThemeArea';
-import { buttons, d03 } from '@/i18n/ar';
+import { buttons, d03, d14, live } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
-import { runAudioTest } from '@/lib/audio';
-import {
-  displayMode,
-  notificationCheck,
-  permissionForServer,
-  requestNotifications,
-  wakeLockSupported,
-  type NotificationCheck,
-} from '@/lib/deviceChecks';
+import { wakeLockSupported, type NotificationCheck } from '@/lib/deviceChecks';
 import { formatTime } from '@/lib/format';
-import { useFieldStore, type AudioCheck } from '@/stores/field';
+import type { AudioCheck } from '@/stores/field';
+import { pushNotReaching, useAudioCheck, useNotificationSetup } from './deviceSetup';
 import { DriverFrame } from './DriverLayout';
 import { intakeEvents } from './fieldModel';
 import { InstallGuideSheet } from './InstallGuideSheet';
@@ -48,8 +41,8 @@ import { useDriverHome } from './useDriverHome';
 
 /**
  * D-03 — بدء الوردية واختبار الصوت: assignment, shift and open events from `GET /v1/me/home`, the device
- * checklist (audio test, notifications, screen wake lock) and «بدء الوردية» (`POST /v1/me/duty/start`). The
- * audio and push plumbing beyond the test tone and the permission prompt is PNT-066/070/072.
+ * checklist (audio test, notifications with the Web Push subscription, screen wake lock — ./deviceSetup.tsx,
+ * shared with D-14) and «بدء الوردية» (`POST /v1/me/duty/start`).
  */
 export function StartShiftPage() {
   useThemeArea('driver');
@@ -121,53 +114,20 @@ function CheckRow({
 
 function StartShift({ me }: { me: Me }) {
   const brand = useBrand();
-  const online = useOnline();
+  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const signOut = useLogout('driver');
   const home = useDriverHome({ poll: false });
-  const audio = useFieldStore((s) => s.audio);
-  const setAudio = useFieldStore((s) => s.setAudio);
-  const [notifications, setNotifications] = useState<NotificationCheck>(() => notificationCheck());
-  const [heardOpen, setHeardOpen] = useState(false);
+  const { audio, test: onTestAudio, dialog: heardDialog } = useAudioCheck(me);
+  const notificationSetup = useNotificationSetup(me);
+  const notifications = notificationSetup.check;
   const [untestedOpen, setUntestedOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const deviceId = me.session.device_id ?? null;
 
   const start = useCommand((body: { device_id?: string | null }, key: string) => startDuty(body, key));
-  const audioRecord = useCommand(
-    (body: { device_id: string; result: 'heard' | 'not_heard' | 'blocked' }, key: string) =>
-      recordAudioTest(body, key),
-  );
-  const devicePut = useCommand((body: { id: string; check: NotificationCheck }, key: string) =>
-    updateDevice(
-      body.id,
-      { notification_permission: permissionForServer(body.check), display_mode: displayMode() },
-      key,
-    ),
-  );
-
-  // Device checks are recorded on the session's device when the server names it (docs/progress/notes/pnt-035.md).
-  const record = (result: 'heard' | 'not_heard' | 'blocked') => {
-    if (deviceId) void audioRecord.run({ device_id: deviceId, result }).catch(() => undefined);
-  };
-
-  // Must stay synchronous up to runAudioTest(): the AudioContext is created inside the tap (02 D-03).
-  const onTestAudio = () => {
-    void runAudioTest().then((outcome) => {
-      if (outcome === 'blocked') {
-        setAudio('blocked');
-        record('blocked');
-      } else setHeardOpen(true);
-    });
-  };
-
-  const onNotifications = () => {
-    void requestNotifications().then((check) => {
-      setNotifications(check);
-      if (deviceId) void devicePut.run({ id: deviceId, check }).catch(() => undefined);
-    });
-  };
 
   const runStart = async () => {
     try {
@@ -236,7 +196,13 @@ function StartShift({ me }: { me: Me }) {
             <p className="m-0 text-sm text-text-muted">{d03.deniedHint}</p>
           ) : null}
           {notifications === 'off' ? (
-            <Button variant="secondary" fullWidth id="notifications-enable" onClick={onNotifications}>
+            <Button
+              variant="secondary"
+              fullWidth
+              id="notifications-enable"
+              loading={notificationSetup.pending}
+              onClick={notificationSetup.enable}
+            >
               {d03.enableNotifications}
             </Button>
           ) : null}
@@ -244,6 +210,18 @@ function StartShift({ me }: { me: Me }) {
             <Button variant="secondary" fullWidth onClick={() => setGuideOpen(true)}>
               {d03.how}
             </Button>
+          ) : null}
+          {pushNotReaching(notifications, home.data, notificationSetup.subscribed) ? (
+            // granted on this browser, but this sign-in's device has no subscription and the browser held
+            // none to send again (the frame tries that first): the tap subscribes (14 §6.4.1)
+            <Banner
+              kind="notifications"
+              rounded
+              message={live.pushNotReaching}
+              actionLabel={d14.setup}
+              loading={notificationSetup.pending}
+              onAction={notificationSetup.enable}
+            />
           ) : null}
         </CheckRow>
         <CheckRow
@@ -264,7 +242,7 @@ function StartShift({ me }: { me: Me }) {
       <Button
         size="lg"
         loading={start.pending}
-        disabled={!online || noAssignment || !home.data || !shiftOpen}
+        disabled={!gate.ready || noAssignment || !home.data || !shiftOpen}
         error={
           start.error && !isApiError(start.error, 'DUTY_ALREADY_STARTED')
             ? displayMessage(start.error)
@@ -279,24 +257,7 @@ function StartShift({ me }: { me: Me }) {
         {d03.logout}
       </Button>
 
-      <Dialog
-        open={heardOpen}
-        onOpenChange={setHeardOpen}
-        title={d03.heardQuestion}
-        confirmLabel={d03.heardYes}
-        cancelLabel={d03.heardNo}
-        onConfirm={() => {
-          setHeardOpen(false);
-          setAudio('ok');
-          record('heard');
-        }}
-        onCancel={() => {
-          setHeardOpen(false);
-          setAudio('notHeard');
-          record('not_heard');
-        }}
-        onDismiss={() => setHeardOpen(false)}
-      />
+      {heardDialog}
       <Dialog
         open={untestedOpen}
         onOpenChange={setUntestedOpen}

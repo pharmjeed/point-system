@@ -8,7 +8,7 @@ import { Button, Dialog } from '@/components';
 import { useCommand } from '@/hooks/useCommand';
 import { buttons, d05 } from '@/i18n/ar';
 import { useUiStore } from '@/stores/ui';
-import { useIntakeStore } from '../intakeStore';
+import { forgetIntake } from '../intakePersistence';
 import { useRefreshHome } from '../useDriverHome';
 
 /**
@@ -20,7 +20,6 @@ export function DiscardDraft({ ticket, disabled }: { ticket: TicketDetail; disab
   const navigate = useNavigate();
   const refresh = useRefreshHome();
   const pushToast = useUiStore((s) => s.pushToast);
-  const clear = useIntakeStore((s) => s.clear);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hasData, setHasData] = useState<string | null>(null);
   const discard = useCommand((body: { expected_version: number }, key: string) =>
@@ -31,7 +30,8 @@ export function DiscardDraft({ ticket, disabled }: { ticket: TicketDetail; disab
     try {
       await discard.run({ expected_version: ticket.version });
       setConfirmOpen(false);
-      clear(ticket.id);
+      void forgetIntake(ticket.id, { keepPendingPhotos: false }); // voided: nothing more to upload
+
       pushToast({ message: d05.canceled, tone: 'success' });
       void refresh();
       navigate(paths.driverHome, { replace: true });

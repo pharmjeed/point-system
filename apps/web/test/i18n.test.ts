@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import * as ar from '@/i18n/ar';
+import * as arMain from '@/i18n/ar';
+import * as arStaff from '@/i18n/ar.staff';
 import { ERROR_CODES, errorMessagesAr } from '@/i18n/errors';
 
 /**
  * The whole of 02 §8 is in src/i18n/ar.ts, word for word (05 §7.8), and the 08 catalogue covers every
  * canon error code. Parsed from the spec so a text change in 02 fails here until ar.ts follows.
  */
+/** The dictionary is split by area (driver first load vs the lazy staff chunks); the checks cover both. */
+const ar = { ...arMain, ...arStaff };
+
 const spec = readFileSync(new URL('../../../docs/02_Wireframes_Spec.md', import.meta.url), 'utf8');
 const section8 = spec.slice(
   spec.indexOf('## 8. قاموس النصوص المشتركة'),

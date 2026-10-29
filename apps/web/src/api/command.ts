@@ -75,20 +75,46 @@ export interface CommandRunOptions {
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** An unfinished intent: its Idempotency-Key and the fingerprint of the body it was made for. */
+export interface CommandIntent {
+  key: string;
+  print: string;
+}
+
 /**
  * Remembers the key of an unfinished intent across presses (one instance per command button / form).
- * Framework-free so it is unit-tested; `useCommand` wraps it for React.
+ * Framework-free so it is unit-tested; `useCommand` wraps it for React. The intake commands keep their
+ * intent across a reload (02 §1.8 item 1: «وفي IndexedDB لأوامر الاستلام»; PNT-071): `onIntent` reports
+ * every change and `restore` resumes a saved one, so the same body is sent again with the same key.
  */
 export class CommandSession<TInput> {
-  private pending: { key: string; print: string } | null = null;
+  private pending: CommandIntent | null = null;
   private inFlight: Promise<unknown> | null = null;
+
+  constructor(private readonly hooks: { onIntent?: (intent: CommandIntent | null) => void } = {}) {}
+
+  private setPending(next: CommandIntent | null): void {
+    const changed = this.pending?.key !== next?.key;
+    this.pending = next;
+    if (changed) this.hooks.onIntent?.(next);
+  }
+
+  /** The unfinished intent, if any (what the next press with the same body resends). */
+  get intent(): CommandIntent | null {
+    return this.pending;
+  }
+
+  /** Resumes an intent saved before a reload (not reported back through `onIntent`). */
+  restore(intent: CommandIntent | null): void {
+    this.pending = intent;
+  }
 
   /** The key for this input: the unfinished intent's key when the inputs are unchanged, else a new one. */
   keyFor(input: TInput): string {
     const print = fingerprint(input);
     if (this.pending && this.pending.print === print) return this.pending.key;
     const key = newIdempotencyKey();
-    this.pending = { key, print };
+    this.setPending({ key, print });
     return key;
   }
 
@@ -113,12 +139,12 @@ export class CommandSession<TInput> {
       for (let attempt = 0; ; attempt += 1) {
         try {
           const result = await send(input, key);
-          this.pending = null; // definitive success: the next intent gets a new key
+          this.setPending(null); // definitive success: the next intent gets a new key
           return result;
         } catch (error) {
           const delay = options.signal?.aborted ? null : delays(error, attempt);
           if (delay === null) {
-            if (!keepsKey(error)) this.pending = null; // definitive answer stored under this key
+            if (!keepsKey(error)) this.setPending(null); // definitive answer stored under this key
             throw error;
           }
           await sleep(delay);
@@ -134,6 +160,6 @@ export class CommandSession<TInput> {
 
   /** Forget the unfinished intent (e.g. the user edited the form or left the screen). */
   reset(): void {
-    this.pending = null;
+    this.setPending(null);
   }
 }

@@ -3,7 +3,8 @@ import type { BulkLabels } from '@/api/types';
 import { Dialog, TextField } from '@/components';
 import { FormSheet } from '@/features/common/FormSheet';
 import { fieldError, NO_ERRORS, toFormErrors, type FormErrors } from '@/features/common/formErrors';
-import { s09, setupStatus, ui } from '@/i18n/ar';
+import { setupStatus, ui } from '@/i18n/ar';
+import { s09 } from '@/i18n/ar.staff';
 import { onlyDigits } from '@/lib/digits';
 
 /** One-field create form: «منطقة جديدة», «لوحة جديدة», «مجموعة جديدة». */

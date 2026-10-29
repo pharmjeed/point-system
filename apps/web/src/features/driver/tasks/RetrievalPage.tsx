@@ -11,7 +11,7 @@ import { Banner, Button, Card, Dialog, PlateBadge, Sheet, Skeleton, Stepper } fr
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useServerNow } from '@/hooks/useNow';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { buttons, components, d04, d10, mediaKind } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { fmtNode, Ltr, withTicket } from '@/i18n/fmtNode';
@@ -62,7 +62,9 @@ type Step = 'pickup' | 'start' | 'ready';
 function Retrieval({ card }: { card: TaskCardData }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const online = useOnline();
+  // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const pushToast = useUiStore((s) => s.pushToast);
   const now = useServerNow(1000);
@@ -118,7 +120,7 @@ function Retrieval({ card }: { card: TaskCardData }) {
   const zoneName = card.parking?.zone_name ?? detail?.current_spot?.zone_name ?? '';
   const spotNote = card.parking?.spot_note ?? detail?.current_spot_note ?? null;
   const plate = plateValue(card.ticket.plate);
-  const offlineDisabled = !online;
+  const offlineDisabled = !gate.ready;
   const error = command.error ? displayMessage(command.error) : undefined;
 
   const keyLine = keySlot

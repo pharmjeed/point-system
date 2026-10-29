@@ -1,5 +1,5 @@
 import type { EventStatus, PaymentMethod, Shift, VenueEvent } from '@/api/types';
-import { s08 } from '@/i18n/ar';
+import { s08 } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatDate, formatHalalas, formatTime } from '@/lib/format';
 

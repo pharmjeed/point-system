@@ -9,7 +9,7 @@ import { paths } from '@/app/paths';
 import { Banner, Button, Dialog, PhotoTile, PlateBadge, Stepper, TextArea, TextField } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { components, d05, d06, mediaKind, ui } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
@@ -22,13 +22,17 @@ import {
   stepOfMissing,
   vehicleSummary,
 } from '../fieldModel';
-import { step1Session, useIntakeDraft, useIntakeStore, type PhotoSlot } from '../intakeStore';
+import { forgetIntake } from '../intakePersistence';
+import { intakeSession, step1Session, useIntakeDraft, useIntakeStore, type PhotoSlot } from '../intakeStore';
 import { useCachedHome, useRefreshHome } from '../useDriverHome';
-import { TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
+import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
+import { useIntakeTicket } from './intakeDraft';
 import { DiscardDraft } from './DiscardDraft';
 import { startPhotoUpload } from './uploads';
 
 const STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos }];
+
+type SubmitBody = { expected_version: number; acknowledge_incomplete_inspection?: boolean };
 
 /** Codes that send the driver back to D-05 with the field highlighted (02 D-06 table). */
 const STEP1_CODES = [
@@ -47,11 +51,12 @@ const STEP1_CODES = [
  */
 export function IntakeKeyPhotosPage() {
   const { ticketId = '' } = useParams();
-  const ticket = useTicket(ticketId);
+  const { ticket, hydrated } = useIntakeTicket(ticketId);
   if (ticket.data) {
     if (ticket.data.status === 'parking') return <Navigate to={driverPaths.intakeLink(ticketId)} replace />;
     if (ticket.data.status !== 'received') return <Navigate to={paths.driverHome} replace />;
-    return <KeyPhotosStep ticket={ticket.data} />;
+    // the draft and the pending photos saved before a reload come back first (PNT-071)
+    return hydrated ? <KeyPhotosStep ticket={ticket.data} /> : <TaskSkeleton />;
   }
   if (ticket.error)
     return <LoadError error={ticket.error} onRetry={() => void ticket.refetch()} backTo={paths.driverHome} />;
@@ -69,7 +74,9 @@ interface Tile {
 function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const online = useOnline();
+  // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
@@ -77,7 +84,6 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
   const settings = fieldSettings(home);
   const draft = useIntakeDraft(ticket.id);
   const update = useIntakeStore((s) => s.update);
-  const clear = useIntakeStore((s) => s.clear);
   const [keyTag, setKeyTag] = useState(() => draft.keyTag ?? ticket.key_tag ?? '');
   const [notes, setNotes] = useState(() => draft.notes ?? ticket.notes ?? '');
   const [keyTagLocal, setKeyTagLocal] = useState<string | null>(null);
@@ -88,10 +94,16 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     undefined,
     step1Session(ticket.id),
   );
-  const save = useCommand((body: IntakePatch, key: string) => patchIntake(ticket.id, body, key));
+  // their unfinished intents survive a reload: the resend is the same key (02 §1.8 item 1, TC-061)
+  const save = useCommand(
+    (body: IntakePatch, key: string) => patchIntake(ticket.id, body, key),
+    undefined,
+    intakeSession<IntakePatch>(ticket.id, 'save'),
+  );
   const submit = useCommand(
-    (body: { expected_version: number; acknowledge_incomplete_inspection?: boolean }, key: string) =>
-      submitIntake(ticket.id, body, key),
+    (body: SubmitBody, key: string) => submitIntake(ticket.id, body, key),
+    undefined,
+    intakeSession<SubmitBody>(ticket.id, 'submit'),
   );
 
   useEffect(() => {
@@ -180,7 +192,9 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         ...(acknowledge ? { acknowledge_incomplete_inspection: true } : {}),
       });
       storeTicket(submitted);
-      clear(ticket.id);
+      // the inputs and the draft row go; photos still uploading stay until the server confirmed them (the
+      // ticket is `parking`: 09 §6.2 takes them, 02 D-06 completes the inspection with them; PNT-071)
+      void forgetIntake(ticket.id, { keepPendingPhotos: true });
       void refresh();
       navigate(driverPaths.intakeLink(ticket.id), { replace: true });
     } catch (error) {
@@ -222,13 +236,13 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     (e) => e && !isApiError(e, 'KEY_TAG_IN_USE', 'INSPECTION_INCOMPLETE', 'INTAKE_INCOMPLETE'),
   );
   const pending = save.pending || submit.pending;
-  const blocked = !online || !!draft.pendingSave;
+  const blocked = !gate.ready || !!draft.pendingSave;
 
   return (
     <TaskScreen
       title={withTicket(d05.title, ticket.display_number)}
       backTo={driverPaths.intakeVehicle(ticket.id)}
-      actions={<DiscardDraft ticket={ticket} disabled={pending} />}
+      actions={<DiscardDraft ticket={ticket} disabled={pending || !gate.ready} />}
     >
       <Stepper current={1} steps={STEPS} />
       {draft.pendingSave ? <Banner kind="stale" rounded message={d05.notSaved} /> : null}

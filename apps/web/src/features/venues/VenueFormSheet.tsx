@@ -8,7 +8,8 @@ import { TextField } from '@/components';
 import { FormSheet } from '@/features/common/FormSheet';
 import { fieldError, NO_ERRORS, toFormErrors, type FormErrors } from '@/features/common/formErrors';
 import { useCommand } from '@/hooks/useCommand';
-import { s08, ui } from '@/i18n/ar';
+import { ui } from '@/i18n/ar';
+import { s08 } from '@/i18n/ar.staff';
 import { useUiStore } from '@/stores/ui';
 
 const blank = { code: '', name_ar: '', name_en: '', city: '', address: '' };

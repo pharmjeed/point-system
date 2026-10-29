@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
@@ -16,6 +17,20 @@ import { defineConfig, devices } from '@playwright/test';
  * is answered in the browser), so the default run stays fast and needs no database.
  */
 const PORT = Number(process.env.E2E_PORT ?? 5317);
+
+/**
+ * A throwaway VAPID public key for the e2e build (PNT-072): the subscription path of D-03/D-14 runs against a
+ * stubbed PushManager; nothing is ever pushed with it. Generated per run (public by nature, never stored).
+ */
+function throwawayVapidPublicKey(): string {
+  const jwk = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).publicKey.export({ format: 'jwk' });
+  const raw = Buffer.concat([
+    Buffer.from([4]),
+    Buffer.from(String(jwk.x), 'base64url'),
+    Buffer.from(String(jwk.y), 'base64url'),
+  ]);
+  return raw.toString('base64url');
+}
 const API_PORT = Number(process.env.E2E_API_PORT ?? 3917);
 const LIVE = process.env.E2E_BACKEND === 'live';
 const LIVE_SPECS = /[\\/]live[\\/].+\.live\.spec\.ts$/;
@@ -43,6 +58,9 @@ export default defineConfig({
     timezoneId: 'Asia/Riyadh',
     trace: 'retain-on-failure',
     launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},
+    // page.route() does not see requests a Service Worker handles: the mocked runs block the SW; the PWA
+    // spec (e2e/pwa.spec.ts) opens its own context with service workers allowed (PNT-070)
+    serviceWorkers: 'block',
   },
   projects: [
     { name: 'mobile-360', use: mobile(360, 740), testIgnore: LIVE_SPECS },
@@ -67,6 +85,10 @@ export default defineConfig({
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    env: { VITE_ENABLE_GALLERY: 'true', API_PORT: String(API_PORT) },
+    env: {
+      VITE_ENABLE_GALLERY: 'true',
+      API_PORT: String(API_PORT),
+      VITE_VAPID_PUBLIC_KEY: process.env.VITE_VAPID_PUBLIC_KEY ?? throwawayVapidPublicKey(),
+    },
   },
 });

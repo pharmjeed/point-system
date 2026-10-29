@@ -3,10 +3,16 @@ import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { onApiError, onApiSuccess } from '@/api/client';
 import { queryKeys } from '@/api/queryClient';
+import type { Me } from '@/api/types';
+import { currentOwner, detachDrafts, forgetUserDrafts } from '@/features/driver/intakePersistence';
 import { clearFieldData } from '@/features/driver/intakeStore';
+import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useOnlineListener } from '@/hooks/useOnline';
 import { applyTheme } from '@/lib/theme';
 import { ui } from '@/i18n/ar';
+import { closeShownNotifications, PUSH_CLICK_EVENT } from '@/pwa/register';
+import { requestResync, stopRealtime } from '@/realtime/manager';
+import { noteContact } from '@/realtime/syncStore';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { areaOf, paths } from './paths';
@@ -36,7 +42,14 @@ export function RootLayout() {
     applyTheme(themes[themeArea]);
   }, [themes, themeArea]);
 
-  useEffect(() => onApiSuccess(({ meta }) => markSynced(meta.server_time)), [markSynced]);
+  useEffect(
+    () =>
+      onApiSuccess(({ meta }) => {
+        markSynced(meta.server_time);
+        noteContact(); // any reply confirms the connection (02 §1.3 indicator)
+      }),
+    [markSynced],
+  );
 
   useEffect(
     () =>
@@ -47,9 +60,18 @@ export function RootLayout() {
         const area = areaOf(pathname);
         if (isSessionEndError(error)) {
           const end = sessionEndFrom(error);
+          const userId = qc.getQueryData<Me>(queryKeys.me)?.user.id ?? currentOwner();
           endSession(end);
+          stopRealtime(); // 02 D-15 ج: the realtime connection closes, the local snapshots are dropped
+          resetHomeRegistry();
           qc.clear();
+          if (end.reason === 'transfer' || end.reason === 'disabled')
+            // 02 §1.11 «بيانات موقع سابق بعد نقل السائق … تُمسح من التخزين المحلي عند الإبطال»: the
+            // previous venue's drafts and photos never stay on the device
+            void forgetUserDrafts(userId);
+          else detachDrafts(); // 02 §1.9, DEC-88: saved and kept for this user (PNT-071)
           clearFieldData();
+          void closeShownNotifications(); // 02 D-15 ج «إغلاق أي إشعار نظامي قديم ممكن»
           navigate(sessionEndPath(end, area), { replace: true });
         } else if (error.code === 'AUTH_SECRET_CHANGE_REQUIRED') {
           if (area === 'staff') goToStaffStep('password');
@@ -66,6 +88,18 @@ export function RootLayout() {
       }),
     [endSession, goToStaffStep, navigate, pushToast, qc],
   );
+
+  // a tapped notification (14 §6.4.5): open its screen, then read the snapshot before any button — the
+  // notification itself is never trusted
+  useEffect(() => {
+    const onClick = (event: Event) => {
+      const url = (event as CustomEvent<{ url?: string }>).detail?.url;
+      if (url && url.startsWith('/') && url !== window.location.pathname) navigate(url);
+      requestResync('foreground');
+    };
+    window.addEventListener(PUSH_CLICK_EVENT, onClick);
+    return () => window.removeEventListener(PUSH_CLICK_EVENT, onClick);
+  }, [navigate]);
 
   return <Outlet />;
 }

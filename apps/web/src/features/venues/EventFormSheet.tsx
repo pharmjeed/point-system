@@ -14,7 +14,8 @@ import { Checkbox, FieldError, SegmentedControl, Select, TextField } from '@/com
 import { FormSheet } from '@/features/common/FormSheet';
 import { fieldError, NO_ERRORS, toFormErrors, type FormErrors } from '@/features/common/formErrors';
 import { useCommand } from '@/hooks/useCommand';
-import { components, paymentMethod, s08, ui } from '@/i18n/ar';
+import { components, paymentMethod, ui } from '@/i18n/ar';
+import { s08 } from '@/i18n/ar.staff';
 import { halalasFromSar, riyadhParts, riyadhRange, sarFromHalalas, todayRiyadh } from '@/lib/riyadh';
 import { useUiStore } from '@/stores/ui';
 import { PAYMENT_METHODS } from './venueModel';

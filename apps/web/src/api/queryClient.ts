@@ -31,6 +31,9 @@ export const queryKeys = {
   /** Under `me`: invalidating the session also re-reads the driver's home (02 §1.7). */
   home: ['me', 'home'] as const,
   ticket: (ticketId: string) => ['tickets', ticketId] as const,
+  /** D-12 lists (`GET /v1/tickets`, infinite pages): patched in place by `ticket.updated`. */
+  vehicles: ['vehicles'] as const,
+  vehicleSearch: (q: string, statuses: string) => ['vehicles', q, statuses] as const,
   mediaUrl: (mediaId: string) => ['media', mediaId, 'url'] as const,
   venues: ['venues'] as const,
   venue: (venueId: string) => ['venues', venueId] as const,

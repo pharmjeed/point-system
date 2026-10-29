@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
+import { serviceWorkerPlugin } from './scripts/sw-plugin.ts';
 
 const appDir = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -42,16 +43,19 @@ function applyBrandDefaults(mode: string): void {
 export default defineConfig(({ mode }) => {
   applyBrandDefaults(mode);
   const proxy = apiProxy(mode);
+  const alias = {
+    '@/': fileURLToPath(new URL('./src/', import.meta.url)),
+    '@brand/': fileURLToPath(new URL('../../brand/', import.meta.url)),
+    // the canon as zod schemas (realtime envelopes, Web Push payload): source files of @point/shared,
+    // bundled into the chunks that use them (05 §3 «packages/shared zod wire schemas»)
+    '@shared/': fileURLToPath(new URL('../../packages/shared/src/', import.meta.url)),
+  };
   return {
     root: appDir,
     envDir: repoRoot,
-    plugins: [react(), tailwindcss()],
-    resolve: {
-      alias: {
-        '@/': fileURLToPath(new URL('./src/', import.meta.url)),
-        '@brand/': fileURLToPath(new URL('../../brand/', import.meta.url)),
-      },
-    },
+    // the Service Worker (`/sw.js`: app-shell precache, Web Push) is built after the app (PNT-070, PNT-072)
+    plugins: [react(), tailwindcss(), serviceWorkerPlugin({ appDir, alias })],
+    resolve: { alias },
     server: { port: 5173, strictPort: false, proxy },
     preview: { proxy },
     build: { target: 'es2022', sourcemap: true },

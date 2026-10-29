@@ -24,15 +24,12 @@ import {
 import {
   buttons,
   components,
-  custodySubject,
   incidentSeverity,
   incidentType,
   onBehalfReason,
   paymentMethod,
-  s03,
-  s12,
-  staff,
 } from '@/i18n/ar';
+import { custodySubject, s03, s12, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { onlyDigits } from '@/lib/digits';
 import { formatHalalas } from '@/lib/format';

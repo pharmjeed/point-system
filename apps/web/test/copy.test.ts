@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import * as ar from '@/i18n/ar';
+import * as arMain from '@/i18n/ar';
+import * as arStaff from '@/i18n/ar.staff';
 
 /**
  * Screen copy is 02's text word for word (05 §7.8). Every string of the screen dictionaries below must occur
  * in docs/02_Wireframes_Spec.md (a `{placeholder}` matches 02's own placeholder or its example value), except
  * the keys listed as not in 02 — those are proposed for 02 §8 in docs/progress/notes/pnt-023.md / pnt-035.md.
  */
+/** The dictionary is split by area (driver first load vs the lazy staff chunks); the checks cover both. */
+const ar = { ...arMain, ...arStaff };
+
 const spec = readFileSync(new URL('../../../docs/02_Wireframes_Spec.md', import.meta.url), 'utf8');
 const canon = readFileSync(new URL('../../../docs/00_Glossary_Canon.md', import.meta.url), 'utf8');
 
@@ -76,6 +80,7 @@ const NOT_IN_02: Record<string, string[]> = {
     'settings', // labels from canon §12 (checked below)
   ],
   d05: ['makeOther', 'colorOther'], // labels of the «أخرى» free-text inputs
+  d13: ['consent'], // 02 D-05's sentence without the customer brand (canon §1 rule 2) — notes/s5-web.md
 };
 
 const SCREENS = {
@@ -92,6 +97,8 @@ const SCREENS = {
   d09: ar.d09,
   d10: ar.d10,
   d11: ar.d11,
+  d12: ar.d12,
+  d13: ar.d13,
   d14: ar.d14,
 } as const;
 
@@ -106,6 +113,17 @@ describe('screen copy comes from 02', () => {
       expect(missing).toEqual([]);
     });
   }
+
+  it('the live in-page texts of the driver are 14 §5.1 word for word (14 is their final reference)', () => {
+    const notifications = readFileSync(
+      new URL('../../../docs/14_Notification_Matrix_Templates.md', import.meta.url),
+      'utf8',
+    );
+    const missing = flatten(ar.live)
+      .filter(([, text]) => !pattern(text).test(notifications))
+      .map(([key, text]) => `${key}: ${text}`);
+    expect(missing).toEqual([]);
+  });
 
   it('S-09 setting labels are the «المعنى» column of canon §12', () => {
     const section = canon.slice(canon.indexOf('## 12.'), canon.indexOf('## 13.'));

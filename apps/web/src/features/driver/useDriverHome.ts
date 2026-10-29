@@ -1,21 +1,80 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { isApiError } from '@/api/errors';
 import { getHome } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome } from '@/api/types';
+import { createRegistry, mergeSnapshot, type LiveRegistry } from '@/realtime/driverHome';
+import { beginSnapshot, completeSnapshot, setServiceDown, useSyncStore } from '@/realtime/syncStore';
+import { promotedTask } from './fieldModel';
+import { announcePromotion } from './promotion';
 
 /**
- * Periodic polling of `GET /v1/me/home` until the realtime channel (Socket.IO, PNT-064/065) pushes
- * `task.*` / `ticket.updated`: the driver's screens re-read their whole snapshot (02 §1.7). TanStack
- * Query stops polling while the page is hidden and re-reads on focus and reconnection.
+ * `GET /v1/me/home`, the driver's full sync source (02 §1.7), kept current by the realtime events (PNT-065):
+ * one React Query entry for D-03 … D-14, merged with what the events applied (`mergeSnapshot`: an older
+ * version never overwrites a newer one). Every successful read is a «sync» for the stale flag of the sync
+ * protocol when it started after the last trigger. The fallback refetch is 15 s while the socket is connected
+ * (15 §11.1) and 5 s without it (the PNT-035 polling).
  */
 export const HOME_POLL_MS = 5000;
+export const HOME_FALLBACK_MS = 15_000;
+
+/** What the events applied to this driver's snapshot (versions, closed rounds, candidates). */
+export const homeRegistry: LiveRegistry = createRegistry();
+/** Client time the snapshot now in the cache was requested: an older one never replaces it. */
+let appliedRequestedAt = 0;
+
+/** Sign-out / session end / another user: forget everything the events taught. */
+export function resetHomeRegistry(): void {
+  homeRegistry.tasks.clear();
+  homeRegistry.tickets.clear();
+  homeRegistry.closedOffers.clear();
+  homeRegistry.offers.clear();
+  homeRegistry.driverStateAt = 0;
+  appliedRequestedAt = 0;
+}
+
+/**
+ * Reads the snapshot and merges it into the cache. A snapshot requested before the one already applied is
+ * dropped (a slow poll answering after a resync). Clears `stale` when it started after the last trigger.
+ * SERVICE_UNAVAILABLE turns on the D-15 ح screen until a read succeeds. A read aborted meanwhile (sign-out,
+ * session end) touches neither the cache nor the sync state.
+ */
+export async function loadHomeSnapshot(qc: QueryClient, signal?: AbortSignal): Promise<DriverHome> {
+  const generation = beginSnapshot();
+  const requestedAt = Date.now();
+  let snapshot: DriverHome;
+  try {
+    snapshot = await getHome(signal);
+  } catch (error) {
+    if (!signal?.aborted && isApiError(error, 'SERVICE_UNAVAILABLE')) setServiceDown(true);
+    throw error;
+  }
+  if (signal?.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
+  setServiceDown(false);
+  const cached = qc.getQueryData<DriverHome>(queryKeys.home);
+  if (cached && requestedAt < appliedRequestedAt) return cached;
+  appliedRequestedAt = requestedAt;
+  const merged = mergeSnapshot(cached, snapshot, homeRegistry, requestedAt);
+  completeSnapshot(generation, snapshot.server_time);
+  // a promotion the events did not bring (missed frame, no socket): announced from the snapshot (02 D-04)
+  const promoted = promotedTask(cached, merged);
+  if (promoted) announcePromotion(promoted);
+  return merged;
+}
+
+/** Applies an event to the cached snapshot (no-op before the first snapshot). */
+export function updateHome(qc: QueryClient, apply: (home: DriverHome) => DriverHome): DriverHome | undefined {
+  return qc.setQueryData<DriverHome>(queryKeys.home, (home) => (home ? apply(home) : home));
+}
 
 export function useDriverHome(options: { poll?: boolean; enabled?: boolean } = {}) {
   const { poll = true, enabled = true } = options;
+  const qc = useQueryClient();
+  const socket = useSyncStore((s) => s.socket);
   return useQuery({
     queryKey: queryKeys.home,
-    queryFn: ({ signal }) => getHome(signal),
-    refetchInterval: poll ? HOME_POLL_MS : false,
+    queryFn: ({ signal }) => loadHomeSnapshot(qc, signal),
+    refetchInterval: poll ? (socket === 'connected' ? HOME_FALLBACK_MS : HOME_POLL_MS) : false,
     staleTime: 2000,
     enabled,
   });
@@ -23,9 +82,10 @@ export function useDriverHome(options: { poll?: boolean; enabled?: boolean } = {
 
 /** The last home snapshot without fetching (TopBar state on any driver screen). */
 export function useCachedHome(): DriverHome | undefined {
+  const qc = useQueryClient();
   const { data } = useQuery({
     queryKey: queryKeys.home,
-    queryFn: ({ signal }) => getHome(signal),
+    queryFn: ({ signal }) => loadHomeSnapshot(qc, signal),
     enabled: false,
   });
   return data;

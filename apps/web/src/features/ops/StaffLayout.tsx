@@ -23,9 +23,12 @@ import { useConnection } from '@/features/session/useConnection';
 import { useLogout } from '@/features/session/useLogout';
 import { useBrand } from '@/hooks/useMe';
 import { useThemeArea } from '@/hooks/useThemeArea';
-import { d14, d15, nav } from '@/i18n/ar';
+import { buttons, d14, d15, nav } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { THEME_PREFS, type ThemePref } from '@/lib/theme';
+import { useRealtime } from '@/realtime/hooks';
+import { requestResync } from '@/realtime/manager';
+import { useSyncStore } from '@/realtime/syncStore';
 import { useUiStore } from '@/stores/ui';
 
 /** The four staff destinations (02 §1.4); «الإدارة» is added for whoever holds its permissions. */
@@ -95,6 +98,9 @@ export function StaffLayout() {
 function StaffFrame({ me }: { me: Me }) {
   const brand = useBrand();
   const connection = useConnection();
+  // live updates of the staff screens (PNT-065): the open screens' React Query keys follow the events
+  useRealtime('staff', me);
+  const stale = useSyncStore((s) => s.stale && s.lastSyncAt !== null);
   const signOut = useLogout('staff');
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -115,7 +121,14 @@ function StaffFrame({ me }: { me: Me }) {
       }
       banner={
         connection.state === 'offline' ? (
-          <Banner kind="offline" message={fmt(d15.offline, { time: connection.lastSync ?? '—' })} />
+          <Banner
+            kind="offline"
+            message={fmt(d15.offline, { time: connection.lastSync ?? '—' })}
+            actionLabel={buttons.retry}
+            onAction={() => requestResync('manual')}
+          />
+        ) : stale ? (
+          <Banner kind="stale" />
         ) : null
       }
       bottomNav={<BottomNav items={STAFF_NAV} />}

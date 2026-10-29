@@ -18,7 +18,8 @@ import {
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { useOnline } from '@/hooks/useOnline';
-import { buttons, incidentSeverity, incidentStatus, incidentType, s12, staff } from '@/i18n/ar';
+import { buttons, incidentSeverity, incidentStatus, incidentType } from '@/i18n/ar';
+import { s12, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatDateTime } from '@/lib/format';
 import {

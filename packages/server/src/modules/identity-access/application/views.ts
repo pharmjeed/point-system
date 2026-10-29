@@ -113,8 +113,8 @@ export function assignmentView(a: {
 export async function buildMe(q: Q, env: Env, sessionId: string, userId: string) {
   // sequential: `q` may be a transaction client, which must not run concurrent queries
   const userRes = await q.query<UserRow>(`SELECT * FROM users WHERE id = $1`, [userId]);
-  const sessionRes = await q.query<{ expires_at: Date; mfa_verified: boolean }>(
-    `SELECT expires_at, mfa_verified FROM auth_sessions WHERE id = $1`,
+  const sessionRes = await q.query<{ expires_at: Date; mfa_verified: boolean; device_id: string | null }>(
+    `SELECT expires_at, mfa_verified, device_id FROM auth_sessions WHERE id = $1`,
     [sessionId],
   );
   const scopes = await q.query(
@@ -174,6 +174,9 @@ export async function buildMe(q: Q, env: Env, sessionId: string, userId: string)
     session: {
       expires_at: iso(session?.expires_at),
       mfa_verified: session?.mfa_verified ?? false,
+      // the devices row this sign-in linked (09 §9.5): the id POST /v1/me/audio-test and
+      // PUT /v1/me/devices/{deviceId} need (docs/progress/notes/s5-web.md DEC-PROPOSED-1)
+      device_id: session?.device_id ?? null,
       restricted: u.must_change_secret || (mfaRequired && !u.mfa_enabled),
       // DEC-82: what the restricted session must do, in order
       pending: [

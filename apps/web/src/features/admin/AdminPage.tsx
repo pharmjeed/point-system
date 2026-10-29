@@ -6,7 +6,7 @@ import { useStaffMe } from '@/features/ops/StaffLayout';
 import { adminSectionsFor, can, type AdminSection } from '@/features/supervisor/permissions';
 import { staffPaths } from '@/features/supervisor/staffPaths';
 import { ForbiddenPage, ForbiddenState, NotFoundState } from '@/features/supervisor/ui';
-import { s13 } from '@/i18n/ar';
+import { s13 } from '@/i18n/ar.staff';
 import { AuditLogSection } from './AuditLogSection';
 import { OrgSettingsSection } from './OrgSettingsSection';
 import { OutboxSection } from './OutboxSection';

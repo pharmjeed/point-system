@@ -30,7 +30,8 @@ import {
 } from '@/features/supervisor/staffApi';
 import { ForbiddenPage, PageSkeleton, QueryError, Section } from '@/features/supervisor/ui';
 import { useStaffCommand } from '@/features/supervisor/useStaffCommand';
-import { buttons, eventStatus, exportKind, paymentMethod, s11, staff, waMessageStatus } from '@/i18n/ar';
+import { buttons, eventStatus, paymentMethod, waMessageStatus } from '@/i18n/ar';
+import { exportKind, s11, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatClock, formatHalalas, formatNumber } from '@/lib/format';
 import { serverNow } from '@/lib/serverClock';

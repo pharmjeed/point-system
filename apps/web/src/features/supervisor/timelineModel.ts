@@ -8,16 +8,8 @@ import type {
   WhatsAppMessage,
 } from '@/api/types';
 import type { TimelineEvent } from '@/components';
-import {
-  custodyHolder,
-  custodyReason,
-  mediaKind,
-  s03,
-  staff,
-  ticketEventText,
-  waLinkStatus,
-  waMessageStatus,
-} from '@/i18n/ar';
+import { custodyHolder, custodyReason, mediaKind, waLinkStatus, waMessageStatus } from '@/i18n/ar';
+import { s03, staff, ticketEventText } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatTime } from '@/lib/format';
 

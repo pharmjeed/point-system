@@ -1,6 +1,6 @@
 import type { BlockingDriver, CustodyItem } from '@/api/types';
 import { TicketNumber } from '@/components';
-import { s06 } from '@/i18n/ar';
+import { s06 } from '@/i18n/ar.staff';
 
 /** One custody item: «مفتاح #125» (types from 08 `details.items`). */
 export function CustodyItemText({ item }: { item: CustodyItem }) {

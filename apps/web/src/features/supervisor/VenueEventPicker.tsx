@@ -1,6 +1,7 @@
 import type { Venue, VenueEvent } from '@/api/types';
 import { Select } from '@/components';
-import { eventStatus, staff } from '@/i18n/ar';
+import { eventStatus } from '@/i18n/ar';
+import { staff } from '@/i18n/ar.staff';
 import { ALL_OPEN } from './selection';
 
 /**

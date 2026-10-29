@@ -6,7 +6,7 @@
  * Test code only — the real rules live in packages/server (S2) and are checked there.
  */
 import { randomInt } from 'node:crypto';
-import { fail, ok, uuid, validation, type Reply } from './http';
+import { fail, ok, page, uuid, validation, type Reply } from './http';
 import type { FCycle, FMedia, FOffer, FTask, FTicket, FUser } from './model';
 import { effectiveSettings, normalizePhone } from './routesSetup';
 import { STORAGE_PREFIX, type Ctx, type FakeServer } from './server';
@@ -36,6 +36,19 @@ const MEDIA_TYPES = ['image/jpeg', 'image/webp', 'image/heic', 'image/png'];
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 
 const isOpen = (t: FTicket) => t.status !== 'delivered' && t.status !== 'voided';
+const TICKET_STATUSES: readonly string[] = [
+  'received',
+  'parking',
+  'parked',
+  'requested',
+  'assigned',
+  'assigned_waiting',
+  'retrieving',
+  'ready',
+  'delivered',
+  'reparking',
+  'voided',
+];
 /** Paper serials and key tags as the API stores them: trimmed, Latin digits, upper case, spaces collapsed. */
 const normalizeTag = (s: string) =>
   s
@@ -210,11 +223,27 @@ export function registerDriverRoutes(s: FakeServer): void {
     );
   };
   const ticketDetail = (t: FTicket, viewer: FUser | null) => {
-    const base = ticketSummary(t);
+    const task = openTask(t);
+    // as the API's loadTicketDetail: the minimal projection adds the vehicle, the parking time, an early
+    // request and the open task (its assignee for staff and the assignee only) — 09 §5.1
+    const base = {
+      ...ticketSummary(t),
+      vehicle_detail: { make: t.vehicle_make, model: t.vehicle_model, color: t.vehicle_color, type: null },
+      parked_at: t.parked_at,
+      pending_retrieval_at: t.pending_retrieval_at,
+      open_task: task
+        ? {
+            ...taskView(task),
+            assignee:
+              viewer && (viewer.role !== 'driver' || task.assignee_id === viewer.id)
+                ? userRef(user(task.assignee_id))
+                : null,
+          }
+        : null,
+    };
     if (!fullFor(t, viewer)) return { ...base, projection: 'minimal' };
     const spot = w().spots.find((x) => x.id === t.spot_id);
     const slot = w().slots.find((x) => x.id === t.key_slot_id);
-    const task = openTask(t);
     // the 09 §5.1 allow-list of the S2 views: the retrieval assignee never sees the stub number (the server
     // matches it at handover); the fee is for staff and the retrieval assignee only
     const staff = viewer?.role !== 'driver';
@@ -260,10 +289,15 @@ export function registerDriverRoutes(s: FakeServer): void {
       media: w()
         .media.filter((m) => m.ticket_id === t.id && m.upload_status !== 'deleted')
         .map(mediaView),
-      created_by: userRef(user(t.created_by)),
-      parked_by: userRef(user(t.parked_by)),
-      retrieved_by: userRef(user(t.retrieved_by)),
-      delivered_by: userRef(user(t.delivered_by)),
+      // the people of the ticket: staff only (as the API, 09 §5.1)
+      ...(staff
+        ? {
+            created_by: userRef(user(t.created_by)),
+            parked_by: userRef(user(t.parked_by)),
+            retrieved_by: userRef(user(t.retrieved_by)),
+            delivered_by: userRef(user(t.delivered_by)),
+          }
+        : {}),
       submitted_at: t.submitted_at,
       parked_at: t.parked_at,
       delivered_at: t.delivered_at,
@@ -449,6 +483,27 @@ export function registerDriverRoutes(s: FakeServer): void {
     return { driver_state: driverState(s, driver.id), promoted_next_task: null };
   };
 
+  // ---------------------------------------------------------------- live views (the realtime hub)
+
+  s.liveView = (userId: string) => {
+    const u = user(userId);
+    const duty = openDuty(s, userId);
+    const mine = w().tasks.filter((k) => k.assignee_id === userId);
+    const live = mine.filter((k) => ['accepted', 'in_progress', 'assigned_waiting'].includes(k.status));
+    return {
+      offer: u && duty?.status === 'on_duty' ? (offerFor(u) as never) : null,
+      tasks: u ? (live.map((k) => taskCard(k, u)) as never[]) : [],
+      driverState: driverState(s, userId),
+      poolId: duty?.dispatch_pool_id ?? null,
+      venueId: duty?.venue_id ?? null,
+    };
+  };
+  s.taskCardOf = (taskId: string, viewerId: string) => {
+    const k = w().tasks.find((x) => x.id === taskId);
+    const u = user(viewerId);
+    return k && u ? (taskCard(k, u) as never) : null;
+  };
+
   // ---------------------------------------------------------------- guards
 
   const onDuty = (u: FUser) => {
@@ -526,8 +581,8 @@ export function registerDriverRoutes(s: FakeServer): void {
       cash_outstanding_halalas: cash,
       checks: {
         audio_tested: device?.audio_test_result === 'heard',
-        push_enabled: false,
-        pwa_installed: false,
+        push_enabled: !!device?.push_subscription,
+        pwa_installed: device?.display_mode === 'standalone',
       },
       channel_health: 'healthy',
     });
@@ -622,7 +677,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       platform: d.platform,
       display_mode: d.display_mode,
       notification_permission: d.notification_permission,
-      push_subscribed: false,
+      push_subscribed: !!d.push_subscription,
       audio_tested_at: d.audio_tested_at,
       audio_test_result: d.audio_test_result,
       last_seen_at: now(),
@@ -648,7 +703,25 @@ export function registerDriverRoutes(s: FakeServer): void {
     const d = ownDevice(ctx, ctx.params.deviceId);
     if (ctx.body?.notification_permission) d.notification_permission = ctx.body.notification_permission;
     if (ctx.body?.display_mode) d.display_mode = ctx.body.display_mode;
+    if (ctx.body?.push_subscription === null) d.push_subscription = null;
+    else if (ctx.body?.push_subscription) {
+      const sub = ctx.body.push_subscription;
+      // 07: the three fields together (ck_devices_push_triplet)
+      if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth)
+        validation([{ field: 'push_subscription', issue: 'invalid' }]);
+      d.push_subscription = {
+        endpoint: sub.endpoint,
+        keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      };
+    }
     return ok(deviceView(d.id));
+  });
+
+  // `POST /v1/me/heartbeat`: the HTTP fallback of client.heartbeat (07 §4.4), not a command with a key
+  s.on('POST /v1/me/heartbeat', (ctx) => {
+    s.need(ctx, 'auth.self');
+    if (typeof ctx.body?.visible !== 'boolean') validation([{ field: 'visible', issue: 'required' }]);
+    return ok({ server_time: now(), connection_state: 'online', sync_required: false });
   });
 
   // ---------------------------------------------------------------- intake (07 §2.2)
@@ -1151,6 +1224,158 @@ export function registerDriverRoutes(s: FakeServer): void {
     const { cycle, task } = requestCycle(t, now(), 'staff');
     cycle.request_reason = reason;
     return ok({ ticket: ticketSummary(t), cycle: cycleView(cycle), task: taskView(task) }, 201);
+  });
+
+  /**
+   * 07 `POST /v1/retrieval-cycles/{cycleId}/cancel` before any movement: the driver only while the request is
+   * not assigned (`requested`; afterwards INVALID_STATE_TRANSITION `driver_cancel_after_assignment`), the
+   * supervisor up to `assigned_waiting` (the after-movement repark of DEC-30 is the API's, not modelled here).
+   */
+  s.on('POST /v1/retrieval-cycles/:cycleId/cancel', (ctx) => {
+    const u = s.need(ctx, 'retrieval.cancel');
+    const cycle = w().cycles.find((c) => c.id === ctx.params.cycleId);
+    const t = cycle ? w().tickets.find((x) => x.id === cycle.ticket_id) : undefined;
+    if (!cycle || !t || !s.inScope(u, t.venue_id)) return fail('RESOURCE_NOT_FOUND');
+    const reason = typeof ctx.body?.reason === 'string' ? ctx.body.reason.trim() : '';
+    if (reason.length < 3) fail('REASON_REQUIRED');
+    if (u.role === 'driver') onDuty(u);
+    if (cycle.closed_at || !isOpen(t)) fail('INVALID_STATE_TRANSITION', { current_status: t.status });
+    if (u.role === 'driver' && t.status !== 'requested')
+      fail('INVALID_STATE_TRANSITION', {
+        current_status: t.status,
+        reason: 'driver_cancel_after_assignment',
+      });
+    state(t.status, ['requested', 'assigned', 'assigned_waiting']);
+    const task = w().tasks.find(
+      (k) =>
+        k.cycle_id === cycle.id && k.type === 'retrieve' && !['completed', 'canceled'].includes(k.status),
+    );
+    if (task) {
+      task.status = 'canceled';
+      task.canceled_at = now();
+      task.cancel_reason = u.role === 'driver' ? 'customer_field_cancel' : 'supervisor_cancel';
+      task.version += 1;
+      for (const o of w().offers)
+        if (o.task_id === task.id && o.status === 'active') {
+          o.status = 'revoked';
+          o.close_reason = 'task_canceled';
+          o.version += 1;
+        }
+    }
+    cycle.outcome = 'canceled';
+    cycle.closed_at = now();
+    t.status = 'parked';
+    t.version += 1;
+    return ok({ ticket: ticketSummary(t), cycle: cycleView(cycle) });
+  });
+
+  /**
+   * 07 `GET /v1/tickets` (D-12): a driver gets the open tickets of his venue only, minimal projection, newest
+   * first; `q` = digits matched against the plate digits or the ticket number; `status` = comma list; cursor
+   * pages (opaque offsets here).
+   */
+  s.on('GET /v1/tickets', (ctx) => {
+    const u = s.need(ctx, 'ticket.read_minimal');
+    const driver = u.role === 'driver';
+    if (driver && !s.activeAssignment(u.id)) fail('ASSIGNMENT_REQUIRED');
+    const venueId = ctx.query.get('venue_id');
+    if (venueId && !s.inScope(u, venueId)) fail('SCOPE_VENUE_DENIED', { venue_id: venueId });
+    const statusParam = ctx.query.get('status');
+    const statuses = statusParam
+      ? statusParam
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean)
+      : null;
+    if (statuses?.some((x) => !TICKET_STATUSES.includes(x)))
+      validation([{ field: 'status', issue: 'invalid_enum_value' }]);
+    const openOnly = driver || ctx.query.get('open_only') !== 'false';
+    const eventId = ctx.query.get('event_id');
+    const q = ctx.query.get('q');
+    const digits = q ? normalizeTag(q).replace(/\D/g, '') : '';
+    if (q && !digits) return page([]);
+    const limit = Math.min(200, Math.max(1, Number(ctx.query.get('limit') ?? 50) || 50));
+    const scope = venueId ? [venueId] : s.venueIdsInScope(u);
+    const rows = w()
+      .tickets.filter((t) => scope.includes(t.venue_id))
+      .filter((t) => !eventId || t.event_id === eventId)
+      .filter((t) => !statuses || statuses.includes(t.status))
+      .filter((t) => !openOnly || isOpen(t))
+      .filter(
+        (t) => !digits || (t.plate_digits ?? '').includes(digits) || String(t.display_number) === digits,
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+    const cursor = ctx.query.get('cursor');
+    let start = 0;
+    if (cursor) {
+      const m = /^tickets:(\d+)$/.exec(Buffer.from(cursor, 'base64url').toString('utf8'));
+      if (!m) return fail('PAGINATION_CURSOR_INVALID');
+      start = Number(m[1]);
+    }
+    const next =
+      start + limit < rows.length ? Buffer.from(`tickets:${start + limit}`).toString('base64url') : null;
+    return page(rows.slice(start, start + limit).map(ticketSummary), next);
+  });
+
+  /**
+   * 07 `PATCH /v1/tickets/{ticketId}/customer-phone` (PNT-049): the creator or the assignee of an open task,
+   * on duty; a WhatsApp ticket after the intake; a new verbal consent and a reason; `link_version + 1` →
+   * `pending_send` (W-01 to the new number).
+   */
+  s.on('PATCH /v1/tickets/:ticketId/customer-phone', (ctx) => {
+    const u = s.need(ctx, 'ticket.change_phone');
+    const t = ticketIn(ctx);
+    if (u.role === 'driver') {
+      onDuty(u);
+      if (
+        t.created_by !== u.id &&
+        !w().tasks.some(
+          (k) =>
+            k.ticket_id === t.id && k.assignee_id === u.id && !['completed', 'canceled'].includes(k.status),
+        )
+      )
+        fail('PERMISSION_DENIED', { permission: 'ticket.change_phone', reason: 'not_creator_or_assignee' });
+    }
+    if (!isOpen(t)) fail('TICKET_CLOSED', { ticket_status: t.status });
+    const b = ctx.body ?? {};
+    s.checkVersion('ticket', t, b.expected_version);
+    if (t.status === 'received' || t.channel !== 'whatsapp')
+      fail('INVALID_STATE_TRANSITION', { current_status: t.status });
+    const phone = normalizePhone(String(b.customer_phone ?? ''));
+    if (!phone) fail('PHONE_INVALID', { field: 'customer_phone' });
+    if (b.consent?.confirmed !== true) fail('CONSENT_REQUIRED');
+    if (typeof b.reason !== 'string' || b.reason.trim().length < 3) fail('REASON_REQUIRED');
+    t.customer_phone = phone;
+    t.consent = true;
+    t.wa_link_status = 'pending_send';
+    t.version += 1;
+    return ok(ticketDetail(t, u));
+  });
+
+  /** 07 `POST /v1/incidents` (the driver's D-10 / D-13 report): stored for the specs to read. */
+  s.on('POST /v1/incidents', (ctx) => {
+    const u = s.need(ctx, 'incident.create');
+    const b = ctx.body ?? {};
+    s.needVenue(ctx, String(b.venue_id ?? ''));
+    if (b.ticket_id && !w().tickets.some((t) => t.id === b.ticket_id && s.inScope(u, t.venue_id)))
+      fail('TICKET_NOT_FOUND');
+    if (typeof b.description !== 'string' || b.description.trim().length < 3)
+      validation([{ field: 'description', issue: 'too_short' }]);
+    const incident = {
+      id: uuid(),
+      venue_id: b.venue_id,
+      event_id: b.event_id ?? null,
+      ticket_id: b.ticket_id ?? null,
+      type: b.type,
+      severity: b.severity ?? 'medium',
+      status: 'open',
+      description: b.description.trim(),
+      reported_by: userRef(u),
+      created_at: now(),
+      version: 1,
+    };
+    s.incidents.push(incident);
+    return ok(incident, 201);
   });
 
   s.on('POST /v1/task-offers/:offerId/accept', (ctx) => {

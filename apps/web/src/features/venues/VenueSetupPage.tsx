@@ -9,7 +9,7 @@ import { can } from '@/app/permissions';
 import { Header, ListItem } from '@/components';
 import { QueryView } from '@/features/common/QueryView';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { s08, s09 } from '@/i18n/ar';
+import { s08, s09 } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { KeysSection, ParkingSection } from './setup/LayoutSections';
 import { PoolsSection } from './setup/PoolsSection';

@@ -9,7 +9,7 @@ import { paths } from '@/app/paths';
 import { Banner, Button, ColorChips, PlateInput, Select, Stepper, TextField } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { d05, ui, vehicleColor, vehicleMake } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
@@ -30,7 +30,8 @@ import {
 } from '../fieldModel';
 import { step1Session, useIntakeDraft, useIntakeStore } from '../intakeStore';
 import { useRefreshHome } from '../useDriverHome';
-import { TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
+import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
+import { useIntakeTicket } from './intakeDraft';
 import { DiscardDraft } from './DiscardDraft';
 
 /** Field keys a server error points at on D-05 (08 field / code mapping). */
@@ -77,11 +78,12 @@ const SAUDI_STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos 
  */
 export function IntakeVehiclePage() {
   const { ticketId = '' } = useParams();
-  const ticket = useTicket(ticketId);
+  const { ticket, hydrated } = useIntakeTicket(ticketId);
   if (ticket.data) {
     if (ticket.data.status === 'parking') return <Navigate to={driverPaths.intakeLink(ticketId)} replace />;
     if (ticket.data.status !== 'received') return <Navigate to={paths.driverHome} replace />;
-    return <VehicleStep ticket={ticket.data} />;
+    // the draft saved before a reload comes back first (PNT-071)
+    return hydrated ? <VehicleStep ticket={ticket.data} /> : <TaskSkeleton />;
   }
   if (ticket.error)
     return <LoadError error={ticket.error} onRetry={() => void ticket.refetch()} backTo={paths.driverHome} />;
@@ -91,7 +93,10 @@ export function IntakeVehiclePage() {
 function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const online = useOnline();
+  // 02 §1.6/§1.7: stale data → «التالي» waits for the resync (PNT-065); without a confirmed connection it
+  // moves on locally and D-06 sends the same step later (02 D-05 «بلا اتصال … «التالي» ينقل محليًا»)
+  const gate = useCommandGate();
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
@@ -109,7 +114,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
     step1Session(ticket.id),
   );
 
-  // keep what the driver typed for this ticket while the app runs (02 D-05; IndexedDB is PNT-071)
+  // keep what the driver typed for this ticket: memory now, IndexedDB 300 ms later (02 D-05, PNT-071)
   useEffect(() => {
     update(ticket.id, { plate, vehicle, paperSerial });
   }, [ticket.id, plate, vehicle, paperSerial, update]);
@@ -132,6 +137,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   const err = (f: Field) => local[f] ?? errors.fields[f];
 
   const onNext = async () => {
+    if (gate.stale && online) return; // the button is disabled; Enter in a field must not send either
     setChecked(true);
     if (!plateComplete(plate) || !makeComplete(vehicle) || !colorComplete(vehicle) || !paperSerial.trim())
       return;
@@ -184,7 +190,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
     <TaskScreen
       title={withTicket(d05.title, ticket.display_number)}
       backTo={paths.driverHome}
-      actions={<DiscardDraft ticket={ticket} disabled={save.pending} />}
+      actions={<DiscardDraft ticket={ticket} disabled={save.pending || !gate.ready} />}
     >
       <Stepper current={0} steps={SAUDI_STEPS} />
       {ticket.event_name_ar ? <p className="m-0">{fmt(d05.event, { event: ticket.event_name_ar })}</p> : null}
@@ -283,7 +289,13 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
             }
           />
         ) : null}
-        <Button type="submit" size="lg" id="intake-next" loading={save.pending}>
+        <Button
+          type="submit"
+          size="lg"
+          id="intake-next"
+          loading={save.pending}
+          disabled={gate.stale && online}
+        >
           {d05.next}
         </Button>
       </form>

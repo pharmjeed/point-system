@@ -8,6 +8,7 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "node"],
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "declaration": false,
     "sourceMap": false,
     "experimentalDecorators": false,
@@ -17,7 +18,8 @@
     "noUnusedParameters": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@brand/*": ["../../brand/*"]
+      "@brand/*": ["../../brand/*"],
+      "@shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": ["src", "test", "e2e", "scripts", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]

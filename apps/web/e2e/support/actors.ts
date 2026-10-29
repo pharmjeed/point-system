@@ -44,7 +44,9 @@ export function expectCommandContract(fake: CommandLog, routes: string[] = []): 
       c.method !== 'GET' &&
       c.route &&
       !c.path.startsWith('/__e2e_storage/') &&
-      !c.path.startsWith('/v1/auth/'),
+      !c.path.startsWith('/v1/auth/') &&
+      // the HTTP fallback of client.heartbeat is not a command (canon §9: not ✓, no Idempotency-Key)
+      c.path !== '/v1/me/heartbeat',
   );
   expect(commands.length).toBeGreaterThan(0);
   const byKey = new Map<string, string>();

@@ -23,6 +23,7 @@ import {
   type RoutePattern,
 } from './http';
 import type { FUser, World } from './model';
+import { FakeRealtime, type LiveView } from './realtime';
 import { seedWorld, type SeedOptions, type SeedUserKey } from './seed';
 
 export interface Session {
@@ -39,6 +40,8 @@ export interface FDevice {
   notification_permission: 'default' | 'granted' | 'denied' | 'unsupported';
   audio_test_result: 'heard' | 'not_heard' | 'blocked' | null;
   audio_tested_at: string | null;
+  /** The Web Push subscription (`PUT /v1/me/devices/{deviceId}`, PNT-072). */
+  push_subscription: { endpoint: string; keys: { p256dh: string; auth: string } } | null;
   created_at: string;
 }
 
@@ -61,11 +64,15 @@ export type Handler = (ctx: Ctx) => Reply;
 export interface FakeCall {
   method: string;
   path: string;
+  /** The query string (D-12 search: `q`, `status`, `cursor`). */
+  query?: URLSearchParams;
   /** The route spec that answered ("POST /v1/tickets/:ticketId/handover"), or null. */
   route: string | null;
   headers: Record<string, string>;
   body: unknown;
   status: number;
+  /** The JSON reply (projection checks of D-13). */
+  reply?: unknown;
   at: number;
 }
 
@@ -93,11 +100,24 @@ export class FakeServer {
   readonly calls: FakeCall[] = [];
   private readonly routes: RouteDef[] = [];
   private readonly idem = new Map<string, { fingerprint: string; reply: Reply }>();
-  private readonly faults: Array<{ pattern: RoutePattern; reply: Reply | 'abort'; times: number }> = [];
+  private readonly faults: Array<{
+    pattern: RoutePattern;
+    reply: Reply | 'abort';
+    times: number;
+    when?: (query: URLSearchParams) => boolean;
+  }> = [];
   private readonly delays: Array<{ pattern: RoutePattern; ms: number; times: number }> = [];
   /** Uploaded objects by media id (the fake private object storage). */
   readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
   readonly devices = new Map<string, FDevice>();
+  /** `POST /v1/incidents` from the driver screens (D-13 «إبلاغ عن واقعة»). */
+  readonly incidents: Array<Record<string, unknown>> = [];
+  /** `/ws` (off until a spec enables it): Socket.IO frames over `page.routeWebSocket` (PNT-065). */
+  readonly realtime = new FakeRealtime(this);
+  /** What a driver sees live (set by the driver routes; read by the realtime hub). */
+  liveView?: (userId: string) => LiveView;
+  /** The TaskCard of a task for a viewer (set by the driver routes). */
+  taskCardOf?: (taskId: string, viewerId: string) => (LiveView['tasks'][number] & object) | null;
 
   constructor(options: SeedOptions = {}) {
     this.world = seedWorld(options);
@@ -114,6 +134,7 @@ export class FakeServer {
       notification_permission: 'default',
       audio_test_result: null,
       audio_tested_at: null,
+      push_subscription: null,
       created_at: nowIso(),
     });
     return id;
@@ -131,9 +152,17 @@ export class FakeServer {
     return this;
   }
 
-  /** Answers the next `times` matching requests with `reply` (or a dropped connection). */
-  failNext(spec: string, reply: Reply | 'abort', times = 1): this {
-    this.faults.push({ pattern: compile(spec), reply, times });
+  /**
+   * Answers the next `times` matching requests with `reply` (or a dropped connection); `when` narrows them by
+   * the query string (D-12: only the requests with a `cursor`).
+   */
+  failNext(
+    spec: string,
+    reply: Reply | 'abort',
+    times = 1,
+    options: { when?: (query: URLSearchParams) => boolean } = {},
+  ): this {
+    this.faults.push({ pattern: compile(spec), reply, times, when: options.when });
     return this;
   }
 
@@ -143,18 +172,31 @@ export class FakeServer {
     return this;
   }
 
+  /** Drops the faults still waiting for a route (the service is back). */
+  clearFaults(spec?: string): this {
+    for (let i = this.faults.length - 1; i >= 0; i -= 1)
+      if (!spec || this.faults[i]?.pattern.spec === spec) this.faults.splice(i, 1);
+    return this;
+  }
+
   callsTo(spec: string): FakeCall[] {
     return this.calls.filter((c) => c.route === spec);
   }
 
-  /** Attaches a page: its `/v1/*` requests are answered here, as its own session (optionally signed in). */
-  async attach(page: Page, as?: SeedUserKey): Promise<Session> {
+  /**
+   * Attaches a page: its `/v1/*` requests are answered here, as its own session (optionally signed in).
+   * `context: true` routes at the context level, which also sees the requests a Service Worker passes on
+   * (the PWA spec runs with workers allowed).
+   */
+  async attach(page: Page, as?: SeedUserKey, options: { context?: boolean } = {}): Promise<Session> {
     const session: Session = { userId: null, deviceId: null };
     if (as) this.signIn(session, as);
-    await page.route(
+    const target = options.context ? page.context() : page;
+    await target.route(
       (url) => url.pathname.startsWith('/v1/') || url.pathname.startsWith(STORAGE_PREFIX),
       (route) => this.serve(route, session),
     );
+    await this.realtime.attach(page, session);
     return session;
   }
 
@@ -186,6 +228,7 @@ export class FakeServer {
       headers: { 'x-requested-with': 'point-web', 'idempotency-key': uuid() },
       session: { userId: user.id, deviceId: null },
     });
+    this.realtime.afterChange();
     if (reply.status >= 400)
       throw new Error(`fake exec ${spec} → ${reply.status} ${JSON.stringify(reply.body)}`);
     return (reply.body as { data?: T } | undefined)?.data as T;
@@ -197,8 +240,12 @@ export class FakeServer {
     return u;
   }
 
-  private take<T extends { pattern: RoutePattern; times: number }>(list: T[], method: string, path: string) {
-    const i = list.findIndex((f) => f.times > 0 && matchRoute(f.pattern, method, path));
+  private take<
+    T extends { pattern: RoutePattern; times: number; when?: (query: URLSearchParams) => boolean },
+  >(list: T[], method: string, path: string, query: URLSearchParams = new URLSearchParams()) {
+    const i = list.findIndex(
+      (f) => f.times > 0 && matchRoute(f.pattern, method, path) && (!f.when || f.when(query)),
+    );
     if (i < 0) return null;
     const hit = list[i] as T;
     hit.times -= 1;
@@ -222,11 +269,12 @@ export class FakeServer {
     }
     const delay = this.take(this.delays, method, url.pathname);
     if (delay) await new Promise((r) => setTimeout(r, delay.ms));
-    const fault = this.take(this.faults, method, url.pathname);
+    const fault = this.take(this.faults, method, url.pathname, url.searchParams);
     const def = this.routes.find((r) => matchRoute(r.pattern, method, url.pathname));
     const call: FakeCall = {
       method,
       path: url.pathname,
+      query: url.searchParams,
       route: def?.pattern.spec ?? null,
       headers,
       body,
@@ -236,7 +284,7 @@ export class FakeServer {
     this.calls.push(call);
     if (fault?.reply === 'abort') {
       call.status = -1;
-      await route.abort('internetdisconnected');
+      await route.abort('internetdisconnected').catch(() => undefined);
       return;
     }
     const reply = fault
@@ -252,21 +300,28 @@ export class FakeServer {
           session,
         });
     call.status = reply.status;
+    call.reply = reply.body;
+    this.realtime.afterChange(); // what the API's planners publish at commit (before the HTTP reply)
+    // a request the page dropped meanwhile (a reload during a delayed reply) has nobody to answer
     if (reply.raw) {
-      await route.fulfill({
-        status: reply.status,
-        contentType: reply.contentType,
-        headers: reply.headers,
-        body: reply.raw,
-      });
+      await route
+        .fulfill({
+          status: reply.status,
+          contentType: reply.contentType,
+          headers: reply.headers,
+          body: reply.raw,
+        })
+        .catch(() => undefined);
       return;
     }
-    await route.fulfill({
-      status: reply.status,
-      contentType: 'application/json',
-      headers: reply.headers,
-      body: reply.body === undefined ? '' : JSON.stringify(reply.body),
-    });
+    await route
+      .fulfill({
+        status: reply.status,
+        contentType: 'application/json',
+        headers: reply.headers,
+        body: reply.body === undefined ? '' : JSON.stringify(reply.body),
+      })
+      .catch(() => undefined);
   }
 
   private dispatch(def: RouteDef | undefined, input: Omit<Ctx, 'params' | 'user'>): Reply {
