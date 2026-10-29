@@ -132,22 +132,31 @@ test('S-10: a key not in its slot has «نقل عهدة», «فتح» and «فت
   await expect(page).toHaveURL(/\/ops\/tickets\/t-39$/);
 });
 
-test('S-04: an alert about a driver (no ticket) links to the driver (S-06)', async ({ page }) => {
+test('S-04: an alert about a driver (no ticket) links to the driver (S-06); a driving supervisor gets no link', async ({
+  page,
+}) => {
   const api = new MockApi(page, roleMe('supervisor'));
+  const about = (id: string, userId: string, type: string) =>
+    alertFixture({
+      id,
+      type,
+      severity: 'warning',
+      ticket_id: null,
+      task_id: null,
+      user_id: userId,
+      details: {},
+    });
   mockStaffApi(api, {
     alerts: [
       alertFixture(),
-      alertFixture({
-        id: 'al-60',
-        type: 'driver_connection_lost_with_custody',
-        severity: 'warning',
-        ticket_id: null,
-        task_id: null,
-        user_id: SAAD.id,
-        details: {},
-      }),
+      about('al-60', SAAD.id, 'driver_connection_lost_with_custody'),
+      // the same alerts are raised for a supervisor with can_drive on duty (canon §10 D*): S-06 opens drivers only
+      about('al-61', 'u-sup-driving', 'driver_connection_lost_with_custody'),
+      about('al-62', 'u-sup-driving', 'push_failed_repeatedly'),
     ],
   });
+  // `GET /v1/drivers` lists the `driver` role only
+  api.on('GET', '/v1/drivers', () => ok([driverRow(SAAD.id, SAAD.full_name, SAAD.employee_code, null)]));
   await api.install();
   await page.goto('/ops/alerts');
   // a ticket alert keeps its ticket link
@@ -155,6 +164,9 @@ test('S-04: an alert about a driver (no ticket) links to the driver (S-06)', asy
     'href',
     '/ops/tickets/t-47',
   );
+  await expect(page.locator('li[data-alert-id="al-60"]').getByRole('link', { name: 'فتح' })).toBeVisible();
+  await expect(page.locator('li[data-alert-id="al-61"]').getByRole('link', { name: 'فتح' })).toHaveCount(0);
+  await expect(page.locator('li[data-alert-id="al-62"]').getByRole('link', { name: 'فتح' })).toHaveCount(0);
   await page.locator('li[data-alert-id="al-60"]').getByRole('link', { name: 'فتح' }).click();
   await expect(page).toHaveURL(new RegExp(`/drivers/${SAAD.id}$`));
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(SAAD.full_name);
