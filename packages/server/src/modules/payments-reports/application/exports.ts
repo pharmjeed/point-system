@@ -99,7 +99,7 @@ export class ExportsService {
       orgId: actor.orgId,
       venueId: f.venue_id ?? null,
       aggregate: { type: 'export', id: row.id, version: null },
-      dedupeKey: `export_generate:${row.id}`,
+      dedupeKey: `export:${row.id}`,
       maxAttempts: EXPORT_JOB_MAX_ATTEMPTS,
       payload: { export_id: row.id },
     });

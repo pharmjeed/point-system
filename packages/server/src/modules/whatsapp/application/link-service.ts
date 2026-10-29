@@ -132,7 +132,7 @@ export async function issueQrLinkCode(
   await schedule(tx, 'job.link_code_expire', new Date(row.expires_at), {
     orgId: t.org_id,
     venueId: t.venue_id,
-    dedupeKey: `link_code_expire:${row.id}`,
+    dedupeKey: `link_expire:${row.id}`,
     aggregate: { type: 'link_code', id: row.id, version: null },
     payload: { link_code_id: row.id },
   });
@@ -324,7 +324,7 @@ export const linkCodeExpireHandler: JobHandler = {
       await schedule(tx, 'job.link_code_expire', new Date(lc.expires_at), {
         orgId: lc.org_id,
         venueId: t.venue_id,
-        dedupeKey: `link_code_expire:${lc.id}`,
+        dedupeKey: `link_expire:${lc.id}`,
         aggregate: { type: 'link_code', id: lc.id, version: null },
         payload: { link_code_id: lc.id },
       });

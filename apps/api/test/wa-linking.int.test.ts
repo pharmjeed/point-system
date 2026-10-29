@@ -268,7 +268,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       const timer = (
         await w.db.query(
           `SELECT available_at, payload FROM outbox_events WHERE type = 'job.link_code_expire' AND dedupe_key = $1`,
-          [`link_code_expire:${qr.link_code_id}`],
+          [`link_expire:${qr.link_code_id}`],
         )
       ).rows[0];
       expect(new Date(timer.available_at).toISOString()).toBe(qr.expires_at);

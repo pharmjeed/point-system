@@ -98,10 +98,11 @@ describe('WhatsApp webhook endpoint', () => {
       ).rows[0];
       expect(row).toMatchObject({ org_id: ORG, status: 'pending', raw_body: raw });
       const job = await w.db.query(
-        `SELECT payload FROM outbox_events WHERE type = 'job.wa_process_inbound' AND payload->>'inbound_event_id' = $1`,
+        `SELECT payload, dedupe_key FROM outbox_events WHERE type = 'job.wa_process_inbound' AND payload->>'inbound_event_id' = $1`,
         [row.id],
       );
       expect(job.rows).toHaveLength(1);
+      expect(job.rows[0].dedupe_key).toBe(`inbound:${row.id}`); // 04 §6.6
     });
 
     it('the same body ×10 (Meta retries) → one row, ten 200 answers', async () => {
