@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { metrics } from '@point/server';
 import { CSRF, SEED_IDS, createTestApp, newKey, type TestApp } from './harness.js';
 
 const U = SEED_IDS.users;
@@ -288,9 +289,16 @@ describe('audit log, outbox administration, retention policy', () => {
         status: 'dead',
         aggregate: { type: 'task_offer', id: randomUUID(), version: 1 },
       });
+      const canceled = async (type: string) =>
+        (await metrics.outboxEvents.get()).values.find(
+          (v) => v.labels.type === type && v.labels.status === 'canceled',
+        )?.value ?? 0;
+      const before = await canceled('job.ready_uncollected_check');
       const s = await retry(stale);
       expect(s.status).toBe(200);
       expect(s.body.data.status).toBe('canceled');
+      // 05 §12.2: a row closed by the admin is counted `canceled`
+      expect(await canceled('job.ready_uncollected_check')).toBe(before + 1);
       expect(s.body.data.last_error).toMatch(
         /not replayed: ticket .* is at version 5, the job was scheduled on 3/,
       );
@@ -298,6 +306,7 @@ describe('audit log, outbox administration, retention policy', () => {
       expect(g.body.data.status).toBe('canceled');
       const c = await retry(current);
       expect(c.body.data.status).toBe('pending');
+      expect(await canceled('job.ready_uncollected_check')).toBe(before + 1); // re-queued: not a result
       const audits = await t.db.query(
         `SELECT entity_id, metadata->>'outcome' AS outcome, metadata->>'current_version' AS v FROM audit_log
           WHERE action = 'outbox.manage' AND entity_id = ANY($1)`,
@@ -318,9 +327,18 @@ describe('audit log, outbox administration, retention policy', () => {
         dedupe: key,
         availableAt: '2026-10-27T16:05:00Z',
       });
+      const before =
+        (await metrics.outboxEvents.get()).values.find(
+          (v) => v.labels.type === 'job.dispatch_pass' && v.labels.status === 'canceled',
+        )?.value ?? 0;
       const r = await retry(dead);
       expect(r.status).toBe(200);
       expect(r.body.data.status).toBe('canceled');
+      expect(
+        (await metrics.outboxEvents.get()).values.find(
+          (v) => v.labels.type === 'job.dispatch_pass' && v.labels.status === 'canceled',
+        )?.value,
+      ).toBe(before + 1);
     });
 
     it('unknown or malformed ids are RESOURCE_NOT_FOUND; the key is required; supervisors are refused', async () => {

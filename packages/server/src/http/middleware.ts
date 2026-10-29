@@ -17,10 +17,15 @@ export function httpRouteLabel(
   return `${req.method} ${fromExpressPath(`${req.baseUrl ?? ''}${path}`) || '/'}`;
 }
 
+/** The `status` label of a request whose client closed the connection before the response was sent. */
+export const HTTP_ABORTED_STATUS = 'aborted';
+
 /**
- * Sets req.requestId and the X-Request-Id response header; API responses are never cached (05 §14.1). Every finished
- * response is timed into `point_http_request_duration_seconds{route,status}` (05 §12.2; the request-save target of
- * 15 §10 reads it for `POST /v1/tickets/{ticketId}/retrievals`).
+ * Sets req.requestId and the X-Request-Id response header; API responses are never cached (05 §14.1). Every request
+ * is timed once into `point_http_request_duration_seconds{route,status}` (05 §12.2; the request-save target of
+ * 15 §10 reads it for `POST /v1/tickets/{ticketId}/retrievals`): at `finish` with the HTTP status, or — Node emits no
+ * `finish` when the client gave up first (the PWA aborts after 10 s) — at `close` with the status `aborted`, so the
+ * slowest requests, the tail behind the target, stay in the histogram.
  */
 export function requestContextMiddleware(
   req: Request & { requestId?: string },
@@ -32,11 +37,16 @@ export function requestContextMiddleware(
   req.requestId = id;
   res.setHeader('X-Request-Id', id);
   if (req.path.startsWith('/v1')) res.setHeader('Cache-Control', 'no-store');
-  res.once('finish', () => {
+  let timed = false;
+  const observe = (status: string) => {
+    if (timed) return;
+    timed = true;
     metrics.httpDuration.observe(
-      { route: httpRouteLabel(req), status: String(res.statusCode) },
+      { route: httpRouteLabel(req), status },
       (performance.now() - started) / 1000,
     );
-  });
+  };
+  res.once('finish', () => observe(String(res.statusCode)));
+  res.once('close', () => observe(res.writableFinished ? String(res.statusCode) : HTTP_ABORTED_STATUS));
   next();
 }

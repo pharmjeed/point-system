@@ -304,7 +304,9 @@ export async function revokeDriverSingleOffers(
 /**
  * 10 §8.3: the round expires (once `expires_at + grace` has passed), its task goes back to `queued` and the
  * silent recipient is rotated to the back of the idle order (DEC-26). Caller holds L1, L4 (task), L7 (offer).
- * `jobVersion` = the aggregate version stored with the timer (stale timers are no-ops).
+ * `jobVersion` = the aggregate version stored with the timer (stale timers are no-ops). Every expiry is counted
+ * here (`point_dispatch_offers_total{mode="single",outcome="expired"}`, 05 §12.2), whether job.offer_expire or the
+ * defensive step A of a dispatch pass closes the round.
  */
 export async function expireSingleRound(
   tx: Tx,
@@ -346,6 +348,7 @@ export async function expireSingleRound(
     task_id: expired.task_id,
     recipient_id: recipient?.user_id ?? null,
   });
+  metrics.dispatchOffers.inc({ mode: 'single', outcome: 'expired' });
   return true;
 }
 

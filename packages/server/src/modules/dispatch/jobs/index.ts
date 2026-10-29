@@ -62,8 +62,7 @@ export const offerExpireHandler: JobHandler = {
       });
       return;
     }
-    if (!(await expireSingleRound(tx, offer, pool.venue_id, cfg, offer.version))) return;
-    metrics.dispatchOffers.inc({ mode: 'single', outcome: 'expired' });
+    if (!(await expireSingleRound(tx, offer, pool.venue_id, cfg, offer.version))) return; // counted there
     await runDispatchPass(tx, pool.id, 'offer_expired');
     await audit(tx, {
       orgId: offer.org_id,

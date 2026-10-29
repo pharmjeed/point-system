@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { io, type Socket } from 'socket.io-client';
 import { metrics, publishRealtime } from '@point/server';
 import { rooms } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startDuty } from './dispatch-fixtures.js';
-import { ORIGIN } from './test-env.js';
+import { CSRF, ORIGIN } from './test-env.js';
 import { SEED_IDS, createTestApp, type SeedUserKey, type TestApp } from './harness.js';
 
 type Sample = { labels: Record<string, unknown>; value: number; metricName?: string };
@@ -66,6 +67,38 @@ describe('05 §12.2 metrics populated by the api', () => {
     ).toBe(1);
     const routes = (await metrics.httpDuration.get()).values.map((v) => String(v.labels.route));
     expect(routes.filter((r) => /[0-9a-f]{8}-[0-9a-f]{4}/.test(r))).toEqual([]);
+  });
+
+  it('a request the client gave up on is timed once, as status aborted (Node emits no finish then)', async () => {
+    const route = 'POST /v1/me/duty/start';
+    const aborted = () => read(metrics.httpDuration, '_count', { route, status: 'aborted' });
+    const before = await aborted();
+    const holder = new pg.Client({ connectionString: t.db.config.connectionString });
+    await holder.connect();
+    await holder.query('BEGIN');
+    try {
+      // every pool row is held: the duty start waits at L1 (lock_timeout 3 s) while the client gives up after 200 ms
+      await holder.query(`SELECT 1 FROM dispatch_pools FOR UPDATE`);
+      await expect(
+        t
+          .http()
+          .post('/v1/me/duty/start')
+          .set(CSRF)
+          .set('Cookie', await t.sessionFor('DRV2'))
+          .set('Idempotency-Key', randomUUID())
+          .send({})
+          .timeout(200),
+      ).rejects.toThrow(/Timeout/);
+      await until(async () => (await aborted()) === before + 1);
+      const sum = await read(metrics.httpDuration, '_sum', { route, status: 'aborted' });
+      expect(sum).toBeGreaterThan(0.15);
+    } finally {
+      await holder.query('ROLLBACK');
+      await holder.end();
+    }
+    // the command then commits and answers into the closed socket: still one observation
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await aborted()).toBe(before + 1);
   });
 
   it('point_db_lock_wait_seconds and point_dispatch_pool_lock_wait_seconds: the canonical locks of a command are timed', async () => {

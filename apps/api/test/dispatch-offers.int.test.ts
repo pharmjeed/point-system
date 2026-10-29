@@ -410,10 +410,16 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     for (const h of dispatchJobs()) worker.register(h);
   });
   afterEach(async () => t.close());
+  /** point_dispatch_offers_total{mode="single",outcome="expired"} (05 §12.2) */
+  const expiredCount = async () =>
+    (await metrics.dispatchOffers.get()).values.find(
+      (v) => v.labels.mode === 'single' && v.labels.outcome === 'expired',
+    )?.value ?? 0;
 
   it('expiry: the round expires after expires_at + grace, the silent driver rotates, the next idle driver gets the task', async () => {
     await threeDrivers(t);
     const r = await requested(t);
+    const expiredBefore = await expiredCount();
     const first = (await liveOffer(t.db, U.DRV3))!;
     await worker.drain(); // nothing due yet (the timer is at +31.5 s)
     expect((await one(t.db, `SELECT status FROM task_offers WHERE id = $1`, [first.id])).status).toBe(
@@ -443,6 +449,7 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
       { offer_id: first.id, task_id: r.retrieveTaskId, recipient_id: U.DRV3 },
     ]);
     expect((await rows(t.db, `SELECT 1 FROM audit_log WHERE action = 'job.offer_expire'`)).length).toBe(1);
+    expect(await expiredCount()).toBe(expiredBefore + 1);
     await expectConsistent(t.db);
   });
 
@@ -485,11 +492,16 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     await threeDrivers(t);
     await requested(t);
     const first = (await liveOffer(t.db, U.DRV3))!;
+    const expiredBefore = await expiredCount();
     t.clock.advanceSeconds(40);
     ok(await startDuty(t, 'DRV4'), 201); // any pass of the pool
     expect((await one(t.db, `SELECT status FROM task_offers WHERE id = $1`, [first.id])).status).toBe(
       'expired',
     );
+    // counted by the pass that closed it; the late job.offer_expire finds it closed and counts nothing
+    expect(await expiredCount()).toBe(expiredBefore + 1);
+    await worker.drain();
+    expect(await expiredCount()).toBe(expiredBefore + 1);
     await expectConsistent(t.db);
   });
 

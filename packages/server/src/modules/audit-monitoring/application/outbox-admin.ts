@@ -7,6 +7,7 @@ import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { redact } from '../../../core/logging/redact.js';
+import { metrics } from '../../../core/metrics/metrics.js';
 import type { OutboxRow } from '../../../core/outbox/dispatcher.js';
 import { OUTBOX_NOTIFY_CHANNEL } from '../../../core/outbox/outbox-writer.js';
 import { DATABASE, ENV } from '../../../http/tokens.js';
@@ -173,6 +174,8 @@ export class OutboxAdmin {
                 : `retry not replayed: a pending job with the same dedupe key exists`,
             ],
           );
+    // 05 §12.2: a row an admin closes ends `canceled` (the worker counts the other results)
+    if (outcome !== 'requeued') metrics.outboxEvents.inc({ type: row.type, status: 'canceled' });
     if (outcome === 'requeued') {
       // the retried row is due now: wake the workers after COMMIT (04 §6.2)
       tx.onBeforeCommit(async () => {

@@ -92,4 +92,19 @@ describe('metric catalog (05 §12.2)', () => {
     );
     expect(unused).toEqual([]);
   });
+
+  it('the latencies with 15 §12 thresholds have each threshold as a bucket bound, and buckets past the critical one', () => {
+    // request save: warning 2 s, critical 5 s; assignment publish: warning 3 s, critical 6 s (15 §12)
+    const bounds = (m: unknown) => (m as { upperBounds: readonly number[] }).upperBounds;
+    for (const [name, m, warning, critical] of [
+      ['point_http_request_duration_seconds', metrics.httpDuration, 2, 5],
+      ['point_retrieval_request_ingest_seconds', metrics.retrievalIngest, 2, 5],
+      ['point_dispatch_publish_seconds', metrics.dispatchPublish, 3, 6],
+    ] as const) {
+      const b = bounds(m);
+      expect(b, name).toContain(warning);
+      expect(b, name).toContain(critical);
+      expect(Math.max(...b), name).toBeGreaterThan(critical);
+    }
+  });
 });

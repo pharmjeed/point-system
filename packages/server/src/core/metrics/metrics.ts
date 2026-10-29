@@ -16,6 +16,12 @@ const g = (name: string, help: string, labelNames: string[] = []) =>
   new client.Gauge({ name, help, labelNames, registers: [registry] });
 
 const FAST = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5];
+/**
+ * The latencies with 15 §10 targets and 15 §12 thresholds — request save (warning 2 s, critical 5 s) and assignment
+ * publish (warning 3 s, critical 6 s): every threshold is a bucket bound, and buckets go past the critical ones
+ * (`histogram_quantile` never returns more than the highest finite bound).
+ */
+const TARGET = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 6, 10, 30];
 const HUMAN = [1, 5, 10, 15, 30, 45, 60, 90, 120, 180, 300, 600];
 
 export const metrics = {
@@ -23,19 +29,19 @@ export const metrics = {
     'point_http_request_duration_seconds',
     'HTTP commands and queries',
     ['route', 'status'],
-    FAST,
+    TARGET,
   ),
   retrievalIngest: h(
     'point_retrieval_request_ingest_seconds',
     'Webhook button press to committed retrieval cycle',
     [],
-    FAST,
+    TARGET,
   ),
   dispatchPublish: h(
     'point_dispatch_publish_seconds',
     'Commit of assignment/offer to WebSocket publish',
     [],
-    FAST,
+    TARGET,
   ),
   dispatchTimeToClaim: h(
     'point_dispatch_time_to_claim_seconds',
