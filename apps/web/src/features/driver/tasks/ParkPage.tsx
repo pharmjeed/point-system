@@ -22,7 +22,7 @@ import {
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useDriverMe } from '@/features/driver/DriverLayout';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { d04, d08 } from '@/i18n/ar';
 import { withTicket } from '@/i18n/fmtNode';
 import { useFieldStore } from '@/stores/field';
@@ -55,7 +55,9 @@ function ParkForm({ home, card }: { home: DriverHome; card: TaskCardData }) {
   const me = useDriverMe();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const online = useOnline();
+  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
+  const online = !gate.offline;
   const refresh = useRefreshHome();
   const pushToast = useUiStore((s) => s.pushToast);
   const setPromotion = useFieldStore((s) => s.setPromotion);
@@ -285,7 +287,7 @@ function ParkForm({ home, card }: { home: DriverHome; card: TaskCardData }) {
         size="lg"
         id="park-submit"
         loading={park.pending}
-        disabled={!online || (needsDeposit && !deposited)}
+        disabled={!gate.ready || (needsDeposit && !deposited)}
         onClick={onSubmit}
       >
         {d08.submit}

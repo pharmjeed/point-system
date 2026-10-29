@@ -19,7 +19,7 @@ import {
 } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { d11, paymentMethod, ui } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
@@ -99,7 +99,9 @@ function HandoverForm({
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const online = useOnline();
+  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
+  const online = !gate.offline;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
@@ -349,7 +351,7 @@ function HandoverForm({
         size="lg"
         id="handover-submit"
         loading={submit.pending}
-        disabled={!online || locked}
+        disabled={!gate.ready || locked}
         onClick={onSubmit}
       >
         {d11.submit}

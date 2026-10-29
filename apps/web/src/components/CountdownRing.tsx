@@ -8,13 +8,15 @@ export interface CountdownRingProps {
   total?: number;
   size?: number;
   stroke?: number;
+  /** The reminder came (02 D-09: «تلوين الحلقة بلون التحذير» at `offer.reminder`). */
+  warn?: boolean;
 }
 
 /**
- * Single-offer countdown (03 §3.5): ⌀56, stroke 5, --pt-primary then --pt-warning under 10 s, number in
- * the middle. Linear; the accessible label changes every 10 s only.
+ * Single-offer countdown (03 §3.5): ⌀56, stroke 5, --pt-primary then --pt-warning under 10 s or once the
+ * reminder came (02 D-09), number in the middle. Linear; the accessible label changes every 10 s only.
  */
-export function CountdownRing({ seconds, total = 30, size = 56, stroke = 5 }: CountdownRingProps) {
+export function CountdownRing({ seconds, total = 30, size = 56, stroke = 5, warn }: CountdownRingProps) {
   const whole = Math.max(0, Math.ceil(seconds));
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
@@ -22,7 +24,7 @@ export function CountdownRing({ seconds, total = 30, size = 56, stroke = 5 }: Co
   const announced = Math.ceil(whole / 10) * 10;
   return (
     <span
-      className={cx('pt-ring', whole < 10 && 'pt-ring--low')}
+      className={cx('pt-ring', (warn || whole < 10) && 'pt-ring--low')}
       role="timer"
       aria-label={fmt(components.ring.remaining, { n: announced })}
       style={{ inlineSize: size, blockSize: size }}

@@ -8,8 +8,8 @@ import { playSound } from '@/lib/audio';
 import { driverPaths } from './fieldModel';
 
 /**
- * «بدأت مهمتك التالية: #131» → «الانتقال» to D-10 (02 D-04, D-08, D-11). Plays `next_due` when the sound
- * was unlocked in D-03; nothing otherwise (PNT-066 owns the blocked-audio banner).
+ * «بدأت مهمتك التالية: #131» → «الانتقال» to D-10 (02 D-04, D-08, D-11). Plays `next_due` (with the Android
+ * vibration) when the sound is unlocked; otherwise nothing is attempted and the D-15 د banner is on screen.
  */
 export function PromotionDialog({
   task,
@@ -23,7 +23,7 @@ export function PromotionDialog({
   const navigate = useNavigate();
   const taskId = task?.task.id;
   useEffect(() => {
-    if (taskId) void playSound('next_due');
+    if (taskId) void playSound('next_due', { key: `task:${taskId}` });
   }, [taskId]);
   return (
     <Dialog

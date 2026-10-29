@@ -526,6 +526,12 @@ export const d08 = {
 export const d09 = {
   accepted: 'قبلت الطلب #{n}',
   reserved: 'حُجز الطلب #{n} كمهمة تالية. لا تبدأ قبل إنهاء مهمتك الحالية.',
+  /** `task.claimed` while the card was on screen (toast, no sound). */
+  claimedByOther: 'قبل الطلب سائق آخر',
+  /** The single offer reached zero (for a second, then the card leaves). */
+  expired: 'انتهى العرض',
+  /** The banner over D-05/D-06/D-08/D-10 opens D-09 in a Sheet (02 D-05). */
+  show: 'عرض',
 } as const;
 
 /** D-10 — المهمة الحالية (الإحضار) */
@@ -629,6 +635,29 @@ export const d15 = {
 export const setupStatus = {
   active: 'نشط',
   inactive: 'معطّل',
+} as const;
+
+/**
+ * In-app notices of the live driver app (14 §5.1, word for word; `{n}` is the ticket number — 14 §11 rule 2
+ * writes «تذكرة 125» in these lines). Checked against docs/14 by test/copy.test.ts.
+ */
+export const live = {
+  reminder: 'تذكير: الطلب ما زال بانتظار قبولك',
+  withdrawn: 'سحب المشرف المهمة — تذكرة {n}. لا تُحضر السيارة.',
+  canceled: 'أُلغي طلب الإحضار — تذكرة {n}',
+  inPageOnly: 'وضع التنبيه: داخل الصفحة فقط — أبقِ الصفحة مفتوحة أثناء الوردية',
+  pushNotReaching: 'الإشعارات لا تصل لجهازك — أعد تفعيلها',
+} as const;
+
+/**
+ * The driver's connection sheet (02 §1.3) lists the screen wake lock (02 §1.10: a failed request is shown
+ * there only). 02 names the check «إبقاء الشاشة مضاءة» with «مدعوم / غير مدعوم» (D-03); the live states are
+ * not in 02 (docs/progress/notes/s5-web.md).
+ */
+export const connectionSheet = {
+  wakeActive: 'مفعّل',
+  wakeOff: 'متوقف',
+  wakeFailed: 'تعذّر التفعيل',
 } as const;
 
 // ---------------------------------------------------------------- component-internal strings (03 §3)
@@ -794,6 +823,8 @@ export const ar = {
   d12,
   d14,
   d15,
+  live,
+  connectionSheet,
   setupStatus,
   components,
 } as const;

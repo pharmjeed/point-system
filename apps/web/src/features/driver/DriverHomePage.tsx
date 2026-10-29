@@ -17,35 +17,23 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { ApiError, displayMessage, isApiError } from '@/api/errors';
-import { acceptOffer, createTicket, setBreak } from '@/api/field';
+import { createTicket, setBreak } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
-import type { DriverHome, OfferCard as OfferCardData, TaskCard as TaskCardData } from '@/api/types';
+import type { DriverHome, TaskCard as TaskCardData } from '@/api/types';
 import { hasOpenDuty, paths } from '@/app/paths';
-import {
-  Banner,
-  Button,
-  EmptyState,
-  Icon,
-  ListItem,
-  OfferCard,
-  Sheet,
-  Skeleton,
-  TaskCard,
-} from '@/components';
+import { Banner, Button, EmptyState, Icon, ListItem, Sheet, Skeleton, TaskCard } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { useOnline } from '@/hooks/useOnline';
-import { d04, d09, nav, ui } from '@/i18n/ar';
-import { withTicket } from '@/i18n/fmtNode';
+import { d04, nav, ui } from '@/i18n/ar';
 import { formatSinceMinutes } from '@/lib/format';
+import { useCommandGate } from '@/realtime/hooks';
+import { useSyncStore } from '@/realtime/syncStore';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import {
   driverPaths,
-  fieldSettings,
   intakeBlockedReason,
   intakeEvents,
-  offerAction,
   plateValue,
   promotedTask,
   taskCardView,
@@ -53,6 +41,7 @@ import {
   type TaskStage,
 } from './fieldModel';
 import { useDriverMe } from './DriverLayout';
+import { LiveOfferCard } from './LiveOffer';
 import { PromotionDialog } from './PromotionDialog';
 import { useDriverHome } from './useDriverHome';
 
@@ -66,22 +55,15 @@ const STAGE_ICON: Record<TaskStage, LucideIcon> = {
   ready: Hand,
 };
 
-/** Offer errors after which the card is gone (02 D-09): a toast with the server text, then a sync. */
-const OFFER_GONE = [
-  'TASK_ALREADY_CLAIMED',
-  'OFFER_EXPIRED',
-  'OFFER_REVOKED',
-  'NOT_OFFER_RECIPIENT',
-  'OFFER_NOT_FOUND',
-];
-
 /** The task screens are one separate chunk; fetch it while the driver looks at D-04 (weak networks). */
 const preloadTaskScreens = () => import('./tasks');
 
 /**
- * D-04 — الرئيسية (simplified for the first vertical path, PNT-035): `GET /v1/me/home` polled every 5 s,
- * «استلام مركبة» (event chooser when several events are open, DEC-37), the current and the reserved next
- * task, and the single oldest actionable offer. Live offers, sounds and the system banners are PNT-067/068.
+ * D-04 — الرئيسية (PNT-035, PNT-067, PNT-068): the live snapshot of the driver frame (`GET /v1/me/home` kept
+ * current by the realtime events), «استلام مركبة» (event chooser when several events are open, DEC-37), the
+ * current and the reserved next task, and the single oldest actionable request as the live D-09 card. While
+ * the data is stale or offline the cards stay on screen dimmed and every command waits (02 §1.6, D-15 أ);
+ * the D-15 banners are the frame's.
  */
 export function DriverHomePage() {
   const me = useDriverMe();
@@ -125,7 +107,6 @@ export function DriverHomePage() {
 function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unknown> }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const online = useOnline();
   const pushToast = useUiStore((s) => s.pushToast);
   const lastEventId = useFieldStore((s) => s.lastEventId);
   const setLastEventId = useFieldStore((s) => s.setLastEventId);
@@ -149,8 +130,8 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
 
   const create = useCommand((body: { event_id: string }, key: string) => createTicket(body, key));
   const endBreak = useCommand((_: { active: false }, key: string) => setBreak(false, key));
-  const accept = useCommand((offerId: string, key: string) => acceptOffer(offerId, key));
-  const [acceptError, setAcceptError] = useState<{ offerId: string; message: string } | null>(null);
+  const gate = useCommandGate();
+  const stale = useSyncStore((st) => st.stale);
 
   const sync = () => qc.invalidateQueries({ queryKey: queryKeys.me });
 
@@ -184,31 +165,9 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
     if (only) return startIntake(only.id);
   };
 
-  const onAccept = async (offer: OfferCardData) => {
-    setAcceptError(null);
-    try {
-      const result = await accept.run(offer.offer_id);
-      const n = offer.ticket.display_number;
-      if (result.result === 'accepted') {
-        pushToast({ message: withTicket(d09.accepted, n), tone: 'success' });
-        void sync();
-        navigate(driverPaths.task(result.task.id));
-      } else {
-        pushToast({ message: withTicket(d09.reserved, n), tone: 'success' });
-        void sync();
-      }
-    } catch (error) {
-      const message = displayMessage(error);
-      if (isApiError(error, ...OFFER_GONE)) pushToast({ message, tone: 'error' });
-      else setAcceptError({ offerId: offer.offer_id, message });
-      if (error instanceof ApiError) void refetch();
-    }
-  };
-
   const state = home.driver_state;
   const blocked = intakeBlockedReason(state);
   const noEvent = state === 'available' && intakeEvents(home).length === 0;
-  const settings = fieldSettings(home);
   const offer = home.offer ?? null;
   const events = [...intakeEvents(home)].sort(
     (a, b) => Number(b.id === lastEventId) - Number(a.id === lastEventId),
@@ -223,93 +182,85 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
           message={d04.onBreak}
           actionLabel={d04.endBreak}
           loading={endBreak.pending}
-          onAction={() => {
-            endBreak.run({ active: false }).then(
-              () => sync(),
-              (error: unknown) => pushToast({ message: displayMessage(error), tone: 'error' }),
-            );
-          }}
+          onAction={
+            gate.ready
+              ? () => {
+                  endBreak.run({ active: false }).then(
+                    () => sync(),
+                    (error: unknown) => pushToast({ message: displayMessage(error), tone: 'error' }),
+                  );
+                }
+              : undefined
+          }
         />
       ) : null}
 
-      <div className="flex flex-col gap-2">
-        <Button
-          size="lg"
-          id="intake-start"
-          iconStart={Plus}
-          disabled={!online || state !== 'available' || noEvent}
-          loading={create.pending}
-          error={create.error ? displayMessage(create.error) : undefined}
-          onClick={onIntake}
-        >
-          {d04.intake}
-        </Button>
-        {blocked || noEvent ? (
-          <p className="m-0 text-sm text-text-muted" id="intake-hint">
-            {blocked ?? d04.noOpenEvent}
-          </p>
-        ) : null}
-      </div>
-
-      {home.current_task ? (
-        <section className="flex flex-col gap-2" aria-labelledby="current-task">
-          <h2 className="pt-section-title" id="current-task">
-            {d04.currentTask}
-          </h2>
-          <CurrentTask card={home.current_task} onOpen={(to) => navigate(to)} />
-        </section>
-      ) : null}
-
-      {home.next_task ? (
-        <section className="flex flex-col gap-2" aria-labelledby="next-task">
-          <h2 className="pt-section-title" id="next-task">
-            {d04.nextTask}
-          </h2>
-          <TaskCard
-            next
-            badge={d04.reserved}
-            heading={`${d04.task.key.heading} ·`}
-            ticketNumber={home.next_task.ticket.display_number}
-            vehicle={vehicleSummary(home.next_task.ticket.vehicle)}
-            plate={plateValue(home.next_task.ticket.plate)}
-            stage={
-              home.next_task.requested_at
-                ? formatSinceMinutes(Date.now() - Date.parse(home.next_task.requested_at))
-                : undefined
-            }
-            stageIcon={Clock}
+      <div className="pt-live" data-stale={stale || gate.offline}>
+        <div className="flex flex-col gap-2">
+          <Button
+            size="lg"
+            id="intake-start"
+            iconStart={Plus}
+            disabled={!gate.ready || state !== 'available' || noEvent}
+            loading={create.pending}
+            error={create.error ? displayMessage(create.error) : undefined}
+            onClick={onIntake}
           >
-            <p className="m-0 text-sm">{d04.nextLine}</p>
-          </TaskCard>
-        </section>
-      ) : null}
+            {d04.intake}
+          </Button>
+          {blocked || noEvent ? (
+            <p className="m-0 text-sm text-text-muted" id="intake-hint">
+              {blocked ?? d04.noOpenEvent}
+            </p>
+          ) : null}
+        </div>
 
-      <section className="flex flex-col gap-2" aria-labelledby="offer-section">
-        <h2 className="pt-section-title" id="offer-section">
-          {d04.offerSection}
-        </h2>
-        {offer ? (
-          <OfferCard
-            key={offer.offer_id}
-            offerId={offer.offer_id}
-            mode={offer.mode}
-            ticketNumber={offer.ticket.display_number}
-            vehicleSummary={vehicleSummary(offer.ticket.vehicle)}
-            plate={plateValue(offer.ticket.plate)}
-            venue={offer.ticket.event_name_ar}
-            requestedAt={offer.requested_at}
-            expiresAt={offer.mode === 'single' ? (offer.expires_at ?? undefined) : undefined}
-            totalSeconds={settings.offerTtlS}
-            canAcceptAs={offerAction(offer)}
-            offline={!online}
-            loading={accept.pending}
-            error={acceptError?.offerId === offer.offer_id ? acceptError.message : undefined}
-            onAccept={() => onAccept(offer)}
-          />
-        ) : (
-          <EmptyState icon={BellRing} title={d04.emptyTitle} body={d04.emptyBody} />
-        )}
-      </section>
+        <div className="pt-live__cards">
+          {home.current_task ? (
+            <section className="flex flex-col gap-2" aria-labelledby="current-task">
+              <h2 className="pt-section-title" id="current-task">
+                {d04.currentTask}
+              </h2>
+              <CurrentTask card={home.current_task} onOpen={(to) => navigate(to)} />
+            </section>
+          ) : null}
+
+          {home.next_task ? (
+            <section className="flex flex-col gap-2" aria-labelledby="next-task">
+              <h2 className="pt-section-title" id="next-task">
+                {d04.nextTask}
+              </h2>
+              <TaskCard
+                next
+                badge={d04.reserved}
+                heading={`${d04.task.key.heading} ·`}
+                ticketNumber={home.next_task.ticket.display_number}
+                vehicle={vehicleSummary(home.next_task.ticket.vehicle)}
+                plate={plateValue(home.next_task.ticket.plate)}
+                stage={
+                  home.next_task.requested_at
+                    ? formatSinceMinutes(Date.now() - Date.parse(home.next_task.requested_at))
+                    : undefined
+                }
+                stageIcon={Clock}
+              >
+                <p className="m-0 text-sm">{d04.nextLine}</p>
+              </TaskCard>
+            </section>
+          ) : null}
+
+          <section className="flex flex-col gap-2" aria-labelledby="offer-section">
+            <h2 className="pt-section-title" id="offer-section">
+              {d04.offerSection}
+            </h2>
+            {offer ? (
+              <LiveOfferCard key={offer.offer_id} offer={offer} />
+            ) : (
+              <EmptyState icon={BellRing} title={d04.emptyTitle} body={d04.emptyBody} />
+            )}
+          </section>
+        </div>
+      </div>
 
       <Sheet open={eventsOpen} onOpenChange={setEventsOpen} title={d04.chooseEvent}>
         <ul className="pt-list">

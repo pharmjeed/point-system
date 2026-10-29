@@ -4,9 +4,12 @@ import { Outlet, useNavigate } from 'react-router';
 import { onApiError, onApiSuccess } from '@/api/client';
 import { queryKeys } from '@/api/queryClient';
 import { clearFieldData } from '@/features/driver/intakeStore';
+import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useOnlineListener } from '@/hooks/useOnline';
 import { applyTheme } from '@/lib/theme';
 import { ui } from '@/i18n/ar';
+import { stopRealtime } from '@/realtime/manager';
+import { noteContact } from '@/realtime/syncStore';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { areaOf, paths } from './paths';
@@ -36,7 +39,14 @@ export function RootLayout() {
     applyTheme(themes[themeArea]);
   }, [themes, themeArea]);
 
-  useEffect(() => onApiSuccess(({ meta }) => markSynced(meta.server_time)), [markSynced]);
+  useEffect(
+    () =>
+      onApiSuccess(({ meta }) => {
+        markSynced(meta.server_time);
+        noteContact(); // any reply confirms the connection (02 §1.3 indicator)
+      }),
+    [markSynced],
+  );
 
   useEffect(
     () =>
@@ -48,6 +58,8 @@ export function RootLayout() {
         if (isSessionEndError(error)) {
           const end = sessionEndFrom(error);
           endSession(end);
+          stopRealtime(); // 02 D-15 ج: the realtime connection closes, the local snapshots are dropped
+          resetHomeRegistry();
           qc.clear();
           clearFieldData();
           navigate(sessionEndPath(end, area), { replace: true });

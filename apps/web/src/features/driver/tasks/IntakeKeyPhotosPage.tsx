@@ -9,7 +9,7 @@ import { paths } from '@/app/paths';
 import { Banner, Button, Dialog, PhotoTile, PlateBadge, Stepper, TextArea, TextField } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { components, d05, d06, mediaKind, ui } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
@@ -69,7 +69,9 @@ interface Tile {
 function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const online = useOnline();
+  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
+  const online = !gate.offline;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
@@ -222,7 +224,7 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     (e) => e && !isApiError(e, 'KEY_TAG_IN_USE', 'INSPECTION_INCOMPLETE', 'INTAKE_INCOMPLETE'),
   );
   const pending = save.pending || submit.pending;
-  const blocked = !online || !!draft.pendingSave;
+  const blocked = !gate.ready || !!draft.pendingSave;
 
   return (
     <TaskScreen

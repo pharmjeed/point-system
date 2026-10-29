@@ -50,6 +50,9 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@/': fileURLToPath(new URL('./src/', import.meta.url)),
         '@brand/': fileURLToPath(new URL('../../brand/', import.meta.url)),
+        // the canon as zod schemas (realtime envelopes, Web Push payload): source files of @point/shared,
+        // bundled into the chunks that use them (05 §3 «packages/shared zod wire schemas»)
+        '@shared/': fileURLToPath(new URL('../../packages/shared/src/', import.meta.url)),
       },
     },
     server: { port: 5173, strictPort: false, proxy },

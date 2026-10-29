@@ -1299,6 +1299,20 @@ a.pt-listitem:active,
   line-height: var(--pt-leading-sm);
   color: var(--pt-text-muted);
 }
+/* 02 D-09: the reminder came — warning border and the reminder line (14 §5.1) */
+.pt-offer--reminded {
+  border-color: var(--pt-warning);
+}
+.pt-offer__reminder {
+  margin: 0;
+  display: flex;
+  gap: var(--pt-space-2);
+  align-items: center;
+  font-size: var(--pt-text-sm);
+  line-height: var(--pt-leading-sm);
+  font-weight: var(--pt-weight-semibold);
+  color: var(--pt-warning-text);
+}
 .pt-offer__viewonly {
   margin: 0;
   display: flex;
@@ -3019,6 +3033,23 @@ a.pt-listitem:active,
 }
 div.pt-spot {
   cursor: default;
+}
+
+/* ---------- live data states (02 §1.6, D-15 أ; PNT-065) ---------- */
+/* stale or offline: the last snapshot stays on screen, dimmed (60%), until the resync completes */
+.pt-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-4);
+}
+.pt-live__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-4);
+  transition: opacity var(--pt-duration-base) var(--pt-ease-standard);
+}
+.pt-live[data-stale='true'] .pt-live__cards {
+  opacity: 0.6;
 }
 
 @media (prefers-reduced-motion: reduce) {

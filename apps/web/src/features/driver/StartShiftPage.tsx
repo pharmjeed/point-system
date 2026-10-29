@@ -26,7 +26,7 @@ import { StateChip, type ChipTone } from '@/features/common/StateChip';
 import { useLogout } from '@/features/session/useLogout';
 import { useCommand } from '@/hooks/useCommand';
 import { useBrand } from '@/hooks/useMe';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { useThemeArea } from '@/hooks/useThemeArea';
 import { buttons, d03 } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
@@ -121,7 +121,8 @@ function CheckRow({
 
 function StartShift({ me }: { me: Me }) {
   const brand = useBrand();
-  const online = useOnline();
+  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const signOut = useLogout('driver');
@@ -264,7 +265,7 @@ function StartShift({ me }: { me: Me }) {
       <Button
         size="lg"
         loading={start.pending}
-        disabled={!online || noAssignment || !home.data || !shiftOpen}
+        disabled={!gate.ready || noAssignment || !home.data || !shiftOpen}
         error={
           start.error && !isApiError(start.error, 'DUTY_ALREADY_STARTED')
             ? displayMessage(start.error)

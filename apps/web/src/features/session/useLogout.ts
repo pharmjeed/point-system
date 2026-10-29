@@ -4,7 +4,9 @@ import { logout } from '@/api/auth';
 import { ApiError, displayMessage } from '@/api/errors';
 import { paths } from '@/app/paths';
 import { clearFieldData } from '@/features/driver/intakeStore';
+import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useSubmitGuard } from '@/hooks/useCommand';
+import { stopRealtime } from '@/realtime/manager';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 
@@ -29,6 +31,8 @@ export function useLogout(area: 'driver' | 'staff') {
           return;
         }
       }
+      stopRealtime();
+      resetHomeRegistry();
       qc.clear();
       reset();
       clearFieldData();

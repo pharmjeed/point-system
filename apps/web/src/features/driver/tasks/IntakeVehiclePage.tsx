@@ -9,7 +9,7 @@ import { paths } from '@/app/paths';
 import { Banner, Button, ColorChips, PlateInput, Select, Stepper, TextField } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
-import { useOnline } from '@/hooks/useOnline';
+import { useCommandGate } from '@/realtime/hooks';
 import { d05, ui, vehicleColor, vehicleMake } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
@@ -91,7 +91,9 @@ export function IntakeVehiclePage() {
 function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const online = useOnline();
+  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  const gate = useCommandGate();
+  const online = !gate.offline;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
