@@ -320,8 +320,10 @@ export function ManualReconcileSheet({ ticket, timeline, meId, meName, onClose }
   const [target, setTarget] = useState<ReconcileTarget | ''>(targets.length === 1 ? (targets[0] ?? '') : '');
   const [paperRef, setPaperRef] = useState('');
   const [note, setNote] = useState('');
+  // «متوقفة» starts from where the ticket is recorded now (spot, place description, key slot): a parked → parked
+  // correction (DEC-253) never erases a place the user did not touch (the server writes what is sent)
   const [spotId, setSpotId] = useState(ticket.current_spot?.id ?? '');
-  const [spotNote, setSpotNote] = useState('');
+  const [spotNote, setSpotNote] = useState(ticket.current_spot_note ?? '');
   const [slotId, setSlotId] = useState(ticket.current_key_slot?.id ?? '');
   const [incidentId, setIncidentId] = useState('');
   const [method, setMethod] = useState<PaymentMethod | ''>('');

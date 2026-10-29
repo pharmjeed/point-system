@@ -115,6 +115,40 @@ test('«مطابقة يدوية بعد انقطاع» to «متوقفة»: state
   expect(second).not.toBe(first); // the input changed after a definitive answer: a new key (02 §1.8 item 4)
 });
 
+test('«مطابقة يدوية» parked → parked keeps a place recorded by description (no silent loss of spot_note)', async ({
+  page,
+}) => {
+  // parking.mode free_text / mixed: the car is known by «وصف المكان» only, the key in slot 12 (DEC-253 correction)
+  const api = new MockApi(page, roleMe('supervisor'));
+  mockStaffApi(api, {
+    ticket: parkedTicket({
+      current_spot: null,
+      current_spot_note: 'خلف البوابة 3',
+      vehicle_holder: { type: 'spot', id: null, label: 'خلف البوابة 3' },
+    }),
+  });
+  api.on('GET', `/v1/venues/${VENUE_ID}/parking-spots`, spotsReply());
+  api.on('POST', '/v1/tickets/t-47/manual-reconcile', () => ok(parkedTicket({ version: 4 })));
+  await api.install();
+  await page.goto('/ops/tickets/t-47?action=manualReconcile');
+  const sheet = page.getByRole('dialog', { name: 'مطابقة يدوية بعد انقطاع' });
+  await sheet.getByRole('radio', { name: 'متوقفة' }).check();
+  // the sheet starts from where the ticket is recorded now
+  await expect(sheet.getByLabel('وصف المكان')).toHaveValue('خلف البوابة 3');
+  await expect(sheet.getByLabel('الموقف', { exact: true })).toHaveValue('');
+  await expect(sheet.getByLabel('خانة المفتاح')).toHaveValue('ks-12');
+  await sheet.getByLabel('مرجع السجل الورقي').fill('P02-R09');
+  await sheet.getByLabel('السبب (إلزامي)').fill('تصحيح خانة المفتاح بعد الانقطاع');
+  await sheet.getByRole('button', { name: 'تأكيد' }).click();
+  await expect(sheet).toBeHidden();
+  expect(api.callsTo('POST', '/v1/tickets/t-47/manual-reconcile')[0]?.body).toMatchObject({
+    target_status: 'parked',
+    parking_spot_id: null,
+    spot_note: 'خلف البوابة 3',
+    key_slot_id: 'ks-12',
+  });
+});
+
 test('«مطابقة يدوية» to «مُسلّمة» for a due ticket asks for the documented collection and its collector', async ({
   page,
 }) => {
@@ -187,7 +221,8 @@ test('«مطابقة يدوية»: a paper ticket without its stub only to «م�
 test('«تغيير الجوال»: number, field check, consent and reason; WA_CUSTOMER_OPTED_OUT is the server text', async ({
   page,
 }) => {
-  const api = new MockApi(page, roleMe('supervisor'));
+  // the customer brand is configured: the sheet must still not name it (canon §1 rule 2)
+  const api = new MockApi(page, { ...roleMe('supervisor'), brand: { customer_name_ar: BRAND } });
   mockStaffApi(api, { ticket: parkedTicket() });
   api.sequence('PATCH', '/v1/tickets/t-47/customer-phone', [
     apiError('WA_CUSTOMER_OPTED_OUT', 409),
@@ -204,6 +239,10 @@ test('«تغيير الجوال»: number, field check, consent and reason; WA_C
   await sheet.getByLabel('السبب (إلزامي)').fill('العميل صحّح رقمه');
   await expect(confirm).toBeDisabled(); // the consent is mandatory (07 `consent`)
   await sheet.getByLabel('وافق العميل على استلام رسائل واتساب لهذه التذكرة').check();
+  // the sheet renders in a portal outside <main>: the check reads the sheet itself, with its consent line
+  const sheetHtml = await page.locator('.pt-sheet').innerHTML();
+  expect(sheetHtml).toContain('وافق العميل على استلام رسائل واتساب لهذه التذكرة');
+  expect(sheetHtml).not.toContain(BRAND);
   await confirm.click();
   await expect(sheet.getByRole('alert')).toContainText('أوقف العميل رسائل واتساب');
   await sheet.getByLabel('الرقم الجديد').fill('0557654321');
@@ -217,8 +256,6 @@ test('«تغيير الجوال»: number, field check, consent and reason; WA_C
     reason: 'العميل صحّح رقمه',
   });
   expect(calls[1]?.headers['idempotency-key']).toBeTruthy();
-  // the staff screen never names the customer brand outside the S-03 message preview (canon §1 rule 2)
-  expect(await page.locator('main').innerHTML()).not.toContain(BRAND);
 });
 
 test('«تغيير الجوال» is not offered for a paper ticket or a draft (DEC-211)', async ({ page }) => {
