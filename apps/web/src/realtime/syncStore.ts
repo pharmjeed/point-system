@@ -54,6 +54,11 @@ export interface SyncState {
   serverConnection: ConnectionState | null;
   /** WhatsApp channel health from `channel.status` (newer than the snapshot's `channel_health`). */
   channel: { health: WaHealthStatus; changedAt: string } | null;
+  /**
+   * The last snapshot read answered SERVICE_UNAVAILABLE (02 D-15 ح: the full screen «النظام غير متاح مؤقتًا»
+   * until a read succeeds again).
+   */
+  serviceDown: boolean;
   heartbeat: HeartbeatSettings;
 }
 
@@ -67,6 +72,7 @@ const INITIAL: SyncState = {
   lastSyncAt: null,
   serverConnection: null,
   channel: null,
+  serviceDown: false,
   heartbeat: HEARTBEAT_DEFAULTS,
 };
 
@@ -144,9 +150,18 @@ export function setChannelHealth(health: WaHealthStatus, changedAt: string): voi
   set({ channel: { health, changedAt } });
 }
 
-/** Sign-out, session end, another user: back to the initial state. */
+/** A snapshot read answered SERVICE_UNAVAILABLE (true) or succeeded (false): 02 D-15 ح. */
+export function setServiceDown(serviceDown: boolean): void {
+  if (get().serviceDown !== serviceDown) set({ serviceDown });
+}
+
+/**
+ * Sign-out, session end, another user: back to the initial state. The generation keeps counting up, so a
+ * snapshot read that started before the reset (the previous user's, still in flight) can never clear the
+ * stale flag of the next session.
+ */
 export function resetSync(): void {
-  set({ ...INITIAL, heartbeat: get().heartbeat });
+  set({ ...INITIAL, generation: get().generation + 1, heartbeat: get().heartbeat });
 }
 
 /**

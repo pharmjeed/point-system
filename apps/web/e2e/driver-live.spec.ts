@@ -51,7 +51,8 @@ test('PNT-065 AC1: after 2 minutes in airplane mode the return shows the right s
   await expect(offline).toContainText('القبول والتسليم متوقفان حتى عودة الاتصال.');
   // the stale card stays on screen, dimmed, and cannot be acted on
   await expect(page.locator('.pt-live')).toHaveAttribute('data-stale', 'true');
-  await expect(offerCardOf(page).getByRole('button', { name: 'يتطلب اتصالًا' })).toBeDisabled();
+  // 02 D-09 «بلا اتصال: الزر معطل والنص «لا يمكن القبول دون اتصال»» (03 §6: 02's text)
+  await expect(offerCardOf(page).getByRole('button', { name: 'لا يمكن القبول دون اتصال' })).toBeDisabled();
 
   // two minutes pass; meanwhile DRV2 reserves the request and a newer one comes in
   await page.clock.fastForward('02:00');

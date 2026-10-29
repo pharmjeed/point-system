@@ -73,9 +73,9 @@ interface Tile {
 function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065)
   const gate = useCommandGate();
-  const online = !gate.offline;
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
@@ -240,7 +240,7 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     <TaskScreen
       title={withTicket(d05.title, ticket.display_number)}
       backTo={driverPaths.intakeVehicle(ticket.id)}
-      actions={<DiscardDraft ticket={ticket} disabled={pending} />}
+      actions={<DiscardDraft ticket={ticket} disabled={pending || !gate.ready} />}
     >
       <Stepper current={1} steps={STEPS} />
       {draft.pendingSave ? <Banner kind="stale" rounded message={d05.notSaved} /> : null}

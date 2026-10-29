@@ -1,9 +1,12 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { isApiError } from '@/api/errors';
 import { getHome } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome } from '@/api/types';
 import { createRegistry, mergeSnapshot, type LiveRegistry } from '@/realtime/driverHome';
-import { beginSnapshot, completeSnapshot, useSyncStore } from '@/realtime/syncStore';
+import { beginSnapshot, completeSnapshot, setServiceDown, useSyncStore } from '@/realtime/syncStore';
+import { promotedTask } from './fieldModel';
+import { announcePromotion } from './promotion';
 
 /**
  * `GET /v1/me/home`, the driver's full sync source (02 §1.7), kept current by the realtime events (PNT-065):
@@ -33,16 +36,29 @@ export function resetHomeRegistry(): void {
 /**
  * Reads the snapshot and merges it into the cache. A snapshot requested before the one already applied is
  * dropped (a slow poll answering after a resync). Clears `stale` when it started after the last trigger.
+ * SERVICE_UNAVAILABLE turns on the D-15 ح screen until a read succeeds. A read aborted meanwhile (sign-out,
+ * session end) touches neither the cache nor the sync state.
  */
 export async function loadHomeSnapshot(qc: QueryClient, signal?: AbortSignal): Promise<DriverHome> {
   const generation = beginSnapshot();
   const requestedAt = Date.now();
-  const snapshot = await getHome(signal);
+  let snapshot: DriverHome;
+  try {
+    snapshot = await getHome(signal);
+  } catch (error) {
+    if (!signal?.aborted && isApiError(error, 'SERVICE_UNAVAILABLE')) setServiceDown(true);
+    throw error;
+  }
+  if (signal?.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
+  setServiceDown(false);
   const cached = qc.getQueryData<DriverHome>(queryKeys.home);
   if (cached && requestedAt < appliedRequestedAt) return cached;
   appliedRequestedAt = requestedAt;
   const merged = mergeSnapshot(cached, snapshot, homeRegistry, requestedAt);
   completeSnapshot(generation, snapshot.server_time);
+  // a promotion the events did not bring (missed frame, no socket): announced from the snapshot (02 D-04)
+  const promoted = promotedTask(cached, merged);
+  if (promoted) announcePromotion(promoted);
   return merged;
 }
 

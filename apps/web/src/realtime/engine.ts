@@ -21,34 +21,56 @@ import {
  * The sync protocol of 07 §4.5 / 11 §9.4 / 02 §1.7 (PNT-065), independent of React and of Socket.IO:
  *
  * - every (re)connection, return to the foreground, `online`, `sync.required`, a heartbeat that says
- *   `sync_required` or comes after a gap, and every frame that fails its schema → a **full resync** before any
- *   command (`requestResync`); resyncs never overlap, a trigger during one runs another right after;
+ *   `sync_required`, any confirmation from the server after a gap longer than `heartbeat.uncertain_after_s`,
+ *   and every frame that fails its schema → a **full resync** before any command (`requestResync`); resyncs
+ *   never overlap, a trigger during one runs another right after; only the server's state counts as a sync
+ *   (a 5xx or a rate limit keeps the data stale and is tried again);
  * - frames are delivered at most once and in best-effort order: a duplicate `id` is dropped, and so is an
  *   update whose `aggregate.version` is not newer than the last one applied for that aggregate;
  * - `client.heartbeat` every `heartbeat.interval_s` with `{visible, audio_unlocked, last_event_id,
  *   app_version}`; without a socket the HTTP fallback `POST /v1/me/heartbeat` (drivers) with
  *   `ws_connected: false`; the ack's `server_time` corrects the countdown clock;
- * - `client.offer_seen` once per offer round shown on screen (15 §9.4).
+ * - `client.offer_seen` once per offer round shown on screen (15 §9.4);
+ * - Socket.IO reconnects a dropped transport by itself, but not a connection the server closed
+ *   (`io server disconnect`, after `session.revoked` or a failed revalidation) nor a refused handshake: the
+ *   app checks the session over HTTP and the engine connects again after a backoff (a session that ended
+ *   stops the engine first);
+ * - `stop()` (sign-out, session end) aborts the resync in flight: nothing it read is written afterwards.
  */
+export type TransportStatus =
+  /** The socket is connected (the handshake was accepted). */
+  | 'connected'
+  /** The transport dropped: Socket.IO reconnects by itself. */
+  | 'disconnected'
+  /** The server closed the connection (`io server disconnect`): no automatic reconnection. */
+  | 'closed'
+  /** The handshake was refused (`connect_error`; `code` from its `data`). */
+  | 'error';
+
 export interface Transport {
   connect(): void;
   disconnect(): void;
   readonly connected: boolean;
-  /** `connected`, `disconnected`, or `error` (the handshake was refused: `code` from `connect_error.data`). */
-  onStatus(listener: (status: 'connected' | 'disconnected' | 'error', code?: string) => void): () => void;
+  onStatus(listener: (status: TransportStatus, code?: string) => void): () => void;
   onFrame(listener: (event: string, frame: unknown) => void): () => void;
   ack(event: string, payload: unknown, timeoutMs: number): Promise<unknown>;
 }
 
 export interface EngineHooks {
-  /** Reads the area's snapshot(s) again; true when it succeeded (02 §1.7 «مزامنة كاملة»). */
-  resync(reason: StaleReason): Promise<{ ok: boolean; serverTime?: string | null }>;
+  /**
+   * Reads the area's snapshot(s) again; `ok` when the server's state was read (02 §1.7 «مزامنة كاملة»).
+   * `signal` aborts when the engine stops: nothing may be written into the caches after that.
+   */
+  resync(reason: StaleReason, signal: AbortSignal): Promise<{ ok: boolean; serverTime?: string | null }>;
   onEvent(event: ServerEvent): void;
   heartbeatBody(): Omit<HeartbeatBody, 'last_event_id'>;
   /** `POST /v1/me/heartbeat` while the socket is down (drivers on duty); null = not this user. */
   httpHeartbeat?: (body: HeartbeatBody & { ws_connected: false }) => Promise<HeartbeatAck | null>;
-  /** The handshake was refused with an AUTH_* code: the app checks the session over HTTP. */
-  onAuthError?: (code: string) => void;
+  /**
+   * The server closed the socket or refused its handshake: the app checks the session over HTTP
+   * (`GET /v1/me` → D-15 ج when it ended). `code` is the refusal's code (AUTH_* …) or `closed`.
+   */
+  checkSession?: (code: string) => void;
 }
 
 export interface EngineEnv {
@@ -60,6 +82,8 @@ export interface EngineEnv {
   /** Subscribes to visibility changes; returns the unsubscribe. */
   onVisibility(listener: (visible: boolean) => void): () => void;
   onOnline(listener: () => void): () => void;
+  /** 0 ≤ x < 1: the jitter of the reconnection backoff. */
+  random?: () => number;
 }
 
 export const browserEnv: EngineEnv = {
@@ -77,12 +101,18 @@ export const browserEnv: EngineEnv = {
     window.addEventListener('online', listener);
     return () => window.removeEventListener('online', listener);
   },
+  random: () => Math.random(),
 };
 
 const ACK_TIMEOUT_MS = 10_000;
 const MAX_SEEN = 500;
 /** A failed resync is tried again after this delay while nothing else triggers one. */
 export const RESYNC_RETRY_MS = 5000;
+/** A refused AUTH_* handshake is tried again after this delay (when the session is still valid). */
+export const AUTH_RETRY_MS = 15_000;
+/** Backoff of a reconnection Socket.IO will not make by itself: 1 s doubling to 15 s, ±50 % jitter. */
+export const RECONNECT_BASE_MS = 1000;
+export const RECONNECT_MAX_MS = 15_000;
 
 export class RealtimeEngine {
   private readonly unsubscribe: Array<() => void> = [];
@@ -92,10 +122,13 @@ export class RealtimeEngine {
   private heartbeatTimer: unknown = null;
   private heartbeatEvery = 0;
   private retryTimer: unknown = null;
+  private reconnectTimer: unknown = null;
+  private reconnectAttempt = 0;
   private resyncRunning = false;
   private resyncAgain: StaleReason | null = null;
   private lastEventId: string | null = null;
   private stopped = true;
+  private abort = new AbortController();
 
   constructor(
     private readonly transport: Transport,
@@ -106,6 +139,7 @@ export class RealtimeEngine {
   start(): void {
     if (!this.stopped) return;
     this.stopped = false;
+    this.abort = new AbortController();
     setSocketStatus('connecting');
     this.unsubscribe.push(
       this.transport.onStatus((status, code) => this.onStatus(status, code)),
@@ -120,6 +154,14 @@ export class RealtimeEngine {
       }),
       useSyncStore.subscribe((s, prev) => {
         if (s.heartbeat.interval_s !== prev.heartbeat.interval_s) this.scheduleHeartbeat();
+        // 07 §4.5: a confirmation after a silence longer than uncertain_after_s (heartbeat ack, any /v1
+        // reply) means the data on screen may be behind: a full resync before any command
+        if (
+          prev.lastContactAt !== null &&
+          s.lastContactAt !== null &&
+          s.lastContactAt - prev.lastContactAt > s.heartbeat.uncertain_after_s * 1000
+        )
+          this.requestResync('heartbeat_gap');
       }),
     );
     this.scheduleHeartbeat();
@@ -131,11 +173,14 @@ export class RealtimeEngine {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.abort.abort();
     for (const off of this.unsubscribe.splice(0)) off();
     if (this.heartbeatTimer !== null) this.env.clearInterval(this.heartbeatTimer);
     if (this.retryTimer !== null) this.env.clearTimeout(this.retryTimer);
+    if (this.reconnectTimer !== null) this.env.clearTimeout(this.reconnectTimer);
     this.heartbeatTimer = null;
     this.retryTimer = null;
+    this.reconnectTimer = null;
     this.transport.disconnect();
     setSocketStatus('off');
   }
@@ -158,6 +203,7 @@ export class RealtimeEngine {
   private async runResync(first: StaleReason): Promise<void> {
     this.resyncRunning = true;
     setSyncing(true);
+    const signal = this.abort.signal;
     let reason: StaleReason | null = first;
     let failed = false;
     try {
@@ -166,17 +212,19 @@ export class RealtimeEngine {
         const generation = beginSnapshot();
         let result: { ok: boolean; serverTime?: string | null };
         try {
-          result = await this.hooks.resync(reason);
+          result = await this.hooks.resync(reason, signal);
         } catch {
           result = { ok: false };
         }
+        // stopped while reading (sign-out, session end, another user): the answer belongs to nobody
+        if (this.stopped || signal.aborted) return;
         if (result.ok) completeSnapshot(generation, result.serverTime ?? null, this.env.now());
         failed = !result.ok;
         reason = this.resyncAgain;
       }
     } finally {
       this.resyncRunning = false;
-      setSyncing(false);
+      if (!this.stopped) setSyncing(false);
     }
     if (failed && !this.stopped) {
       if (this.retryTimer !== null) this.env.clearTimeout(this.retryTimer);
@@ -188,9 +236,12 @@ export class RealtimeEngine {
     }
   }
 
-  private onStatus(status: 'connected' | 'disconnected' | 'error', code?: string): void {
+  private onStatus(status: TransportStatus, code?: string): void {
     if (this.stopped) return;
     if (status === 'connected') {
+      this.reconnectAttempt = 0;
+      if (this.reconnectTimer !== null) this.env.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
       setSocketStatus('connected');
       noteContact(this.env.now());
       this.requestResync('reconnect');
@@ -198,7 +249,32 @@ export class RealtimeEngine {
       return;
     }
     setSocketStatus('down');
-    if (status === 'error' && code && code.startsWith('AUTH_')) this.hooks.onAuthError?.(code);
+    if (status === 'closed') {
+      // `io server disconnect`: Socket.IO stays down until told otherwise; a revoked session ends the
+      // engine through `GET /v1/me` before the backoff runs out
+      this.hooks.checkSession?.('closed');
+      this.scheduleReconnect();
+    } else if (status === 'error') {
+      // a refused handshake is not retried by Socket.IO either (a dropped transport is: connect() no-ops)
+      const auth = !!code && code.startsWith('AUTH_');
+      if (auth) this.hooks.checkSession?.(code);
+      this.scheduleReconnect(auth ? AUTH_RETRY_MS : undefined);
+    }
+  }
+
+  /** Connects again after `ms` (or the backoff); one timer at a time, none once stopped. */
+  private scheduleReconnect(ms?: number): void {
+    if (this.stopped || this.reconnectTimer !== null) return;
+    const jitter = 0.5 + (this.env.random ?? Math.random)();
+    const backoff = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** this.reconnectAttempt);
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = this.env.setTimeout(
+      () => {
+        this.reconnectTimer = null;
+        if (!this.stopped && !this.transport.connected) this.transport.connect();
+      },
+      ms ?? Math.round(backoff * jitter),
+    );
   }
 
   /** One frame from the server: schema, duplicate and version checks, then the area's handler. */
@@ -266,12 +342,11 @@ export class RealtimeEngine {
       ack = null; // no answer: the indicator degrades with the age of the last contact
     }
     if (!ack || this.stopped) return;
-    const { lastContactAt, heartbeat } = useSyncStore.getState();
     const now = this.env.now();
-    const gap = lastContactAt !== null && now - lastContactAt > heartbeat.uncertain_after_s * 1000;
+    // a confirmation after a gap asks for a resync by itself (the store subscription in start())
     noteContact(now, ack.connection_state);
     recordServerTime(ack.server_time, now);
-    if (ack.sync_required || gap) this.requestResync(gap ? 'heartbeat_gap' : 'sync_required');
+    if (ack.sync_required) this.requestResync('sync_required');
   }
 
   /** `client.offer_seen` once per round actually shown (15 §9.4); best effort. */

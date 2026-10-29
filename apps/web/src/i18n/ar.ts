@@ -470,6 +470,8 @@ export const d05 = {
   paperHint: 'انسخ الرقم المطبوع على الكعب كما هو.',
   next: 'التالي',
   notSaved: 'لم تُحفظ الخطوة الأولى على الخادم بعد؛ سنعيد المحاولة تلقائيًا.',
+  /** The request banner over the intake (02 D-05 «عند بث أثناء التسجيل»), with «عرض» opening D-09. */
+  openRequest: 'طلب إحضار مفتوح — يمكنك حجزه كمهمة تالية',
   cancelTitle: 'إلغاء الاستلام؟',
   cancelConfirm: 'إلغاء الاستلام',
   cancelKeep: 'متابعة التسجيل',
@@ -530,8 +532,10 @@ export const d09 = {
   claimedByOther: 'قبل الطلب سائق آخر',
   /** The single offer reached zero (for a second, then the card leaves). */
   expired: 'انتهى العرض',
-  /** The banner over D-05/D-06/D-08/D-10 opens D-09 in a Sheet (02 D-05). */
+  /** The banner over the other driver screens opens D-09 in a Sheet (02 D-05, D-09). */
   show: 'عرض',
+  /** «الحالات: بلا اتصال: الزر معطل والنص …» (02 D-09; 03 §6: 02's text over 03 §4.4's «يتطلب اتصالًا»). */
+  offline: 'لا يمكن القبول دون اتصال',
 } as const;
 
 /** D-10 — المهمة الحالية (الإحضار) */
@@ -716,6 +720,14 @@ export const live = {
   reminder: 'تذكير: الطلب ما زال بانتظار قبولك',
   withdrawn: 'سحب المشرف المهمة — تذكرة {n}. لا تُحضر السيارة.',
   canceled: 'أُلغي طلب الإحضار — تذكرة {n}',
+  /** Supervisor cancel after the movement started (DEC-30): the holder's repark task, with «فتح» → D-08. */
+  repark: 'أعد سيارة تذكرة {n} إلى الموقف وسجّل الموقف والمفتاح',
+  /**
+   * The request banner over D-12/D-13/D-14 and the task screens when the driver may accept it (the titles of
+   * 14 §5.1; 02 has no banner text for an available driver: docs/progress/notes/s5-web.md).
+   */
+  offerSingle: 'طلب إحضار — تذكرة {n}',
+  offerBroadcast: 'طلب مفتوح للجميع — تذكرة {n}',
   inPageOnly: 'وضع التنبيه: داخل الصفحة فقط — أبقِ الصفحة مفتوحة أثناء الوردية',
   pushNotReaching: 'الإشعارات لا تصل لجهازك — أعد تفعيلها',
 } as const;

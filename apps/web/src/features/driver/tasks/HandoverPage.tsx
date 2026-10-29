@@ -28,6 +28,7 @@ import { onlyDigits } from '@/lib/digits';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import { driverPaths, findTicketTask, plateValue, vehicleSummary } from '../fieldModel';
+import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
 
@@ -99,13 +100,15 @@ function HandoverForm({
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065); no handover
+  // without the server's check (02 D-11)
   const gate = useCommandGate();
-  const online = !gate.offline;
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
   const setPromotion = useFieldStore((s) => s.setPromotion);
+  const setCompleting = useFieldStore((s) => s.setCompleting);
   const paper = ticket.channel === 'paper';
   const due = !!card.payment_due || ticket.payment_status === 'due';
   const amount = card.payment_due?.amount_halalas ?? ticket.fee_halalas ?? 0;
@@ -146,12 +149,13 @@ function HandoverForm({
     const result = await submit.run(body);
     storeTicket(result.ticket);
     const promoted = result.driver.promoted_next_task;
-    if (promoted) setPromotion({ card: promoted, title: d11.promoted });
+    // 02 D-11: «بعد ثانيتين» of «تم تسليم #125» the frame shows «مهمتك التالية بدأت الآن» (and next_due)
+    if (promoted) setPromotion({ card: promoted, title: d11.promoted, showAt: Date.now() + SUCCESS_MS });
     void refresh();
     onDelivered({ n: ticket.display_number, whatsapp: !paper });
   };
 
-  const onSubmit = async () => {
+  const submitChecked = async () => {
     setLocalError(null);
     const local =
       paper && !stub.trim()
@@ -196,6 +200,16 @@ function HandoverForm({
         void qc.invalidateQueries({ queryKey: queryKeys.ticket(ticket.id) });
         void refresh();
       }
+    }
+  };
+
+  const onSubmit = async () => {
+    // the promotion this handover causes is announced from the reply (in `send`), not by the frame
+    setCompleting(Date.now() + COMPLETING_WINDOW_MS);
+    try {
+      await submitChecked();
+    } finally {
+      setCompleting(0);
     }
   };
 
@@ -295,6 +309,7 @@ function HandoverForm({
             <Button
               variant="secondary"
               loading={resend.pending}
+              disabled={!gate.ready}
               error={resend.error ? displayMessage(resend.error) : undefined}
               onClick={onResend}
             >

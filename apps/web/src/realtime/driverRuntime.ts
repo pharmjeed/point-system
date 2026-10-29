@@ -1,12 +1,13 @@
 import { api } from '@/api/client';
-import { ApiError } from '@/api/errors';
+import { isDefinitiveError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, OfferCard, Task, TaskCard, TicketDetail, TicketSummary } from '@/api/types';
+import { announcePromotion } from '@/features/driver/promotion';
 import { homeRegistry, loadHomeSnapshot, updateHome } from '@/features/driver/useDriverHome';
-import { d09, live } from '@/i18n/ar';
-import { fmt } from '@/i18n/fmt';
+import { d09 } from '@/i18n/ar';
 import { audioRunning, playSound, stopSound } from '@/lib/audio';
 import { recordServerTime } from '@/lib/serverClock';
+import { useFieldStore, type NoticeKind } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import {
   applyDriverState,
@@ -17,7 +18,7 @@ import {
   applyTicketSummary,
   isTaskCard,
 } from './driverHome';
-import { RealtimeEngine, type EngineHooks } from './engine';
+import { RealtimeEngine, type EngineEnv, type EngineHooks, type Transport } from './engine';
 import type { AcquireOptions, RealtimeHandle } from './manager';
 import { useOfferLive } from './offerStore';
 import type { HeartbeatAck, ServerEvent } from './protocol';
@@ -28,18 +29,30 @@ import { createSocketTransport } from './transport';
  * The driver's realtime client (07 §4.3 «سلوك العميل», 02 D-04/D-09; PNT-065/066/067): events are applied to
  * the `GET /v1/me/home` cache entry with the version rules of ./driverHome.ts; the resync reads the snapshot
  * again (and `me`, and the open ticket screens). Sounds: the arrival of the head card is announced by the
- * screen that shows it (OfferAlerts); here `task.claimed` / `offer.closed` stop the card's sound at once.
+ * frame that shows it (OfferAlerts); here `task.claimed` / `offer.closed` stop the card's sound at once, and
+ * the task changes of 14 §3.1–§3.2 / §5.1 raise their notice over every driver screen: a promotion of the
+ * reserved next task (`next_due` + the dialog), a direct assignment or a repark (`next_due`), a withdrawal
+ * (`reminder`), a cancel (no sound), an early request during parking (`reminder`).
  */
 export const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0';
-/** A refused handshake is tried again after this delay (when the session is still valid). */
-export const AUTH_RETRY_MS = 15_000;
 
 const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
+
+const MOVING = new Set(['accepted', 'in_progress']);
 
 function stopOfferSounds(offerIds: readonly string[], head: OfferCard | null | undefined, taskId: string) {
   for (const id of offerIds) stopSound(`offer:${id}`);
   if (head && (head.task_id === taskId || offerIds.includes(head.offer_id)))
     stopSound(`offer:${head.offer_id}`);
+}
+
+function notice(kind: NoticeKind, card: Pick<TaskCard, 'task' | 'ticket'>): void {
+  useFieldStore.getState().addNotice({
+    kind,
+    taskId: card.task.id,
+    ticketId: card.ticket.id,
+    ticketNumber: card.ticket.display_number,
+  });
 }
 
 export function driverEvents(options: AcquireOptions) {
@@ -48,6 +61,40 @@ export function driverEvents(options: AcquireOptions) {
   const refreshHome = () => void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true });
   const toast = (message: string, tone: 'info' | 'error' = 'info') =>
     useUiStore.getState().pushToast({ message, tone });
+
+  /** `task.updated` with this driver's TaskCard (07 §4.3): its slot, then what 14 §3.1–§3.2 announce. */
+  const onTaskCard = (payload: TaskCard & { cause?: string }, now: number) => {
+    const { cause, ...card } = payload;
+    const before = home();
+    const wasCurrent = before?.current_task?.task.id === card.task.id;
+    const wasNext = before?.next_task?.task.id === card.task.id;
+    const result = { applied: false };
+    updateHome(qc, (h) => {
+      const r = applyTaskCard(h, card, homeRegistry, now);
+      result.applied = r.applied;
+      return r.home;
+    });
+    if (!result.applied) return;
+    const status = card.task.status;
+    if (status === 'canceled' && (wasCurrent || wasNext)) {
+      // 14 §3.1 ticket.retrieval_canceled / §3.2 task.canceled: «أُلغي طلب الإحضار — تذكرة n», no sound
+      notice('canceled', card);
+      return;
+    }
+    if (!MOVING.has(status)) return;
+    if (wasNext || cause === 'task.promoted') {
+      // 02 D-04: the reserved next task is the current one now → next_due + «بدأت مهمتك التالية» (the dialog
+      // plays it), on whatever screen is open (10 §6.3: cancel / reassignment / transfer / reconcile of the
+      // current task, or its completion)
+      announcePromotion(card);
+      return;
+    }
+    if (wasCurrent || cause === 'task.claimed') return; // a step of the current task / this driver's accept
+    // a direct assignment to this driver (14 §3.2 task.reassigned) or the repark after a supervisor's cancel
+    // (DEC-30, 14 §3.1 ticket.reparking): next_due, and the repark line that leads to D-08
+    if (card.task.type === 'repark') notice('repark', card);
+    void playSound('next_due', { key: `task:${card.task.id}` });
+  };
 
   return (event: ServerEvent): void => {
     const now = Date.now();
@@ -66,10 +113,12 @@ export function driverEvents(options: AcquireOptions) {
         const p = event.payload;
         if (p.claimed_by?.id === userId) return; // this driver's own acceptance: its task.updated came first
         const before = home()?.offer;
-        const shown = !!before && (before.task_id === p.task_id || p.offer_ids.includes(before.offer_id));
+        const head = !!before && (before.task_id === p.task_id || p.offer_ids.includes(before.offer_id));
+        // 02 D-09 «فقط إذا كانت البطاقة ظاهرة للسائق»: the card rendered (D-04 or the open Sheet), page visible
+        const shown = head && useOfferLive.getState().onScreen === before.offer_id && visible();
         stopOfferSounds(p.offer_ids, before, p.task_id); // 02 §1.7: the card's sound stops at once
         updateHome(qc, (h) => applyOfferClosed(h, p.offer_ids, p.task_id, homeRegistry));
-        if (shown && visible()) toast(d09.claimedByOther); // 02 D-09: only if the card was on screen
+        if (shown) toast(d09.claimedByOther);
         refreshHome();
         return;
       }
@@ -86,47 +135,42 @@ export function driverEvents(options: AcquireOptions) {
       }
       case 'task.updated': {
         const p = event.payload;
-        if (isTaskCard(p)) {
-          const { cause, ...card } = p as TaskCard & { cause?: string };
-          const before = home();
-          const known =
-            before?.current_task?.task.id === card.task.id || before?.next_task?.task.id === card.task.id;
-          const result = { applied: false };
+        if (isTaskCard(p)) onTaskCard(p as TaskCard & { cause?: string }, now);
+        else {
+          const task = p as Task;
+          const gone: { card: TaskCard | null } = { card: null };
           updateHome(qc, (h) => {
-            const r = applyTaskCard(h, card, homeRegistry, now);
-            result.applied = r.applied;
+            const r = applyTaskGone(h, task.id, task.version, homeRegistry, now);
+            gone.card = r.removed;
             return r.home;
           });
-          // a direct assignment (reassignment to this driver, a repark by the supervisor): next_due (14 §7);
-          // the promotion of the reserved next task is announced by D-04 with its dialog (02 D-04)
-          if (
-            result.applied &&
-            !known &&
-            (card.task.status === 'accepted' || card.task.status === 'in_progress') &&
-            cause !== 'task.claimed'
-          )
-            void playSound('next_due', { key: `task:${card.task.id}` });
-        } else {
-          const task = p as Task;
-          const before = home();
-          const card =
-            before?.current_task?.task.id === task.id
-              ? before.current_task
-              : before?.next_task?.task.id === task.id
-                ? before.next_task
-                : null;
-          updateHome(qc, (h) => applyTaskGone(h, task.id, task.version, homeRegistry, now).home);
-          if (card && (task.status === 'canceled' || task.assignee?.id !== userId)) {
-            // 14 §5.1: «سحب المشرف المهمة — تذكرة N. لا تُحضر السيارة.» with `reminder`
-            toast(fmt(live.withdrawn, { n: card.ticket.display_number }), 'error');
-            void playSound('reminder', { key: `task:${task.id}` });
+          const card = gone.card; // the task was on screen and this view is newer
+          if (card) {
+            if (task.status === 'canceled')
+              notice('canceled', card); // 14 §3.2 task.canceled: no sound
+            else if (task.assignee?.id !== userId) {
+              // 14 §3.2 task.withdrawn / task.reassigned (away): the red banner and `reminder`
+              notice('withdrawn', card);
+              void playSound('reminder', { key: `task:${task.id}` });
+            }
           }
         }
         refreshHome();
         return;
       }
       case 'ticket.updated': {
-        const { cause: _c, ...summary } = event.payload;
+        const { cause, ...summary } = event.payload;
+        // 14 §3.1 ticket.retrieval_requested_early: the parking driver's banner and `reminder`
+        const parking = home()?.current_task;
+        if (
+          cause === 'ticket.retrieval_requested_early' &&
+          parking &&
+          parking.ticket.id === summary.id &&
+          (parking.task.type === 'park' || parking.task.type === 'repark')
+        ) {
+          notice('early', parking);
+          void playSound('reminder', { key: `task:${parking.task.id}` });
+        }
         updateHome(qc, (h) => applyTicketSummary(h, summary as TicketSummary, homeRegistry, now));
         const detail = qc.getQueryData<TicketDetail>(queryKeys.ticket(summary.id));
         if (detail && detail.version < summary.version)
@@ -185,40 +229,46 @@ export function patchVehicles(
   return changed ? { ...data, pages } : data;
 }
 
-export function startRealtime(options: AcquireOptions): RealtimeHandle {
+/** The driver's engine hooks (exported for the runtime unit tests). */
+export function driverHooks(options: AcquireOptions): EngineHooks {
   const { qc } = options;
-  const transport = createSocketTransport();
-  const onEvent = driverEvents(options);
-  const hooks: EngineHooks = {
-    async resync() {
+  return {
+    async resync(_reason, signal) {
       try {
-        const snapshot = await loadHomeSnapshot(qc);
+        const snapshot = await loadHomeSnapshot(qc, signal);
+        if (signal.aborted) return { ok: false }; // signed out meanwhile: the cache stays cleared
         qc.setQueryData(queryKeys.home, snapshot);
         void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true });
         void qc.invalidateQueries({ queryKey: ['tickets'] });
         void qc.invalidateQueries({ queryKey: queryKeys.vehicles }); // D-12 lists (no event for others' tickets)
         return { ok: true, serverTime: snapshot.server_time };
       } catch (error) {
-        // a definitive answer (no assignment, no session…) is the server's state: nothing to wait for
-        return { ok: error instanceof ApiError };
+        // the server's definitive answer (no assignment, no session…) is its state: nothing to wait for; a
+        // failure to read it (5xx, 429, no reply) keeps the data stale and is tried again (PNT-065 AC2)
+        return { ok: isDefinitiveError(error) };
       }
     },
-    onEvent,
+    onEvent: driverEvents(options),
     heartbeatBody: () => ({ visible: visible(), audio_unlocked: audioRunning(), app_version: APP_VERSION }),
     httpHeartbeat: async (body) => {
       if (!options.hasDuty()) return null;
       return (await api.post<HeartbeatAck>('/v1/me/heartbeat', { body })).data;
     },
-    // the handshake was refused: `GET /v1/me` tells whether the session ended (RootLayout → D-15 ج); if it did
-    // not, the socket tries again later (Socket.IO does not retry a refused handshake by itself)
-    onAuthError: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true });
-      setTimeout(() => {
-        if (!engine.isStopped) transport.connect();
-      }, AUTH_RETRY_MS);
-    },
+    // the server closed the socket or refused it: `GET /v1/me` tells whether the session ended (RootLayout →
+    // D-15 ج, which stops the engine); if it did not, the engine connects again after its backoff
+    checkSession: () => void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true }),
   };
-  const engine = new RealtimeEngine(transport, hooks);
+}
+
+export function startRealtime(
+  options: AcquireOptions,
+  deps: { transport?: Transport; env?: EngineEnv } = {},
+): RealtimeHandle {
+  const engine = new RealtimeEngine(
+    deps.transport ?? createSocketTransport(),
+    driverHooks(options),
+    deps.env,
+  );
   engine.start();
   return { engine, stop: () => engine.stop() };
 }

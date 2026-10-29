@@ -14,7 +14,7 @@ import {
   SquareParking,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { ApiError, displayMessage, isApiError } from '@/api/errors';
 import { createTicket, setBreak } from '@/api/field';
@@ -35,14 +35,12 @@ import {
   intakeBlockedReason,
   intakeEvents,
   plateValue,
-  promotedTask,
   taskCardView,
   vehicleSummary,
   type TaskStage,
 } from './fieldModel';
 import { useDriverMe } from './DriverLayout';
 import { LiveOfferCard } from './LiveOffer';
-import { PromotionDialog } from './PromotionDialog';
 import { useDriverHome } from './useDriverHome';
 
 const STAGE_ICON: Record<TaskStage, LucideIcon> = {
@@ -110,23 +108,9 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
   const pushToast = useUiStore((s) => s.pushToast);
   const lastEventId = useFieldStore((s) => s.lastEventId);
   const setLastEventId = useFieldStore((s) => s.setLastEventId);
-  const announced = useFieldStore((s) => s.announced);
-  const markAnnounced = useFieldStore((s) => s.markAnnounced);
-  const promotion = useFieldStore((s) => s.promotion);
-  const setPromotion = useFieldStore((s) => s.setPromotion);
   const [eventsOpen, setEventsOpen] = useState(false);
-  const previous = useRef<DriverHome | undefined>(undefined);
-
-  // 02 D-04: the reserved next task became the current one → «بدأت مهمتك التالية». D-08 and D-11 hand
-  // over the promotion their command returned through the field store.
-  useEffect(() => {
-    const card = promotedTask(previous.current, home);
-    previous.current = home;
-    if (card && !announced.includes(card.task.id)) {
-      markAnnounced(card.task.id);
-      setPromotion({ card, title: d04.promoted });
-    }
-  }, [home, announced, markAnnounced, setPromotion]);
+  // the promotion of the reserved next task («بدأت مهمتك التالية») is the frame's dialog: it is announced on
+  // whatever driver screen is open (./promotion.ts)
 
   const create = useCommand((body: { event_id: string }, key: string) => createTicket(body, key));
   const endBreak = useCommand((_: { active: false }, key: string) => setBreak(false, key));
@@ -195,7 +179,7 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
         />
       ) : null}
 
-      <div className="pt-live" data-stale={stale || gate.offline}>
+      <div className="pt-live" data-stale={stale || gate.unconfirmed}>
         <div className="flex flex-col gap-2">
           <Button
             size="lg"
@@ -276,12 +260,6 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
           ))}
         </ul>
       </Sheet>
-
-      <PromotionDialog
-        task={promotion?.card ?? null}
-        title={promotion?.title}
-        onClose={() => setPromotion(null)}
-      />
     </>
   );
 }

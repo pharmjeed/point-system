@@ -7,7 +7,7 @@ import { queryKeys } from '@/api/queryClient';
 import type { OfferCard as OfferCardData } from '@/api/types';
 import { Banner, OfferCard, Sheet } from '@/components';
 import { useCommand } from '@/hooks/useCommand';
-import { components, d09, live } from '@/i18n/ar';
+import { components, d05, d09, live } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
 import { playSound, stopSound } from '@/lib/audio';
@@ -23,9 +23,10 @@ import { homeRegistry, updateHome, useCachedHome } from './useDriverHome';
 /**
  * The live D-09 card (PNT-067): the head request of the driver's snapshot — only the oldest request the driver
  * may act on (02 D-04) — with the countdown on server time, the reminder (event or `reminder_at`), the
- * accept / reserve press and the 02 D-09 error handling; the same card on D-04 and in the Sheet over the task
- * screens. Sounds (02 §1.10, 14 §7): the arrival of a round plays `offer` or `broadcast` once (with Android
- * vibration), the reminder plays `reminder` once, and the press, `task.claimed` and `offer.closed` stop them.
+ * accept / reserve press and the 02 D-09 error handling; the same card on D-04 and in the Sheet over the other
+ * driver screens. Sounds (02 §1.10, 14 §7): the arrival of a round plays `offer` or `broadcast` once (with
+ * Android vibration), the reminder plays `reminder` once, and the press, `task.claimed` and `offer.closed`
+ * stop them.
  */
 
 /** Offer errors after which the card is gone (02 D-09 «إزالة البطاقة»): toast with the server text, sync. */
@@ -37,7 +38,10 @@ export const OFFER_GONE = [
   'OFFER_NOT_FOUND',
 ];
 
-/** Errors that ask for a full sync before the card is shown again (02 D-04, D-09). */
+/**
+ * Errors that ask for a full sync before the card is shown again (02 D-04, D-09): their text stays with the
+ * head card the resync shows (02 D-09 «مزامنة وإظهار الطلب الأقدم: «يوجد طلب أقدم يجب قبوله أولًا.»»).
+ */
 const SYNC_FIRST = ['OLDER_REQUEST_PENDING', 'NEXT_TASK_ALREADY_RESERVED', 'DRIVER_NOT_AVAILABLE'];
 
 const offerKey = (offerId: string) => `offer:${offerId}`;
@@ -58,7 +62,8 @@ function useDocumentVisible(): boolean {
 
 /**
  * Sounds of the head card, for the whole driver frame: a new round is announced once while the page is
- * visible (07 §4.5: in the background Web Push takes over); leaving the head stops its sound.
+ * visible (07 §4.5: in the background Web Push takes over); leaving the head stops its sound. No head card →
+ * no refusal text is kept for the next one.
  */
 export function useOfferAlerts(offer: OfferCardData | null | undefined): void {
   const visible = useDocumentVisible();
@@ -71,6 +76,7 @@ export function useOfferAlerts(offer: OfferCardData | null | undefined): void {
   useEffect(() => {
     if (previous.current && previous.current !== offerId) stopSound(offerKey(previous.current));
     previous.current = offerId;
+    if (!offerId) useOfferLive.getState().setRefusal(null);
   }, [offerId]);
 
   useEffect(() => {
@@ -108,9 +114,19 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
   const visible = useDocumentVisible();
   const pushToast = useUiStore((s) => s.pushToast);
   const reminded = useOfferLive((s) => !!s.reminded[offer.offer_id]);
+  const refusal = useOfferLive((s) => s.refusal);
+  const setRefusal = useOfferLive((s) => s.setRefusal);
   const accept = useCommand((offerId: string, key: string) => acceptOffer(offerId, key));
   const [error, setError] = useState<string | null>(null);
   const settings = fieldSettings(home);
+
+  // the card is on screen (D-04, or the Sheet open): `task.claimed` then says «قبل الطلب سائق آخر» (02 D-09)
+  useEffect(() => {
+    useOfferLive.getState().setOnScreen(offer.offer_id);
+    return () => {
+      if (useOfferLive.getState().onScreen === offer.offer_id) useOfferLive.getState().setOnScreen(null);
+    };
+  }, [offer.offer_id]);
 
   // 15 §9.4: `client.offer_seen` once the card is really on screen
   useEffect(() => {
@@ -136,6 +152,7 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
   const onAccept = async () => {
     stopSound(offerKey(offer.offer_id)); // PNT-066: the press (a reservation too) stops the sound at once
     setError(null);
+    setRefusal(null);
     const n = offer.ticket.display_number;
     try {
       const result = await accept.run(offer.offer_id);
@@ -158,9 +175,14 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
         requestResync('manual');
         return;
       }
+      if (isApiError(e, ...SYNC_FIRST)) {
+        // the text goes with the head card the resync shows (the older request, or this one again)
+        setRefusal(message);
+        requestResync('manual');
+        return;
+      }
       setError(message);
-      if (isApiError(e, ...SYNC_FIRST)) requestResync('manual');
-      else if (e instanceof ApiError) void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true });
+      if (e instanceof ApiError) void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true });
     }
   };
 
@@ -177,10 +199,11 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
       expiresAt={offer.mode === 'single' ? (offer.expires_at ?? undefined) : undefined}
       totalSeconds={settings.offerTtlS}
       canAcceptAs={offerAction(offer)}
-      offline={gate.offline}
+      offline={gate.unconfirmed}
+      offlineText={d09.offline}
       waiting={!gate.ready}
       loading={accept.pending}
-      error={error ?? undefined}
+      error={error ?? refusal ?? undefined}
       reminded={reminded}
       reminderText={live.reminder}
       expiredText={d09.expired}
@@ -191,8 +214,23 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
 }
 
 /**
- * Over D-05, D-06, D-08 and D-10 a new request is a banner with «عرض» that opens D-09 in a Sheet, without
- * leaving the screen or clearing its inputs (02 §2.1 note, D-05).
+ * The line of the request banner (docs/progress/notes/s5-web.md DEC-PROPOSED-6): 02 D-05's sentence when the
+ * driver may reserve it as the next task; the 14 §5.1 card title with the ticket number when he may accept
+ * it; the 02 D-09 note when he already holds a next task (the card is view-only).
+ */
+export function offerBannerText(offer: OfferCardData): string {
+  const action = offerAction(offer);
+  if (action === 'reserve_next') return d05.openRequest;
+  if (action === 'accept')
+    return fmt(offer.mode === 'single' ? live.offerSingle : live.offerBroadcast, {
+      n: offer.ticket.display_number,
+    });
+  return components.offer.viewOnly;
+}
+
+/**
+ * Over every driver screen but D-04 a new request is a banner with «عرض» that opens D-09 in a Sheet, without
+ * leaving the screen or clearing its inputs (02 §2.1 note, D-05, D-09 «في Sheet فوق الشاشات الأخرى»).
  */
 export function OfferSheetBanner({ offer }: { offer: OfferCardData | null | undefined }) {
   const [open, setOpen] = useState(false);
@@ -204,12 +242,12 @@ export function OfferSheetBanner({ offer }: { offer: OfferCardData | null | unde
     <>
       <Banner
         kind="info"
-        message={fmt(components.offer.announce, { n: offer.ticket.display_number })}
+        message={offerBannerText(offer)}
         actionLabel={d09.show}
         onAction={() => setOpen(true)}
       />
       <Sheet open={open} onOpenChange={setOpen} title={components.offer.layer}>
-        {open ? <LiveOfferCard offer={offer} onDone={() => setOpen(false)} /> : null}
+        {open ? <LiveOfferCard key={offer.offer_id} offer={offer} onDone={() => setOpen(false)} /> : null}
       </Sheet>
     </>
   );

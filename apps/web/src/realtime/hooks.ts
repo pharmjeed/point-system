@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { queryKeys } from '@/api/queryClient';
-import type { Me } from '@/api/types';
+import type { ConnectionState, Me } from '@/api/types';
 import { hasOpenDuty } from '@/app/paths';
 import { useOnline } from '@/hooks/useOnline';
 import { acquireRealtime, type RealtimeArea } from './manager';
@@ -52,14 +52,38 @@ export function useConnectionState() {
   return connectionStateAt({ lastContactAt, heartbeat }, online, now);
 }
 
+export interface CommandGate {
+  /** A command may be sent now. */
+  ready: boolean;
+  /** The connection is lost (D-15 أ). */
+  offline: boolean;
+  /** No confirmation from the server for longer than `heartbeat.uncertain_after_s` (D-15 ب). */
+  uncertain: boolean;
+  /** The data on screen waits for its full resync (02 §1.6 «إعادة المزامنة»). */
+  stale: boolean;
+  /**
+   * Offline or uncertain: no confirmed connection. 03 §4.4 «عند uncertain/offline … تُعطَّل أزرار القبول
+   * والتسليم مع نص «يتطلب اتصالًا»», 07 §4.5 «بلا اتصال مؤكد … يُعطّل القبول والتسليم حتى المزامنة»: the cards
+   * dim and the buttons say why.
+   */
+  unconfirmed: boolean;
+}
+
 /**
- * Whether a command may be sent now (02 §1.6, §1.7; PNT-065 acceptance 2): never while offline, and never
- * while the data is stale — until the full resync after a reconnection, a return to the foreground or a
- * `sync.required` has completed. The server checks every command anyway.
+ * Whether a command may be sent now (02 §1.6, §1.7, 03 §4.4; PNT-065 acceptance 2): never without a confirmed
+ * connection (offline or uncertain), and never while the data is stale — until the full resync after a
+ * reconnection, a return to the foreground, a `sync.required` or a silence has completed. The server checks
+ * every command anyway.
  */
-export function useCommandGate(): { ready: boolean; offline: boolean; stale: boolean } {
+export function commandGate(connection: ConnectionState, stale: boolean): CommandGate {
+  const offline = connection === 'offline';
+  const uncertain = connection === 'uncertain';
+  const unconfirmed = offline || uncertain;
+  return { ready: !unconfirmed && !stale, offline, uncertain, stale, unconfirmed };
+}
+
+export function useCommandGate(): CommandGate {
   const connection = useConnectionState();
   const stale = useSyncStore((s) => s.stale);
-  const offline = connection === 'offline';
-  return { ready: !offline && !stale, offline, stale };
+  return commandGate(connection, stale);
 }

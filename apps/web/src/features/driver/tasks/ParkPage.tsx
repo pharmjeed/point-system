@@ -28,6 +28,7 @@ import { withTicket } from '@/i18n/fmtNode';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import { fieldSettings, findTask, plateValue, vehicleSummary } from '../fieldModel';
+import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useTicket } from './common';
 
@@ -55,12 +56,13 @@ function ParkForm({ home, card }: { home: DriverHome; card: TaskCardData }) {
   const me = useDriverMe();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065)
   const gate = useCommandGate();
-  const online = !gate.offline;
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const pushToast = useUiStore((s) => s.pushToast);
   const setPromotion = useFieldStore((s) => s.setPromotion);
+  const setCompleting = useFieldStore((s) => s.setCompleting);
   const settings = fieldSettings(home);
   const venueId = home.venue?.id ?? me.active_assignment?.venue_id ?? '';
   const ticket = useTicket(card.ticket.id);
@@ -122,6 +124,8 @@ function ParkForm({ home, card }: { home: DriverHome; card: TaskCardData }) {
       key_slot_id: slot?.id ?? null,
       expected_version: card.task.version,
     };
+    // the promotion this completion causes is announced from the reply below, not by the frame (02 D-08)
+    setCompleting(Date.now() + COMPLETING_WINDOW_MS);
     try {
       const result = await park.run(body);
       pushToast({ message: withTicket(d08.parked, card.ticket.display_number), tone: 'success' });
@@ -145,6 +149,8 @@ function ParkForm({ home, card }: { home: DriverHome; card: TaskCardData }) {
         void refresh();
         navigate(paths.driverHome, { replace: true });
       } else if (error.is('VERSION_CONFLICT', 'INVALID_STATE_TRANSITION')) void refresh();
+    } finally {
+      setCompleting(0);
     }
   };
 

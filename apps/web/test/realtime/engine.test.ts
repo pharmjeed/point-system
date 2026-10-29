@@ -1,107 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RealtimeEngine, type EngineEnv, type EngineHooks, type Transport } from '@/realtime/engine';
-import { resetSync, useSyncStore } from '@/realtime/syncStore';
+import { AUTH_RETRY_MS, RealtimeEngine, type EngineHooks } from '@/realtime/engine';
+import { noteContact, resetSync, useSyncStore } from '@/realtime/syncStore';
 import { clockOffsetMs, recordServerTime } from '@/lib/serverClock';
+import { envelope, FakeEnv, FakeTransport, flush } from './engineFakes';
 import { IDS } from './fixtures';
-
-/** A transport the test drives: connection status, frames from the server, acks. */
-class FakeTransport implements Transport {
-  connected = false;
-  connects = 0;
-  readonly acks: Array<{ event: string; payload: unknown }> = [];
-  ackReply: (event: string, payload: unknown) => unknown = () => ({
-    data: { server_time: '2026-10-29T18:00:00.000Z', connection_state: 'online', sync_required: false },
-  });
-  private status = new Set<(s: 'connected' | 'disconnected' | 'error', code?: string) => void>();
-  private frames = new Set<(event: string, frame: unknown) => void>();
-  connect() {
-    this.connects += 1;
-  }
-  disconnect() {
-    this.connected = false;
-  }
-  onStatus(l: (s: 'connected' | 'disconnected' | 'error', code?: string) => void) {
-    this.status.add(l);
-    return () => this.status.delete(l);
-  }
-  onFrame(l: (event: string, frame: unknown) => void) {
-    this.frames.add(l);
-    return () => this.frames.delete(l);
-  }
-  async ack(event: string, payload: unknown) {
-    this.acks.push({ event, payload });
-    return this.ackReply(event, payload);
-  }
-  up() {
-    this.connected = true;
-    for (const l of this.status) l('connected');
-  }
-  down() {
-    this.connected = false;
-    for (const l of this.status) l('disconnected');
-  }
-  refuse(code: string) {
-    for (const l of this.status) l('error', code);
-  }
-  emit(event: string, frame: unknown) {
-    for (const l of this.frames) l(event, frame);
-  }
-}
-
-class FakeEnv implements EngineEnv {
-  t = 1_000_000;
-  private visibility = new Set<(v: boolean) => void>();
-  private online = new Set<() => void>();
-  intervals: Array<() => void> = [];
-  timeouts: Array<() => void> = [];
-  now = () => this.t;
-  setInterval = (fn: () => void) => {
-    this.intervals.push(fn);
-    return fn;
-  };
-  clearInterval = (h: unknown) => {
-    this.intervals = this.intervals.filter((f) => f !== h);
-  };
-  setTimeout = (fn: () => void) => {
-    this.timeouts.push(fn);
-    return fn;
-  };
-  clearTimeout = (h: unknown) => {
-    this.timeouts = this.timeouts.filter((f) => f !== h);
-  };
-  onVisibility = (l: (v: boolean) => void) => {
-    this.visibility.add(l);
-    return () => this.visibility.delete(l);
-  };
-  onOnline = (l: () => void) => {
-    this.online.add(l);
-    return () => this.online.delete(l);
-  };
-  setVisible(v: boolean) {
-    for (const l of this.visibility) l(v);
-  }
-  goOnline() {
-    for (const l of this.online) l();
-  }
-}
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
-
-function envelope(type: string, payload: Record<string, unknown>, extra: Record<string, unknown> = {}) {
-  return {
-    id: globalThis.crypto.randomUUID(),
-    type,
-    occurred_at: '2026-10-29T18:00:00.000Z',
-    org_id: IDS.org,
-    venue_id: IDS.venue,
-    dispatch_pool_id: null,
-    event_id: null,
-    aggregate: null,
-    actor: { type: 'system', id: null },
-    payload,
-    ...extra,
-  };
-}
 
 describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
   let transport: FakeTransport;
@@ -300,14 +202,102 @@ describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
     ]);
   });
 
-  it('a refused handshake (AUTH_*) is handed to the app to check the session over HTTP', () => {
-    const onAuthError = vi.fn();
+  it('a refused handshake (AUTH_*) is handed to the app to check the session, then tried again', async () => {
+    const checkSession = vi.fn();
     engine.stop();
-    engine = new RealtimeEngine(transport, { ...hooks, onAuthError }, env);
+    engine = new RealtimeEngine(transport, { ...hooks, checkSession }, env);
     engine.start();
+    await finishResync();
+    const connects = transport.connects;
     transport.refuse('AUTH_SESSION_REVOKED');
-    expect(onAuthError).toHaveBeenCalledWith('AUTH_SESSION_REVOKED');
+    expect(checkSession).toHaveBeenCalledWith('AUTH_SESSION_REVOKED');
     expect(useSyncStore.getState().socket).toBe('down');
+    // Socket.IO never retries a refused handshake: the engine does, once the session check had its chance
+    expect(env.pending()).toContain(AUTH_RETRY_MS);
+    env.run(AUTH_RETRY_MS);
+    expect(transport.connects).toBe(connects + 1);
+  });
+
+  it('a socket the server closed (`io server disconnect`) is checked and connected again after a backoff', async () => {
+    const checkSession = vi.fn();
+    engine.stop();
+    engine = new RealtimeEngine(transport, { ...hooks, checkSession }, env);
+    engine.start();
+    await finishResync();
+    transport.up();
+    await finishResync();
+    const connects = transport.connects;
+    transport.close(); // after session.revoked or a failed revalidation (realtime-server.ts)
+    expect(checkSession).toHaveBeenCalledWith('closed');
+    expect(useSyncStore.getState().socket).toBe('down');
+    expect(env.pending()).toEqual([1000]); // 1 s × jitter (0.5 + 0.5)
+    transport.close(); // one timer at a time
+    expect(env.pending()).toEqual([1000]);
+    env.run(1000);
+    expect(transport.connects).toBe(connects + 1);
+    // still refused or closed: the backoff doubles, and a connection resets it
+    transport.close();
+    expect(env.pending()).toEqual([2000]);
+    env.run(2000);
+    transport.up();
+    await finishResync();
+    transport.close();
+    expect(env.pending()).toEqual([1000]);
+  });
+
+  it('a session that ended stops the engine: no reconnection is attempted', async () => {
+    engine.start();
+    await finishResync();
+    transport.close();
+    expect(env.pending()).toEqual([1000]);
+    engine.stop(); // RootLayout → D-15 ج → stopRealtime()
+    expect(env.pending()).toEqual([]);
+  });
+
+  it('a dropped transport is left to Socket.IO (no extra timer)', async () => {
+    engine.start();
+    await finishResync();
+    transport.up();
+    await finishResync();
+    transport.down();
+    expect(env.pending()).toEqual([]);
+  });
+
+  it('a resync still reading when the engine stops writes nothing (sign-out, session end)', async () => {
+    let signal: AbortSignal | null = null;
+    engine.stop();
+    engine = new RealtimeEngine(
+      transport,
+      {
+        ...hooks,
+        resync: (reason, s) => {
+          signal = s;
+          resyncs.push(reason);
+          return new Promise((resolve) => resolveResync.push(resolve));
+        },
+      },
+      env,
+    );
+    engine.start();
+    engine.stop();
+    expect((signal as AbortSignal | null)?.aborted).toBe(true);
+    resetSync(); // stopRealtime() resets the sync state for the next user
+    await finishResync(true); // the late answer of the previous session
+    expect(useSyncStore.getState()).toMatchObject({ stale: true, lastSyncAt: null, syncing: false });
+    expect(env.pending()).toEqual([]);
+  });
+
+  it('any confirmation after a silence longer than uncertain_after_s asks for a resync (07 §4.5)', async () => {
+    engine.start();
+    await finishResync();
+    expect(useSyncStore.getState().stale).toBe(false);
+    env.t += 30_000;
+    noteContact(env.t); // within the threshold: nothing
+    expect(useSyncStore.getState().stale).toBe(false);
+    env.t += 50_000;
+    noteContact(env.t); // e.g. a `/v1` reply after 50 s without any
+    expect(useSyncStore.getState()).toMatchObject({ stale: true, staleReason: 'heartbeat_gap' });
+    expect(resyncs.at(-1)).toBe('heartbeat_gap');
   });
 
   it('stop closes everything and ignores late frames', () => {

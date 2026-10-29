@@ -1,10 +1,10 @@
-import { ApiError } from '@/api/errors';
+import { isDefinitiveError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
 import type { Alert, Task } from '@/api/types';
 import { applyAlertReply } from '@/features/supervisor/cache';
 import { staffKeys } from '@/features/supervisor/staffApi';
 import { serverNow } from '@/lib/serverClock';
-import { RealtimeEngine, type EngineHooks } from './engine';
+import { RealtimeEngine, type EngineEnv, type EngineHooks, type Transport } from './engine';
 import type { AcquireOptions, RealtimeHandle } from './manager';
 import type { ServerEvent } from './protocol';
 import { setChannelHealth } from './syncStore';
@@ -17,7 +17,6 @@ import { createSocketTransport } from './transport';
  * sound follows the alert lists (OpsArea): an `alert.updated` is applied to the cached lists at once so an
  * acknowledged escalation stops without waiting for the refetch.
  */
-const AUTH_RETRY_MS = 15_000;
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0';
 
 export function staffEvents(options: AcquireOptions) {
@@ -85,17 +84,19 @@ export function staffEvents(options: AcquireOptions) {
   };
 }
 
-export function startRealtime(options: AcquireOptions): RealtimeHandle {
+/** The staff engine hooks (exported for the runtime unit tests). */
+export function staffHooks(options: AcquireOptions): EngineHooks {
   const { qc } = options;
-  const transport = createSocketTransport();
-  const hooks: EngineHooks = {
-    async resync() {
+  return {
+    async resync(_reason, signal) {
       try {
         await qc.invalidateQueries({ queryKey: staffKeys.all }, { throwOnError: true });
+        if (signal.aborted) return { ok: false };
         void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true });
         return { ok: true, serverTime: new Date(serverNow()).toISOString() };
       } catch (error) {
-        return { ok: error instanceof ApiError };
+        // a board that could not be read (5xx, 429, no reply) is not a sync: «قديم» stays and it is tried again
+        return { ok: isDefinitiveError(error) };
       }
     },
     onEvent: staffEvents(options),
@@ -104,14 +105,16 @@ export function startRealtime(options: AcquireOptions): RealtimeHandle {
       audio_unlocked: false,
       app_version: APP_VERSION,
     }),
-    onAuthError: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true });
-      setTimeout(() => {
-        if (!engine.isStopped) transport.connect();
-      }, AUTH_RETRY_MS);
-    },
+    // closed or refused: `GET /v1/me` decides (S-01 when the session ended); otherwise the engine reconnects
+    checkSession: () => void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true }),
   };
-  const engine = new RealtimeEngine(transport, hooks);
+}
+
+export function startRealtime(
+  options: AcquireOptions,
+  deps: { transport?: Transport; env?: EngineEnv } = {},
+): RealtimeHandle {
+  const engine = new RealtimeEngine(deps.transport ?? createSocketTransport(), staffHooks(options), deps.env);
   engine.start();
   return { engine, stop: () => engine.stop() };
 }

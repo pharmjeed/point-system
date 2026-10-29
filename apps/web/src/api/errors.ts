@@ -81,6 +81,23 @@ export function isNetworkError(error: unknown): error is NetworkError {
   return error instanceof NetworkError;
 }
 
+/**
+ * Whether a failed read is the server's definitive answer — a deterministic 4xx that waiting will not change
+ * (no session, no assignment, no permission…) — rather than a failure to read the state at all (5xx such as
+ * INTERNAL_ERROR / SERVICE_UNAVAILABLE / DEPENDENCY_TIMEOUT, a proxy 502, RATE_LIMITED, a retryable code, no
+ * reply). The sync protocol counts only the former as a completed sync (PNT-065 acceptance 2, 02 §1.7).
+ */
+export function isDefinitiveError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    !error.retryable &&
+    error.code !== 'RATE_LIMITED' &&
+    error.code !== 'IDEMPOTENCY_IN_PROGRESS'
+  );
+}
+
 export function fallbackMessageAr(code: string, requestId: string | null = null): string {
   const known = (errorMessagesAr as Record<string, string | undefined>)[code];
   if (known && known !== '—') return known; // «—» = webhook-only code without UI text (08 §4.13)

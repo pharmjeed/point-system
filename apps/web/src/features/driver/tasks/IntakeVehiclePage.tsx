@@ -93,9 +93,10 @@ export function IntakeVehiclePage() {
 function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  // 02 §1.6/§1.7: offline or stale data → commands wait (PNT-065)
+  // 02 §1.6/§1.7: stale data → «التالي» waits for the resync (PNT-065); without a confirmed connection it
+  // moves on locally and D-06 sends the same step later (02 D-05 «بلا اتصال … «التالي» ينقل محليًا»)
   const gate = useCommandGate();
-  const online = !gate.offline;
+  const online = !gate.unconfirmed;
   const refresh = useRefreshHome();
   const storeTicket = useStoreTicket();
   const pushToast = useUiStore((s) => s.pushToast);
@@ -136,6 +137,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   const err = (f: Field) => local[f] ?? errors.fields[f];
 
   const onNext = async () => {
+    if (gate.stale && online) return; // the button is disabled; Enter in a field must not send either
     setChecked(true);
     if (!plateComplete(plate) || !makeComplete(vehicle) || !colorComplete(vehicle) || !paperSerial.trim())
       return;
@@ -188,7 +190,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
     <TaskScreen
       title={withTicket(d05.title, ticket.display_number)}
       backTo={paths.driverHome}
-      actions={<DiscardDraft ticket={ticket} disabled={save.pending} />}
+      actions={<DiscardDraft ticket={ticket} disabled={save.pending || !gate.ready} />}
     >
       <Stepper current={0} steps={SAUDI_STEPS} />
       {ticket.event_name_ar ? <p className="m-0">{fmt(d05.event, { event: ticket.event_name_ar })}</p> : null}
@@ -287,7 +289,13 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
             }
           />
         ) : null}
-        <Button type="submit" size="lg" id="intake-next" loading={save.pending}>
+        <Button
+          type="submit"
+          size="lg"
+          id="intake-next"
+          loading={save.pending}
+          disabled={gate.stale && online}
+        >
           {d05.next}
         </Button>
       </form>

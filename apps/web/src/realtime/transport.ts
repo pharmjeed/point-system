@@ -6,6 +6,9 @@ import type { Transport } from './engine';
  * path `VITE_WS_PATH` (`/ws`), the session cookie sent with the handshake (`withCredentials`), WebSocket
  * first with the long-polling fallback when the server allows it (`WS_TRANSPORTS`), automatic reconnection
  * with a randomised backoff (1 s doubling to 15 s). The client never asks for rooms: the server decides.
+ * A disconnect the server made (`io server disconnect`: `socket.disconnect(true)` after `session.revoked` or
+ * a failed revalidation) is reported as `closed`: Socket.IO does not reconnect it (socket.active is false),
+ * the engine does after checking the session.
  */
 export function createSocketTransport(): Transport {
   const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
@@ -39,8 +42,9 @@ export function createSocketTransport(): Transport {
     },
     onStatus(listener) {
       const onConnect = () => listener('connected');
-      const onDisconnect = () => {
-        if (!manual) listener('disconnected');
+      const onDisconnect = (reason: Socket.DisconnectReason) => {
+        if (manual) return;
+        listener(reason === 'io server disconnect' ? 'closed' : 'disconnected');
       };
       const onError = (error: Error & { data?: { code?: unknown } }) => {
         const code = typeof error?.data?.code === 'string' ? error.data.code : undefined;

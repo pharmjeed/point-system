@@ -110,7 +110,7 @@ export function VehiclesPage() {
           <EmptyState icon={Car} title={d12.emptyAll} />
         )
       ) : (
-        <div className="pt-live" data-stale={gate.offline}>
+        <div className="pt-live" data-stale={gate.unconfirmed || gate.stale}>
           <div className="pt-live__cards">
             <ul className="pt-list" aria-label={d12.title} aria-busy={list.isFetching}>
               {items.map((t) => (
