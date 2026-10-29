@@ -831,7 +831,7 @@ paths:
       operationId: heartbeat
       summary: نبضة اتصال بديلة عن WebSocket
       tags: [Me & Duty]
-      description: 'الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا'
+      description: 'الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا ولا يرفع duty_sessions.version (DEC-218). ترويسة Idempotency-Key إن أُرسلت تُتجاهل: لا تُخزن ولا يُعاد رد محفوظ، والجسم يُتحقق منه دائمًا (DEC-368)'
       requestBody:
         required: true
         content:

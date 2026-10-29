@@ -533,7 +533,8 @@
 | `40001` serialization_failure، `40P01` deadlock_detected | إعادة المعاملة كاملة تلقائيًا حتى 3 مرات بتأخير عشوائي 20–80 ms (القاموس §14ب)، ثم `SERVICE_UNAVAILABLE` (`retryable: true`) |
 | `55P03` lock_not_available (`lock_timeout` = 3s) | لا يُعاد على الخادم: عند L0 (صف `idempotency_keys`) ← `IDEMPOTENCY_IN_PROGRESS`؛ غير ذلك ← `SERVICE_UNAVAILABLE` (`retryable: true`) |
 | `57014` query_canceled (`statement_timeout` = 5s) | `SERVICE_UNAVAILABLE` |
-| `08xxx` اتصال، `53xxx` موارد | `SERVICE_UNAVAILABLE` |
+| `08xxx` اتصال، `53xxx` موارد، `57P0x` إيقاف الخادم أو إنهاء الجلسة | `SERVICE_UNAVAILABLE` (`Retry-After: 2`) |
+| قاعدة لا يمكن الوصول إليها بلا SQLSTATE: أخطاء المقبس التي ترفعها طبقة قاعدة البيانات (`ECONNREFUSED`، `ECONNRESET`، `EPIPE`…)، «Connection terminated unexpectedly»، مهلة الاتصال بالمجمّع (`DATABASE_CONNECT_TIMEOUT_MS`)، مهلة القراءة في العميل (مهلة الجملة + 2 ثانية)؛ و`55000` «not currently accepting connections» | `SERVICE_UNAVAILABLE` (`Retry-After: 2`) في الـHTTP ومصافحة `/ws` وإقرار النبضة؛ ورمز مقبس من خارج طبقة القاعدة (جسم طلب أُجهض) أو كائن خطأ HTTP ليس انقطاعًا لها (DEC-370، DEC-375) |
 
 ---
 
@@ -632,7 +633,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
 ### 9.3 الاتصال الفوري
 
-رفض مصافحة `/ws` يرسل `connect_error` ببيانات `{ code }` من رموز الدخول (`AUTH_UNAUTHENTICATED`، `AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`). ردود أحداث العميل (`client.heartbeat`، `client.offer_seen`) تستخدم الغلاف نفسه في دالة الإقرار. إبطال الجلسة أثناء الاتصال يُرسل `session.revoked` بـ`reason` ثم يقطع الاتصال.
+رفض مصافحة `/ws` يرسل `connect_error` ببيانات `{ code }` من رموز الدخول (`AUTH_UNAUTHENTICATED`، `AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`)، أو `SERVICE_UNAVAILABLE` حين لا تُبلغ القاعدة (§5.4). ردود أحداث العميل (`client.heartbeat`، `client.offer_seen`) تستخدم الغلاف نفسه في دالة الإقرار، وإقرار النبضة أثناء انقطاع القاعدة `SERVICE_UNAVAILABLE`. إبطال الجلسة أثناء الاتصال يُرسل `session.revoked` بـ`reason` ثم يقطع الاتصال؛ ولا يُبطل جلسةَ مقبس إلا رفضٌ من رموز `AUTH_*`، فلا يقرأ الجهاز انقطاع القاعدة إبطالًا (DEC-370).
 
 ### 9.4 السجلات
 

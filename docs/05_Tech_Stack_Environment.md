@@ -201,7 +201,7 @@ packages/server/src/
 - الأقفال عبر مساعدات مرتبة فقط وبترتيب Canon §14ب (L0…L10): `lockIdempotency` (L0، أول جملة في الأمر) ← `lockPools(tx, ids)` (L1) ← `lockEvents(tx, ids)` (L2؛ `FOR SHARE` للتحصيل وتسليم النقد) ← `lockTransfers` ← `lockAssignments` ← `lockUsers` (L3) ← `lockTasks(tx, ids)` (L4) ← `lockTickets(tx, ids)` (L5) ← `lockCycles` (L6) ← `lockOffers` (L7) ← `lockDutySessions(tx, userIds)` (L8)، ثم الصفوف التابعة (L9) والإلحاقيات (L10) آخر المعاملة؛ النمط `FOR NO KEY UPDATE`. المساعدات تفرض الترتيب وترمي خطأ برمجيًا إن خولف، مع الاستثناء الوحيد في Canon §14ب: معاملة تحمل L1 يجوز لها بعد أقفال أمرها قفل صفوف إضافية من L4–L8 **لنفس المجموعة** لتمريرة التوزيع و`settleDriverAfterTask`.
 - ممنوع أي استدعاء شبكي داخل المعاملة (Graph API، Push، رفع S3). يُراجع في مراجعة الكود ويُغطى بقاعدة lint مخصصة على مجلدات `use-cases`.
 - `SET LOCAL lock_timeout` و`statement_timeout` من المتغيرات `DATABASE_LOCK_TIMEOUT_MS` (3000) و`DATABASE_STATEMENT_TIMEOUT_MS` (5000).
-- الانتظار محدود في جهة العميل أيضًا (DEC-PROPOSED-8، 17 §12): مقعد في المجمّع أو اتصال جديد لا يُنال خلال `DATABASE_CONNECT_TIMEOUT_MS` (5000)، وجملة لا يصل ردها خلال مهلة الجملة + 2 ثانية (قاعدة متوقفة لا تطبق `statement_timeout` بنفسها) ← `SERVICE_UNAVAILABLE` (`Retry-After: 2`)؛ الاتصال الذي انتهت مهلته يُغلق ولا يعود إلى المجمّع، ولا يُرسل عليه `ROLLBACK` (الخادم يتراجع عن معاملة الاتصال المغلق).
+- الانتظار محدود في جهة العميل أيضًا (DEC-375، 17 §12): مقعد في المجمّع أو اتصال جديد لا يُنال خلال `DATABASE_CONNECT_TIMEOUT_MS` (5000؛ 0 = بلا حد)، وجملة لا يصل ردها خلال مهلة الجملة + 2 ثانية (قاعدة متوقفة لا تطبق `statement_timeout` بنفسها؛ مهلة المجمّع للقراءات خارج المعاملة ومهلة المعاملة نفسها داخلها) ← `SERVICE_UNAVAILABLE` (`Retry-After: 2`، DEC-370)؛ الاتصال الذي انتهت مهلته يُغلق ولا يعود إلى المجمّع، ولا يُرسل عليه `ROLLBACK` (الخادم يتراجع عن معاملة الاتصال المغلق)؛ و`/health/ready` يرد خلال ثانيتين، وعملاء `LISTEN` (Outbox والاتصال الفوري) بالحدود نفسها. القراءة الطويلة تُجرى في معاملة بمهلتها (كالتصدير بـ30 ثانية)، لأن القراءة خارج المعاملة التي تتجاوز 7 ثوانٍ ترد `503`.
 - سياسة الإعادة (Canon §14ب): المعاملة كلها تُعاد حتى 3 مرات عند `40001`/`40P01` بتأخير عشوائي 20–80 ms (`point_db_tx_retries_total`)؛ تجاوز `lock_timeout` (`55P03`) لا يُعاد على الخادم، ويرد `IDEMPOTENCY_IN_PROGRESS` إن حدث عند L0 وإلا `SERVICE_UNAVAILABLE` (`retryable: true`).
 
 ### 7.5 الوقت
@@ -368,6 +368,8 @@ VITE_APP_VERSION=dev
 - **حراس الإقلاع (القرار DEC-298):** في `staging` و`production` يرفض الإقلاع كوكيًا لا يبدأ بـ`__Host-` أو بلا `SESSION_COOKIE_SECURE=true`، و`APP_BASE_URL` غير https، و`API_BASE_URL` من أصل آخر؛ وفي كل بيئة كوكي `__Host-` بلا Secure، و`WA_GRAPH_BASE_URL` غير https مع `WA_MODE=live`، وstaging حيًا بلا قائمة سماح، و`CHAOS_KILL_AT` في الإنتاج.
 - **التخزين على أصل التطبيق (القرار DEC-300):** مع MinIO المستضاف ذاتيًا `S3_ENDPOINT=https://{DOMAIN}` و`S3_FORCE_PATH_STYLE=true`، وCaddy يوجّه `/{S3_BUCKET_MEDIA}` و`/{S3_BUCKET_EXPORTS}` إلى MinIO؛ ومع S3 مُدار يُضبط `STORAGE_ORIGIN` في Caddy (لـ`img-src` و`connect-src`) ويحتاج الدلو CORS لأصل التطبيق.
 - **المراقب (القرار DEC-157):** `MONITOR_INTERVAL_S` فاصل `SystemMonitor` في العامل والـAPI معًا (الافتراضي 10 ثوانٍ، و0 يعطله كما في الاختبارات التي تستدعي دورته مباشرة).
+- **انتظار القاعدة (القرار DEC-375):** `DATABASE_CONNECT_TIMEOUT_MS` (5000، و0 = بلا حد) أقصى انتظار لمقعد في المجمّع أو اتصال جديد، ومهلة القراءة في العميل مهلة الجملة + 2 ثانية؛ بعدهما `SERVICE_UNAVAILABLE` (§7.4).
+- **`CHAOS_KILL_AT` (القرار DEC-369):** متغير اختبار فقط (نسخ الاختبار وملف الفوضى `pnpm ops:chaos`) ولذلك ليس في `.env.example`: قائمة بفواصل من أسماء نقاط القتل في 17 H-03؛ يُرفض به الإقلاع في الإنتاج (DEC-298) وفي أي بيئة لاسم غير معروف.
 - **مشغّل التخزين (القرار DEC-108):** S3 عند ضبط `S3_ENDPOINT` أو المفتاحين الثابتين معًا (`S3_ACCESS_KEY_ID` و`S3_SECRET_ACCESS_KEY`)، ودائمًا في `staging` و`production` (دور المثيل أو المهمة عبر سلسلة اعتماد AWS الافتراضية حين لا تُضبط مفاتيح ثابتة)؛ والحاوية في الذاكرة فقط في `local` و`test` دون أي إعداد S3، مع تحذير في `local` لأن الصور تضيع عند إعادة التشغيل.
 
 ---
@@ -706,7 +708,11 @@ pnpm test:e2e                       # Playwright
 pnpm --filter @point/web test:e2e:live   # G1 في المتصفح مقابل الـAPI الحقيقي وقاعدة مبذورة (TEST_DATABASE_URL)، DEC-359
 pnpm lint && pnpm typecheck
 pnpm db:drift                       # مقارنة الترحيلات مع docs/06_schema.sql
+pnpm test:race                      # حزمة سباق التوزيع RACE_LOOPS مرة (50) ثم ثوابت المخطط (PNT-063)
+pnpm ops:load                       # ملف الحمل 17 H-08 (AC-13): 5 قاعات و50 سائقًا و100 ضغطة في دقيقة عبر k6، DEC-371
+pnpm ops:chaos                      # سيناريوهات الفوضى 17 H-03 و§12 (AC-06) من بناء الإنتاج، DEC-374
 pnpm ops:rehearsal                  # البروفة الآلية (17 H-10 الخطوة 1، TC-036) على قاعدة مؤقتة بالعمليات الحقيقية والمحاكي، DEC-366
+pnpm ops:restore-drill              # تمرين النسخ والاستعادة الآلي (TC-037، H-09)، DEC-303
 ```
 
 ### 18.2 بيانات `seed` للتطوير

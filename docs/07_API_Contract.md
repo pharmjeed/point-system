@@ -298,8 +298,8 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 
 #### `POST /v1/me/heartbeat` — نبضة اتصال بديلة عن WebSocket
 
-- الصلاحية: `auth.self` · مفتاح التكرار: — · نجاح: `200`
-- الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا
+- الصلاحية: `auth.self` · مفتاح التكرار: — (إن أُرسل يُتجاهل: لا يُخزن ولا يُعاد رد محفوظ، والجسم يُتحقق منه دائمًا، DEC-368) · نجاح: `200`
+- الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا ولا يرفع `duty_sessions.version` (DEC-218)
 - أحداث: `driver.connection_changed`
 
 ### 2.2 الاستلام والتذاكر (Canon §9.2)
@@ -1171,7 +1171,8 @@ Content-Type: application/json
 ### 4.1 الاتصال والمصادقة
 
 - خادم Socket.IO على أصل الـAPI بالمسار `/ws` (نقل websocket مع السماح بالرجوع لـpolling).
-- المصادقة بكوكي `__Host-point_sid` المرسل مع المصافحة، ويُرفض الاتصال إذا ترويسة `Origin` لا تطابق `APP_BASE_URL`. الجلسة المبطلة أو المقيدة تُرفض بـ`connect_error` ورسالة `{ "code": "AUTH_SESSION_REVOKED" }` أو ما يناسب من Canon §8.
+- المصادقة بكوكي `__Host-point_sid` المرسل مع المصافحة، ويُرفض الاتصال إذا ترويسة `Origin` لا تطابق `APP_BASE_URL`. الجلسة المبطلة أو المقيدة تُرفض بـ`connect_error` ورسالة `{ "code": "AUTH_SESSION_REVOKED" }` أو ما يناسب من Canon §8. وقاعدة لا يمكن الوصول إليها تُرفض بها المصافحة بـ`{ "code": "SERVICE_UNAVAILABLE" }` ولا تمس الجلسة؛ ولا يُبطل جلسةَ مقبس قائم إلا رفضٌ من رموز `AUTH_*` (المراجعة الدورية كل 60 ثانية التي لا تبلغ القاعدة تبقي المقبس، DEC-370).
+- العميل حين يغلق الخادم المقبس (`io server disconnect`) أو يرفض مصافحته — ولا يعيد Socket.IO الاتصال وحده بعدهما — يتحقق من الجلسة بـ`GET /v1/me` (الجلسة المنتهية ← D-15 ج أو S-01 ويتوقف)، وإلا يتصل من جديد بعد تراجع: ثانية تتضاعف حتى 15 ثانية بتذبذب ±50%، و15 ثانية بعد رفض مصافحة `AUTH_*`؛ وإعادة الاتصال تجري مزامنة §4.5 الكاملة (DEC-398).
 - لا يرسل العميل اشتراكات؛ **الخادم** يقرر الغرف بعد التحقق ويعيد حسابها عند بدء/إنهاء المناوبة، والنقل، وتغيير النطاق، والتعطيل:
 
 | الغرفة | من ينضم |
@@ -1181,7 +1182,7 @@ Content-Type: application/json
 | `venue:{venueId}:supervisors` | المشرف لكل موقع في نطاقه، والإدارة/المالك عند فتح لوحة الموقع |
 | `org:{orgId}:admins` | الإدارة والمالك |
 
-عند النقل أو التعطيل أو سحب النطاق يُخرج الخادم الاتصال من الغرف القديمة فورًا، ثم يرسل `session.revoked` عند إبطال الجلسة.
+عند النقل أو التعطيل أو سحب النطاق يُخرج الخادم الاتصال من الغرف القديمة فورًا، ثم يرسل `session.revoked` عند إبطال الجلسة فعلًا (لا عند تعذر الوصول إلى القاعدة، DEC-370).
 
 ### 4.2 الغلاف
 
@@ -1226,7 +1227,7 @@ Content-Type: application/json
 
 | الحدث | الحمولة | الرد (ack) |
 |---|---|---|
-| `client.heartbeat` | `{visible: boolean, audio_unlocked: boolean, last_event_id, app_version}` كل `heartbeat.interval_s` (15 ث)؛ الجهاز معروف من الجلسة (`auth_sessions.device_id`) | `{server_time, connection_state, sync_required}` |
+| `client.heartbeat` | `{visible: boolean, audio_unlocked: boolean, last_event_id, app_version}` كل `heartbeat.interval_s` (15 ث)؛ الجهاز معروف من الجلسة (`auth_sessions.device_id`)؛ وحين يتعطل المقبس يرسل السائق المناوب وحده `POST /v1/me/heartbeat` بالفاصل نفسه وبلا `Idempotency-Key` (DEC-378) | `{server_time, connection_state, sync_required}`، أو غلاف الخطأ `SERVICE_UNAVAILABLE` حين لا تُبلغ القاعدة (الجلسة والمقبس باقيان، DEC-370) |
 | `client.offer_seen` | `{offer_id, receive_latency_ms?}` عند ظهور البطاقة فعليًا على الشاشة | `{ok: true}` — يملأ `offer_recipients.seen_at` مرة واحدة ويكتب `offer_card_seen` (`via: ws`) في المعاملة نفسها (DEC-166، 15 §9.4) |
 
 ### 4.5 دلالات التسليم والمزامنة
