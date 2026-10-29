@@ -93,6 +93,8 @@ export function driverEvents(options: AcquireOptions) {
   const refreshHome = () => void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true });
   const toast = (message: string, tone: 'info' | 'error' = 'info') =>
     useUiStore.getState().pushToast({ message, tone });
+  /** The newest ticket version seen per ticket: an older `ticket.updated` arriving late raises no notice. */
+  const ticketVersions = new Map<string, number>();
 
   /** `task.updated` with this driver's TaskCard (07 §4.3): its slot, then what 14 §3.1–§3.2 announce. */
   const onTaskCard = (payload: TaskCard & { cause?: string }, now: number) => {
@@ -211,9 +213,13 @@ export function driverEvents(options: AcquireOptions) {
           void playSound('reminder', { key: `task:${parking.task.id}` });
         }
         updateHome(qc, (h) => applyTicketSummary(h, summary as TicketSummary, homeRegistry, now));
-        // 09 §5.1: the pending QR confirmation reaches the privileged viewer only; D-07's dialog keeps it
-        if (wa_link_pending !== undefined) useLinkStore.getState().notePending(summary.id, wa_link_pending);
-        waNotices(summary as TicketSummary, cause, message);
+        const fresh = summary.version >= (ticketVersions.get(summary.id) ?? 0);
+        if (fresh) {
+          ticketVersions.set(summary.id, summary.version);
+          // 09 §5.1: the pending QR confirmation reaches the privileged viewer only; D-07's dialog keeps it
+          if (wa_link_pending !== undefined) useLinkStore.getState().notePending(summary.id, wa_link_pending);
+          waNotices(summary as TicketSummary, cause, message);
+        }
         const detail = qc.getQueryData<TicketDetail>(queryKeys.ticket(summary.id));
         // a message state (W-05 failed on D-10 / D-11) does not move the ticket's version: read it again
         if (detail && (detail.version < summary.version || message))

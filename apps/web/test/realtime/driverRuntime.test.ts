@@ -419,6 +419,17 @@ describe('ticket.updated and the WhatsApp link (02 D-07, D-10, D-11; 14 §5.1; 0
     expect(useFieldStore.getState().notices).toEqual([]);
   });
 
+  it('an older ticket.updated arriving late raises no notice (versions)', () => {
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 7 })));
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'failed', version: 6 }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
   it('the customer stopped the messages: «العميل أوقف رسائل واتساب…» (14 §5.1)', () => {
     onEvent(
       event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'opted_out' })),
