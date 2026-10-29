@@ -79,8 +79,6 @@ export const s06 = {
   /** the DEC-32 confirmation of «تعطيل الحساب» and «إنهاء المناوبة قسرًا»: what happens automatically */
   autoRelease:
     'المهمة التالية المحجوزة {next} ومهمة الإحضار المقبولة قبل استلام المفتاح ستعودان للطابور بأولويتهما، وتُسحب عروضه الفردية.',
-  /** CUSTODY_OPEN (disable) and DUTY_END_BLOCKED_CUSTODY (forced end): the same list of `details.items` */
-  custodyOpen: 'لا يمكن تنفيذ الإجراء وبعهدة السائق: {items}.',
   // not in 02 (docs/progress/notes/pnt-023.md)
   venue: 'الموقع',
   assignReason: 'السبب (اختياري)',
@@ -577,7 +575,7 @@ export const s07 = {
   acceptedNote: '(يُعاد للطابور إن وُجد)',
   nextTask: 'مهمة تالية محجوزة: {v}',
   nextNote: 'ستُعاد لطابور {venue}',
-  offers: 'عروض فردية حية',
+  offers: 'عروض فردية حية: {n}',
   offersNote: 'ستُسحب',
   mustRelease: '#{n} — يجب إعادته أو نقله رسميًا',
   after: 'بعد النقل: تُنهى جلسته الحالية، وتنقطع صلاحياته في {venue}، ويحتفظ السجل التاريخي بموقعه الأصلي.',

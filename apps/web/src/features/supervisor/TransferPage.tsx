@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { queryKeys } from '@/api/queryClient';
 import type { CustodyBlockItem, DriverListItem, DriverTransfer, Me, Venue } from '@/api/types';
 import { paths } from '@/app/paths';
 import {
@@ -101,7 +102,13 @@ function TransferForm({ me, item, onBack }: { me: Me; item: DriverListItem; onBa
       commands.transferDriver(driverId, body, key),
     {
       successMessage: null,
-      invalidate: [staffKeys.driver(driverId), staffKeys.driverAssignments(driverId), staffKeys.boards()],
+      // S-05 / S-06 read `queryKeys.drivers` (outside ['staff']): back on S-06 the new assignment shows at once
+      invalidate: [
+        staffKeys.driver(driverId),
+        staffKeys.driverAssignments(driverId),
+        staffKeys.boards(),
+        queryKeys.drivers,
+      ],
       onSuccess: (t) => setDone(t),
     },
   );
@@ -230,7 +237,7 @@ function PendingTransfer({
   const cancel = useStaffCommand(
     (reason: string, key: string) => commands.cancelTransfer(transfer.id, { reason }, key),
     {
-      invalidate: [staffKeys.driverAssignments(driverId), staffKeys.driver(driverId)],
+      invalidate: [staffKeys.driverAssignments(driverId), staffKeys.driver(driverId), queryKeys.drivers],
       onSuccess: () => setOpen(false),
       onPermissionDenied: () => setOpen(false),
     },

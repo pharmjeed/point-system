@@ -476,16 +476,6 @@ function EditDriverSheet({
   );
 }
 
-/** «مفتاح #125، مركبة #125» — the items of `details.items` (08 §4) as one line. */
-function itemsText(items: readonly CustodyItem[]): string {
-  return items
-    .map((i) => {
-      const label = (s06.itemType as Record<string, string>)[i.type] ?? i.type;
-      return i.display_number ? `${label} #${i.display_number}` : label;
-    })
-    .join('، ');
-}
-
 /** `details.items` of a custody refusal (CUSTODY_OPEN, DUTY_END_BLOCKED_CUSTODY), or null. */
 function custodyRefusal(error: unknown, code: string): CustodyItem[] | null {
   return error instanceof ApiError && error.code === code && Array.isArray(error.details.items)
@@ -512,7 +502,8 @@ function CustodyPreview({ checklist, known }: { checklist: TransferChecklist; kn
 
 /**
  * «تعطيل الحساب» with a mandatory reason (02 S-06, DEC-32). `CUSTODY_OPEN` lists what the driver holds
- * (`details.items`) in place of the snapshot, with the S-06 text; the server decides, there is no override.
+ * (`details.items`) in place of the snapshot, under the server's `message_ar` (02 §1.9, DEC-80, DEC-351: the 02
+ * error table sets the handling, the text is 08's); the server decides, there is no override.
  */
 function DisableDialog({ me, driver, onClose }: { me: Me; driver: DriverListItem; onClose: () => void }) {
   const qc = useQueryClient();
@@ -527,7 +518,7 @@ function DisableDialog({ me, driver, onClose }: { me: Me; driver: DriverListItem
   const [reason, setReason] = useState('');
   /** under the reason field: the local check and the server's REASON_REQUIRED */
   const [reasonError, setReasonError] = useState<string | null>(null);
-  /** under the list: the refusal (CUSTODY_OPEN with its items, or the server's text) */
+  /** under the list: the refusal (the server's text, with the items of CUSTODY_OPEN) */
   const [failure, setFailure] = useState<{ message: string; items: CustodyItem[] } | null>(null);
   const disable = useCommand((body: { reason: string }, key: string) => disableDriver(user.id, body, key));
   const confirm = async () => {
@@ -542,14 +533,8 @@ function DisableDialog({ me, driver, onClose }: { me: Me; driver: DriverListItem
       pushToast({ message: ui.saved, tone: 'success' });
       onClose();
     } catch (e) {
-      const items = custodyRefusal(e, 'CUSTODY_OPEN');
       if (e instanceof ApiError && e.code === 'REASON_REQUIRED') setReasonError(e.message_ar);
-      else
-        setFailure(
-          items?.length
-            ? { message: fmt(s06.custodyOpen, { items: itemsText(items) }), items }
-            : { message: displayMessage(e), items: [] },
-        );
+      else setFailure({ message: displayMessage(e), items: custodyRefusal(e, 'CUSTODY_OPEN') ?? [] });
     } finally {
       void qc.invalidateQueries({ queryKey: queryKeys.drivers });
       void qc.invalidateQueries({ queryKey: staffKeys.boards() });
@@ -584,8 +569,9 @@ function DisableDialog({ me, driver, onClose }: { me: Me; driver: DriverListItem
 /**
  * «إنهاء المناوبة قسرًا» (02 S-06; `POST /v1/duty-sessions/{sessionId}/force-end`, `duty.force_end` is the
  * supervisor's alone; 10 §9.5): mandatory reason and the DEC-32 snapshot; DUTY_END_BLOCKED_CUSTODY lists
- * `details.items` with the S-06 text. The reserved next task and a retrieval accepted before the key pickup go
- * back to the queue with their priority and the single offers are withdrawn (server side).
+ * `details.items` («بالقائمة نفسها», 02 S-06) under the server's `message_ar` (DEC-80). The reserved next task and a
+ * retrieval accepted before the key pickup go back to the queue with their priority and the single offers are
+ * withdrawn (server side).
  */
 function ForceEndDialog({
   me,
@@ -625,7 +611,7 @@ function ForceEndDialog({
       destructive
       confirmLabel={s06.forceEnd}
       pending={cmd.pending}
-      error={items?.length ? fmt(s06.custodyOpen, { items: itemsText(items) }) : cmd.message}
+      error={cmd.message}
       reasonError={cmd.fields.reason}
       onConfirm={(reason) => cmd.run(reason)}
     >

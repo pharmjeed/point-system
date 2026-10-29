@@ -253,8 +253,8 @@ test('disabling a driver who holds a key lists the items (CUSTODY_OPEN); reset-s
   await expect(dialog.getByText(errorMessagesAr.REASON_REQUIRED)).toBeVisible();
   await dialog.getByLabel('السبب (إلزامي)').fill('انتهاء العقد');
   await dialog.getByRole('button', { name: 'تعطيل الحساب' }).click();
-  // 02 S-06: «لا يمكن تنفيذ الإجراء وبعهدة السائق: {العناصر}.» from `details.items` (staff-gaps sweep)
-  await expect(dialog.getByText('لا يمكن تنفيذ الإجراء وبعهدة السائق: مركبة #9، مفتاح #9.')).toBeVisible();
+  // the server's `message_ar` (02 §1.9, DEC-80) over the items of `details.items` (02 S-06, DEC-32)
+  await expect(dialog.getByText(errorMessagesAr.CUSTODY_OPEN)).toBeVisible();
   await expect(dialog.getByTestId('custody-checklist')).toContainText('#9 — يجب إعادته أو نقله رسميًا');
   expect(drv2.status).toBe('active');
   await dialog.getByRole('button', { name: 'إلغاء' }).click();
