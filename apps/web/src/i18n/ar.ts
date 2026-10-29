@@ -800,6 +800,8 @@ export const live = {
   codeSendFailed: 'تعذر إرسال رمز التسليم للعميل. أعد الإرسال أو اطلب استثناء المشرف.',
   codeExpired: 'انتهت صلاحية رمز التسليم — أعد الإرسال للعميل',
   codeLocked: 'تجاوز العميل عدد المحاولات — تواصل مع المشرف',
+  /** 14 §3.4 handover.code_issued: a code this screen did not ask for (a supervisor's reissue, DEC-207). */
+  codeIssued: 'أُرسل الرمز للعميل',
   /** 12 §7.6 / 14 §5.1: the customer stopped the messages («إيقاف») — a notice to the drivers concerned. */
   optedOut: 'العميل أوقف رسائل واتساب — سلّمه شفهيًا أو بالتذكرة الورقية',
 } as const;
