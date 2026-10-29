@@ -22,7 +22,7 @@ import {
   type Reply,
   type RoutePattern,
 } from './http';
-import type { FUser, World } from './model';
+import type { FakeWhatsApp, FUser, World } from './model';
 import { FakeRealtime, type LiveView } from './realtime';
 import { seedWorld, type SeedOptions, type SeedUserKey } from './seed';
 
@@ -110,8 +110,15 @@ export class FakeServer {
   /** Uploaded objects by media id (the fake private object storage). */
   readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
   readonly devices = new Map<string, FDevice>();
-  /** `POST /v1/incidents` from the driver screens (D-13 «إبلاغ عن واقعة»). */
+  /** `POST /v1/incidents` from the driver screens (D-10 «إبلاغ عن مشكلة», D-11, D-13 «إبلاغ عن واقعة»). */
   readonly incidents: Array<Record<string, unknown>> = [];
+  /** The WhatsApp side (link codes, provider answers, the customer's actions): set by the driver routes. */
+  whatsapp!: FakeWhatsApp;
+  /**
+   * `GET /v1/me` `brand` (the org settings, canon §1 rule 4): empty unless a spec sets it — no brand literal
+   * lives in e2e support; the app then falls back to VITE_BRAND_*.
+   */
+  brand: Record<string, string> = {};
   /** `/ws` (off until a spec enables it): Socket.IO frames over `page.routeWebSocket` (PNT-065). */
   readonly realtime = new FakeRealtime(this);
   /** What a driver sees live (set by the driver routes; read by the realtime hub). */

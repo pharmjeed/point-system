@@ -24,6 +24,7 @@ async function fillVehicleStep(page: Page): Promise<void> {
   await page.getByLabel('الشركة المصنعة').selectOption('toyota');
   await page.getByLabel('الطراز (اختياري)').fill('كامري');
   await page.getByRole('radio', { name: 'أبيض' }).click();
+  await page.getByRole('radio', { name: 'تذكرة ورقية' }).click();
   await page.getByLabel('رقم التذكرة الورقية').fill(SERIAL);
 }
 

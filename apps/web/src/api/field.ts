@@ -32,6 +32,7 @@ import type {
   TicketSummary,
   UploadInstruction,
   VehicleInfo,
+  WaLinkResult,
 } from './types';
 
 /**
@@ -247,6 +248,34 @@ export async function submitIntake(
 ): Promise<TicketDetail> {
   return (
     await api.post<TicketDetail>(`/v1/tickets/${enc(ticketId)}/submit-intake`, { body, idempotencyKey: key })
+  ).data;
+}
+
+/**
+ * D-06 (QR mode, right before the submit) and D-07: `direct` sends W-01 again to the ticket's number (the retry
+ * of D-07, DEC-193), `qr` issues a link code for the customer-brand QR panel (07 `linkWhatsApp`, `wa.link`).
+ */
+export async function linkWhatsApp(
+  ticketId: string,
+  body: { method: 'direct' | 'qr' },
+  key: string,
+): Promise<WaLinkResult> {
+  return (
+    await api.post<WaLinkResult>(`/v1/tickets/${enc(ticketId)}/whatsapp-link`, { body, idempotencyKey: key })
+  ).data;
+}
+
+/** D-07 «هل هو جوال العميل الذي أمامك؟» (07 `confirmWhatsAppLink`): `matches` links or rejects the sender. */
+export async function confirmWhatsAppLink(
+  ticketId: string,
+  body: { link_code_id: string; matches: boolean },
+  key: string,
+): Promise<TicketDetail> {
+  return (
+    await api.post<TicketDetail>(`/v1/tickets/${enc(ticketId)}/whatsapp-link/confirm`, {
+      body,
+      idempotencyKey: key,
+    })
   ).data;
 }
 

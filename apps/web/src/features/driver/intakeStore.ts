@@ -4,6 +4,8 @@ import type { IntakePatch } from '@/api/field';
 import type { MediaKind } from '@/api/types';
 import { useFieldStore } from '@/stores/field';
 import type { PlateForm, VehicleForm } from './fieldModel';
+import type { IntakeChannel } from './linkModel';
+import { useLinkStore, type LinkMethod } from './linkStore';
 
 /**
  * The open intake drafts (02 D-05, D-06). In memory they follow the screens; ./intakePersistence.ts mirrors
@@ -32,13 +34,26 @@ export type IntakeCommand = 'step1' | 'save' | 'submit';
 export interface IntakeDraft {
   plate?: PlateForm;
   vehicle?: VehicleForm;
+  /** «تذكرة العميل» and «طريقة الربط» of D-05 (the method is local only: 07 has no field for it). */
+  channel?: IntakeChannel;
+  method?: LinkMethod;
+  /**
+   * The customer's number as typed for the direct link, and the verbal consent: kept with the current draft
+   * only (05 §14 «لا لبيانات العميل خارج مسودة الاستلام الجارية»; 09 §5.1 the creator during `received`),
+   * gone with it (submitted, discarded, sign-out).
+   */
+  phone?: string;
+  consent?: boolean;
   paperSerial?: string;
   keyTag?: string;
   notes?: string;
   /** D-05 «التالي» sent without a reply (offline / timeout): retried from D-06. */
   pendingSave: IntakePatch | null;
-  /** A business error of that retried PATCH, shown back on D-05 (02 D-06 table). */
-  step1Error: { code: string; message: string } | null;
+  /**
+   * A business error of that retried PATCH or of the submit, shown back on D-05 (02 D-06 table); `missing`
+   * is INTAKE_INCOMPLETE's `details.missing` (the fields to highlight).
+   */
+  step1Error: { code: string; message: string; missing?: string[] } | null;
   photos: Record<string, PhotoSlot>;
   /** The unfinished commands of this intake (key + body fingerprint). */
   intents?: Partial<Record<IntakeCommand, CommandIntent>>;
@@ -149,4 +164,5 @@ export function step1Session(ticketId: string): CommandSession<IntakePatch> {
 export function clearFieldData(): void {
   useIntakeStore.getState().clearAll();
   useFieldStore.getState().reset();
+  useLinkStore.getState().reset();
 }

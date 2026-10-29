@@ -31,6 +31,10 @@ interface DraftRow {
   savedAt: number;
   plate?: IntakeDraft['plate'];
   vehicle?: IntakeDraft['vehicle'];
+  channel?: IntakeDraft['channel'];
+  method?: IntakeDraft['method'];
+  phone?: string;
+  consent?: boolean;
   paperSerial?: string;
   keyTag?: string;
   notes?: string;
@@ -81,6 +85,10 @@ function rowOf(userId: string, ticketId: string, draft: IntakeDraft): DraftRow {
     savedAt: Date.now(),
     plate: draft.plate,
     vehicle: draft.vehicle,
+    channel: draft.channel,
+    method: draft.method,
+    phone: draft.phone,
+    consent: draft.consent,
     paperSerial: draft.paperSerial,
     keyTag: draft.keyTag,
     notes: draft.notes,
@@ -168,6 +176,10 @@ export async function hydrateIntake(userId: string, ticketId: string): Promise<P
   store.update(ticketId, {
     plate: row?.plate,
     vehicle: row?.vehicle,
+    channel: row?.channel,
+    method: row?.method,
+    phone: row?.phone,
+    consent: row?.consent,
     paperSerial: row?.paperSerial,
     keyTag: row?.keyTag,
     notes: row?.notes,

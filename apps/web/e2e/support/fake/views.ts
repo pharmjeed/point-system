@@ -105,8 +105,8 @@ export function meView(s: FakeServer, u: FUser, session?: Session) {
       pending: u.must_change_secret ? ['secret_change'] : [],
       device_id: session?.deviceId ?? null,
     },
-    // no brand literals in e2e support (canon §1): the app falls back to VITE_BRAND_*
-    brand: {},
+    // no brand literals in e2e support (canon §1): a spec sets them, else the app falls back to VITE_BRAND_*
+    brand: { ...s.brand },
     heartbeat: { interval_s: 15, uncertain_after_s: 45, offline_after_s: 120 },
   };
 }

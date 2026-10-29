@@ -468,6 +468,20 @@ export const d05 = {
   paperSerial: 'رقم التذكرة الورقية',
   paperSerialPlaceholder: '004521',
   paperHint: 'انسخ الرقم المطبوع على الكعب كما هو.',
+  /** «تذكرة العميل» (SegmentedControl) and «طريقة الربط» (Radio) — 02 D-05 «قناة العميل». */
+  channel: 'تذكرة العميل',
+  channels: { whatsapp: 'واتساب', paper: 'تذكرة ورقية' },
+  linkMethod: 'طريقة الربط',
+  methods: { direct: 'رقم جوال العميل', qr: 'رمز QR يمسحه العميل' },
+  phone: 'جوال العميل',
+  /**
+   * The question read to the customer names the business (12 §7.1, F-17): the customer brand comes from the
+   * settings (`{customer}`, canon §1 rule 4). The checkbox itself is `d13.consent` (DEC-PROPOSED-11 of
+   * notes/s5-web.md: no brand in the staff sentence) — docs/progress/notes/driver-gaps.md.
+   */
+  consentHint: 'اسأل العميل: «هل توافق أن تصلك تذكرة السيارة وتحديثاتها من {customer} على واتساب؟»',
+  /** The local check of the consent box before «التالي» (02 D-05 `CONSENT_REQUIRED` row). */
+  consentRequired: 'لا نرسل واتساب دون موافقة العميل.',
   next: 'التالي',
   notSaved: 'لم تُحفظ الخطوة الأولى على الخادم بعد؛ سنعيد المحاولة تلقائيًا.',
   /** The request banner over the intake (02 D-05 «عند بث أثناء التسجيل»), with «عرض» opening D-09. */
@@ -497,12 +511,50 @@ export const d06 = {
   needsConnection: 'يلزم الاتصال لإتمام التسجيل',
 } as const;
 
-/** D-07 — تأكيد التذكرة الورقية (mode C; WhatsApp modes A/B arrive with PNT-043/PNT-044) */
+/** D-07 — ربط واتساب (أ الإرسال المباشر، ب لوحة العميل، ج التذكرة الورقية) */
 export const d07 = {
   paperTitle: 'تذكرة ورقية · #{n}',
   paperText: 'سلّم العميل الكعب رقم {serial}، وعلّق الجزء الآخر على المفتاح.',
   stubGiven: 'سلّمت الكعب للعميل',
   toParking: 'متابعة إلى الصف',
+  // الوضع أ — إرسال مباشر لرقم العميل
+  title: 'ربط واتساب · #{n}',
+  status: { pending_send: 'جارٍ الإرسال…', linked: 'أُرسلت', failed: 'تعذر الإرسال' },
+  /**
+   * 02's «أُرسلت تذكرة «…» إلى الرقم المنتهي بـ 123.» without the customer brand: canon §1 rule 2 keeps it
+   * on the QR panel only (not in 02 as worded; docs/progress/notes/driver-gaps.md).
+   */
+  sentTo: 'أُرسلت تذكرة واتساب إلى الرقم المنتهي بـ {digits}.',
+  sentHint: 'يستطيع العميل طلب سيارته من زر «طلب السيارة» في الرسالة.',
+  notReceived: 'العميل لم تصله الرسالة؟',
+  notReceivedHint: 'تأكد مع العميل من الرقم، أو اطلب منه مسح رمز QR.',
+  failed: 'تعذر إرسال التذكرة. قد لا يكون الرقم على واتساب.',
+  resend: 'إعادة الإرسال',
+  viaQr: 'الربط عبر QR',
+  paper: 'تذكرة ورقية',
+  /** The channel is down while W-01 waits (02 D-07 `WA_CHANNEL_UNAVAILABLE` row; 12 §7.3). */
+  channelDown: 'واتساب متوقف مؤقتًا. سلّم العميل تذكرة ورقية.',
+  // الوضع ب — لوحة QR (علامة العميل) ومنطقة السائق
+  qrMeta: '{venue} · تذكرة {n} · صالح لمدة {ttl}',
+  waiting: 'بانتظار رسالتك…',
+  expired: 'انتهت صلاحية الرمز.',
+  /**
+   * The code is shown from the reply that issued it only (09 §5.1): after a reload, a rejected sender or the
+   * paper fallback there is none to show until «رمز جديد» (not in 02; docs/progress/notes/driver-gaps.md).
+   */
+  noCode: 'اضغط «رمز جديد» ليظهر رمز QR للعميل.',
+  newCode: 'رمز جديد',
+  changeMethod: 'تغيير الطريقة',
+  fullscreen: 'ملء الشاشة',
+  confirmTitle: 'وصلت رسالة الربط من رقم ينتهي بـ {digits}.',
+  /** The sender's number is not on the ticket's projection (F-21 username, or a parked ticket): not in 02. */
+  confirmTitleUnknown: 'وصلت رسالة الربط.',
+  confirmQuestion: 'هل هو جوال العميل الذي أمامك؟',
+  confirmYes: 'نعم، اربط التذكرة',
+  confirmNo: 'لا، ليس هو',
+  linked: 'تم الربط — وصلت التذكرة للعميل.',
+  /** «بعد المغادرة»: W-01 failed after the driver left D-07 (a frame notice with «فتح» → D-13). */
+  sendFailedAfter: 'تعذر إرسال تذكرة #{n} للعميل.',
 } as const;
 
 /** D-08 — إتمام الصف (وإعادة الصف) */
@@ -554,6 +606,9 @@ export const d10 = {
   startHint: 'عند البدء يصل العميل إشعار «جارٍ إحضار سيارتك».',
   readyHint: 'عند الضغط يصل العميل رمز التسليم. لا تطلب الرمز قبل هذه الخطوة.',
   needsConnection: 'يلزم الاتصال لتأكيد كل خطوة',
+  report: 'إبلاغ عن مشكلة',
+  /** W-05 failed (02 D-10 «فشل رسالة العميل»; a driver sees the W-01 and W-05 states only, 09 §5.1). */
+  messageFailed: 'تعذر إرسال الرسالة للعميل. أُبلغ المشرف.',
 } as const;
 
 /** D-11 — التسليم والتحصيل */
@@ -576,6 +631,11 @@ export const d11 = {
   newCode: 'إرسال رمز جديد',
   resent: 'أُرسل رمز جديد للعميل. الرمز السابق لم يعد صالحًا.',
   offline: 'لا يمكن التسليم دون اتصال. انتظر عودة الاتصال أو اطلب المشرف.',
+  /** «العميل لم يصله الرمز؟ │ إعادة الإرسال (متبقٍ 3)» and its Sheet (02 D-11). */
+  notReceived: 'العميل لم يصله الرمز؟',
+  resendLeft: 'إعادة الإرسال (متبقٍ {n})',
+  resendCode: 'إعادة إرسال الرمز',
+  askSupervisor: 'طلب المشرف (تحقق يدوي)',
 } as const;
 
 /** D-12 — المركبات */
@@ -634,6 +694,8 @@ export const d13 = {
   },
   reportDescription: 'الوصف',
   reported: 'أُبلغ المشرف.',
+  /** Shown when the WhatsApp link is `none` or `failed`; opens D-07 (02 D-13). */
+  relink: 'إعادة الربط بواتساب',
 } as const;
 
 /** D-14 — حسابي */
@@ -729,6 +791,12 @@ export const live = {
   offerBroadcast: 'طلب مفتوح للجميع — تذكرة {n}',
   inPageOnly: 'وضع التنبيه: داخل الصفحة فقط — أبقِ الصفحة مفتوحة أثناء الوردية',
   pushNotReaching: 'الإشعارات لا تصل لجهازك — أعد تفعيلها',
+  /** D-11 banners of 14 §5.1 (02 D-11 has no text for them): W-05 not sent, the code expired or locked. */
+  codeSendFailed: 'تعذر إرسال رمز التسليم للعميل. أعد الإرسال أو اطلب استثناء المشرف.',
+  codeExpired: 'انتهت صلاحية رمز التسليم — أعد الإرسال للعميل',
+  codeLocked: 'تجاوز العميل عدد المحاولات — تواصل مع المشرف',
+  /** 12 §7.6 / 14 §5.1: the customer stopped the messages («إيقاف») — a notice to the drivers concerned. */
+  optedOut: 'العميل أوقف رسائل واتساب — سلّمه شفهيًا أو بالتذكرة الورقية',
 } as const;
 
 /**

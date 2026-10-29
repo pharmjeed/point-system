@@ -43,7 +43,7 @@ export async function runG1Path(
     pending: p1.locator('#intake-start'),
   });
 
-  // D-05 — plate, make, model, colour, paper stub
+  // D-05 — plate, make, model, colour, the paper channel and its stub
   await expect(p1).toHaveURL(/\/d\/intake\/[^/]+\/vehicle$/);
   const ticketId = /\/d\/intake\/([^/]+)\/vehicle$/.exec(p1.url())?.[1] ?? '';
   const n = 1;
@@ -54,6 +54,7 @@ export async function runG1Path(
   await p1.getByLabel('الشركة المصنعة').selectOption('toyota');
   await p1.getByLabel('الطراز (اختياري)').fill('كامري');
   await p1.getByRole('radio', { name: 'أبيض' }).click();
+  await p1.getByRole('radio', { name: 'تذكرة ورقية' }).click();
   await p1.getByLabel('رقم التذكرة الورقية').fill(G1.serial);
   await pressCommand(drv1.log, 'PATCH /v1/tickets/:ticketId/intake', p1.locator('#intake-next'));
 

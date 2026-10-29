@@ -568,7 +568,7 @@ export interface TicketDetail extends TicketSummary {
     consent?: ConsentInfo | null;
     opted_out?: boolean;
   } | null;
-  wa_link_pending?: { link_code_id: string; inbound_phone_masked: string; received_at: string } | null;
+  wa_link_pending?: WaLinkPending | null;
   paper_serial?: string | null;
   key_tag?: string | null;
   inspection_status?: InspectionStatus;
@@ -592,6 +592,37 @@ export interface TicketDetail extends TicketSummary {
   submitted_at?: string | null;
   parked_at?: string | null;
   delivered_at?: string | null;
+}
+
+/** A QR-link message waiting for «هل هذا العميل أمامك؟» (07 `TicketDetail.wa_link_pending`, masked number only). */
+export interface WaLinkPending {
+  link_code_id: string;
+  inbound_phone_masked: string;
+  received_at: string;
+}
+
+export type LinkCodeStatus = 'active' | 'pending_confirmation' | 'consumed' | 'expired' | 'revoked';
+
+/**
+ * `LinkCodeQr` (07): the D-07 customer panel. The code and its wa.me link exist only in the reply of
+ * `POST /v1/tickets/{ticketId}/whatsapp-link` (09 §5.1 «للسائق الطالب فقط … طالما هو active»): kept in memory.
+ */
+export interface LinkCodeQr {
+  link_code_id: string;
+  code: string;
+  status: LinkCodeStatus;
+  expires_at: string;
+  wa_me_url: string;
+  prefilled_text: string;
+  qr_text: string;
+}
+
+/** `WaLinkResult` (07): the reply of `POST /v1/tickets/{ticketId}/whatsapp-link`. */
+export interface WaLinkResult {
+  method: 'direct' | 'qr';
+  wa_link_status: WaLinkStatus;
+  channel_health: WaHealthStatus;
+  qr?: LinkCodeQr | null;
 }
 
 /** The driver's current or next task (D-04 / D-10). `parking` and `key_slot` are for the assignee only. */
