@@ -246,7 +246,6 @@ STORAGE_ORIGIN=
 | `TRUST_PROXY` | `1` | عدد القفزات أمام الـapi (§2 بند 6) |
 | `WORKER_ID` | اسم الحاوية | — |
 | `WORKER_CONCURRENCY` / `WORKER_BATCH_SIZE` / `WORKER_POLL_INTERVAL_MS` / `WORKER_LEASE_SECONDS` | `8` / `20` / `500` / `30` | العامل |
-| `DISPATCH_SWEEP_INTERVAL_S` / `HEARTBEAT_SWEEP_INTERVAL_S` | `5` / `15` | التمريرات التأمينية |
 | `RETENTION_PURGE_CRON_UTC` | `0 2 * * *` | الاحتفاظ اليومي (05:00 بتوقيت الرياض) |
 | `MONITOR_INTERVAL_S` | `10` | مراقب النظام (`outbox_lag`، `task_stuck`)؛ `0` يوقفه |
 | `WS_PATH` / `WS_TRANSPORTS` | `/ws` / `websocket` | لا تضف `polling` إلا مع جلسات لاصقة |
