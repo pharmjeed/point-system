@@ -2282,7 +2282,7 @@ paths:
       description: |-
         السائق: قبل الإسناد فقط (requested)؛ بعده INVALID_STATE_TRANSITION (reason=driver_cancel_after_assignment). المشرف: في requested/assigned/assigned_waiting، وإذا استُلم المفتاح يلزم /release-custody أولًا. بعد بدء الحركة (retrieving/ready) للمشرف فقط (DEC-30): مهمة الإحضار canceled (cancel_reason=supervisor_cancel) ومهمة repark بحالة in_progress لنفس السائق الحائز والتذكرة reparking، فلا يتحرر السائق ولا تُمحى العهدة حتى /complete-parking (AC-11).
 
-        الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking
+        الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: يشترط المركبة والمفتاح مع سائق المهمة الجارية وإلا CUSTODY_HOLDER_MISMATCH دون أثر (DEC-226)؛ cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking + حل ready_not_collected وhandover_code_locked
       parameters:
       - $ref: '#/components/parameters/cycleId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2334,7 +2334,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: CUSTODY_RELEASE_REQUIRED | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+          description: CUSTODY_HOLDER_MISMATCH | CUSTODY_RELEASE_REQUIRED | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -2356,7 +2356,7 @@ paths:
       x-permission: retrieval.cancel
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CUSTODY_RELEASE_REQUIRED, DUTY_REQUIRED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, REASON_REQUIRED]
+      x-error-codes: [CUSTODY_HOLDER_MISMATCH, CUSTODY_RELEASE_REQUIRED, DUTY_REQUIRED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, REASON_REQUIRED]
       x-domain-events: [ticket.retrieval_canceled, ticket.reparking, task.canceled, task.created, offer.revoked, driver.availability_changed]
       x-ws-events: [offer.closed, task.updated, ticket.updated, driver.state_changed]
       x-whatsapp: [W-07]
@@ -2971,9 +2971,9 @@ paths:
       description: |-
         target_driver_id=null يعيد المهمة للطابور بأولويتها الأصلية؛ وإلا تُسند لسائق مؤهل في نفس المجموعة (accepted إن كان متاحًا، assigned_waiting إن كان مشغولًا بلا مهمة تالية). لا سحب خفي ولا إعادة إسناد بعد بدء الحركة.
 
-        الشروط: task.status ∈ {offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · offered/broadcast: target_driver_id إلزامي وتُسحب الجولة (close_reason=reassigned) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
+        الشروط: task.status ∈ {queued, offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · queued/offered/broadcast: target_driver_id إلزامي وتُسحب الجولة الحية (close_reason=reassigned)؛ null لمهمة في الطابور ← INVALID_STATE_TRANSITION (already_in_queue)، والمكلّف نفسه ← (same_assignee) (DEC-214) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
 
-        الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة)
+        الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع تستثني السائق السابق (DEC-216)؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة) بـtask.reassigned (trigger=reassign، target=driver، from_status، result_status) وticket.assigned(_waiting) بـvia=supervisor، دون task.claimed (DEC-215)
       parameters:
       - $ref: '#/components/parameters/taskId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3066,9 +3066,9 @@ paths:
       summary: إعادة المفتاح لخانته قبل السحب
       tags: [Retrieval & Handover]
       description: |-
-        الشروط: task.status=accepted وkey_picked_up_at غير فارغ · لم تبدأ الحركة
+        الشروط: task.status=accepted وkey_picked_up_at غير فارغ (الاستدعاء الثاني ← INVALID_STATE_TRANSITION بـreason=key_not_picked_up) · لم تبدأ الحركة · المكلّف أو المشرف · الخانة شاغرة (KEY_SLOT_OCCUPIED) ونشطة هي ولوحتها (DEC-230)
 
-        الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null
+        الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null؛ المهمة تبقى accepted لمكلّفها ولا يُسوّى (DEC-230)
       parameters:
       - $ref: '#/components/parameters/taskId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3138,9 +3138,9 @@ paths:
       summary: إعادة الصف لغياب العميل
       tags: [Retrieval & Handover]
       description: |-
-        الشروط: ticket.status=ready
+        الشروط: ticket.status=ready ومهمة الإحضار in_progress · المركبة والمفتاح مع سائق المهمة الجارية، وإلا CUSTODY_HOLDER_MISMATCH دون أثر (DEC-226)
 
-        الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + W-08
+        الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + واقعة customer_absent محلولة (DEC-222) + حل ready_not_collected وhandover_code_locked + W-08
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3215,7 +3215,7 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [CUSTODY_HOLDER_MISMATCH, INVALID_STATE_TRANSITION, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
-      x-domain-events: [ticket.reparking, task.canceled, task.created]
+      x-domain-events: [ticket.reparking, task.canceled, task.created, incident.opened, incident.resolved]
       x-ws-events: [task.updated, ticket.updated]
       x-whatsapp: [W-08]
   /v1/tickets/{ticketId}/custody-transfers:
@@ -6408,7 +6408,7 @@ paths:
       description: |-
         فوري (scheduled_at فارغ أو ماضٍ) أو مجدول. يُمنع مع مركبة أو مفتاح بعهدته أو مهمة in_progress أو مهمة صف/إعادة صف نشطة (DEC-32): الفوري يعيد TRANSFER_BLOCKED_CUSTODY دون إنشاء سجل نقل، والمجدول يصبح عند تفعيله blocked مع تنبيه transfer_blocked ويُعاد تقييمه آليًا. المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان لطابور الموقع القديم بأولويتهما. عند الإتمام: إبطال العروض، إعادة المهمة التالية لطابور الموقع القديم، إنهاء المناوبة والتعيين القديم وفتح الجديد، إبطال الجلسات ومغادرة الغرف. السجلات القديمة لا تُعاد كتابتها.
 
-        الشروط: المشرف يملك نطاق الموقعين · لا نقل مفتوح آخر
+        الشروط: المشرف يملك نطاق الموقعين (TRANSFER_SCOPE_DENIED بـmissing_venue_id) · لا نقل مفتوح آخر · الهدف ليس الموقع الحالي (VALIDATION_FAILED: to_venue_id same_as_current) · تغيّر التعيين المتزامن ← ASSIGNMENT_CONFLICT (assignment_changed) · سائق عُطّل قبل التفعيل ← النقل canceled · الأقفال L1 لكل مجموعات الموقعين تصاعديًا ثم L3 (DEC-224، DEC-225)
       parameters:
       - $ref: '#/components/parameters/driverId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6456,7 +6456,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: DRIVER_DISABLED | IDEMPOTENCY_IN_PROGRESS | TRANSFER_ALREADY_PENDING | TRANSFER_BLOCKED_CUSTODY
+          description: ASSIGNMENT_CONFLICT | DRIVER_DISABLED | IDEMPOTENCY_IN_PROGRESS | TRANSFER_ALREADY_PENDING | TRANSFER_BLOCKED_CUSTODY
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -6478,7 +6478,7 @@ paths:
       x-permission: driver.transfer
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [DRIVER_DISABLED, REASON_REQUIRED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED]
+      x-error-codes: [ASSIGNMENT_CONFLICT, DRIVER_DISABLED, REASON_REQUIRED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED]
       x-domain-events: [driver.transfer_requested, driver.transferred, driver.transfer_blocked, task.withdrawn, offer.revoked, driver.duty_ended]
       x-ws-events: [session.revoked, driver.state_changed]
   /v1/transfers/{transferId}/cancel:
@@ -6486,7 +6486,7 @@ paths:
       operationId: cancelTransfer
       summary: إلغاء نقل مجدول/محجوب
       tags: [Drivers & Staff]
-      description: 'الشروط: status ∈ {pending, blocked}'
+      description: 'الشروط: status ∈ {pending, blocked} · نطاق الموقعين كالإنشاء (TRANSFER_SCOPE_DENIED، DEC-224)'
       parameters:
       - $ref: '#/components/parameters/transferId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6516,7 +6516,7 @@ paths:
           description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
         '403':
           $ref: '#/components/responses/Error'
-          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | TRANSFER_SCOPE_DENIED
         '404':
           $ref: '#/components/responses/Error'
           description: RESOURCE_NOT_FOUND
@@ -6544,7 +6544,7 @@ paths:
       x-permission: driver.transfer
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, REASON_REQUIRED]
+      x-error-codes: [INVALID_STATE_TRANSITION, REASON_REQUIRED, TRANSFER_SCOPE_DENIED]
       x-domain-events: [alert.resolved]
   /v1/duty-sessions/{sessionId}/force-end:
     post:
@@ -6552,9 +6552,9 @@ paths:
       summary: إنهاء مناوبة سائق بالمشرف
       tags: [Drivers & Staff]
       description: |-
-        الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا) · المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32)
+        الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا؛ items = صفوف blockingCustody: type ∈ {vehicle, key, task} مع task_id وtask_type وtask_status للمهمة، DEC-229) · المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) · sessionId = DriverLive.duty_session_id (DEC-217)
 
-        الأثر: end_reason=forced
+        الأثر: end_reason=forced؛ وsync.required (reason=duty_force_ended، scope=home) لغرفة السائق (DEC-221)
       parameters:
       - $ref: '#/components/parameters/sessionId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -11295,7 +11295,12 @@ components:
         duty_started_at:
           type: [string, 'null']
           format: date-time
+        duty_session_id:
+          type: [string, 'null']
+          format: uuid
+          description: المناوبة المفتوحة (معرّف مسار force-end في S-05 وS-06)؛ في GET /v1/drivers وdriver.state_changed، ولا ترسله لوحة التشغيل بعد (DEC-217)
       required: [driver, driver_state]
+      description: 'الحالة الحية للسائق؛ في driver.state_changed بـaggregate {type: user, id, version: null} (DEC-220)'
     DriverListItem:
       type: object
       properties:

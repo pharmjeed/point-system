@@ -152,7 +152,7 @@ flowchart TB
 
 - المسؤولية: التذكرة ومراحل الاستلام، الخط الزمني، دورات الاسترجاع، الفحص والصور، تخصيص المواقف وخانات المفاتيح، سلسلة العهدة، رموز التسليم.
 - الجداول: `tickets`, `ticket_events`, `retrieval_cycles`, `vehicle_inspections`, `media_assets`, `spot_allocations`, `key_slot_allocations`, `custody_events`, `claim_codes`.
-- الواجهة: `TicketLifecycle.transition(tx, ticket, to, ctx)` (يتحقق من آلة الحالة في الملف 11)، `IntakeService`، `CycleService.open / close`، `CustodyService.move(tx, subject, from, to, reason)`، `AllocationService.allocateSpot / allocateKeySlot / release`، `ClaimCodeService.issue / verify / resend / revoke`، `MediaService.presignUpload / complete / presignRead`.
+- الواجهة: `TicketLifecycle.transition(tx, ticket, to, ctx)` (يتحقق من آلة الحالة في الملف 11)، `IntakeService`، `CycleService.open / close`، `CustodyService.move(tx, subject, from, to, reason)`، `AllocationService.allocateSpot / allocateKeySlot / release`، `ClaimCodeService.issue / verify / resend / revoke` (ومعه `revokeLiveClaimCode`)، `MediaService.presignUpload / complete / presignRead`، وإسقاط `TaskCard` (`loadTaskCard`) الذي تشترك فيه القراءات وردود الأوامر ورسالة `task.updated`، لأن dispatch لا يستورد use-cases (DEC-233).
 - يُصدر: كل `ticket.*`، `custody.changed`، كل `handover.*`.
 - يبطل رموز الربط الحية عند التحويل إلى الورق أو الإلغاء (`revoke_reason = channel_paper` أو `ticket_voided`) رغم أن `link_codes` جدول whatsapp؛ ويجوز أن ينقله PNT-044 إلى whatsapp خلف خطاف (DEC-188).
 - معالجات العامل: `job.ready_uncollected_check`, `job.claim_code_expire`.
@@ -248,7 +248,7 @@ flowchart BT
 | `CancelRetrieval` | `POST /v1/retrieval-cycles/{cycleId}/cancel` | tickets-custody + dispatch + notifications (W-07) | نعم |
 | `ReassignTask` | `POST /v1/tasks/{taskId}/reassign` | dispatch + tickets-custody + incidents | نعم |
 | `Repark` | `POST /v1/tickets/{ticketId}/repark` | tickets-custody + dispatch + notifications (W-08) | نعم |
-| `ActivateTransfer` | `job.transfer_activate` | identity-access + dispatch + incidents | نعم (مجموعتا الموقعين) |
+| `ActivateTransfer` | `POST /v1/drivers/{driverId}/transfers` (فوري) و`job.transfer_activate`؛ ويعيد تقييم المحجوب مخطِّط معاملة يجدول التفعيل حين تنهي معاملة مهمة السائق أو تنقل العهدة منه (DEC-223) | identity-access + dispatch + venues-events + incidents | نعم (كل مجموعات الموقعين تصاعديًا، DEC-225) |
 | `CloseEvent` | `POST /v1/events/{eventId}/close` | venues-events + tickets-custody + payments-reports + incidents | لا (L2) |
 | `ProcessInbound` | `job.wa_process_inbound` | whatsapp + (`RequestRetrieval` أو `LinkConfirm` أو الردود) | حسب الفرع |
 | `ManualReconcile` | `POST /v1/tickets/{ticketId}/manual-reconcile` | tickets-custody + dispatch + incidents | نعم |

@@ -464,9 +464,9 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 السائق: قبل الإسناد فقط (requested)؛ بعده INVALID_STATE_TRANSITION (reason=driver_cancel_after_assignment). المشرف: في requested/assigned/assigned_waiting، وإذا استُلم المفتاح يلزم /release-custody أولًا. بعد بدء الحركة (retrieving/ready) للمشرف فقط (DEC-30): مهمة الإحضار canceled (cancel_reason=supervisor_cancel) ومهمة repark بحالة in_progress لنفس السائق الحائز والتذكرة reparking، فلا يتحرر السائق ولا تُمحى العهدة حتى /complete-parking (AC-11).
 
 - الصلاحية: `retrieval.cancel` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking
+- الأثر: قبل الحركة: cycle outcome=canceled + task canceled (customer_field_cancel أو supervisor_cancel) + العروض revoked + ticket=parked. بعد الحركة: يشترط المركبة والمفتاح مع سائق المهمة الجارية وإلا CUSTODY_HOLDER_MISMATCH {subject, current_holder_type} دون أثر (DEC-226)؛ cycle outcome=canceled + رمز التسليم revoked (canceled) + مهمة repark in_progress للحائز + ticket=reparking + حل ready_not_collected وhandover_code_locked للدورة
 - أحداث: `ticket.retrieval_canceled`, `ticket.reparking`, `task.canceled`, `task.created`, `offer.revoked`, `driver.availability_changed` · WS: `offer.closed`, `task.updated`, `ticket.updated`, `driver.state_changed` · واتساب: W-07
-- أخطاء خاصة: `CUSTODY_RELEASE_REQUIRED`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `REASON_REQUIRED`
+- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `CUSTODY_RELEASE_REQUIRED`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `REASON_REQUIRED`
 
 #### `POST /v1/task-offers/{offerId}/accept` — قبول الطلب أو حجزه كمهمة تالية
 
@@ -538,25 +538,25 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 target_driver_id=null يعيد المهمة للطابور بأولويتها الأصلية؛ وإلا تُسند لسائق مؤهل في نفس المجموعة (accepted إن كان متاحًا، assigned_waiting إن كان مشغولًا بلا مهمة تالية). لا سحب خفي ولا إعادة إسناد بعد بدء الحركة.
 
 - الصلاحية: `task.reassign` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: task.status ∈ {offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · offered/broadcast: target_driver_id إلزامي وتُسحب الجولة (close_reason=reassigned) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
-- الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة)
+- الشروط: task.status ∈ {queued, offered, broadcast, accepted, assigned_waiting} (الملف 10 §9.1)؛ in_progress ← REASSIGN_BLOCKED_MOVEMENT · queued/offered/broadcast: target_driver_id إلزامي وتُسحب الجولة الحية (close_reason=reassigned)؛ null لمهمة في الطابور ← INVALID_STATE_TRANSITION (reason=already_in_queue)، والمكلّف نفسه ← (reason=same_assignee) (DEC-214) · إذا استُلم المفتاح: /release-custody أولًا أو نقل عهدة رسمي للسائق الجديد
+- الأثر: للطابور: task=queued + ticket=requested + تمريرة توزيع تستثني السائق السابق (DEC-216)؛ لسائق: كقبول ذري باسمه (accepted، أو assigned_waiting مع W-03 إن لم تُرسل في هذه الدورة)، بـtask.reassigned (trigger=reassign، target=driver، from_status، result_status) وticket.assigned(_waiting) بـvia=supervisor، دون task.claimed (DEC-215)
 - أحداث: `task.withdrawn`, `task.reassigned`, `ticket.assigned`, `ticket.assigned_waiting`, `offer.revoked`, `task.offered`, `task.broadcast_opened`, `driver.availability_changed` · WS: `task.updated`, `ticket.updated`, `driver.state_changed`, `offer.closed`, `task.offered`, `task.broadcast` · واتساب: W-03
 - أخطاء خاصة: `CUSTODY_RELEASE_REQUIRED`, `DRIVER_NOT_AVAILABLE`, `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `NEXT_TASK_ALREADY_RESERVED`, `OLDER_REQUEST_PENDING`, `REASON_REQUIRED`, `REASSIGN_BLOCKED_MOVEMENT`, `VERSION_CONFLICT`
 
 #### `POST /v1/tasks/{taskId}/release-custody` — إعادة المفتاح لخانته قبل السحب
 
 - الصلاحية: `task.release_custody` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: task.status=accepted وkey_picked_up_at غير فارغ · لم تبدأ الحركة
-- الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null
+- الشروط: task.status=accepted وkey_picked_up_at غير فارغ (الاستدعاء الثاني ← INVALID_STATE_TRANSITION بـreason=key_not_picked_up) · لم تبدأ الحركة · المكلّف أو المشرف · الخانة المطلوبة شاغرة (KEY_SLOT_OCCUPIED) ونشطة هي ولوحتها (DEC-230)
+- الأثر: عهدة المفتاح driver → key_slot (withdrawal_release) + تخصيص جديد + key_picked_up_at=null؛ المهمة تبقى accepted لمكلّفها ولا يُسوّى (DEC-230)
 - أحداث: `custody.changed` · WS: `task.updated`
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `REASON_REQUIRED`
 
 #### `POST /v1/tickets/{ticketId}/repark` — إعادة الصف لغياب العميل
 
 - الصلاحية: `ticket.repark` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready
-- الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + W-08
-- أحداث: `ticket.reparking`, `task.canceled`, `task.created` · WS: `task.updated`, `ticket.updated` · واتساب: W-08
+- الشروط: ticket.status=ready ومهمة الإحضار in_progress · المركبة والمفتاح مع سائق المهمة الجارية، وإلا CUSTODY_HOLDER_MISMATCH {subject, current_holder_type} دون أثر (DEC-226)
+- الأثر: الدورة outcome=reparked + رمز التسليم revoked + مهمة retrieve canceled + مهمة repark in_progress لحائز المركبة (يبقى مشغولًا) + واقعة customer_absent محلولة (DEC-222) + حل ready_not_collected وhandover_code_locked + W-08
+- أحداث: `ticket.reparking`, `task.canceled`, `task.created`, `incident.opened`, `incident.resolved` · WS: `task.updated`, `ticket.updated` · واتساب: W-08
 - أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tickets/{ticketId}/custody-transfers` — نقل عهدة رسمي
@@ -681,9 +681,9 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `POST /v1/drivers/{driverId}/reset-secret` | إعادة تعيين الرقم السري | `driver.manage` | إلزامي | must_change_secret=true + إبطال الجلسات (secret_reset) · WS `session.revoked` | `DRIVER_DISABLED` |
 | `GET /v1/drivers/{driverId}/assignments` | سجل تعيينات السائق | `driver.read` | — | — | `RESOURCE_NOT_FOUND` |
 | `POST /v1/drivers/{driverId}/assignments` | تعيين أولي لموقع — لسائق بلا تعيين نشط. للنقل بين موقعين استخدم /transfers. | `driver.assign` | إلزامي | — | `ASSIGNMENT_CONFLICT`, `DRIVER_DISABLED`, `SCOPE_VENUE_DENIED` |
-| `POST /v1/drivers/{driverId}/transfers` | نقل سائق بين موقعين — فوري (scheduled_at فارغ أو ماضٍ) أو مجدول. يُمنع مع مركبة أو مفتاح بعهدته أو مهمة in_progress أو مهمة صف/إعادة صف نشطة (DEC-32): الفوري يعيد TRANSFER_BLOCKED_CUSTODY دون إنشاء سجل نقل، والمجدول يصبح عند تفعيله blocked مع تنبيه transfer_blocked ويُعاد تقييمه آليًا. المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان لطابور الموقع القديم بأولويتهما. عند الإتمام: إبطال العروض، إعادة المهمة التالية لطابور الموقع القديم، إنهاء المناوبة والتعيين القديم وفتح الجديد، إبطال الجلسات ومغادرة الغرف. السجلات القديمة لا تُعاد كتابتها. الشروط: المشرف يملك نطاق الموقعين؛ لا نقل مفتوح آخر | `driver.transfer` | إلزامي | `driver.transfer_requested`, `driver.transferred`, `driver.transfer_blocked`, `task.withdrawn`, `offer.revoked`, `driver.duty_ended` · WS `session.revoked`, `driver.state_changed` | `DRIVER_DISABLED`, `REASON_REQUIRED`, `TRANSFER_ALREADY_PENDING`, `TRANSFER_BLOCKED_CUSTODY`, `TRANSFER_SCOPE_DENIED` |
-| `POST /v1/transfers/{transferId}/cancel` | إلغاء نقل مجدول/محجوب — الشروط: status ∈ {pending, blocked} | `driver.transfer` | إلزامي | `alert.resolved` | `INVALID_STATE_TRANSITION`, `REASON_REQUIRED` |
-| `POST /v1/duty-sessions/{sessionId}/force-end` | إنهاء مناوبة سائق بالمشرف — الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا)؛ المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) | `duty.force_end` | إلزامي | end_reason=forced · `driver.duty_ended`, `driver.availability_changed`, `task.withdrawn`, `offer.revoked` · WS `driver.state_changed`, `sync.required` | `DUTY_END_BLOCKED_CUSTODY`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED` |
+| `POST /v1/drivers/{driverId}/transfers` | نقل سائق بين موقعين — فوري (scheduled_at فارغ أو ماضٍ) أو مجدول. الهدف هو الموقع الحالي ← VALIDATION_FAILED (to_venue_id، same_as_current)؛ تغيّر التعيين المتزامن ← ASSIGNMENT_CONFLICT (reason=assignment_changed)؛ سائق عُطّل قبل التفعيل ← النقل canceled؛ الأقفال L1 لكل مجموعات الموقعين تصاعديًا ثم L3 (DEC-224، DEC-225). يُمنع مع مركبة أو مفتاح بعهدته أو مهمة in_progress أو مهمة صف/إعادة صف نشطة (DEC-32): الفوري يعيد TRANSFER_BLOCKED_CUSTODY دون إنشاء سجل نقل، والمجدول يصبح عند تفعيله blocked مع تنبيه transfer_blocked ويُعاد تقييمه آليًا. المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان لطابور الموقع القديم بأولويتهما. عند الإتمام: إبطال العروض، إعادة المهمة التالية لطابور الموقع القديم، إنهاء المناوبة والتعيين القديم وفتح الجديد، إبطال الجلسات ومغادرة الغرف. السجلات القديمة لا تُعاد كتابتها. الشروط: المشرف يملك نطاق الموقعين؛ لا نقل مفتوح آخر | `driver.transfer` | إلزامي | `driver.transfer_requested`, `driver.transferred`, `driver.transfer_blocked`, `task.withdrawn`, `offer.revoked`, `driver.duty_ended` · WS `session.revoked`, `driver.state_changed` | `ASSIGNMENT_CONFLICT`, `DRIVER_DISABLED`, `REASON_REQUIRED`, `TRANSFER_ALREADY_PENDING`, `TRANSFER_BLOCKED_CUSTODY`, `TRANSFER_SCOPE_DENIED` |
+| `POST /v1/transfers/{transferId}/cancel` | إلغاء نقل مجدول/محجوب — الشروط: status ∈ {pending, blocked}؛ نطاق الموقعين كالإنشاء (DEC-224) | `driver.transfer` | إلزامي | `alert.resolved` | `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `TRANSFER_SCOPE_DENIED` |
+| `POST /v1/duty-sessions/{sessionId}/force-end` | إنهاء مناوبة سائق بالمشرف — الشروط: يُمنع بـDUTY_END_BLOCKED_CUSTODY إذا كان بعهدته مركبة أو مفتاح أو لديه مهمة in_progress أو مهمة صف/إعادة صف نشطة (انقلها رسميًا أولًا؛ العناصر صفوف blockingCustody كمنع النقل والتعطيل، DEC-229)؛ معرّف المسار duty_session_id من DriverLive (DEC-217)؛ المهمة التالية المحجوزة ومهمة الإحضار المقبولة قبل استلام المفتاح تعودان للطابور بأولويتهما (DEC-32) | `duty.force_end` | إلزامي | end_reason=forced · `driver.duty_ended`, `driver.availability_changed`, `task.withdrawn`, `offer.revoked` · WS `driver.state_changed`, `sync.required` | `DUTY_END_BLOCKED_CUSTODY`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED` |
 | `GET /v1/staff` | المشرفون والإدارة | `staff.manage` | — | — | — |
 | `POST /v1/staff` | إضافة مشرف أو إدارة — الإدارة تضيف مشرفين فقط؛ المالك يضيف إدارة. كلمة مرور مؤقتة تُعرض مرة واحدة؛ MFA حسب السياسة. | `staff.manage` | إلزامي | — | `PHONE_INVALID` |
 | `PATCH /v1/staff/{userId}` | تعديل/تعطيل موظف | `staff.manage` | إلزامي | WS `session.revoked` | `CUSTODY_OPEN`, `PHONE_INVALID`, `REASON_REQUIRED`, `VERSION_CONFLICT` |
@@ -1194,17 +1194,17 @@ Content-Type: application/json
 |---|---|---|---|
 | `task.offered` | `user:{recipientId}` | `OfferCard` (mode=single) | تعرض البطاقة، صوت `offer`، عداد من `expires_at` مقابل `server_time` |
 | `task.broadcast` | `user:{recipientId}` لكل مستلم | `OfferCard` (mode=broadcast، `eligible_as` خاص بكل سائق) | تعرض البطاقة إن كانت أقدم طلب قابل للقبول، صوت `broadcast` |
-| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by}` | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
-| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
+| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by: {id, full_name}}` — `offer_ids` الجولة المقبولة؛ يسبقه `task.updated` للفائز بإصدار المهمة نفسه فيتجاهل جهازه الحجز (DEC-220) | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
+| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
-| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task`؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
+| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
 | `ticket.updated` | المشرفون + السائق المعني (المكلّف/المنشئ أثناء التسجيل) | `TicketSummary` + `cause` (+ `wa_link_pending` للسائق في ربط QR) | تحدّث البطاقات والقوائم |
-| `driver.state_changed` | `user:{driverId}` + المشرفون | `DriverLive` | تحدّث شريط الحالة ولوحة السائقين |
+| `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |
 | `alert.updated` | نفس الغرف | `Alert` | يوقف صوت التصعيد عند الإقرار أو الحل |
 | `incident.updated` | `venue:{venueId}:supervisors` | `Incident` | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
 | `channel.status` | كل الغرف في المؤسسة | `{whatsapp: WaHealthStatus, changed_at}` | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
-| `sync.required` | `user:{userId}` | `{reason}` | تجلب `GET /v1/me/home` (السائق) أو `GET /v1/events/{eventId}/operations` (المشرف) |
+| `sync.required` | `user:{userId}` | `{reason}` (و`scope`)؛ منه `reason` = `duty_force_ended` أو `duty_ended` مع `scope: home` لغرفة السائق عند إنهاء مناوبته قسرًا أو ذاتيًا (لأجهزته الأخرى)، أما النقل والتعطيل فيكتفيان بـ`session.revoked` (DEC-221) | تجلب `GET /v1/me/home` (السائق) أو `GET /v1/events/{eventId}/operations` (المشرف) |
 | `session.revoked` | `user:{userId}` | `{reason: SessionRevokedReason}` | تمسح البيانات المحلية وتعود لشاشة الدخول |
 
 تنبيه أمني: لا يحمل أي حدث رمز التسليم ولا الجوال الكامل؛ موضع المفتاح والموقف يصلان فقط في `TaskCard` للمكلّف.

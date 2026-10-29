@@ -167,7 +167,7 @@ LIMIT 1;
 | `STATEMENT_TIMEOUT` | 5 s | `SET LOCAL statement_timeout` |
 | `TX_RETRY` | 3 محاولات مع تأخير عشوائي 20–80 ms | فقط عند `40001` أو `40P01`؛ `55P03` لا يُعاد على الخادم (§2.1، Canon §14ب) |
 
-**تعليقات لا ترفع `version`:** حقول وصفية لا تمثل حالة ولا ترفع `version` ولا تبطل المؤقتات: `task_offers.reminded_at`، `offer_recipients.notified_ws_at/notified_push_at/seen_at`، `duty_sessions.last_heartbeat_at/connection_state`، `tasks.escalated_at`، `dispatch_pools.last_pass_at/pass_count`، وعداد `events.next_display_number`. كل ما عداها يرفع `version`.
+**تعليقات لا ترفع `version`:** حقول وصفية لا تمثل حالة ولا ترفع `version` ولا تبطل المؤقتات: `task_offers.reminded_at`، `offer_recipients.notified_ws_at/notified_push_at/seen_at`، `duty_sessions.last_heartbeat_at/connection_state`، `tasks.escalated_at`، `dispatch_pools.last_pass_at/pass_count`، وعداد `events.next_display_number`. كل ما عداها يرفع `version`. يسري ذلك على كل كاتب لـ`connection_state`: `job.heartbeat_sweep`، ونبضة الهوية (`POST /v1/me/heartbeat` و`client.heartbeat`) حين تعيده `online` (DEC-218).
 
 ---
 
@@ -247,10 +247,10 @@ async function runDispatchPass(tx: Tx, poolId: UUID, reason: PassReason): Promis
     }
 
     // no untried idle driver may take it
-    const actionable = onDuty.filter(d => d.state !== 'busy_with_next' && !blocked.has(d.userId));
+    const canAct = onDuty.filter(d => d.state !== 'busy_with_next');
     if (task.status === 'queued') {
-      if (actionable.length === 0) continue;                  // blocked behind an older live round: stay queued
-      await openBroadcast(tx, task, onDuty, now, cfg);        // task→broadcast + reminder timer + ws/push
+      if (canAct.length > 0 && canAct.every(d => blocked.has(d.userId))) continue;   // R-3: held by an older live round: stay queued
+      await openBroadcast(tx, task, onDuty, now, cfg);        // task→broadcast + reminder timer + ws/push; all view_only when everyone is busy_with_next (DEC-213)
     } else {
       await extendBroadcast(tx, task, onDuty);                // add drivers who came on duty since it opened
     }
@@ -267,7 +267,7 @@ async function runDispatchPass(tx: Tx, poolId: UUID, reason: PassReason): Promis
 
 - **R-1** أقدم طلب يُعالج أولًا دائمًا، والأطول تفرغًا يأخذ أقدم طلب (المعمارية §4و.1–2).
 - **R-2** العرض الفردي يذهب فقط لمتاح لا يحمل عرضًا فرديًا حيًا ولم يُجرَّب لهذا الطلب في النوبة.
-- **R-3** إذا لم يوجد مرشح فردي يُفتح البث، إلا إذا كان كل من يمكنه التصرف محجوبًا بجولة أقدم؛ عندها يبقى الطلب `queued` غير مرئي حتى تُحجز الجولة الأقدم (لأن حارس الأولوية سيمنع أي أحد من أخذه قبل الأقدم على أي حال).
+- **R-3** إذا لم يوجد مرشح فردي يُفتح البث، إلا إذا كان كل من يمكنه التصرف محجوبًا بجولة أقدم؛ عندها يبقى الطلب `queued` غير مرئي حتى تُحجز الجولة الأقدم (لأن حارس الأولوية سيمنع أي أحد من أخذه قبل الأقدم على أي حال). وإن لم يوجد من يمكنه التصرف أصلًا (كل المناوبين غير المستريحين `busy_with_next`) يُفتح البث ومستلموه كلهم `view_only`، فيظهر الطلب منتظرًا ويتحول فرديًا حين يتفرغ أحد (المثال الثالث في §4.8، DEC-213).
 - **R-4** الطلب المعروض حصريًا على سائق ليس متاحًا للبقية، فيجوز توزيع الطلب التالي عليهم (المعمارية §4و.6).
 - **R-5** تحويل البث إلى فردي يحدث فقط لمتاح لم يُجرَّب لنفس الطلب، فلا تحدث حلقة «فردي ← انتهاء ← بث ← فردي لنفس السائق».
 - **R-6** البث يشمل كل المناوبين في المجموعة عدا المستريحين، بما فيهم `busy_with_next` (يرون التنبيه ولا يقبلون — المعمارية §4و.3).
@@ -390,7 +390,7 @@ UPDATE task_offers
 
 ### 4.7 تنبيه «سائق متاح والطلب الأقدم محجوز تاليًا»
 
-في نهاية كل تمريرة، إذا `dispatch.idle_driver_alert = true` ووُجد سائق متاح لا يحمل عرضًا فرديًا ووُجدت مهمة `assigned_waiting` في المجموعة: تنبيه `idle_driver_while_next_waiting` بشدة `warning` (الملف 14 §8) لأقدم مهمة محجوزة، مفتاح `idle_driver_while_next_waiting:<task_id>`، وتفاصيل `{ idle_driver_ids, reserved_by, waiting_since }`. يُحل آليًا عند ترقية المهمة أو سحبها أو اختفاء المتاح. **لا إعادة إسناد صامتة**؛ المشرف يقرر عبر §9.1 (المعمارية §4و.7).
+في نهاية كل تمريرة، إذا `dispatch.idle_driver_alert = true` ووُجد سائق متاح لا يحمل عرضًا فرديًا ووُجدت مهمة `assigned_waiting` في المجموعة: تنبيه `idle_driver_while_next_waiting` بشدة `warning` (الملف 14 §8) لأقدم مهمة محجوزة، مفتاح `idle_driver_while_next_waiting:<task_id>`، وتفاصيل `{ idle_driver_ids, reserved_by, waiting_since }` — تنبيه واحد للمجموعة، وتُحل تنبيهاتها الأخرى من النوع نفسه بالسبب `no_idle_driver` (DEC-231). يُحل آليًا عند ترقية المهمة أو سحبها أو اختفاء المتاح. **لا إعادة إسناد صامتة**؛ المشرف يقرر عبر §9.1 (المعمارية §4و.7).
 
 ### 4.8 أمثلة زمنية
 
@@ -664,7 +664,8 @@ UPDATE tickets SET status = 'requested', active_cycle_id = $cycle, last_requeste
 
 ### 7.3 الطلب المبكر (DEC-13)
 
-- عند الطلب والتذكرة `received`/`parking`/`reparking`: إن كان `pending_retrieval_at IS NULL` يُضبط `pending_retrieval_at = now()` و`pending_retrieval_source = 'whatsapp'` (تكرار الضغط لا يغيّر الوقت). حدث `ticket.retrieval_requested_early`، W-02 للعميل، وws `ticket.updated` إلى السائق القائم على المركبة (لافتة «العميل طلب سيارته — أكمل الصف وستُعرض للإحضار») وإلى مشرفي الموقع. **لا** تُنشأ مهمة؛ لا حركتان متزامنتان (المعمارية §4هـ).
+- نتائج نقطة الدخول للعميل (`requestRetrievalForCustomer`): `created` (دورة جديدة لتذكرة `parked`)، `pending_early` (أول طلب مبكر)، `already_pending` (ضغطة مكررة أثناء الصف تُبقي الوقت الأول ولا تصدر شيئًا)، `already_active` (دورة مفتوحة)، `closed` (DEC-227).
+- عند الطلب والتذكرة `received`/`parking`/`reparking`: إن كان `pending_retrieval_at IS NULL` يُضبط `pending_retrieval_at = now()` و`pending_retrieval_source = 'whatsapp'` (تكرار الضغط لا يغيّر الوقت)، والحدث `ticket.retrieval_requested_early` يحمل `status_at_request` و`parking_task_assignee_id`. حدث `ticket.retrieval_requested_early`، W-02 للعميل، وws `ticket.updated` إلى السائق القائم على المركبة (لافتة «العميل طلب سيارته — أكمل الصف وستُعرض للإحضار») وإلى مشرفي الموقع. **لا** تُنشأ مهمة؛ لا حركتان متزامنتان (المعمارية §4هـ).
 - عند `complete-parking` (في المعاملة نفسها، بعد تخصيص الموقف والخانة والعهدة):
 
 ```sql
@@ -718,7 +719,7 @@ async function handleTimer(job: OutboxJob): Promise<void> {
 | `job.ready_uncollected_check` | `POST /v1/tasks/{taskId}/ready` | `ready_at + ready.uncollected_alert_min` (10 د) | التذكرة `ready` و`active_cycle_id` = الدورة | تنبيه `ready_not_collected` (warning)؛ المشرف يقرر إعادة الصف §9.4 | `ready_uncollected:<cycle_id>` |
 | `job.claim_code_expire` | إصدار رمز التسليم | `claim_codes.expires_at` | الرمز حي (غير مستهلك ولا ملغى) | مسح `code_ciphertext`، `revoked_at`، `revoke_reason = 'expired_cleanup'`؛ التحقق بعده يعيد `HANDOVER_CODE_EXPIRED` | `claim_code_expire:<claim_code_id>` |
 | `job.transfer_activate` | إنشاء نقل مجدول، أو إنهاء مهمة سائق لديه نقل `blocked` | `scheduled_at` أو الآن | النقل `pending`/`blocked` | §9.7 | `transfer_activate:<transfer_id>` |
-| `job.heartbeat_sweep` | متكرر كل 15 ثانية | — | — | `connection_state`: `uncertain` بعد 45 ث، `offline` بعد 120 ث؛ تنبيه `driver_connection_lost_with_custody` إن كان يحوز عهدة أو مهمة؛ **لا** يغيّر التوفر ولا يسحب مهمة | `heartbeat_sweep` |
+| `job.heartbeat_sweep` | متكرر كل `heartbeat.interval_s` (15 ث): سلسلة عامة واحدة يبذرها بدء المناوبة (DEC-232) | — | — | `connection_state`: `uncertain` بعد 45 ث، `offline` بعد 120 ث، لكل مناوبة في معاملتها (L8 وحده، بلا رفع إصدار)؛ تنبيه `driver_connection_lost_with_custody` عند الانتقال إلى `offline` وهو يحوز عهدة أو مهمة (DEC-219)؛ **لا** يغيّر التوفر ولا يسحب مهمة | `heartbeat_sweep` |
 | `job.dispatch_sweep` | متكرر كل 5 ثوانٍ: سلسلة عامة واحدة تجدول تاليتها دائمًا، ويبذرها عند الحاجة كل أمر ينشئ طلبًا أو جولة بقراءة عادية أولًا (DEC-179) | — | — | تمريرة لكل مجموعة لها طلب مفتوح أو جولة حية أو مهمة تالية، كلٌّ في معاملة، فلا توقف مجموعة فاشلة غيرها | `dispatch_sweep` |
 | `job.dispatch_pass` | أمر يحتاج تمريرة لمجموعة لا يحمل قفلها | الآن | — | `runDispatchPass(…, reason)` | `dispatch_pass:<pool_id>` |
 
@@ -753,7 +754,7 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 | `idle_driver_while_next_waiting:<task_id>` | ترقية المهمة أو سحبها أو اختفاء المتاح |
 | `ready_not_collected:<cycle_id>` | التسليم أو إعادة الصف أو الإلغاء |
 | `transfer_blocked:<transfer_id>` | اكتمال النقل أو إلغاؤه |
-| `driver_connection_lost_with_custody:<duty_session_id>` | عودة الاتصال أو انتهاء العهدة |
+| `driver_connection_lost_with_custody:<duty_session_id>` | عودة الاتصال `online` أو زوال العهدة والمهمة أو انتهاء المناوبة (DEC-219) |
 
 الحل الآلي يضبط `status = 'resolved'`، `resolved_at = now()`، `resolved_by = NULL`، و`resolution_note` بالسبب، ويرسل ws `alert.updated`.
 
@@ -775,7 +776,7 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 
 | حالة المهمة | مسموح؟ | الشرط |
 |---|---|---|
-| `offered` / `broadcast` | لسائق محدد فقط | تُسحب الجولة (`close_reason = 'reassigned'`)؛ لا «إعادة للطابور» لأنها فيه أصلًا (لا انتقال `broadcast` ← `queued`) |
+| `queued` / `offered` / `broadcast` | لسائق محدد فقط | تُحجز باسمه وتُسحب الجولة الحية (`close_reason = 'reassigned'`)؛ لا «إعادة للطابور» لأنها فيه أصلًا: `target_driver_id = null` ← `INVALID_STATE_TRANSITION` (`reason = already_in_queue`)، ولا انتقال `broadcast` ← `queued` (DEC-214) |
 | `accepted` قبل استلام المفتاح | نعم | — |
 | `accepted` بعد استلام المفتاح (`key_picked_up_at IS NOT NULL`) | بعد إقرار تحرير العهدة فقط | وإلا `CUSTODY_RELEASE_REQUIRED` — يلزم `POST /v1/tasks/{taskId}/release-custody` أولًا (إعادة المفتاح لخانته) أو نقل عهدة رسمي `POST /v1/tickets/{ticketId}/custody-transfers` للسائق الجديد |
 | `assigned_waiting` | نعم | — |
@@ -783,14 +784,14 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 
 الآثار:
 
-- **إلى الطابور:** المهمة `queued`، `assignee_id = NULL`، `claimed_at/accepted_at/assigned_waiting_at = NULL`، `queued_at = now()` (نوبة جديدة، `priority_at` كما هو)؛ التذكرة `requested`؛ الدورة `accepted_by` و`assigned_at` و`assigned_waiting_at` = `NULL` (تنتظر من جديد، DEC-180)؛ جدولة تصعيد جديد؛ تمريرة. السائق السابق لا يتلقى عرضًا فرديًا لها لاحقًا (ضمن المجرَّبين §2.5) ويبقى مستلمًا للبث.
+- **إلى الطابور:** المهمة `queued`، `assignee_id = NULL`، `claimed_at/accepted_at/assigned_waiting_at = NULL`، `queued_at = now()` (نوبة جديدة، `priority_at` كما هو)؛ التذكرة `requested`؛ الدورة `accepted_by` و`assigned_at` و`assigned_waiting_at` = `NULL` (تنتظر من جديد، DEC-180)؛ جدولة تصعيد جديد؛ تمريرة تستثني السائق السابق (DEC-216). السائق السابق الذي قبلها بجولة لا يتلقى عرضًا فرديًا لها لاحقًا (ضمن المجرَّبين §2.5) ويبقى مستلمًا للبث؛ أما من أسندها إليه المشرف فليس ضمن المجرَّبين، فتستثنيه تمريرة معاملة السحب وحدها ويجوز للتمريرات اللاحقة عرضها عليه.
 - **إلى سائق محدد:** يجب أن يكون مناوبًا في نفس المجموعة (`DUTY_REQUIRED`)؛ هدف لا يستطيع أخذ المهمة (مثل الاستراحة) ← `DRIVER_NOT_AVAILABLE`؛ إن كان `busy_with_next` ← `NEXT_TASK_ALREADY_RESERVED`؛ متاح ← `accepted`؛ مشغول بلا تالية ← `assigned_waiting` (W-03 فقط إن لم تُرسل في هذه الدورة). حارس الأولوية يُطبق على السائق الهدف إلا مع `override_priority = true` وسبب ← سجل تدقيق إضافي بالفعل `dispatch.priority_override`. صوت `offer` وws `task.updated` للهدف.
 - **السائق السابق:** ws `task.updated` (إزالة البطاقة + رسالة «سحب المشرف المهمة»)؛ إن كانت مهمته الحالية ⇒ §6.1 (تُرقّى تاليته أو يصبح متاحًا).
-- الأحداث: `task.withdrawn` (للطابور) أو `task.reassigned` (لسائق)، `audit_log` بالفعل `task.reassign` مع السبب.
+- الأحداث: `task.withdrawn` (للطابور) أو `task.reassigned` (لسائق: `trigger = reassign`، `target = driver`، `from_status`، `result_status`) مع `ticket.assigned` أو `ticket.assigned_waiting` بـ`via = supervisor` ولا `task.claimed` (DEC-215)، `audit_log` بالفعل `task.reassign` مع السبب. الإسناد للمكلّف نفسه ← `INVALID_STATE_TRANSITION` (`reason = same_assignee`، DEC-214).
 
 ### 9.2 إقرار تحرير العهدة
 
-`POST /v1/tasks/{taskId}/release-custody` (المكلّف أو المشرف): يتطلب مهمة `accepted` مع `key_picked_up_at IS NOT NULL` وعدم بدء الحركة. يكتب `custody_events` (`subject = 'key'`, من `driver` إلى `key_slot`, `reason = 'withdrawal_release'`)، يعيد تخصيص الخانة (`key_slot_allocations`)، يضبط `tasks.key_picked_up_at = NULL`. لا يحرر السائق ولا يغيّر توفره (تبقى المهمة `accepted` باسمه)؛ بعدها يمكن السحب §9.1 أو الإلغاء §9.3.
+`POST /v1/tasks/{taskId}/release-custody` (المكلّف أو المشرف): يتطلب مهمة `accepted` مع `key_picked_up_at IS NOT NULL` وعدم بدء الحركة؛ الاستدعاء الثاني (المفتاح أعيد) ← `INVALID_STATE_TRANSITION` (`reason = key_not_picked_up`). يكتب `custody_events` (`subject = 'key'`, من `driver` إلى `key_slot`, `reason = 'withdrawal_release'`)، يخصص الخانة المطلوبة (`key_slot_allocations`؛ مشغولة ← `KEY_SLOT_OCCUPIED`، والخانة ولوحتها نشطتان تُقرآن `FOR SHARE`)، يضبط `tasks.key_picked_up_at = NULL`. لا يحرر السائق ولا يسوّيه ولا يغيّر توفره (تبقى المهمة `accepted` باسمه، DEC-230)؛ بعدها يمكن السحب §9.1 أو الإلغاء §9.3.
 
 ### 9.3 إلغاء الطلب ميدانيًا
 
@@ -833,7 +834,7 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 
 ينفذ فورًا إن كان `scheduled_at <= now()` أو عبر `job.transfer_activate`. المعاملة:
 
-1. قفل مجموعتي الموقعين تصاعديًا بالمعرف (L1)، ثم `driver_transfers` ← `driver_assignments` ← `users` (L3)، ثم ما يلزم من المهام (L4) والتذاكر (L5) والجولات (L7) والمناوبة (L8) بترتيب Canon §14ب.
+1. قفل كل مجموعات توزيع الموقعين تصاعديًا بالمعرف (L1، DEC-225)، ثم `driver_transfers` ← `driver_assignments` ← `users` (L3)، ثم ما يلزم من المهام (L4) والتذاكر (L5) والجولات (L7) والمناوبة (L8) بترتيب Canon §14ب. قواعد النقل وأخطاؤه (نطاق الموقعين للإنشاء والإلغاء، الهدف هو الموقع الحالي، تعطيل السائق قبل التفعيل، تغيّر التعيين المتزامن ← `ASSIGNMENT_CONFLICT` بـ`reason = assignment_changed`) في DEC-224.
 2. فحص المنع (DEC-32، لا تجاوز): أي تذكرة مفتوحة `vehicle_holder_type = 'driver'` أو `key_holder_type = 'driver'` بمعرفه، أو مهمة `in_progress` (تشمل `park/repark`) ⇒ ممنوع: النقل الفوري يعود `TRANSFER_BLOCKED_CUSTODY` (409) دون إنشاء سجل نقل ولا تنبيه؛ والمجدول عند تفعيله يصبح `blocked` مع `blocked_details` وتنبيه `transfer_blocked` بصف لكل من الموقعين (DEC-46)، ويعاد تقييمه آليًا عند انتهاء مهمته (جدولة `job.transfer_activate`). مهمة الإحضار `accepted` قبل استلام المفتاح لا تمنع النقل (الخطوة 4).
 3. سحب كل عرض فردي حي له (`close_reason = 'transfer'`) وإعادة مهامها للطابور.
 4. مهمته التالية `assigned_waiting` ومهمة الإحضار `accepted` قبل استلام المفتاح ⇒ تعودان لطابور الموقع القديم بأولويتهما الأصلية (نوبة جديدة، `task.withdrawn`) — المعمارية §4أ.
@@ -842,6 +843,8 @@ UPDATE duty_sessions SET available_since = now(), version = version + 1
 7. `driver_transfers.status = 'completed'`، أحداث `driver.transferred`، تدقيق، تمريرة للمجموعة القديمة.
 
 السجلات التاريخية (التذاكر والمهام والدورات) تحتفظ بالموقع والسائق الأصليين ولا تُعاد كتابتها.
+
+النقل حالة استخدام في `use-cases` (يعبر الهوية والتوزيع والمواقع). إعادة تقييم النقل المحجوب يتولاها مخطِّط معاملة (TxPlanner) يجدول `job.transfer_activate` فورًا حين تنهي معاملة مهمة السائق أو تنقل العهدة منه (`task.completed`، `task.canceled`، `task.reassigned`، `custody.changed`)، فلا يحتاج نقل العهدة الرسمي ولا المطابقة اليدوية كودًا خاصًا بالنقل؛ والمانع الذي يزول دون حدث (تصحيح بيانات) ينتظر أول أمر يمس السائق (DEC-223). سائق عُطّل قبل التفعيل ← النقل `canceled`.
 
 ### 9.8 تعطيل السائق
 

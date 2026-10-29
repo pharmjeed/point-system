@@ -340,15 +340,15 @@ stateDiagram-v2
 - العميل: W-06.
 
 **TT-20 · `ready` ← `reparking` — `POST /v1/tickets/{ticketId}/repark`**
-- الحراس: التذكرة `ready`؛ سبب إلزامي؛ حائز المركبة سائق (وإلا نقل عهدة رسمي أولًا، `CUSTODY_HOLDER_MISMATCH`).
-- الآثار بالترتيب: مهمة `retrieve` ← `canceled` (`cancel_reason = repark_customer_absent`)؛ الدورة مغلقة `outcome = reparked` (`reparked_at`)؛ الرمز الحي ← `revoked` بسبب `reparked`؛ إنشاء مهمة `repark` بحالة `in_progress` لحائز المركبة؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ واقعة `customer_absent` موثقة؛ حل `ready_not_collected`. السائق يبقى مشغولًا، وتاليته (إن وُجدت) تبقى محجوزة.
-- الأحداث: `ticket.reparking` (`cause = customer_absent`)، `task.canceled`، `task.created`.
+- الحراس: التذكرة `ready` ومهمة الإحضار `in_progress`؛ سبب إلزامي؛ المركبة والمفتاح مع سائق المهمة الجارية (نقل العهدة الرسمي ينقل المهمة معهما)، وإلا `CUSTODY_HOLDER_MISMATCH` (`subject`، `current_holder_type`) دون أثر (DEC-226).
+- الآثار بالترتيب: مهمة `retrieve` ← `canceled` (`cancel_reason = repark_customer_absent`)؛ الدورة مغلقة `outcome = reparked` (`reparked_at`) بأزمنتها؛ الرمز الحي ← `revoked` بسبب `reparked`؛ إنشاء مهمة `repark` بحالة `in_progress` لحائز المركبة؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ واقعة `customer_absent` محلولة فورًا بشدة `low` (`incident.opened` ثم `incident.resolved` بـ`auto_created: true`) عبر الخطاف `IncidentRecorder` (DEC-222)؛ حل `ready_not_collected` و`handover_code_locked` للدورة. السائق يبقى مشغولًا، وتاليته (إن وُجدت) تبقى محجوزة.
+- الأحداث: `ticket.reparking` (`cause = customer_absent`)، `task.canceled`، `task.created`، `incident.opened`، `incident.resolved`.
 - العميل: W-08 (DEC-42: يُرسل هنا فقط، حيث تُغلق الدورة `reparked`).
 - إلغاء الطلب بعد بدء الحركة يمر عبر TT-20b لا عبر هذا الأمر.
 
 **TT-20b · `retrieving` أو `ready` ← `reparking` — `POST /v1/retrieval-cycles/{cycleId}/cancel` (المشرف، DEC-30)**
-- الحراس: مشرف بنطاق الموقع؛ سبب إلزامي؛ الدورة مفتوحة؛ حائز المركبة سائق.
-- الآثار: مهمة `retrieve` ← `canceled` (`cancel_reason = supervisor_cancel`)؛ الدورة مغلقة `outcome = canceled` (`canceled_at`، `canceled_by`، `cancel_reason`)؛ الرمز الحي (إن وُجد) ← `revoked` بسبب `canceled`؛ إنشاء مهمة `repark` بحالة `in_progress` للسائق نفسه؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ حل `ready_not_collected` إن وُجد. السائق لا يعود متاحًا ولا تُمحى العهدة حتى «إتمام الصف» (TT-21)، فيتحقق AC-11.
+- الحراس: مشرف بنطاق الموقع؛ سبب إلزامي؛ الدورة مفتوحة؛ المركبة والمفتاح مع سائق المهمة الجارية، وإلا `CUSTODY_HOLDER_MISMATCH` دون أثر (DEC-226).
+- الآثار: مهمة `retrieve` ← `canceled` (`cancel_reason = supervisor_cancel`)؛ الدورة مغلقة `outcome = canceled` (`canceled_at`، `canceled_by`، `cancel_reason`)؛ الرمز الحي (إن وُجد) ← `revoked` بسبب `canceled` مع مسح نسخته المشفرة؛ إنشاء مهمة `repark` بحالة `in_progress` للسائق نفسه؛ التذكرة `reparking` و`active_cycle_id = NULL`؛ لا حدث عهدة و`available_since` يبقى `NULL`؛ حل `ready_not_collected` و`handover_code_locked` للدورة إن وُجدا. السائق لا يعود متاحًا ولا تُمحى العهدة حتى «إتمام الصف» (TT-21)، فيتحقق AC-11.
 - الأحداث: `ticket.retrieval_canceled`، `ticket.reparking` (`cause = supervisor_cancel`)، `task.canceled`، `task.created`.
 - العميل: W-07 فقط (لا W-08، DEC-42).
 
@@ -959,7 +959,8 @@ interface TicketRetrievalRequested {
 interface TicketRetrievalRequestedEarly {   // من زر واتساب فقط (DEC-25)؛ لا حقول موظف
   ticket: TicketRef; pending_retrieval_at: ISODateTime; request_source: 'whatsapp';
   requested_by_customer_id: UUID | null;
-  parking_task_assignee_id: UUID | null;
+  parking_task_assignee_id: UUID | null;            // مكلّف مهمة الصف أو إعادة الصف المفتوحة (DEC-204)
+  status_at_request: 'received' | 'parking' | 'reparking';   // DEC-227؛ الضغطة المكررة (already_pending) لا تصدره
 }
 interface TicketAssigned {
   ticket: TicketRef; cycle_id: UUID; task_id: UUID; assignee_id: UUID;
@@ -1043,9 +1044,10 @@ interface TaskWithdrawn {
 }
 interface TaskReassigned {
   task_id: UUID; ticket_id: UUID; from_assignee_id: UUID | null; to_assignee_id: UUID;
+  from_status: TaskStatus; target: 'driver';                  // للتحليل (DEC-215)
   result_status: 'accepted' | 'assigned_waiting' | 'in_progress';
   reason: string; priority_override: boolean; trigger: 'reassign' | 'custody_transfer';
-}
+}   // الإسناد لسائق يصدر معه ticket.assigned أو ticket.assigned_waiting بـvia = supervisor، ولا task.claimed (DEC-215)
 interface TaskEscalated { task_id: UUID; ticket_id: UUID; queued_at: ISODateTime; waited_s: number; on_duty_count: number }
 ```
 
@@ -1224,15 +1226,15 @@ interface WaCustomerOptedOut {
 
 ### 8.11 المهام المؤجلة `job.*`
 
-قاعدة إعادة التحقق: كل مهمة تحمل `aggregate_version` أو **علامة حلقة** (`queued_at`، `assigned_waiting_at`، `ready_at`)؛ عند التنفيذ يأخذ المعالج الأقفال اللازمة ويعيد فحص الشرط؛ إن تغيّر الكيان تنتهي المهمة `done` بلا أثر وتُحسب في مقياس «مهام قديمة».
+قاعدة إعادة التحقق: كل مهمة تحمل `aggregate_version` أو **علامة حلقة** (`queued_at`، `assigned_waiting_at`، `ready_at`)، ومؤقتات الجولات تحمل `offer_id` (DEC-228)؛ عند التنفيذ يأخذ المعالج الأقفال اللازمة ويعيد فحص الشرط؛ إن تغيّر الكيان أو قدمت العلامة تنتهي المهمة `done` بلا أثر وتُحسب في مقياس «مهام قديمة».
 
 | النوع | يُجدول | الحمولة | الشرط عند التنفيذ | الأثر |
 |---|---|---|---|---|
 | `job.dispatch_pass` | عند تغيّر عرض/طلب خارج معاملة تحمل القفل؛ `dedupe_key = dispatch_pass:<pool_id>` | `{ dispatch_pool_id, reason }` | المجموعة نشطة | تمريرة توزيع (10) |
 | `job.dispatch_sweep` | دوري كل 5 ثوانٍ (DEC-08)؛ `dedupe_key = dispatch_sweep`؛ سلسلة عامة واحدة تجدول تاليتها، ويبذرها عند الحاجة كل أمر ينشئ طلبًا أو جولة (DEC-179) | `{}` | — | تمريرة لكل مجموعة لديها طلب مفتوح أو جولة حية أو متجاوزة لمهلتها أو مهمة تالية، كل مجموعة في معاملتها الخاصة؛ إصلاح `claimed_elsewhere` |
-| `job.offer_remind` | `reminder_at` لجولة `single` | `{ offer_id, task_id, aggregate_version }` | الجولة `active` و`reminded_at` فارغ | OF-02، `offer.reminded` |
-| `job.offer_expire` | `expires_at + dispatch.accept_grace_ms` (DEC-47) | `{ offer_id, task_id }` | الجولة `active` و`expires_at + dispatch.accept_grace_ms <= now()` | OF-04، RT-04، تدوير المستلم (`available_since = now()` إن بقي متاحًا، DEC-26)، تمريرة توزيع |
-| `job.broadcast_remind` | `reminder_at` لجولة `broadcast` | `{ offer_id, task_id }` | الجولة `active` و`reminded_at` فارغ | تذكير واحد للمهمة المفتوحة فقط |
+| `job.offer_remind` | `reminder_at` لجولة `single`؛ `dedupe_key = offer_remind:<offer_id>` | `{ offer_id, task_id, pool_id }` مع `aggregate_version` الجولة على الصف (DEC-228) | الجولة `active` و`single` وبالإصدار نفسه و`reminded_at` فارغ؛ ويصل المستلم ما دام `available` | OF-02، `offer.reminded` |
+| `job.offer_expire` | `expires_at + dispatch.accept_grace_ms` (DEC-47)؛ `dedupe_key = offer_expire:<offer_id>` | `{ offer_id, task_id, pool_id }` مع `aggregate_version` الجولة (DEC-228) | الجولة `active` وبالإصدار نفسه و`expires_at + dispatch.accept_grace_ms <= now()`؛ المؤقت المبكر يعيد جدولة نفسه | OF-04، RT-04، تدوير المستلم (`available_since = now()` إن بقي متاحًا، DEC-26)، تمريرة توزيع |
+| `job.broadcast_remind` | `reminder_at` لجولة `broadcast`؛ `dedupe_key = broadcast_remind:<offer_id>` | `{ offer_id, task_id, pool_id }` (DEC-228) | الجولة `active` و`broadcast` و`reminded_at` فارغ | تذكير واحد للمستلمين المناوبين القادرين على التصرف الآن فقط |
 | `job.escalate_unaccepted` | `queued_at + dispatch.unaccepted_escalation_s` | `{ task_id, cycle_id, queued_at }` | المهمة `queued`/`offered`/`broadcast` و`queued_at` مطابق و`escalated_at` فارغ | `escalated_at`، `task.escalated`، تنبيه `request_unaccepted`؛ الطلب لا يسقط |
 | `job.next_task_wait_check` | `assigned_waiting_at + dispatch.next_task_wait_alert_s` | `{ task_id, assigned_waiting_at }` | ما زالت `assigned_waiting` بنفس العلامة | تنبيه `next_task_waiting_long` دون إعادة إسناد |
 | `job.ready_uncollected_check` | `ready_at + ready.uncollected_alert_min` | `{ ticket_id, cycle_id, ready_at }` | التذكرة `ready` بنفس الدورة والعلامة | تنبيه `ready_not_collected` |
@@ -1243,7 +1245,7 @@ interface WaCustomerOptedOut {
 | `job.wa_process_inbound` | بعد حفظ الطلب الخام وإرسال 200 | `{ inbound_event_id }` | `whatsapp_inbound_events.status = pending` | تحليل الرسائل والحالات، أحداث §8.10 |
 | `job.push_send` | من حدث يطلق Push؛ بلا `ordering_key` (منع التكرار فقط) | `{ notification_id }` | الإشعار `pending`؛ لعروض المهام: الجولة ما زالت نشطة، وإلا يُرسل البديل الهادئ أو يُتجاوز | Web Push؛ اشتراك منتهٍ (410) يمسح حقول Push من الجهاز |
 | `job.ws_publish` | احتياطي فقط (DEC-48): حين يتعذر النشر داخل المعاملة (حمولة أكبر من حد NOTIFY أو نشر مؤجل)؛ الأصل `pg_notify` داخل المعاملة نفسها | `{ outbox_event_id, rooms }` | — | نشر عبر `pg_notify` لعمليات الـAPI؛ لا إعادة للعميل غير المتصل |
-| `job.heartbeat_sweep` | دوري كل `heartbeat.interval_s` | `{}` | — | `connection_state` من `last_heartbeat_at` حسب `heartbeat.uncertain_after_s` و`heartbeat.offline_after_s`؛ `driver.connection_changed` |
+| `job.heartbeat_sweep` | دوري كل `heartbeat.interval_s`؛ سلسلة عامة واحدة (`dedupe_key = heartbeat_sweep`) يبذرها بدء المناوبة (DEC-232) | `{}` | — | لكل مناوبة مفتوحة في معاملتها (L8 وحده، بلا رفع إصدار): `connection_state` من `last_heartbeat_at` (أو `started_at`) حسب `heartbeat.uncertain_after_s` و`heartbeat.offline_after_s`؛ `driver.connection_changed`؛ رفع/حل `driver_connection_lost_with_custody` (DEC-219) |
 | `job.retention_purge` | يومي عند `RETENTION_PURGE_CRON_UTC`: صف واحد لكل المؤسسات بمفتاح `retention:<date>`، تُعاد جدولته بعد كل تشغيل فعلي ويُنشئه المراقب إن غاب (DEC-161) | `{ scope: 'all' }` (واختياريًا `org_id`، `dry_run`، `reschedule`) | سياسة `retention.*` لكل مؤسسة | حذف/إخفاء وفق 06؛ لا يمس بيانات واقعة مفتوحة |
 | `job.export_generate` | `POST /v1/exports` | `{ export_id }` | التصدير `pending` | ملف مؤقت، `ready` أو `failed` |
 
