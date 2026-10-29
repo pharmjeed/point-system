@@ -25,7 +25,7 @@
 
 | الدور | من هو | النطاق الفعلي | كيف يُنشأ | التحقق الثنائي |
 |---|---|---|---|---|
-| `owner` | المالك | المؤسسة كاملة (صف `role_scopes` بنوع `org` نشط) | أداة التهيئة عند التثبيت فقط، لا عبر الـAPI | إلزامي |
+| `owner` | المالك | المؤسسة كاملة (صف `role_scopes` بنوع `org` نشط) | أداة التهيئة عند التثبيت فقط، لا عبر الـAPI: `node api/dist/cli.js create-owner` (DEC-302) | إلزامي |
 | `admin` | الإدارة | المؤسسة كاملة (صف `org` نشط) | المالك عبر `POST /v1/staff` | إلزامي |
 | `supervisor` | المشرف | المواقع التي لديه عليها صفوف `role_scopes` بنوع `venue` نشطة | المالك أو الإدارة عبر `POST /v1/staff` ثم `POST /v1/staff/{userId}/scopes` | مفعّل افتراضيًا (`security.supervisor_mfa_required = true`) |
 | `driver` | السائق | موقع تعيينه النشط فقط (`driver_assignments.status = active`) | الإدارة أو المالك عبر `POST /v1/drivers` | لا؛ رقم سري 6 أرقام |
@@ -355,7 +355,7 @@ interface ActorContext {
 
 ## 6. الصور والروابط الموقعة
 
-1. حاوية التخزين خاصة بالكامل؛ لا وصول عام ولا روابط دائمة. المفاتيح غير قابلة للتخمين: `org/{orgId}/tickets/{ticketId}/{mediaId}.{ext}`.
+1. حاوية التخزين خاصة بالكامل؛ لا وصول عام ولا روابط دائمة. المفاتيح غير قابلة للتخمين: `org/{orgId}/tickets/{ticketId}/{mediaId}.{ext}`. التخزين المستضاف ذاتيًا يُخدم على أصل التطبيق (`/{S3_BUCKET_MEDIA}` عبر Caddy، بلا CORS) بمستخدم تطبيق مقصور على Get وPut وDelete؛ ومع S3 مُدار يُسمح بأصله في CSP (`STORAGE_ORIGIN`) ويحتاج الدلو CORS لأصل التطبيق (DEC-300).
 2. **الرفع:** رابط PUT موقّع صالح 5 دقائق يُصدر لمنشئ التذكرة فقط أثناء `received` أو `parking` (إكمال الصور الناقصة)، مقيد بنوع المحتوى المعلن والحجم. بعد الرفع يتحقق `complete` من وجود الكائن ومطابقة حجمه وبصمته (`sha256`) للمُعلن على الأصل المرفوع، ثم يزيل بيانات EXIF والموقع (DEC-36) ويحفظ النسخة المنقّاة بحجمها وبصمتها الجديدين، ولا يبقى الأصل غير المنقّى، قبل `upload_status = uploaded`.
 3. **العرض:** رابط GET موقّع صالح 300 ثانية كحد أقصى يُصدر لكل طلب بعد فحص `ticket.read_photos`، مع `Cache-Control: private, no-store`. لا تُخزَّن الروابط ولا تُسجَّل ولا توضع في Push أو واتساب أو التصدير.
 4. تُزال بيانات EXIF والموقع من كل صورة على الخادم قبل حفظها النهائي (DEC-36)، ولا معاينات مصغّرة عامة؛ أي معالجة للصور تتم داخل الحاوية الخاصة نفسها.
@@ -388,7 +388,7 @@ interface ActorContext {
 
 ### 8.1 خط المعالجة
 
-1. `RateLimitMiddleware` — حسب IP قبل الدخول وحسب المستخدم بعده (فئات 07 §1.9).
+1. `RateLimitGuard` — أول الحراس: حسب IP قبل الدخول (فئتا `auth` و`webhook` وكل طلب بلا كوكي جلسة؛ IPv6 بـ/64)، وحد المستخدم أو الجهاز في `UserRateLimitGuard` بعد البند 4 (فئات 07 §1.9؛ DEC-294، DEC-295).
 2. `CsrfGuard` — لكل طريقة غير آمنة عدا `/webhooks/whatsapp`: `X-Requested-With: point-web` و`Origin` = `APP_BASE_URL`، وإلا `PERMISSION_DENIED` (`reason = csrf`).
 3. `SessionAuthGuard` — يقرأ الكوكي `__Host-point_sid`، يحسب `sha256` ويطابق `auth_sessions.token_hash`، يرفض المنتهية والمبطلة والمعطلة، ويفرض على الجلسة المقيدة لأي مسار خارج `auth.self` تغيير السر المؤقت أولًا (`AUTH_SECRET_CHANGE_REQUIRED`) ثم إعداد MFA (`AUTH_MFA_SETUP_REQUIRED`)، ثم يبني `ActorContext`.
 4. `PermissionGuard` — يقرأ الصلاحية المعلنة على المسار ويطابقها بمصفوفة الدور (+ D* للمشرف القائد).
@@ -494,12 +494,12 @@ function requireDuty(a: ActorContext, poolId: string) {
 
 ### 9.3 الجلسات والكوكي
 
-- رمز جلسة معتم 256 بت في الكوكي `__Host-point_sid` بخصائص `HttpOnly; Secure; SameSite=Lax; Path=/` ودون `Domain` (DEC-29)؛ يُخزن هاشه فقط في `auth_sessions.token_hash`. لا رموز في `localStorage`.
+- رمز جلسة معتم 256 بت في الكوكي `__Host-point_sid` بخصائص `HttpOnly; Secure; SameSite=Lax; Path=/` ودون `Domain` (DEC-29)؛ يُخزن هاشه فقط في `auth_sessions.token_hash`. لا رموز في `localStorage`. يرفض الإقلاع في `staging` و`production` كوكيًا لا يبدأ بـ`__Host-` أو بلا Secure، و`APP_BASE_URL` غير https، و`API_BASE_URL` من أصل آخر؛ وكوكي `__Host-` بلا Secure في كل بيئة (DEC-298).
 - التطبيق والـAPI من أصل واحد في الإنتاج (DEC-29)، وCORS مقيد بـ`APP_BASE_URL` وحده مع الاعتمادات ودون نجمة (07 §1.3).
 - العمر المطلق: 14 ساعة للسائق (`security.driver_session_hours`) و12 للموظفين (`security.staff_session_hours`)؛ يُحدَّث `last_seen_at` مع الاستخدام.
 - رمز جديد عند الدخول وعند إكمال MFA وعند تغيير السر (منع تثبيت الجلسة).
 - **CSRF:** كل `POST/PUT/PATCH/DELETE` عدا `/webhooks/whatsapp` — ومنها مسار الدخول لمنع login CSRF — يتطلب الترويسة `X-Requested-With: point-web` وترويسة `Origin` مطابقة لـ`APP_BASE_URL`، وإلا `403 PERMISSION_DENIED` (`reason = csrf`). الأوامر تقبل `application/json` فقط.
-- CSP صارمة في تطبيق الويب (لا سكربتات مضمنة ولا أطراف ثالثة) لتقليل أثر XSS على الجلسة. يضعها الخادم أو الوكيل العكسي ترويسةً `Content-Security-Policy` للتطبيق المبني، لا `<meta>` في `index.html` (خادم Vite للتطوير يحقن سكربتات مضمنة): `script-src 'self'`، و`style-src 'self'` مع `style-src-elem 'self' 'unsafe-inline'` (عناصر `<style>` المضمنة وحدها، لقفل التمرير الذي يحقنه Radix في النوافذ والأوراق؛ سمات `style` تبقى محجوبة، DEC-192)، و`img-src 'self' data:` ومضيف التخزين للروابط الموقعة للصور، و`connect-src 'self'` ومضيف التخزين للرفع المباشر؛ القيمة الكاملة في 05 §14.1 (DEC-94).
+- CSP صارمة في تطبيق الويب (لا سكربتات مضمنة ولا أطراف ثالثة) لتقليل أثر XSS على الجلسة. يضعها الخادم أو الوكيل العكسي ترويسةً `Content-Security-Policy` للتطبيق المبني، لا `<meta>` في `index.html` (خادم Vite للتطوير يحقن سكربتات مضمنة): `script-src 'self'`، و`style-src 'self'` مع `style-src-elem 'self' 'unsafe-inline'` (عناصر `<style>` المضمنة وحدها، لقفل التمرير الذي يحقنه Radix في النوافذ والأوراق؛ سمات `style` تبقى محجوبة، DEC-192)، و`img-src 'self' data:` ومضيف التخزين للروابط الموقعة للصور، و`connect-src 'self'` و`wss://` للنطاق ومضيف التخزين للرفع المباشر، و`object-src 'none'`، مع `Referrer-Policy: no-referrer` و`X-Frame-Options: DENY` وCOOP وCORP بقيمة `same-origin`؛ وللـAPI سياسة `default-src 'none'`؛ القيمة الكاملة في 05 §14.1 (DEC-94، DEC-299).
 
 ### 9.4 أسباب الإبطال
 
@@ -534,13 +534,13 @@ function requireDuty(a: ActorContext, poolId: string) {
 1. **لا تعديل للنفس:** لا يغيّر أي مستخدم دوره أو نطاقاته أو حالة حسابه بنفسه (`PERMISSION_DENIED` بـ`reason = self_modification`).
 2. **الموافقة الذاتية مقيدة ومعلَّمة:** إذا نفّذ مشرف قائد استثناءً على عمل نفّذه بنفسه (`handover.exception` على مهمة هو مكلّفها، `payment.reverse` لتحصيل حصّله، `payment.waive` على تذكرة يسلّمها، `ticket.inspection_exception` لتذكرة أنشأها)، يُسمح فقط بسبب إلزامي وتُعلَّم `audit_log.metadata.self_approved = true` وتظهر في تقرير الحفل لمراجعة الإدارة.
 3. **ممنوع مطلقًا:** أن يؤكد المشرف استلام نقده بنفسه: `403 PERMISSION_DENIED` (`reason = self_handover`) قبل أي قفل، والقيد `ck_cash_handover_distinct_people` احتياطي (DEC-275).
-4. حساب المالك الأول يُنشأ بأداة التهيئة عند التثبيت؛ لا يوجد مسار API لإنشاء مالك.
+4. حساب المالك الأول يُنشأ بأداة التهيئة عند التثبيت (`node api/dist/cli.js create-owner`: المؤسسة إن لم توجد، والمالك `O-0001` بنطاق `org` نشط، وكلمة مرور مؤقتة من 16 محرفًا تُعرض مرة مع `must_change_secret` وبلا TOTP، وتدقيق `owner.bootstrap` بفاعل `system`؛ ترفض إن وُجد مالك، DEC-302)؛ لا يوجد مسار API لإنشاء مالك.
 
 ---
 
 ## 11. متطلبات التدقيق للإجراءات الحساسة
 
-كل صف في `audit_log` يحمل: `actor_type`، `actor_id`، `action` (اسم الصلاحية؛ ولفاعل النظام نوع المهمة `job.*`، DEC-145، DEC-152)، `entity_type`، `entity_id`، `venue_id`، `request_id`، `ip`، `user_agent`، `occurred_at`. الجدول يحدد الإضافات الإلزامية.
+كل صف في `audit_log` يحمل: `actor_type`، `actor_id`، `action` (اسم الصلاحية؛ ولفاعل النظام نوع المهمة `job.*`، DEC-145، DEC-152؛ وأداة تهيئة المالك `owner.bootstrap`، DEC-302)، `entity_type`، `entity_id`، `venue_id`، `request_id`، `ip`، `user_agent`، `occurred_at`. الجدول يحدد الإضافات الإلزامية.
 
 | الإجراء | حقول إضافية إلزامية | ممنوع تسجيله |
 |---|---|---|

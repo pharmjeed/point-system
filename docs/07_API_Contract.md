@@ -167,10 +167,12 @@ sequenceDiagram
 | `read` | 300/دقيقة لكل مستخدم | |
 | `device` | 60/دقيقة لكل جهاز | النبضة كل 15 ثانية |
 | `export` | 5/ساعة لكل مستخدم | |
-| `webhook` | بلا حد تطبيقي؛ جسم خام ≤ 3 MB (وبقية أجسام JSON ≤ 1 MB، DEC-130) | الرد السريع أهم من الحد |
+| `webhook` | صمام لكل عنوان مصدر (`RATE_LIMIT_WEBHOOK_PER_MIN`، 6000 في الدقيقة افتراضيًا؛ Meta تعيد بعد 429)؛ جسم خام ≤ 3 MB (وبقية أجسام JSON ≤ 1 MB، DEC-130) | الرد السريع أهم من الحد (DEC-293) |
 | `health` | شبكة داخلية | |
 
-التجاوز يعيد `429 RATE_LIMITED` مع `Retry-After` بالثواني، وترويسات `RateLimit-Limit` و`RateLimit-Remaining` و`RateLimit-Reset` على كل رد. `RESEND_LIMIT_REACHED` حد أعمال منفصل (`handover.max_resends`).
+التجاوز يعيد `429 RATE_LIMITED` مع `Retry-After` بالثواني و`details.retry_after_s`، وترويسات `RateLimit-Limit` و`RateLimit-Remaining` و`RateLimit-Reset` على كل رد. `RESEND_LIMIT_REACHED` حد أعمال منفصل (`handover.max_resends`).
+
+التنفيذ (DEC-293، DEC-294، DEC-295): دلو رموز داخل كل عملية `api` (N نسخ ← N × الحد) تقوده فئة المسار (`x-rate-limit-class`)، ومتغير بيئة لكل فئة (05 §8، 0 = بلا حد)؛ الموضوع قبل الدخول عنوان العميل (IPv6 بـ/64؛ فئتا `auth` و`webhook` وكل طلب بلا كوكي جلسة، أول الحراس)، وبعده المستخدم، والجهاز (الجلسة) لفئة `device` بعد حارسي الجلسة والصلاحية؛ والطلب بكوكي يتبين بطلانه لا يُحد بالعنوان (الحماية الحجمية للحافة)؛ والحمايات عبر النسخ في PostgreSQL (قفل الحساب، حد كشف الجوال).
 
 ### 1.10 تقييم الصلاحية والنطاق
 

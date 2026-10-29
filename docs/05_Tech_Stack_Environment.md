@@ -54,11 +54,14 @@ point/
 ├─ tools/
 │  └─ wa-simulator/        # محاكي Graph API + مُرسِل Webhook موقّع للتطوير والاختبار
 ├─ infra/
-│  ├─ docker/              # Dockerfile للخلفية (صورة واحدة بأمرين: api أو worker)
-│  ├─ compose/             # docker-compose.yml للتطوير المحلي
+│  ├─ docker/              # Dockerfile للخلفية (صورة واحدة: api أو worker أو migrate) وweb.Dockerfile (Caddy + PWA)، DEC-305
+│  ├─ caddy/               # Caddyfile: TLS، الأصل الواحد، ترويسات الأمان والتخزين المؤقت للـPWA (DEC-299)
+│  ├─ compose/             # docker-compose.yml للتطوير، وdocker-compose.prod.yml، وملفات اختيارية local-db/minio/simulator
+│  ├─ db/                  # bootstrap-roles.sql: أدوار القاعدة مرة لكل بيئة (DEC-301)
+│  ├─ backup/              # backup.sh وrestore.sh وتمرين الاستعادة (DEC-303)
 │  ├─ k6/                  # سيناريوهات اختبار الحمل
 │  └─ github/              # قوالب سير عمل GitHub Actions (تُنسخ إلى .github/workflows)
-├─ docs/                   # حزمة التوثيق هذه (المرجع)
+├─ docs/                   # حزمة التوثيق هذه (المرجع)، ومنها دليل التشغيل DEPLOYMENT.md
 ├─ brand/                  # ملفات الهوية: الشعارات، tokens، أيقونات التطبيق، الأصوات، manifest
 ├─ .env.example
 ├─ pnpm-workspace.yaml
@@ -119,7 +122,7 @@ packages/server/src/
 | `@opentelemetry/sdk-node` + instrumentations (http, express, pg) + مُصدِّر OTLP | التتبع عبر api و worker و Graph API | `OTEL_*`؛ مؤجل في الإصدار الأول حتى توجد نقطة استقبال، ويُفعَّل فقط عند ضبط `OTEL_EXPORTER_OTLP_ENDPOINT` (DEC-163) |
 | `prom-client` | مقاييس `/metrics` | شبكة داخلية فقط |
 | `helmet`, `cookie-parser` | ترويسات الأمان وقراءة الكوكي | CSP للـAPI بسيطة (§14) |
-| `@nestjs/throttler` | حد المعدل لكل نسخة | الحماية الأساسية من التخمين في القاعدة نفسها (`failed_login_count`, `locked_until`) |
+| (بلا مكتبة) دلو رموز داخل العملية في `core/rate-limit` | حد المعدل لكل نسخة بفئات 07 §1.9 (`ROUTES.rateLimitClass` = `x-rate-limit-class`) | بدل `@nestjs/throttler` (DEC-294): العنوان قبل الدخول (IPv6 بـ/64) والمستخدم أو الجهاز بعده؛ والحماية الأساسية من التخمين في القاعدة نفسها (`failed_login_count`, `locked_until`) |
 | `fetch` المدمج في Node.js | استدعاء Graph API | مهلة صريحة بـ`AbortSignal.timeout` وإعادة محاولة في العامل فقط |
 
 لا تُضاف مكتبة طوابير خارجية ولا Redis في الإصدار الأول (DEC-07).
@@ -216,6 +219,7 @@ packages/server/src/
 
 - لا سر في حزمة الواجهة. المتغيرات العامة فقط بالبادئة `VITE_` (§8).
 - الأسرار تُقرأ عبر `SecretResolver`: `env://NAME` محليًا، و`sm://path` من مدير الأسرار في البيئات الأخرى. حقول `whatsapp_channel.*_secret_ref` تخزن المرجع لا القيمة.
+- **خادم مستضاف ذاتيًا (القرار DEC-304):** لا محوّل لمدير أسرار بعد، فحتى يختار Q-02 مزودًا بمدير أسرار يكون ملف `.env` المقصور على الجذر (`0600`) بمراجع `env://` مخزنَ الأسرار في `staging` و`production`.
 
 ### 7.8 اللغة والاتجاه
 
@@ -262,7 +266,7 @@ DATABASE_SSL=false                   # true in staging/production
 
 # ---------- Sessions & crypto ----------
 SESSION_SECRET=                      # 32+ random bytes (base64); rotating logs everyone out
-SESSION_COOKIE_NAME=__Host-point_sid # use point_sid when SESSION_COOKIE_SECURE=false (local http)
+SESSION_COOKIE_NAME=point_sid        # __Host-point_sid in staging/production (SESSION_COOKIE_SECURE=true)
 SESSION_COOKIE_SECURE=false          # true everywhere except local http
 CODE_PEPPER=                         # HMAC key for claim codes (DEC-15); rotate only between events
 AUTH_SECRET_PEPPER=                  # base64 32 bytes, argon2id pepper for PINs/passwords (09 §9.1, DEC-58); rotating it invalidates every secret
@@ -357,6 +361,10 @@ VITE_APP_VERSION=dev
 - **متغيرات الويب (القرار DEC-83):** يقرأ Vite ملف `.env` الواحد في جذر المستودع (`envDir`). إن لم يُضبط `VITE_BRAND_STAFF_NAME_AR` إطلاقًا (نسخة جديدة، CI) يؤخذ `short_name` من `manifest.webmanifest` لا نص صلب، و`brand` في `GET /v1/me` (إعدادات المؤسسة) يتقدم وقت التشغيل.
 - **قائمة سماح الاختبار (القرار DEC-144):** مستلم خارج `WA_TEST_RECIPIENT_ALLOWLIST` (إلزامية في `staging`، وفي `local` و`test` إن ضُبطت) يجعل الإشعار `failed` بـ`WA_SEND_FAILED` دون استدعاء المزود ودون تنبيه.
 - **Web Push (القرار DEC-270):** `VAPID_PUBLIC_KEY` و`VAPID_PRIVATE_KEY` معًا أو لا شيء (`EnvError` عند الإقلاع)، و`VAPID_SUBJECT` يبدأ بـ`mailto:` أو `https:` حين يُضبطان. المرسل: `APP_ENV=test` ← مرسل يسجّل في الذاكرة؛ المفتاحان ← `web-push`؛ `local` بلا مفاتيح ← مرسل التطوير المسجِّل (تحذير، لا شيء يغادر العملية)؛ `staging` و`production` بلا مفاتيح ← مرسل معطل تفشل محاولاته بـ`push_not_configured` دون أن تُحسب على الجهاز.
+- **حدود المعدل (القراران DEC-293 وDEC-296):** متغير لكل فئة من 07 §1.9 (0 = بلا حد للفئة)، ولا `RATE_LIMIT_LOGIN_PER_15MIN` (الجزء الخاص بالحساب هو القفل بعد `security.max_login_attempts`)؛ وللـWebhook صمام لكل عنوان مصدر؛ و`RATE_LIMIT_ENABLED` غير المضبوط مفعّل إلا مع `NODE_ENV=test`.
+- **`TRUST_PROXY` (القرار DEC-297):** عدد الوكلاء العكسيين أمام الـAPI لـ`trust proxy` في Express (أو صيغة قائمة Express)؛ 1 خلف Caddy، و2 خلف CDN مع `trusted_proxies` في Caddy.
+- **حراس الإقلاع (القرار DEC-298):** في `staging` و`production` يرفض الإقلاع كوكيًا لا يبدأ بـ`__Host-` أو بلا `SESSION_COOKIE_SECURE=true`، و`APP_BASE_URL` غير https، و`API_BASE_URL` من أصل آخر؛ وفي كل بيئة كوكي `__Host-` بلا Secure، و`WA_GRAPH_BASE_URL` غير https مع `WA_MODE=live`، وstaging حيًا بلا قائمة سماح، و`CHAOS_KILL_AT` في الإنتاج.
+- **التخزين على أصل التطبيق (القرار DEC-300):** مع MinIO المستضاف ذاتيًا `S3_ENDPOINT=https://{DOMAIN}` و`S3_FORCE_PATH_STYLE=true`، وCaddy يوجّه `/{S3_BUCKET_MEDIA}` و`/{S3_BUCKET_EXPORTS}` إلى MinIO؛ ومع S3 مُدار يُضبط `STORAGE_ORIGIN` في Caddy (لـ`img-src` و`connect-src`) ويحتاج الدلو CORS لأصل التطبيق.
 - **المراقب (القرار DEC-157):** `MONITOR_INTERVAL_S` فاصل `SystemMonitor` في العامل والـAPI معًا (الافتراضي 10 ثوانٍ، و0 يعطله كما في الاختبارات التي تستدعي دورته مباشرة).
 - **مشغّل التخزين (القرار DEC-108):** S3 عند ضبط `S3_ENDPOINT` أو المفتاحين الثابتين معًا (`S3_ACCESS_KEY_ID` و`S3_SECRET_ACCESS_KEY`)، ودائمًا في `staging` و`production` (دور المثيل أو المهمة عبر سلسلة اعتماد AWS الافتراضية حين لا تُضبط مفاتيح ثابتة)؛ والحاوية في الذاكرة فقط في `local` و`test` دون أي إعداد S3، مع تحذير في `local` لأن الصور تضيع عند إعادة التشغيل.
 
@@ -376,8 +384,9 @@ VITE_APP_VERSION=dev
 1. كل بيئة لها قاعدة بيانات ودلاء تخزين ومفاتيح VAPID وأسرار مستقلة.
 2. بيئة `staging` ترفض الإرسال لأي رقم خارج القائمة المسموحة حتى لو وُجد خطأ في البيانات.
 3. رقم الإنتاج لا يُستخدم في أي بيئة أخرى، ولا يوجد إلا صف `whatsapp_channel` فعال واحد في كل بيئة (`uq_whatsapp_channel_active`).
-4. دلو الوسائط في كل بيئة له قاعدة دورة حياة تحذف البادئة `incoming/` بعد يوم واحد (القرار DEC-97): رابط PUT الموقّع يكتب في `incoming/{org}/{ticket}/{media}-{nonce}`، والنسخة المنقّاة تُحفظ بمفتاح 09 §6.1 ويُحذف الأصل قبل `uploaded`، فتكنس القاعدة الأيتام (رفع لم يكتمل، إعادة PUT برابط ما زال صالحًا بعد الإتمام، توقف بين الكتابة والحذف). محليًا تضيفها خدمة `minio-init` (§9.1).
-5. دور الاحتفاظ `point_retention` (الترحيل `0004_retention_role.sql`) يأخذه `job.retention_purge` بـ`SET LOCAL ROLE`؛ في `staging` و`production` يُمنح دور دخول العامل عضويته (`GRANT point_retention TO <worker login>`)، ودونها تفشل كل دفعة حذف (مهمة فاشلة وتنبيه `outbox_lag`) (القرار DEC-153).
+4. دلو الوسائط في كل بيئة له قاعدة دورة حياة تحذف البادئة `incoming/` بعد يوم واحد (القرار DEC-97): رابط PUT الموقّع يكتب في `incoming/{org}/{ticket}/{media}-{nonce}`، والنسخة المنقّاة تُحفظ بمفتاح 09 §6.1 ويُحذف الأصل قبل `uploaded`، فتكنس القاعدة الأيتام (رفع لم يكتمل، إعادة PUT برابط ما زال صالحًا بعد الإتمام، توقف بين الكتابة والحذف). محليًا تضيفها خدمة `minio-init` (§9.1)، وهي تنشئ أيضًا مستخدم تطبيق مقصورًا على Get وPut وDelete في الدلوين وترفض دلوًا بإصدارات (DEC-128، DEC-300).
+5. دور الاحتفاظ `point_retention` (الترحيل `0004_retention_role.sql`) يأخذه `job.retention_purge` بـ`SET LOCAL ROLE`؛ في `staging` و`production` يُمنح دور دخول العامل عضويته بلا وراثة (`GRANT point_retention TO point_worker WITH INHERIT FALSE, SET TRUE`؛ المنح العادي يورّثه `DELETE` على الجداول الإلحاقية دائمًا)، ودونها تفشل كل دفعة حذف (مهمة فاشلة وتنبيه `outbox_lag`) (القراران DEC-153 وDEC-301). الأدوار في `infra/db/bootstrap-roles.sql`: `point_owner` يملك الكائنات ويشغّل الترحيلات، و`point_api` و`point_worker` عضوان في `point_app`.
+6. الإقلاع في `staging` و`production` يرفض الإعدادات الخطرة (القرار DEC-298، §8).
 
 ### 9.1 التطوير المحلي (`infra/compose/docker-compose.yml`)
 
@@ -426,6 +435,8 @@ volumes:
 
 المنافذ المحلية: الواجهة 5173، الـAPI 3000، PostgreSQL 5432، MinIO 9000 (لوحة 9001)، المحاكي 4010، المقاييس 9464.
 
+صورتا `minio/minio` و`minio/mc` المجتمعيتان لم تعودا تُنشران بإصدارات موسومة، فملف MinIO لا يثبّت إصدارًا افتراضيًا ويُثبَّت عند الحاجة بـ`MINIO_IMAGE` و`MINIO_MC_IMAGE`؛ وS3 المُدار مُوصى به للإنتاج (DEC-307). ملفات الإنتاج والمكونات الاختيارية في `infra/compose` (`docker-compose.prod.yml` ومعه `docker-compose.local-db.yml` و`docker-compose.minio.yml` و`docker-compose.simulator.yml` بـ`-f` إضافية، DEC-305).
+
 في التطوير يمرر Vite الطلبات `/v1` و`/ws` و`/webhooks` إلى `localhost:3000` (proxy) ليعمل الكوكي كطرف أول دون CORS.
 
 ### 9.2 محاكي واتساب (`tools/wa-simulator`)
@@ -450,9 +461,11 @@ volumes:
 | `DATA_ENCRYPTION_KEY` (+ المعرف) | تشفير أسرار TOTP والنسخ المؤقتة للرموز | مدير الأسرار | مفتاح جديد بمعرف جديد؛ القديم للقراءة حتى إعادة التشفير |
 | `VAPID_PRIVATE_KEY` | توقيع Web Push | مدير الأسرار | **التدوير يبطل كل اشتراكات Push**؛ يتطلب إعادة اشتراك الأجهزة |
 | مفاتيح S3 | التخزين | مدير الأسرار أو هوية الخدمة | تدوير دوري |
-| `DATABASE_URL` | الاتصال | مدير الأسرار | مستخدم تطبيق بصلاحيات محدودة (`06_schema.sql` §17) |
+| `DATABASE_URL` | الاتصال | مدير الأسرار | دور دخول لكل عملية بصلاحيات محدودة: `point_api` و`point_worker` (عضوان في `point_app`)، والترحيلات بـ`point_owner` (`06_schema.sql` §17، DEC-301) |
 
 لا يُطبع أي سر في السجلات أو رسائل الأخطاء أو مخرجات CI، ويُفعَّل فحص الأسرار في المستودع (secret scanning).
+
+على خادم مستضاف ذاتيًا قبل اختيار مزود بمدير أسرار (Q-02) يقوم ملف `.env` المقصور على الجذر (`0600`) بمراجع `env://` مقام مدير الأسرار في العمود «التخزين» أعلاه (DEC-304).
 
 ---
 
@@ -471,7 +484,7 @@ volumes:
 | `integration` | Vitest + Testcontainers `postgres:16` + المحاكي | نجاح كامل، بما فيها اختبارات السباق |
 | `openapi` | توليد OpenAPI من المخططات ومقارنته بـ`docs/07_openapi.yaml` | لا اختلاف غير مقصود |
 | `e2e` | Playwright على 360/390/430 بكسل | نجاح كامل |
-| `build` | صورة Docker واحدة للخلفية + ملفات الواجهة الثابتة | — |
+| `build` | صورة Docker واحدة للخلفية على `node:24-alpine` (`pnpm deploy --prod` لكل عملية، المستخدم `node`، فحص الصحة `/health/live`) + صورة الويب (Caddy مع `apps/web/dist`) (DEC-305) | — |
 | `security` | فحص الاعتماديات والأسرار | لا ثغرات حرجة مفتوحة |
 
 ### 11.2 ترتيب النشر
@@ -531,7 +544,7 @@ volumes:
 | `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري |
 | `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات |
 | `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159) |
-| `point_backup_last_success_timestamp_seconds` | Gauge | آخر نسخة احتياطية ناجحة |
+| `point_backup_last_success_timestamp_seconds` | Gauge | آخر نسخة احتياطية ناجحة؛ من ملف نصي لـnode_exporter يكتبه سكربت النسخ، لا عملية دائمة (DEC-303) |
 
 ### 12.3 تنبيهات النظام (من المعمارية §15، قيم أولية تُضبط بعد التجربة)
 
@@ -556,12 +569,12 @@ volumes:
 
 | البند | المقترح |
 |---|---|
-| النسخ | نسخ يومية مشفرة لـPostgreSQL من المزود المُدار، مع استعادة زمنية (PITR) إن دعمها المزود |
+| النسخ | نسخ يومية مشفرة لـPostgreSQL من المزود المُدار، مع استعادة زمنية (PITR) إن دعمها المزود؛ وعلى الخادم المستضاف ذاتيًا `infra/backup/backup.sh`: `pg_dump -Fc` يوميًا عبر age (مستلمون عامّون على الخادم والهوية خارجه) أو openssl AES-256-CBC مع PBKDF2 (600 ألف تكرار) وملف `.sha256` مرافق، مع بيان الترحيلات وأعداد الصفوف من لقطة النسخة نفسها (`pg_dump --snapshot`)، ونسخة خارج الموقع في دلو منفصل (يجوز فيه الإصدارات وObject Lock، DEC-128 يخص دلوي الوسائط والتصديرات) (DEC-303) |
 | الاحتفاظ بالنسخ | 30 يومًا على الأقل، ونسخة شهرية لمدة 12 شهرًا (تُراجع مع سياسة الاحتفاظ Q-06) |
 | تخزين الكائنات | بلا إصدارات (versioning) على دلوي الوسائط والتصديرات (DEC-128): الحذف حذف فعلي، فلا تبقى أصول غير منقّاة (09 §6.2، DEC-36) ولا صور حُذفت بالاحتفاظ نسخًا غير حالية؛ المتانة من تكرار التخزين لدى المزود وخطة النسخ الاحتياطي (PNT-095). قاعدة دورة حياة الوسائط `incoming/` بعد يوم (DEC-97)، وحذف الصور بالاحتفاظ تجريه `job.retention_purge` (06 ERD §8) فيحترم الحجز القانوني |
 | هدف نقطة الاستعادة RPO | 5 دقائق مع PITR، وإلا 24 ساعة (يُوثق حسب المزود) |
 | هدف زمن الاستعادة RTO | ساعة واحدة للخدمة الكاملة؛ وأثناءها الإجراء الورقي (`04` §8.13) |
-| تمرين الاستعادة | قبل الإطلاق (معيار القبول AC-12) ثم كل ربع سنة: استعادة إلى بيئة معزولة + تشغيل فحص الثوابت + مطابقة عينة من التذاكر |
+| تمرين الاستعادة | قبل الإطلاق (معيار القبول AC-12) ثم كل ربع سنة: استعادة إلى قاعدة جديدة فارغة في بيئة معزولة (`--single-transaction --no-owner`) + التحقق (الترحيلات، أعداد البيان صفًا بصف، `consistency.sql`، فحص الثوابت) ثم التحويل؛ والتمرين الآلي `pnpm ops:restore-drill` في CI (DEC-303) |
 | الأسرار والإعدادات | نسخة موثقة من إعدادات البنية (كبنية ككود حيث أمكن) ومراجع الأسرار |
 
 ---
@@ -571,16 +584,18 @@ volumes:
 ### 14.1 النقل والترويسات
 
 - HTTPS إلزامي (TLS 1.2 كحد أدنى، ويُفضّل 1.3)، و`Strict-Transport-Security: max-age=31536000; includeSubDomains` بعد التحقق من كل النطاقات الفرعية.
-- ترويسات الـAPI: `X-Content-Type-Options: nosniff`، `Referrer-Policy: no-referrer`، `Cross-Origin-Resource-Policy: same-site`، `Cache-Control: no-store` لكل ردود `/v1`.
+- ترويسات الـAPI (helmet): `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`، `X-Frame-Options: DENY`، `X-Content-Type-Options: nosniff`، `Referrer-Policy: no-referrer`، `Cross-Origin-Resource-Policy: same-site`، `Cache-Control: no-store` لكل ردود `/v1` (DEC-299).
 - ترويسات الواجهة (من الاستضافة الثابتة أو CDN):
-  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline' (DEC-192); img-src 'self' blob: data: <S3-host>; connect-src 'self' <API-origin> <WS-origin> <S3-host>; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline' (DEC-192); img-src 'self' blob: data: <S3-host>; connect-src 'self' wss://<DOMAIN> <S3-host>; media-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'` — `wss://<DOMAIN>` لأن Safari الأقدم لا يطابق ws بـ`'self'`، و`<S3-host>` = `STORAGE_ORIGIN` مع S3 مُدار وفارغ حين يُخدم التخزين على الأصل نفسه (DEC-299، DEC-300)
   - `Permissions-Policy: geolocation=(), microphone=(), camera=(self), payment=()` — لا GPS في الإصدار الأول.
-  - `X-Content-Type-Options: nosniff`، `Referrer-Policy: strict-origin-when-cross-origin`.
+  - `X-Content-Type-Options: nosniff`، `Referrer-Policy: no-referrer` (لا تتسرب الروابط الموقعة في Referer)، `X-Frame-Options: DENY`، `Cross-Origin-Opener-Policy: same-origin`، `Cross-Origin-Resource-Policy: same-origin` (DEC-299).
+  - خرائط المصدر `.map` لا تُنشر، والأصل المفقود تحت `/assets/*` يرد 404 ولا يُرد `index.html` مكانه (DEC-299). القيمة المطبّقة في `infra/caddy/Caddyfile`.
 
 ### 14.2 الكوكي والأصل
 
 - الكوكي: `__Host-point_sid` بخصائص `Secure; HttpOnly; SameSite=Lax; Path=/` وبلا `Domain`.
-- **الإنتاج: أصل واحد (ملزم، DEC-29)** — موازن الحمل أو CDN يوجه `/v1/*` و`/ws` و`/webhooks/*` و`/health/*` إلى `api` والباقي إلى الواجهة الثابتة. لا CORS، والكوكي طرف أول، و`connect-src 'self'`.
+- **الإنتاج: أصل واحد (ملزم، DEC-29)** — موازن الحمل أو CDN (أو Caddy في `infra/caddy`) يوجه `/v1/*` و`/ws` و`/webhooks/*` و`/health/*` إلى `api` والباقي إلى الواجهة الثابتة، و`/metrics` لا يُمرَّر. لا CORS، والكوكي طرف أول، و`connect-src 'self'`.
+- عنوان العميل (حدود المعدل، عنوان التدقيق) من `X-Forwarded-For` بعدد الوكلاء في `TRUST_PROXY` (1 خلف Caddy، و2 خلف CDN مع `trusted_proxies` في Caddy)، والوكيل يستبدل الترويسة المزوّرة (DEC-297).
 - لا يُستخدم نطاقان منفصلان للتطبيق والـAPI في الإنتاج (DEC-29)؛ في التطوير المحلي فقط يعمل Vite على 5173 والـAPI على 3000 عبر وكيل Vite بالأصل نفسه، فلا CORS في أي بيئة.
 - لا تخزين للجلسة في التخزين المحلي، ولا لبيانات العميل خارج مسودة الاستلام الجارية؛ التخزين المحلي (IndexedDB أو `localStorage`) لمسودات الاستلام والتفضيلات فقط، لكل مستخدم، ويُمسح عند الخروج، ضمن `try/catch` (سلوك المسودات في الملف 02).
 
@@ -593,7 +608,7 @@ volumes:
 
 - فحص الاعتماديات وفحص الأسرار في CI؛ تحديثات أمنية خلال 7 أيام للثغرات الحرجة.
 - مراجعة كود إلزامية لأي تغيير في: الصلاحيات، الأقفال، رموز التسليم، Webhook، الترحيلات.
-- مستخدم قاعدة البيانات للتطبيق بصلاحيات محدودة: لا `UPDATE/DELETE` على `audit_log` و`ticket_events` و`custody_events` و`analytics_events` (`06_schema.sql` §17).
+- مستخدم قاعدة البيانات للتطبيق بصلاحيات محدودة: لا `UPDATE/DELETE` على `audit_log` و`ticket_events` و`custody_events` و`analytics_events` (`06_schema.sql` §17)؛ وعضوية العامل في `point_retention` بلا وراثة (`INHERIT FALSE`، `SET TRUE`)، وكل ترحيل يضيف جدولًا يمنح `point_app` صراحة (DEC-301).
 
 ---
 
@@ -651,6 +666,8 @@ volumes:
 ## 17. خيارات الاستضافة وقرار إقامة البيانات (Q-02)
 
 المكونات المطلوبة من أي مزود: حاويات لعمليتين (`api` و`worker`) مع فحوص صحة ونشر تدريجي، PostgreSQL 16+ مُدار مع نسخ مشفرة ويفضل PITR، تخزين كائنات متوافق مع S3، مدير أسرار، شهادات HTTPS، موازن حمل يدعم WebSocket، وتجميع السجلات والمقاييس.
+
+خيار الخادم الواحد المستضاف ذاتيًا جاهز في `infra/` ودليله `docs/DEPLOYMENT.md`: صورة الخلفية وصورة الويب (Caddy بـTLS تلقائي للنطاق)، و`docker-compose.prod.yml` (`migrate` ثم `api` و`worker` ثم `web`، للقراءة فقط مع `cap_drop: ALL` و`no-new-privileges` وأدوار قاعدة لكل خدمة)، والمكونات الاختيارية ملفات compose إضافية (DEC-305)؛ وS3 المُدار مُوصى به للإنتاج بدل MinIO (DEC-307).
 
 | الخيار | المزايا | التحفظات |
 |---|---|---|

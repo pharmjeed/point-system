@@ -72,7 +72,7 @@
 
 يتبع ترتيب دورة الطلب في NestJS (Middleware ← Guards ← Interceptors ← Pipes ← Handler):
 
-1. **حد المعدل** (Middleware، قبل الجلسة لحماية الدخول؛ الفئات في 07 §1.9): `RATE_LIMITED`.
+1. **حد المعدل بالعنوان** (أول الحراس، قبل الجلسة لحماية الدخول؛ الفئات في 07 §1.9): فئتا `auth` و`webhook` وكل طلب بلا كوكي جلسة: `RATE_LIMITED`؛ أما حد المستخدم أو الجهاز فبعد البند 4 مباشرة لأن المستخدم لا يُعرف قبله، فالطلب الموثق المتجاوز للحد الذي يفشل CSRF أيضًا يرد `PERMISSION_DENIED` (DEC-295).
 2. **حماية CSRF** لكل `POST/PUT/PATCH/DELETE` عدا `/webhooks/whatsapp` (ومنها مسار الدخول): الترويسة `X-Requested-With: point-web` وترويسة `Origin` مطابقة لـ`APP_BASE_URL`، وإلا `PERMISSION_DENIED` (`reason = csrf`) — DEC-29.
 3. **الجلسة** (`SessionAuthGuard`، كوكي `__Host-point_sid`): `AUTH_UNAUTHENTICATED`، `AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`، `AUTH_ACCOUNT_DISABLED`، ثم قيدا الجلسة المقيدة لأي مسار خارج `auth.self`: `AUTH_SECRET_CHANGE_REQUIRED` أولًا ثم `AUTH_MFA_SETUP_REQUIRED` (كل مسارات `auth.self` مسموحة للقيدين معًا).
 4. **الصلاحية حسب الدور** (`PermissionGuard`): `PERMISSION_DENIED`.

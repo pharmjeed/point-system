@@ -442,6 +442,7 @@ return error(403, 'WA_WEBHOOK_VERIFY_FAILED');
 3. معاملة واحدة: `INSERT INTO whatsapp_inbound_events (signature_verified_at, body_sha256, raw_body) ... ON CONFLICT (body_sha256) DO NOTHING` + إدراج `job.wa_process_inbound` في `outbox_events` إن كان الصف جديدًا.
 4. بعد الالتزام: رد 200 بلا جسم. إن فشلت المعاملة: رد 500 لتعيد Meta المحاولة — لا نجاح كاذب (المعمارية §10).
 5. لا تحليل ولا استعلامات أخرى في هذا المعالج، التزامًا بزمن F-09.
+6. لا نافذة زمنية للتوقيع: Meta تعيد التسليم حتى 7 أيام (F-08)، فالتسليم القديم الموقّع صحيحًا يُقر ويُزال تكراره بـ`body_sha256` (يبقى بعد أن يمسح `retention.wa_raw_days` الجسم الخام) ثم `wa_message_id`؛ وضغطة الزر القديمة تحكمها قواعد رمز الإجراء (`wa.action_token_ttl_h`، `link_version`) (DEC-306).
 
 ### 6.3 مهمة `job.wa_process_inbound`
 
