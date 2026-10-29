@@ -39,7 +39,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 | — | `brand/BRAND_GUIDELINES.md`, `brand/tokens/`, `brand/logo/`, `brand/app-icons/`, `brand/sounds/` | UI identity assets (copy, never redraw) |
 | — | `docs/design/README.md`, `docs/design/system/` | the published design system «بوينت · POINT» (Claude Design): every component's look, states and both themes. Read the README first: values come from `brand/tokens`, behaviour and props from 02/03/07 (DEC-49, DEC-50) |
 
-**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-365`) in `docs/DECISIONS.md` and fix the affected file in the same change.
+**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-412`) in `docs/DECISIONS.md` and fix the affected file in the same change.
 
 ## 3. Non-negotiables (full list: canon §2)
 
@@ -102,7 +102,12 @@ pnpm dev               # api + worker + web + wa-simulator
 pnpm test              # unit
 pnpm test:int          # integration (Testcontainers, PostgreSQL 16)
 pnpm test:e2e          # Playwright (mobile viewports, RTL)
+pnpm test:race         # dispatch race suite RACE_LOOPS times in a row (50), then the schema invariants
 pnpm lint && pnpm typecheck
+pnpm ops:load          # load profile 17 H-08 / AC-13 (k6 + 50 drivers on Socket.IO, throwaway database), DEC-371
+pnpm ops:chaos         # chaos 17 H-03 / §12 / AC-06 against the production build (KP-1 … KP-5 also in CI on main), DEC-374
+pnpm ops:rehearsal     # automated rehearsal 17 H-10 step 1 / TC-036 (real processes + simulator, throwaway database), DEC-366
+pnpm ops:restore-drill # backup + restore drill TC-037 / H-09 (encrypted dump, fresh database, row counts), DEC-303
 ```
 
 ## 8. Git & GitHub

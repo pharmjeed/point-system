@@ -28,7 +28,8 @@
  *    `close_summary` saved, every action with its actor (each ticket's created/parked/delivered by, and every
  *    command's audit rows under its request id in the bot's name) — every scripted moment's outcome in the
  *    database, the invariants, and writes the report (counts, waits p50/p95, alerts raised/resolved, settlement
- *    totals, invariants) to docs/test-evidence/rehearsal/<date>.md (REHEARSAL_REPORT). Then it stops everything
+ *    totals, invariants) to docs/test-evidence/rehearsal/<date>-auto.md (REHEARSAL_REPORT; <date>.md is the
+ *    human rehearsal's evidence, which an automated run must not overwrite: DEC-408). Then it stops everything
  *    and drops the database (REHEARSAL_KEEP_DB=1 keeps it); the process logs are kept, and their folder printed,
  *    only when the run fails or is interrupted (SIGINT / SIGTERM clean up the same way). Exit 0 = passed.
  *
@@ -81,7 +82,7 @@ const CFG = {
   dwellS: [num('REHEARSAL_DWELL_MIN_S', 60), num('REHEARSAL_DWELL_MAX_S', 300)],
   seed: num('REHEARSAL_SEED', 20261029),
   deadlineS: num('REHEARSAL_DEADLINE_S', 1500),
-  report: env.REHEARSAL_REPORT ?? join(ROOT, 'docs/test-evidence/rehearsal', `${today}.md`),
+  report: env.REHEARSAL_REPORT ?? join(ROOT, 'docs/test-evidence/rehearsal', `${today}-auto.md`),
   keepDb: env.REHEARSAL_KEEP_DB === '1',
   skipBuild: env.REHEARSAL_SKIP_BUILD === '1',
 };

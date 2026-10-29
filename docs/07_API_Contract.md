@@ -250,6 +250,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 #### `GET /v1/me` — بيانات المستخدم الحالي وصلاحياته
 
 - الصلاحية: `auth.self` · مفتاح التكرار: — · نجاح: `200`
+- الرد `Me`؛ و`session.device_id` معرّف صف `devices` الذي ربطه هذا الدخول (`auth_sessions.device_id`، 09 §9.5) أو `null` لجلسة بلا جهاز مربوط، وهو `deviceId` في `PUT /v1/me/devices/{deviceId}` و`device_id` في `POST /v1/me/audio-test` (DEC-376)
 
 #### `GET /v1/me/home` — الشاشة الرئيسية للسائق ومصدر المزامنة الكاملة
 
@@ -298,8 +299,8 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 
 #### `POST /v1/me/heartbeat` — نبضة اتصال بديلة عن WebSocket
 
-- الصلاحية: `auth.self` · مفتاح التكرار: — · نجاح: `200`
-- الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا
+- الصلاحية: `auth.self` · مفتاح التكرار: — (إن أُرسل يُتجاهل: لا يُخزن ولا يُعاد رد محفوظ، والجسم يُتحقق منه دائمًا، DEC-368) · نجاح: `200`
+- الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا ولا يرفع `duty_sessions.version` (DEC-218)
 - أحداث: `driver.connection_changed`
 
 ### 2.2 الاستلام والتذاكر (Canon §9.2)
@@ -424,7 +425,7 @@ direct: يرسل W-01 من رقم مصاف إلى جوال التذكرة (يت�
 
 #### `GET /v1/tickets` — قائمة/بحث المركبات
 
-السائق: تذاكر موقعه المفتوحة فقط وبالإسقاط الأدنى. البحث q يطابق أرقام اللوحة أو الرقم الظاهر. الترتيب: الأحدث إنشاءً أولًا. المرشحات تُقاطع مع نطاق المستدعي: event_id خارج النطاق يعيد قائمة فارغة (لا كشف)، وvenue_id خارج النطاق يعيد SCOPE_VENUE_DENIED.
+السائق: تذاكر موقعه المفتوحة فقط وبالإسقاط الأدنى. البحث q يطابق أرقام اللوحة في أي موضع (احتواء) أو الرقم الظاهر تطابقًا تامًا، بعد حذف ما ليس رقمًا وتوحيد الأرقام العربية الهندية؛ وq بلا أرقام يعيد قائمة فارغة (DEC-388). الترتيب: الأحدث إنشاءً أولًا. المرشحات تُقاطع مع نطاق المستدعي: event_id خارج النطاق يعيد قائمة فارغة (لا كشف)، وvenue_id خارج النطاق يعيد SCOPE_VENUE_DENIED.
 
 - الصلاحية: `ticket.read_minimal` · مفتاح التكرار: — · نجاح: `200`
 - أخطاء خاصة: `SCOPE_VENUE_DENIED`
@@ -535,10 +536,10 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
 - الصلاحية: `handover.exception` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو تذكرة بلا جوال ← VALIDATION_FAILED على identity_checks.phone_last4 بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (identity_checks: insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED على payment.collected_by بـnot_eligible)؛ ويُقفل الحفل FOR SHARE بعد المجموعة حين تكون التذكرة due أو يُرسل payment
-- الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة `manual_verification` (أو `lost_ticket` للورقية) تُنشأ دائمًا بحالة resolved وحلها `handover_exception: <methods>` (incident.opened وincident.resolved بـauto_created: true) + العهدة من حائزيها الحاليين (سائق أو مشرف) إلى العميل + حل handover_code_locked وready_not_collected (DEC-210) + التحصيل المضمّن: payments(recorded) بـcollected_by من الجسم وpayment.recorded بـsource=exception، فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22)
+- الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو تذكرة بلا جوال ← VALIDATION_FAILED على identity_checks.phone_last4 بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (identity_checks: insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED على payment.collected_by بـnot_eligible)؛ ويُقفل الحفل FOR SHARE بعد المجموعة حين تكون التذكرة due أو يُرسل payment (L1 ← L2 ← L4 ← L5 ← L6 كالتسليم)؛ والبوابة `check` خطاف التحصيل المضمّن لكل حالة مالية (DEC-365)
+- الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة `manual_verification` (أو `lost_ticket` للورقية) تُنشأ دائمًا بحالة resolved وحلها `handover_exception: <methods>` (incident.opened وincident.resolved بـauto_created: true) + العهدة من حائزيها الحاليين (سائق أو مشرف) إلى العميل + حل handover_code_locked وready_not_collected (DEC-210) + التحصيل المضمّن: payments(recorded) بـcollected_by من الجسم وpayment.recorded بـsource=exception، فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22) + التدقيق `handover.exception` ثم `payment.record` بمعرّف طلب واحد (13 §8.4، DEC-365)
 - أحداث: `handover.exception_approved`, `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `incident.opened`, `incident.resolved`, `payment.recorded`, `driver.availability_changed`, `task.promoted` · WS: `ticket.updated`, `task.updated`, `driver.state_changed` · واتساب: W-06
-- أخطاء خاصة: `HANDOVER_NOT_READY`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- أخطاء خاصة: `HANDOVER_NOT_READY`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VALIDATION_FAILED`, `VERSION_CONFLICT`
 
 #### `POST /v1/tasks/{taskId}/reassign` — إعادة إسناد آمنة قبل بدء الحركة
 
@@ -581,7 +582,7 @@ target_driver_id=null يعيد المهمة للطابور بأولويتها ا
 بعد عودة النظام من تعطل كلي: يضبط الحالة النهائية من السجل الورقي المرقّم. لا تُشغّل أوامر مؤجلة ولا تُرسل رسائل عميل قديمة.
 
 - الصلاحية: `ticket.manual_reconcile` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط (DEC-253): أي حالة مفتوحة ومنها `parked` ← `parked` للتصحيح · النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed) · الموقف والملاحظة والخانة لـparked فقط · الورقية بلا كعب إلى voided فقط · incident_id من موقع التذكرة وليس لتذكرة أخرى · الدفع (DEC-252): delivered لتذكرة due يتطلب payment بـcollected_by أو إعفاءً سابقًا وإلا PAYMENT_PENDING؛ payment لـdelivered ولـdue فقط (not_applicable) مع PAYMENT_ALREADY_RECORDED وقواعد 13 §5؛ التحصيل المسجل يمنع voided (reason=payment_recorded)
+- الشروط (DEC-253): أي حالة مفتوحة ومنها `parked` ← `parked` للتصحيح · النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed) · الموقف والملاحظة والخانة لـparked فقط · الورقية بلا كعب إلى voided فقط · incident_id من موقع التذكرة وليس لتذكرة أخرى · evidence.paper_log_ref بصيغة السجل الورقي المطبوع `P<الصفحة>-R<السطر>` (مثل `P03-R12`؛ لا يفرضها الخادم) وevidence.note بكل أسطر المركبة (DEC-403) · المركبة التي استُلمت أثناء الانقطاع تُدخل أولًا مسودة ورقية (`POST /v1/tickets` ثم `PATCH …/intake` بالقناة paper والحفل open) ثم تُطابق من `received` بلا submit-intake ولا complete-parking، وdelivered_by لمسودة بلا دورة = الفاعل (DEC-404) · الدفع (DEC-252): delivered لتذكرة due يتطلب payment بـcollected_by أو إعفاءً سابقًا وإلا PAYMENT_PENDING؛ payment لـdelivered ولـdue فقط (not_applicable) مع PAYMENT_ALREADY_RECORDED وقواعد 13 §5؛ التحصيل المسجل يمنع voided (reason=payment_recorded)
 - الأثر: حالة نهائية + custody_events(manual_reconcile، الملاحظة = paper_log_ref) + ticket_events(data.manual=true) + كبت رسائل واتساب (المعلّقة بلا محاولة جارية ← skipped superseded) + رموز التسليم الحية canceled ومسح نسختها، ورموز الربط والإجراء لـvoided فقط + delivered_by = مكلّف الإحضار وإلا retrieved_by/accepted_by وإلا الفاعل، parked_by = مكلّف الصف المفتوح + تسوية سائق الحركة الملغاة + إسقاط الطلب المبكر المعلّق دون إعادة + حل تنبيهات الحالة السابقة (عدا inspection_incomplete لـparked) (DEC-253)؛ payment.recorded بـsource=reconcile مع تدقيق payment.record (DEC-252)
 - أحداث: `ticket.manually_reconciled`, `custody.changed`, `task.canceled`, `payment.recorded` · WS: `ticket.updated`
 - أخطاء خاصة: `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `PARKING_SPOT_OCCUPIED`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `RESOURCE_NOT_FOUND` (`incident` أو `user` لـ`payment.collected_by` أو `parking_spot` أو `key_slot`), `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
@@ -1171,7 +1172,8 @@ Content-Type: application/json
 ### 4.1 الاتصال والمصادقة
 
 - خادم Socket.IO على أصل الـAPI بالمسار `/ws` (نقل websocket مع السماح بالرجوع لـpolling).
-- المصادقة بكوكي `__Host-point_sid` المرسل مع المصافحة، ويُرفض الاتصال إذا ترويسة `Origin` لا تطابق `APP_BASE_URL`. الجلسة المبطلة أو المقيدة تُرفض بـ`connect_error` ورسالة `{ "code": "AUTH_SESSION_REVOKED" }` أو ما يناسب من Canon §8.
+- المصادقة بكوكي `__Host-point_sid` المرسل مع المصافحة، ويُرفض الاتصال إذا ترويسة `Origin` لا تطابق `APP_BASE_URL`. الجلسة المبطلة أو المقيدة تُرفض بـ`connect_error` ورسالة `{ "code": "AUTH_SESSION_REVOKED" }` أو ما يناسب من Canon §8. وقاعدة لا يمكن الوصول إليها تُرفض بها المصافحة بـ`{ "code": "SERVICE_UNAVAILABLE" }` ولا تمس الجلسة؛ ولا يُبطل جلسةَ مقبس قائم إلا رفضٌ من رموز `AUTH_*` (المراجعة الدورية كل 60 ثانية التي لا تبلغ القاعدة تبقي المقبس، DEC-370).
+- العميل حين يغلق الخادم المقبس (`io server disconnect`) أو يرفض مصافحته — ولا يعيد Socket.IO الاتصال وحده بعدهما — يتصل من جديد بنفسه بعد تراجع: ثانية تتضاعف حتى 15 ثانية بتذبذب ±50%، و15 ثانية بعد رفض مصافحة `AUTH_*`؛ وبعد إغلاق الخادم أو رفض `AUTH_*` يعيد قراءة `GET /v1/me` ومؤقت إعادة الاتصال يجري (الجلسة المنتهية ← D-15 ج أو S-01 ويتوقف)، وأي رفض آخر (مثل `SERVICE_UNAVAILABLE`) يعيد الاتصال بعد التراجع نفسه بلا فحص؛ وإعادة الاتصال تجري مزامنة §4.5 الكاملة (DEC-398).
 - لا يرسل العميل اشتراكات؛ **الخادم** يقرر الغرف بعد التحقق ويعيد حسابها عند بدء/إنهاء المناوبة، والنقل، وتغيير النطاق، والتعطيل:
 
 | الغرفة | من ينضم |
@@ -1181,7 +1183,7 @@ Content-Type: application/json
 | `venue:{venueId}:supervisors` | المشرف لكل موقع في نطاقه، والإدارة/المالك عند فتح لوحة الموقع |
 | `org:{orgId}:admins` | الإدارة والمالك |
 
-عند النقل أو التعطيل أو سحب النطاق يُخرج الخادم الاتصال من الغرف القديمة فورًا، ثم يرسل `session.revoked` عند إبطال الجلسة.
+عند النقل أو التعطيل أو سحب النطاق يُخرج الخادم الاتصال من الغرف القديمة فورًا، ثم يرسل `session.revoked` عند إبطال الجلسة فعلًا (لا عند تعذر الوصول إلى القاعدة، DEC-370).
 
 ### 4.2 الغلاف
 
@@ -1222,11 +1224,13 @@ Content-Type: application/json
 
 تنبيه أمني: لا يحمل أي حدث رمز التسليم ولا الجوال الكامل؛ موضع المفتاح والموقف يصلان فقط في `TaskCard` للمكلّف.
 
+مخططات zod المشتركة في `packages/shared` (`canon/realtime.ts`) تغطي الغلاف و`ticket.updated` و`sync.required` و`channel.status` و`incident.updated` وحدها بعد؛ فيحللها العميل تحليلًا صارمًا ويفحص الحقول المعرِّفة لبقية الحمولات (`task.*` و`offer.*` و`driver.state_changed` و`alert.*`)، والإطار الذي يفشل لا يُطبَّق أبدًا ويطلق مزامنة كاملة (11 §9.4)؛ ومخططات البقية متابعة للحزمة المشتركة (DEC-377).
+
 ### 4.4 من العميل إلى الخادم
 
 | الحدث | الحمولة | الرد (ack) |
 |---|---|---|
-| `client.heartbeat` | `{visible: boolean, audio_unlocked: boolean, last_event_id, app_version}` كل `heartbeat.interval_s` (15 ث)؛ الجهاز معروف من الجلسة (`auth_sessions.device_id`) | `{server_time, connection_state, sync_required}` |
+| `client.heartbeat` | `{visible: boolean, audio_unlocked: boolean, last_event_id, app_version}` كل `heartbeat.interval_s` (15 ث)؛ الجهاز معروف من الجلسة (`auth_sessions.device_id`)؛ وحين يتعطل المقبس يرسل السائق المناوب وحده `POST /v1/me/heartbeat` بالفاصل نفسه وبلا `Idempotency-Key` (DEC-378) | `{server_time, connection_state, sync_required}`، أو غلاف الخطأ `SERVICE_UNAVAILABLE` حين لا تُبلغ القاعدة (الجلسة والمقبس باقيان، DEC-370) |
 | `client.offer_seen` | `{offer_id, receive_latency_ms?}` عند ظهور البطاقة فعليًا على الشاشة | `{ok: true}` — يملأ `offer_recipients.seen_at` مرة واحدة ويكتب `offer_card_seen` (`via: ws`) في المعاملة نفسها (DEC-166، 15 §9.4) |
 
 ### 4.5 دلالات التسليم والمزامنة

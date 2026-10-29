@@ -831,7 +831,7 @@ paths:
       operationId: heartbeat
       summary: نبضة اتصال بديلة عن WebSocket
       tags: [Me & Duty]
-      description: 'الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا'
+      description: 'الأثر: يحدّث last_heartbeat_at؛ لا يغيّر التوفر ولا يسحب مهامًا ولا يرفع duty_sessions.version (DEC-218). ترويسة Idempotency-Key إن أُرسلت تُتجاهل: لا تُخزن ولا يُعاد رد محفوظ، والجسم يُتحقق منه دائمًا (DEC-368)'
       requestBody:
         required: true
         content:
@@ -1023,7 +1023,7 @@ paths:
         schema:
           type: string
           maxLength: 20
-        description: أرقام اللوحة أو رقم التذكرة
+        description: 'أرقام اللوحة (احتواء في أي موضع) أو رقم التذكرة (تطابق تام)، بعد حذف ما ليس رقمًا وتوحيد الأرقام العربية الهندية؛ q بلا أرقام يعيد قائمة فارغة (DEC-388)'
       - name: open_only
         in: query
         required: false
@@ -2862,9 +2862,9 @@ paths:
       description: |-
         للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
-        الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو بلا جوال ← VALIDATION_FAILED بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED بـnot_eligible)؛ ويُقفل الحفل FOR SHARE حين تكون التذكرة due أو يُرسل payment
+        الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو بلا جوال ← VALIDATION_FAILED بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED بـnot_eligible)؛ ويُقفل الحفل FOR SHARE بعد المجموعة حين تكون التذكرة due أو يُرسل payment (L1 ← L2 ← L4 ← L5 ← L6)؛ والبوابة check خطاف التحصيل المضمّن لكل حالة مالية (DEC-365)
 
-        الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة manual_verification (أو lost_ticket للورقية) تُنشأ دائمًا resolved بحل handover_exception: <methods> (auto_created: true) + العهدة من حائزيها الحاليين إلى العميل (DEC-210) + التحصيل المضمّن بـcollected_by من الجسم وpayment.recorded بـsource=exception (النقد بعهدة المحصّل حتى تسليمه، PAY-TC-22)
+        الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة manual_verification (أو lost_ticket للورقية) تُنشأ دائمًا resolved بحل handover_exception: <methods> (auto_created: true) + العهدة من حائزيها الحاليين إلى العميل (DEC-210) + التحصيل المضمّن بـcollected_by من الجسم وpayment.recorded بـsource=exception (النقد بعهدة المحصّل حتى تسليمه، PAY-TC-22) + التدقيق handover.exception ثم payment.record بمعرّف طلب واحد (13 §8.4، DEC-365)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2962,7 +2962,7 @@ paths:
       x-permission: handover.exception
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VALIDATION_FAILED, VERSION_CONFLICT]
       x-domain-events: [handover.exception_approved, handover.completed, ticket.delivered, task.completed, custody.changed, driver.availability_changed, task.promoted, incident.opened, incident.resolved, payment.recorded]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
       x-whatsapp: [W-06]
@@ -3335,9 +3335,12 @@ paths:
                     paper_log_ref:
                       type: string
                       maxLength: 60
+                      description: 'سطر السجل الورقي المطبوع بصيغة P<الصفحة>-R<السطر> بخانتين لكلٍّ، مثل P03-R12؛ صيغة النموذج لا يفرضها الخادم (DEC-403)'
+                      examples: [P03-R12]
                     note:
                       type: string
                       maxLength: 500
+                      description: 'كل أسطر المركبة نفسها في السجل، والوقت الفعلي ومن استلم أو سلّم حين يختلف عن قيد النظام (DEC-403، DEC-404)'
                   required: [paper_log_ref]
                 parking_spot_id:
                   type: [string, 'null']
@@ -9730,6 +9733,10 @@ components:
               format: date-time
             mfa_verified:
               type: boolean
+            device_id:
+              type: [string, 'null']
+              format: uuid
+              description: 'صف devices الذي ربطه هذا الدخول (auth_sessions.device_id، 09 §9.5)، و null لجلسة بلا جهاز مربوط؛ هو deviceId في PUT /v1/me/devices/{deviceId} وdevice_id في POST /v1/me/audio-test (DEC-376)'
             restricted:
               type: boolean
               description: true إذا الجلسة مقيدة بتغيير السر أو إعداد MFA

@@ -110,7 +110,7 @@ flowchart LR
 | `ticket_created` | `channel` enum(whatsapp/paper)، `pricing_mode` enum(included/per_vehicle) | حجم الاستلام؛ KPI-16 |
 | `ticket_intake_submitted` | `channel`، `inspection_status` enum(complete/incomplete/exception_approved)، `photos_count` int، `has_customer_phone` bool، `wa_link_method` enum(direct/qr/none)، `intake_duration_s` int | KPI-14، KPI-16 |
 | `ticket_parked` | `parking_duration_s` int، `spot_mode` enum(spot/note)، `key_slot_used` bool، `had_pending_retrieval` bool، `is_repark` bool | KPI-16 |
-| `ticket_retrieval_requested` | `request_source` enum(whatsapp/staff)، `cycle_no` int، `requested_early` bool، `queue_depth` int، `available_drivers` int، `ingest_latency_ms` int (للطلبات من واتساب: من استلام الـWebhook حتى الالتزام) | KPI-03، KPI-14، سعة التشغيل، هدف حفظ الطلب |
+| `ticket_retrieval_requested` | `request_source` enum(whatsapp/staff)، `cycle_no` int، `requested_early` bool، `queue_depth` int، `available_drivers` int، `ingest_latency_ms` int (للطلب الذي تفتح ضغطة واتساب دورته فقط: من `whatsapp_inbound_events.received_at` حتى كتابة الدورة بساعة المعاملة؛ لا للطلب المبكر المحوَّل عند الصف ولا لطلب الموظف، DEC-367) | KPI-03، KPI-14، سعة التشغيل، هدف حفظ الطلب |
 | `ticket_retrieval_requested_early` | `request_source` enum(whatsapp) (الطلب المبكر من زر واتساب فقط، DEC-25)، `status_at_request` enum(received/parking/reparking) | KPI-03 (تصنيف الطلب المبكر) |
 | `ticket_assigned` | `wait_s` int (من `requested_at`)، `offer_mode` enum(single/broadcast)، `offer_round_no` int | KPI-01، KPI-13 |
 | `ticket_assigned_waiting` | `wait_s` int، `offer_round_no` int | KPI-13 |
@@ -219,7 +219,7 @@ flowchart LR
 | `audio_blocked_detected` | محاولة تشغيل صوت تنبيه رُفضت من المتصفح | `sound` enum(offer/broadcast/reminder/next_due/escalation/test)، `recovered_by_tap` bool | موثوقية التنبيه |
 | `notification_permission_changed` | تغيّر إذن الإشعارات المرصود | `from`، `to` enum(default/granted/denied/unsupported)، `context` enum(duty_start/account/banner) | تبنّي Push |
 | `push_subscription_changed` | اشتراك/إلغاء/فشل Web Push | `status` enum(subscribed/unsubscribed/failed)، `error_name` enum(not_allowed/abort/network/invalid_state/unknown) | تبنّي Push |
-| `push_notification_clicked` | فتح الواجهة من إشعار | `kind` enum(offer/broadcast/reminder/next_due/escalation/closed) (أنواع Push في القاموس §5.7)، `age_ms` int | فعالية Push |
+| `push_notification_clicked` | فتح الواجهة من إشعار (مصدره رسالة `push.click` التي يرسلها Service Worker للنافذة المركّزة بـ`kind` و`age_ms` = الآن − `sent_at` الحمولة؛ إرساله متروك لتذكرة التحليلات، DEC-390) | `kind` enum(offer/broadcast/reminder/next_due/escalation/closed) (أنواع Push في القاموس §5.7)، `age_ms` int | فعالية Push |
 | `pwa_installed` | أول تشغيل بوضع `standalone` أو قبول التثبيت | `platform`، `method` enum(install_prompt/ios_manual/detected_standalone) | تبنّي PWA |
 | `connection_changed` | تغيّر الاتصال من جهة الجهاز | `from`، `to` enum(online/uncertain/offline)، `cause` enum(ws_disconnect/navigator_offline/heartbeat_timeout/recovered)، `offline_ms` int | صحة الاتصال |
 | `sync_completed` | بعد مزامنة كاملة | `sync_reason` enum(startup/reconnect/visibility/sync_required/manual)، `duration_ms` int، `stale_ms` int، `changed` bool | سلامة البيانات المعروضة |
@@ -289,7 +289,7 @@ flowchart LR
 
 ## 10. مؤشرات الأداء (KPI) — تعريفات واستعلامات
 
-المعامل `:event_id` معرف الحفل. المدد بالثواني. «p50/p90» عبر `percentile_cont`. **الدورات الملغاة مستبعدة من متوسطات التسليم وتُعرض منفصلة** (المعمارية §15).
+المعامل `:event_id` معرف الحفل. المدد بالثواني. «p50/p90» عبر `percentile_cont`. **الدورات الملغاة مستبعدة من متوسطات التسليم وتُعرض منفصلة** (المعمارية §15). وحفل «اختبار داخلي — <التاريخ>» في الإنتاج (تجربة الإرسال لأرقام الفريق، DEC-407) يُستبعد من مقارنات المؤشرات عبر الحفلات في تقرير الحفل التجريبي.
 
 افتراضات على طوابع الكيانات (تُضبط في 11): `tasks.queued_at` لحظة دخول المهمة الطابور (أو عودتها إليه)، `tasks.claimed_at` لحظة أول قبول مؤكد، `tasks.accepted_at` لحظة صيرورة المهمة `accepted` (القبول المباشر أو الترقية من `assigned_waiting`)، `claim_codes.attempts` عدد المحاولات الفاشلة.
 
@@ -616,7 +616,7 @@ SELECT a.type, a.severity,
 
 | الهدف | التعريف | مصدر القياس |
 |---|---|---|
-| حفظ الطلب p95 أقل من ثانيتين | من استلام الـWebhook (أو طلب API) حتى التزام دورة الاسترجاع | مقياس نظام (§12) + الخاصية `ingest_latency_ms` في `ticket_retrieval_requested` |
+| حفظ الطلب p95 أقل من ثانيتين | من استلام الـWebhook (`whatsapp_inbound_events.received_at`) حتى التزام دورة الاسترجاع؛ وطلب الموظف من طلب API حتى رده | المرجع `point_retrieval_request_ingest_seconds` يرصده العامل بعد التزام الوارد للضغطة التي فتحت دورة (05 §12.2)، والخاصية `ingest_latency_ms` في `ticket_retrieval_requested` المدى نفسه حتى كتابة الدورة قبل الالتزام؛ وطلب الموظف `point_http_request_duration_seconds` لـ`POST /v1/tickets/{ticketId}/retrievals` (DEC-367) |
 | نشر حدث الإسناد p95 أقل من 3 ثوانٍ | من التزام القبول حتى بث `task.claimed` و`task.updated` | مقياس نظام في ناشر WebSocket |
 
 زمن مزود واتساب (`since_queued_ms` في `wa_message_status_changed`) وزمن وصول العرض للجهاز (`receive_latency_ms` في `offer_card_seen`) يُعرضان منفصلين ولا يدخلان في هذين الهدفين.
@@ -725,7 +725,7 @@ SELECT a.type, a.severity,
 
 1. **المُسقِط التحليلي في العامل:** `AnalyticsProjector` يستهلك أحداث النطاق من `outbox_events` في العامل، ولا يكتب `analytics_events` داخل معاملة الأمر أبدًا: عند حجز الحدث يكتب صفه التحليلي ويسم الحدث `done` في **معاملة واحدة** للعامل، فكل حدث نطاق يُسقط مرة واحدة بالضبط. إشعارات العميل ومهام `job.wa_send`/`job.push_send` لا تُنشأ هنا؛ يخططها `NotificationPlanner` داخل معاملة الأمر نفسها (DEC-41). أحداث النطاق بلا `ordering_key`، فالمُسقِط لا يعتمد ترتيبها ويتحقق من `aggregate_version`. رفض مخطط الخصائص (مفتاح غير معروف أو ممنوع) لا يُرجع أي أمر ولا يعيد الحدث: يُسجَّل خطأ ومقياس ويُوسم الحدث `done` دون الصف المرفوض.
 2. **سجل الربط:** خريطة في `packages/shared` من نوع حدث النطاق إلى دالة إسقاط، مكتوبة بحيث يفرض TypeScript تغطية كل الأنواع (`satisfies Record<DomainEventType, Projector>`)، مع اختبار يقارنها بقائمة القاموس §7.1.
-3. **حساب المدد:** من طوابع الكيان المخزنة (مثل `parked_at - submitted_at`) عند الإسقاط، لا من `now()`.
+3. **حساب المدد:** من طوابع الكيان المخزنة (مثل `parked_at - submitted_at`) عند الإسقاط، لا من `now()`. الاستثناء الوحيد `ingest_latency_ms` في `ticket.retrieval_requested`: نهايته كتابة الدورة ولا طابع مخزن لها، فتُحسب في معاملة الأمر بالساعة المحقونة (`tx.clock.now()`) من `whatsapp_inbound_events.received_at` (DEC-367).
 4. **`actor_role`:** من دور المستخدم وقت الحدث؛ العميل `customer` والمؤقتات `system`.
 5. **الدفعات:** صف تحليلي واحد لكل حدث داخل معاملة الموزّع نفسها التي تعلّم الحدث `done` (مرة واحدة بالضبط)؛ الإسقاط الفاشل يتراجع إلى نقطة حفظ ولا يوقف Outbox أبدًا؛ والإدراج على دفعات فقط إن أظهرت اختبارات الحمل (PNT-097) حاجة إليه (DEC-164).
 6. **قياسات العميل:** إدراج مباشر بعد التحقق في مسار `/v1/telemetry` (الحجم صغير)، مع الحدود في §9.3. الواجهة تجمع الأحداث وترسلها كل 30 ثانية أو عند 20 حدثًا أو عند إخفاء الصفحة (`fetch` بـ`keepalive: true` مع ترويسات CSRF، لا `navigator.sendBeacon`، DEC-167)، وتحتفظ بها في الذاكرة عند الانقطاع حتى 200 حدث.
