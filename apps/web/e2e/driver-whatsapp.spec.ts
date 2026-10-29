@@ -12,7 +12,7 @@ import {
   startDuty,
   uploadPhoto,
 } from './support/driver';
-import { createFake, type FakeServer } from './support/fake';
+import { createFake, errorReply, type FakeServer } from './support/fake';
 
 /**
  * GAP-1 — the WhatsApp channel of the intake (02 D-05 «قناة العميل», D-06 «في وضع QR فقط», D-07 modes أ / ب;
@@ -412,6 +412,30 @@ test('GAP-1 D-07 أ «العميل لم تصله الرسالة؟» while W-01 i
   await expect(page.getByRole('alertdialog', { name: 'وصلت رسالة الربط من رقم ينتهي بـ 567.' })).toBeVisible({
     timeout: 10_000,
   });
+});
+
+test('02 D-06 INTAKE_INCOMPLETE: back on D-05 the fields of `details.missing` carry the server text', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  const { ticketId } = newIntake(fake);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await fillVehicle(page);
+  await page.getByLabel('جوال العميل', { exact: true }).fill('0501234567');
+  await page.getByLabel('وافق العميل على استلام رسائل واتساب لهذه التذكرة').check();
+  await page.locator('#intake-next').click();
+  await keyAndPhotos(page);
+  fake.failNext(
+    'POST /v1/tickets/:ticketId/submit-intake',
+    errorReply('INTAKE_INCOMPLETE', { missing: ['customer_phone', 'vehicle.color'] }),
+  );
+  await page.locator('#intake-submit').click();
+  await expect(page).toHaveURL(/\/vehicle$/);
+  // under the number and under the colour, not as a form message
+  await expect(page.locator('#customer-phone-err')).toHaveText('أكمل بيانات الاستلام الناقصة.');
+  await expect(page.getByText('أكمل بيانات الاستلام الناقصة.')).toHaveCount(2);
 });
 
 test('GAP-1 D-13 «إعادة الربط بواتساب» opens D-07 for a parked ticket whose W-01 failed; «العودة» returns', async ({
