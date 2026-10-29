@@ -17,7 +17,7 @@
 
 | البند | الحال |
 |---|---|
-| الفحوص المحلية على PostgreSQL 16 | `pnpm test` 1174 ناجحًا؛ `pnpm test:int` 582 ناجحًا وواحد متخطى عمدًا (S3 الحقيقي الاختياري)؛ lint وtypecheck وbuild نظيفة؛ `db:drift` و`db:invariants` ناجحان؛ `pnpm test:race` 50 تشغيلًا متتاليًا ثم الثوابت |
+| الفحوص المحلية على PostgreSQL 16 | في `STATUS.md`: `pnpm test` 1174 ناجحًا؛ `pnpm test:int` 582 ناجحًا وواحد متخطى عمدًا (S3 الحقيقي الاختياري)؛ lint وtypecheck وbuild نظيفة؛ `db:drift` و`db:invariants` ناجحان؛ `pnpm test:race` 50 تشغيلًا متتاليًا ثم الثوابت. إعادة التشغيل على `130157c`: `pnpm test` 1173 ناجحًا و**1 فاشل** (`apps/api/test/deploy-config.test.ts`: الإيداع `0ad3583`، DEC-192، سمح بـ`style-src-elem 'unsafe-inline'` ولم يُحدَّث الاختبار) |
 | CI | **لا يعمل:** GitHub Actions لا تبدأ على الحساب (حد الإنفاق أو تعطيل Actions للمستودعات الخاصة)، والمعيار 17 §15.1-1 يتطلب CI |
 | البوابات | G1 ناجحة على الـAPI الحقيقي · G2 آليًا مع المحاكي، واليدوي على رقم Meta بانتظار Q-03 · G3 وG4 جاريتان · G5 هذه القائمة |
 | ما يحتاج المالك | النطاق، الاستضافة، أصول Meta، اعتماد الاحتفاظ، الأجهزة الفعلية، البروفة البشرية، تشغيل CI، التوقيع (§3) |
@@ -51,7 +51,7 @@
 | AC-18 | زر «طلب السيارة» وحده | `packages/shared/test/wa-templates.test.ts` (`lintWaCatalog`)، `g2-customer-gate.int.test.ts` (TC-056) | ✓ | القوالب كما اعتمدتها Meta (PNT-100) |
 | AC-19 | سائق يسجل وآخر يحضر ويسلّم، وكل فعل بفاعله | `apps/api/test/g1-vertical-slice.int.test.ts`، `apps/web/e2e/driver-g1.spec.ts` (TC-057)، `apps/web/e2e/live/g1.live.spec.ts` (على الـAPI الحقيقي)، `g2-customer-gate.int.test.ts` | ✓ | — |
 | AC-20 | رقم واحد لقاعتين والتوجيه الصحيح | `wa-button.int.test.ts` (TC-058) | ✓ | — |
-| AC-21 | 360/390/430 بلا تمرير أفقي، لمس مريح، مثابرة النموذج | `apps/web/e2e/layout.spec.ts`، `apps/web/e2e/staff-layout.spec.ts` (TC-059، TC-060) | ◐ | مثابرة النموذج TC-061 (PNT-071، مسار S5) |
+| AC-21 | 360/390/430 بلا تمرير أفقي، لمس مريح، مثابرة النموذج | `apps/web/e2e/layout.spec.ts`، `apps/web/e2e/staff-layout.spec.ts` (TC-059، TC-060) | ◐ | مثابرة النموذج TC-061 (PNT-071، مسار S5)؛ مشاريع WebKit للطرفي (17 H-06؛ الحالي Chromium وحده) |
 | AC-22 | رفض الإذن لا يمنع العمل ومراقبة الخادم مستمرة | مراقبة القبول على الخادم دون أي عميل `dispatch-s4-next-task.int.test.ts` (TC-063) | ◐ | الطرفي بإذن مرفوض TC-062 (PNT-072، مسار S5)، وDM-08 على الأجهزة |
 
 ---
