@@ -361,8 +361,11 @@ async function finish(
   ]);
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;
   metrics.dispatchPassDuration.observe({ reason: r.reason }, seconds);
-  // 10 §12.3 fields (the passes of the worker's sweep carry a logger; a command's pass is in its command line)
-  logger?.debug(
+  // 10 §12.3 fields (the passes of the worker's sweep carry a logger; a command's pass is in its command line):
+  // `info` when the pass did something — a sweep that pairs, expires or closes repairs a missed timer or pass —
+  // `debug` otherwise (05 §7.6: debug locally only; a sweep runs every 5 s per pool)
+  const acted = r.offersCreated + r.broadcastsOpened + r.expired + (r.orphansClosed ?? 0) > 0;
+  logger?.[acted ? 'info' : 'debug'](
     {
       pool_id: pool.id,
       venue_id: pool.venue_id,
@@ -370,6 +373,7 @@ async function finish(
       offers_created: r.offersCreated,
       broadcasts_opened: r.broadcastsOpened,
       expired: r.expired,
+      orphans_closed: r.orphansClosed ?? 0,
       demand: r.demand,
       on_duty: r.onDuty,
       lock_wait_ms: Math.round(lockWaitMs * 10) / 10,

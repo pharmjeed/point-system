@@ -579,8 +579,27 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
         (v) => v.labels.mode === 'single' && v.labels.outcome === 'revoked',
       )?.value ?? 0;
     const before = await revoked();
+    // a worker whose log lines are kept (05 §7.6 / 10 §12.3 fields of the sweep's pass)
+    const lines: Record<string, unknown>[] = [];
+    const logged = new OutboxDispatcher(
+      t.db,
+      t.clock,
+      createLogger({ level: 'info', destination: { write: (l: string) => void lines.push(JSON.parse(l)) } }),
+      { workerId: 'test-worker-logged' },
+    );
+    for (const h of dispatchJobs()) logged.register(h);
     t.clock.advanceSeconds(6); // the next job.dispatch_sweep (its offer_expire timer is not due yet)
-    await worker.drain();
+    await logged.drain();
+    expect(
+      lines.find((l) => l.msg === 'dispatch sweep closed a live round whose task can no longer be offered'),
+    ).toMatchObject({ level: 'error', pool_id: POOL_R, offer_id: offer.id, outcome: 'claimed_elsewhere' });
+    // the sweep's pass that repaired something is an info line with the 10 §12.3 fields
+    const pass = lines.find(
+      (l) => l.msg === 'dispatch pass' && l.pass_reason === 'sweep' && l.pool_id === POOL_R,
+    );
+    expect(pass).toMatchObject({ level: 'info', orphans_closed: 1, offers_created: 0 });
+    expect(typeof pass?.lock_wait_ms).toBe('number');
+    expect(typeof pass?.duration_ms).toBe('number');
     expect(await one(t.db, `SELECT status, close_reason FROM task_offers WHERE id = $1`, [offer.id])).toEqual(
       {
         status: 'revoked',
