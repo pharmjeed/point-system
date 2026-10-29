@@ -316,7 +316,10 @@ function EventCard({
         <Dialog
           id={`reopen-${event.id}`}
           open={reopening}
-          onOpenChange={setReopening}
+          onOpenChange={(o) => {
+            if (!o) open.reset(); // a refusal stays in the Dialog, not under the card
+            setReopening(o);
+          }}
           title={s08.reopen}
           body={s08.reopenBody}
           confirmLabel={s08.reopen}
