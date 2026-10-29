@@ -10,6 +10,7 @@ import {
   intakeBlockedReason,
   intakeEvents,
   missingGroups,
+  newestClaim,
   offerAction,
   plateBody,
   plateComplete,
@@ -243,5 +244,31 @@ describe('D-04', () => {
       settings: { parking: { mode: 'free_text' }, keys: { require_slot: false } },
     } as DriverHome;
     expect(fieldSettings(home)).toMatchObject({ parkingMode: 'free_text', requireSlot: false });
+  });
+});
+
+describe('D-11 handover code state (GAP-8)', () => {
+  const state = (issued_at: string, patch: Record<string, unknown> = {}) => ({
+    issued_at,
+    expires_at: '2026-10-29T19:30:00.000Z',
+    attempts: 0,
+    max_attempts: 5,
+    attempts_left: 5,
+    resend_no: 0,
+    resends_left: 3,
+    ...patch,
+  });
+
+  it('the latest issued code wins: a resend reply until the ticket catches up, then the ticket', () => {
+    const ticket = state('2026-10-29T19:00:00.000Z', { sent_status: 'failed' });
+    const reply = state('2026-10-29T19:05:00.000Z', { resend_no: 1, resends_left: 2 });
+    expect(newestClaim(ticket, reply, null)).toBe(reply);
+    const caughtUp = state('2026-10-29T19:05:00.000Z', {
+      resend_no: 1,
+      resends_left: 2,
+      sent_status: 'failed',
+    });
+    expect(newestClaim(caughtUp, reply, ticket)).toBe(caughtUp);
+    expect(newestClaim(null, undefined)).toBeNull();
   });
 });

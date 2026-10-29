@@ -31,7 +31,7 @@ import { formatHalalas, formatTime } from '@/lib/format';
 import { onlyDigits } from '@/lib/digits';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
-import { driverPaths, findTicketTask, plateValue, vehicleSummary } from '../fieldModel';
+import { driverPaths, findTicketTask, newestClaim, plateValue, vehicleSummary } from '../fieldModel';
 import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
@@ -125,9 +125,8 @@ function HandoverForm({
   const methods: PaymentMethod[] = card.payment_due?.allowed_methods?.length
     ? card.payment_due.allowed_methods
     : ['cash', 'pos'];
-  // a resend's reply is the newest state; the detail follows `ticket.updated` (W-05 `sent_status`)
   const [codeState, setCodeState] = useState<ClaimCodeState | null>(null);
-  const claim = codeState ?? ticket.claim_code ?? card.claim_code ?? null;
+  const claim = newestClaim(ticket.claim_code, codeState, card.claim_code);
   const now = useServerNow(1000);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [sheet, setSheet] = useState(false);
