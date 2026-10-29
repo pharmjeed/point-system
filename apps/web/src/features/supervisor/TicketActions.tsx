@@ -36,7 +36,7 @@ import {
 import { fmt } from '@/i18n/fmt';
 import { onlyDigits } from '@/lib/digits';
 import { formatHalalas } from '@/lib/format';
-import type { TicketAction } from './permissions';
+import { custodyTransferHolders, type TicketAction } from './permissions';
 import { commands, fetchDrivers, fetchKeyBoards, fetchParkingSpots, staffKeys } from './staffApi';
 import { REASON_MIN, ReasonDialog, reasonOk } from './ui';
 import { useStaffCommand } from './useStaffCommand';
@@ -590,8 +590,7 @@ function CustodyTransferSheet({ me, ticket, onClose }: ActionProps) {
     queryFn: ({ signal }) => fetchParkingSpots(ticket.venue_id, signal),
     enabled: holderType === 'spot',
   });
-  const holderTypes: CustodyHolderType[] =
-    subject === 'key' ? ['driver', 'supervisor', 'key_slot'] : ['driver', 'supervisor', 'spot'];
+  const holderTypes: CustodyHolderType[] = custodyTransferHolders(subject, ticket);
   const targetOptions: Array<readonly [string, string]> =
     holderType === 'driver'
       ? (drivers.data?.items ?? [])

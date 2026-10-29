@@ -40,6 +40,7 @@ import { CustodyItemList } from '@/features/venues/BlockingList';
 import { useCommand } from '@/hooks/useCommand';
 import { s05, s06, ui } from '@/i18n/ar';
 import { errorMessagesAr } from '@/i18n/errors';
+import { fmt } from '@/i18n/fmt';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { normalizeSaudiMobile } from '@/lib/phone';
 import { useUiStore } from '@/stores/ui';
@@ -90,6 +91,7 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
   });
   const [sheet, setSheet] = useState<'assign' | 'edit' | null>(null);
   const [disabling, setDisabling] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const manage = can(me, 'driver.manage');
   const active = user.status === 'active';
@@ -110,18 +112,20 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
       void refresh();
     }
   };
+  // 03 §4.5 (DEC-344): the reset ends the driver's sessions, so it runs only after the confirmation Dialog
   const onReset = async () => {
     try {
       const result = await reset.run({});
+      setResetting(false);
       setSecret(result.temporary_secret);
     } catch {
-      // shown under the actions
+      // shown in the confirmation Dialog
     }
   };
 
   const live = driver.live;
   const onDuty = !!live && live.driver_state !== 'off_duty';
-  const actionError = enable.error ?? reset.error;
+  const actionError = enable.error;
   return (
     <>
       <Card className="pt-record">
@@ -189,7 +193,7 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
           </Button>
         ) : null}
         {manage && active ? (
-          <Button compact variant="secondary" iconStart={KeyRound} loading={reset.pending} onClick={onReset}>
+          <Button compact variant="secondary" iconStart={KeyRound} onClick={() => setResetting(true)}>
             {s06.resetSecret}
           </Button>
         ) : null}
@@ -230,6 +234,24 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
           onOpenChange={setDisabling}
           driverId={user.id}
           name={user.full_name}
+        />
+      ) : null}
+      {manage && active ? (
+        <Dialog
+          id="reset-secret"
+          open={resetting}
+          onOpenChange={setResetting}
+          title={s06.resetSecret}
+          body={fmt(s06.resetConfirm, { name: user.full_name })}
+          destructive
+          confirmLabel={s06.resetSecret}
+          loading={reset.pending}
+          error={reset.error ? displayMessage(reset.error) : undefined}
+          onConfirm={onReset}
+          onCancel={() => {
+            reset.reset();
+            setResetting(false);
+          }}
         />
       ) : null}
       <TempSecretDialog name={user.full_name} secret={secret} onClose={() => setSecret(null)} />

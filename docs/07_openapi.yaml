@@ -3271,7 +3271,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | IDEMPOTENCY_IN_PROGRESS | KEY_SLOT_OCCUPIED | MOVEMENT_IN_PROGRESS | PARKING_SPOT_OCCUPIED | TICKET_CLOSED
@@ -3296,7 +3296,7 @@ paths:
       x-permission: ticket.custody_transfer
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CUSTODY_HOLDER_MISMATCH, KEY_SLOT_OCCUPIED, MOVEMENT_IN_PROGRESS, PARKING_SPOT_OCCUPIED, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND]
+      x-error-codes: [CUSTODY_HOLDER_MISMATCH, KEY_SLOT_OCCUPIED, MOVEMENT_IN_PROGRESS, PARKING_SPOT_OCCUPIED, REASON_REQUIRED, RESOURCE_NOT_FOUND, TICKET_CLOSED, TICKET_NOT_FOUND]
       x-domain-events: [custody.changed, task.reassigned, driver.availability_changed, task.key_picked_up, task.promoted, offer.revoked]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
   /v1/tickets/{ticketId}/manual-reconcile:
@@ -3375,7 +3375,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '404':
           $ref: '#/components/responses/Error'
-          description: TICKET_NOT_FOUND
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | VERSION_CONFLICT
@@ -3400,7 +3400,7 @@ paths:
       x-permission: ticket.manual_reconcile
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, KEY_SLOT_OCCUPIED, PARKING_SPOT_OCCUPIED, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, KEY_SLOT_OCCUPIED, PARKING_SPOT_OCCUPIED, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, RESOURCE_NOT_FOUND, TICKET_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [ticket.manually_reconciled, custody.changed, task.canceled, payment.recorded]
       x-ws-events: [ticket.updated]
   /v1/tickets/{ticketId}/payments:

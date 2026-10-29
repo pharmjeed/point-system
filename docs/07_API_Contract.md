@@ -574,7 +574,7 @@ target_driver_id=null يعيد المهمة للطابور بأولويتها ا
 - الشروط (DEC-250): الحائز الجديد ليس customer (التسليم TT-18/TT-19: VALIDATION_FAILED بـuse_handover)؛ المركبة إلى driver أو spot أو supervisor أو unknown، والمفتاح إلى driver أو key_slot أو supervisor أو unknown (not_allowed_for_subject)؛ المركبة parked إلى spot أو unknown فقط (parked_vehicle_spot_or_unknown)؛ الحائز السائق سائق نشط (أو مشرف can_drive) في مناوبة on_duty بمجموعة التذكرة (driver_not_on_duty، not_a_driver)، والحائز المشرف موظف نشط بنطاق الموقع؛ السبب يُحفظ note لحدث العهدة؛ وقفل المجموعة يؤخذ دائمًا
 - الأثر: custody_events(official_transfer) + حقول الحائز الحالي (+ نقل المهمة وتسوية السائق السابق عند الحاجة)
 - أحداث: `custody.changed`, `task.reassigned`, `task.key_picked_up`, `driver.availability_changed`, `task.promoted`, `offer.revoked` · WS: `ticket.updated`, `task.updated`, `driver.state_changed`
-- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `KEY_SLOT_OCCUPIED`, `MOVEMENT_IN_PROGRESS`, `PARKING_SPOT_OCCUPIED`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`
+- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `KEY_SLOT_OCCUPIED`, `MOVEMENT_IN_PROGRESS`, `PARKING_SPOT_OCCUPIED`, `REASON_REQUIRED`, `RESOURCE_NOT_FOUND` (`to_holder_id` غير معروف: `user` أو `parking_spot` أو `key_slot`), `TICKET_CLOSED`, `TICKET_NOT_FOUND`
 
 #### `POST /v1/tickets/{ticketId}/manual-reconcile` — مطابقة يدوية بعد انقطاع
 
@@ -584,7 +584,7 @@ target_driver_id=null يعيد المهمة للطابور بأولويتها ا
 - الشروط (DEC-253): أي حالة مفتوحة ومنها `parked` ← `parked` للتصحيح · النهائية ← INVALID_STATE_TRANSITION (reason=ticket_closed) · الموقف والملاحظة والخانة لـparked فقط · الورقية بلا كعب إلى voided فقط · incident_id من موقع التذكرة وليس لتذكرة أخرى · الدفع (DEC-252): delivered لتذكرة due يتطلب payment بـcollected_by أو إعفاءً سابقًا وإلا PAYMENT_PENDING؛ payment لـdelivered ولـdue فقط (not_applicable) مع PAYMENT_ALREADY_RECORDED وقواعد 13 §5؛ التحصيل المسجل يمنع voided (reason=payment_recorded)
 - الأثر: حالة نهائية + custody_events(manual_reconcile، الملاحظة = paper_log_ref) + ticket_events(data.manual=true) + كبت رسائل واتساب (المعلّقة بلا محاولة جارية ← skipped superseded) + رموز التسليم الحية canceled ومسح نسختها، ورموز الربط والإجراء لـvoided فقط + delivered_by = مكلّف الإحضار وإلا retrieved_by/accepted_by وإلا الفاعل، parked_by = مكلّف الصف المفتوح + تسوية سائق الحركة الملغاة + إسقاط الطلب المبكر المعلّق دون إعادة + حل تنبيهات الحالة السابقة (عدا inspection_incomplete لـparked) (DEC-253)؛ payment.recorded بـsource=reconcile مع تدقيق payment.record (DEC-252)
 - أحداث: `ticket.manually_reconciled`, `custody.changed`, `task.canceled`, `payment.recorded` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `PARKING_SPOT_OCCUPIED`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `KEY_SLOT_OCCUPIED`, `PARKING_SPOT_OCCUPIED`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `REASON_REQUIRED`, `RESOURCE_NOT_FOUND` (`incident` أو `user` لـ`payment.collected_by` أو `parking_spot` أو `key_slot`), `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 ### 2.4 التحصيل (Canon §9.4)
 

@@ -326,7 +326,7 @@ INSERT INTO cash_handovers (org_id, venue_id, event_id, driver_id, received_by,
 VALUES ($org, $venue, $event_id, $driver_id, $actor, $amount, $expected, $note)
 RETURNING id, difference_halalas;                                       -- عمود محسوب = amount - expected
 UPDATE payments SET cash_handover_id = $handover_id WHERE id = ANY($locked_payment_ids);
--- فقط إن كان difference_halalas <> 0 (عبر openIncident()، DEC-240؛ ومعه incident.opened بـauto_created: true، DEC-284):
+-- فقط إن كان difference_halalas <> 0 (يكتبها كاتب وحدة التحصيل في المعاملة نفسها، DEC-284، DEC-240؛ ومعه incident.opened بـauto_created: true):
 INSERT INTO incidents (org_id, venue_id, event_id, type, severity, description, opened_by)
 VALUES ($org, $venue, $event_id, 'payment_discrepancy', 'medium', $description_ar, $actor);
 INSERT INTO audit_log (org_id, actor_type, actor_id, action, entity_type, entity_id, venue_id, request_id, after)

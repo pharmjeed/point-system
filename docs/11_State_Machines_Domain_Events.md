@@ -805,10 +805,10 @@ stateDiagram-v2
 
 ### 6.11 الوقائع `incidents.status`
 
-`open` ← `in_review` ← `resolved` ← `closed`، مع `open` ← `resolved` مباشرة و`resolved` ← `in_review` لإعادة الفتح. `resolved` يشترط `resolution` و`resolved_at` (قيد المخطط). `closed` نهائية. الأوامر: `POST /v1/incidents` و`PATCH /v1/incidents/{incidentId}`، أو إنشاء نظامي موثق (TT-19، TT-20، عكس دفع بعد التسليم).
+`open` ← `in_review` ← `resolved` ← `closed`، مع `open` ← `resolved` مباشرة و`resolved` ← `in_review` لإعادة الفتح. `resolved` يشترط `resolution` و`resolved_at` (قيد المخطط). `closed` نهائية. الأوامر: `POST /v1/incidents` و`PATCH /v1/incidents/{incidentId}`، أو إنشاء نظامي موثق (TT-19، TT-20، وفروقات التحصيل: العكس بلا بديل بعد التسليم وفرق تسليم النقد).
 
 - `PATCH` (DEC-239): حدث واحد لكل تغيير (`incident.resolved` حين تصير محلولة، وإلا `incident.updated` بـ`changed`)؛ الحل يتطلب `resolution` (`VALIDATION_FAILED`، وكذلك مسحه عن محلولة)؛ إعادة الفتح تمسح `resolution` و`resolved_by` و`resolved_at` ويحفظها التدقيق؛ أي أمر على `closed` ← `INVALID_STATE_TRANSITION` (`reason = incident_closed`)؛ `owner_id` موظف نشط بنطاق الموقع (غير معروف ← `RESOURCE_NOT_FOUND`، وغير مؤهل ← `VALIDATION_FAILED` بـ`not_eligible`)؛ و`PATCH` بلا تغيير لا يرفع `version` ولا يصدر حدثًا ويُدقَّق `noop`.
-- الإنشاء النظامي عبر `openIncident()` في وحدة الوقائع: `opened_by` هو المستخدم صاحب الأمر، ومع `resolution` تُنشأ محلولة بـ`incident.opened` ثم `incident.resolved` (DEC-240).
+- الإنشاء النظامي (DEC-240): الأمر الذي يفتح واقعته يكتبها في معاملته بـ`opened_by` = المستخدم صاحب الأمر و`incident.opened` بـ`auto_created: true` (ومع الحل الفوري `incident.resolved` بعده)؛ كاتبوه: TT-19 في حالة الاستخدام نفسها (DEC-210)، وTT-20 عبر الخطاف `IncidentRecorder` (DEC-222)، وفروقات التحصيل بكاتب وحدة التحصيل (DEC-284، فـ04 §4.3 لا يسمح لها باستيراد `incidents`). و`openIncident()` في وحدة الوقائع كاتب `POST /v1/incidents`، والموضع المقترح لتوحيدهم لاحقًا خلف خطاف تسجله وحدة الوقائع.
 
 ### 6.12 صندوق الأحداث `outbox_events.status`
 

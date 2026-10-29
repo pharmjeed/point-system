@@ -83,9 +83,11 @@ export interface OpenIncidentInput {
 }
 
 /**
- * Writes an incident (L10 with the command's other appends) and `incident.opened` — the seam for the flows that
- * open incidents themselves (TT-19, TT-20, a payment reversal after delivery; 11 §6.11). No realtime here:
- * the WS `incident.updated` is published by the realtime planner from the domain events (11 §8.8).
+ * Writes an incident (L10 with the command's other appends) and `incident.opened` — the writer of
+ * `POST /v1/incidents`. The flows that open incidents themselves write their own row today (DEC-240: TT-19 in its
+ * use-case, TT-20 through the IncidentRecorder hook, the payment discrepancies in payments-reports, which may not
+ * import this module); this function is where they may be unified later behind a hook. No realtime here: the WS
+ * `incident.updated` is published by the realtime planner from the domain events (11 §8.8).
  */
 export async function openIncident(tx: Tx, i: OpenIncidentInput): Promise<IncidentRow> {
   const resolution = i.resolution?.trim() || null;

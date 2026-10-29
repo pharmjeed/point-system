@@ -531,13 +531,17 @@ export function boardFixture(over: Json = {}) {
         status: 'offered',
         requested_at: secondsAgo(40),
         waiting_seconds: 40,
+        // as the server sends it (DEC-241): the round's recipient, no assignee before an acceptance
         offer: {
           offer_id: 'o-52',
           mode: 'single',
           round_no: 1,
           expires_at: new Date(Date.now() + 20_000).toISOString(),
+          recipients: 1,
+          recipient: KHALID,
         },
-        assignee: KHALID,
+        assignee: null,
+        badges: [],
       },
       {
         task_id: 'k-47',

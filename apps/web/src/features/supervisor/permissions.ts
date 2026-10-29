@@ -1,4 +1,4 @@
-import type { Me, Payment, TicketDetail } from '@/api/types';
+import type { CustodyHolderType, CustodySubject, Me, Payment, TicketDetail } from '@/api/types';
 
 /**
  * Permission gating for the staff screens (09 §3, canon §10). `GET /v1/me.permissions` is the list the
@@ -136,6 +136,20 @@ export function ticketActions(me: Pick<Me, 'permissions' | 'user'>, t: TicketDet
     out.push('recordPayment');
   if (can(me, 'incident.create')) out.push('openIncident');
   return out;
+}
+
+/**
+ * The new holders S-03 offers for an official custody transfer (DEC-250, DEC-328): the key to an on-duty driver,
+ * the supervisor himself or a free key slot; a moving vehicle to a driver, the supervisor or a free spot; a
+ * `parked` vehicle only to a free spot (the server refuses anything but a spot or `unknown` for it,
+ * `parked_vehicle_spot_or_unknown`). `customer` and `unknown` are never offered (handover, reconcile).
+ */
+export function custodyTransferHolders(
+  subject: CustodySubject,
+  ticket: Pick<TicketDetail, 'status'>,
+): Array<Exclude<CustodyHolderType, 'customer' | 'unknown'>> {
+  if (subject === 'key') return ['driver', 'supervisor', 'key_slot'];
+  return ticket.status === 'parked' ? ['spot'] : ['driver', 'supervisor', 'spot'];
 }
 
 /** Admin area sections (02 §2.2 table, 02 S-13) — read permission per section. */

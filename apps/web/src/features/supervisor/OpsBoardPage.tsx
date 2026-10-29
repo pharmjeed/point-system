@@ -61,6 +61,7 @@ import {
   secondsSince,
   sortQueue,
   stageSince,
+  taskWaitsLong,
   thresholdsFrom,
   vehicleSummary,
   type Thresholds,
@@ -446,10 +447,11 @@ function QueueEntryRow({
     const left = item.offer?.expires_at
       ? Math.max(0, Math.ceil((Date.parse(item.offer.expires_at) - now) / 1000))
       : null;
+    // «معروض على {سائق}» from offer.recipient with the round's countdown, else «معروض» (DEC-316)
+    const offered = queueStateText(item);
     pills.unshift({
       level: 'warning',
-      label:
-        left != null ? `${s02.queueState.offeredAnyone} ${formatClock(left)}` : s02.queueState.offeredAnyone,
+      label: left != null ? `${offered} ${formatClock(left)}` : offered,
     });
   }
   return (
@@ -488,14 +490,7 @@ function TaskRows({
         const extra: string[] = [];
         if (notCollected(card, { alerts: board.alerts, thresholds, nowMs: now, readySince: since }))
           extra.push(s02.escalation.notCollected);
-        if (
-          card.task.status === 'assigned_waiting' &&
-          ((elapsed != null && elapsed >= thresholds.nextTaskWaitAlertS) ||
-            board.alerts.some(
-              (a) =>
-                a.type === 'next_task_waiting_long' && a.task_id === card.task.id && a.status !== 'resolved',
-            ))
-        )
+        if (taskWaitsLong(card, { alerts: board.alerts, thresholds, nowMs: now, since }))
           extra.push(s02.escalation.longWait);
         const stage = [`${taskType[card.task.type]} · ${taskStatus[card.task.status]}`, ...extra].join(' · ');
         return (
