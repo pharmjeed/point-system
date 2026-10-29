@@ -202,7 +202,7 @@ sequenceDiagram
 
 ## 2. مرجع المسارات
 
-مرتبة كما في Canon §9. «تكرار» = `Idempotency-Key`. «أخطاء خاصة» تضاف إلى الأخطاء العامة: `401` (`AUTH_UNAUTHENTICATED`، `AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`)، `403` (`PERMISSION_DENIED` وقيود الجلسة)، `422 VALIDATION_FAILED` للجسم، رموز التكرار، `429 RATE_LIMITED`، `500 INTERNAL_ERROR`، `503 SERVICE_UNAVAILABLE`. القائمة الكاملة لكل مسار في `x-error-codes` ووصف الاستجابات في الـYAML.
+مرتبة كما في Canon §9. «تكرار» = `Idempotency-Key`. «أخطاء خاصة» تضاف إلى الأخطاء العامة: `401` (`AUTH_UNAUTHENTICATED`، `AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`)، `403` (`PERMISSION_DENIED` وقيود الجلسة)، `422 VALIDATION_FAILED` للجسم، `413 PAYLOAD_TOO_LARGE` لجسم فوق 1 MB (Webhook فوق 3 MB) بتفصيل `max_bytes` (DEC-130)، رموز التكرار، `429 RATE_LIMITED`، `500 INTERNAL_ERROR`، `503 SERVICE_UNAVAILABLE`. القائمة الكاملة لكل مسار في `x-error-codes` ووصف الاستجابات في الـYAML.
 
 ### 2.1 الدخول والجلسة والجهاز والمناوبة (Canon §9.1)
 

@@ -71,18 +71,29 @@ export function toHttpAppError(err: unknown): { error: AppError; unexpected: boo
       429: 'RATE_LIMITED',
     };
     const code = map[status];
-    if (code)
-      return { error: new AppError(code, status === 404 ? { resource: 'route' } : {}), unexpected: false };
+    if (code) {
+      const details = status === 404 ? { resource: 'route' } : status === 413 ? maxBytes(err.cause) : {};
+      return { error: new AppError(code, details), unexpected: false };
+    }
   }
   // body-parser errors (malformed JSON, too large) are plain errors with a status
   const status = (err as { status?: number; type?: string })?.status;
-  if (status === 413) return { error: new AppError('PAYLOAD_TOO_LARGE'), unexpected: false };
+  if (status === 413) return { error: new AppError('PAYLOAD_TOO_LARGE', maxBytes(err)), unexpected: false };
   if (status === 400)
     return {
       error: new AppError('VALIDATION_FAILED', { fields: [{ field: 'body', issue: 'malformed_json' }] }),
       unexpected: false,
     };
   return { error: new AppError('INTERNAL_ERROR'), unexpected: true };
+}
+
+/**
+ * 08 §4.15: PAYLOAD_TOO_LARGE carries the limit the body exceeded (body-parser's `limit`, in bytes, DEC-130). The
+ * Express adapter hands a body-parser error over as the `cause` of an HttpException.
+ */
+function maxBytes(err: unknown): Record<string, unknown> {
+  const limit = (err as { limit?: unknown })?.limit;
+  return typeof limit === 'number' ? { max_bytes: limit } : {};
 }
 
 function describe(err: unknown) {

@@ -98,6 +98,9 @@ paths:
         '403':
           $ref: '#/components/responses/Error'
           description: AUTH_ACCOUNT_DISABLED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
@@ -152,6 +155,9 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
           description: AUTH_MFA_INVALID | AUTH_MFA_REQUIRED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
@@ -258,6 +264,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
@@ -314,6 +323,9 @@ paths:
         '403':
           $ref: '#/components/responses/Error'
           description: PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
@@ -473,6 +485,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -551,6 +566,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -608,6 +626,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -688,6 +709,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DRIVER_DISABLED | DUTY_ALREADY_STARTED | IDEMPOTENCY_IN_PROGRESS | SHIFT_NOT_OPEN
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -751,6 +775,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_OPEN | DRIVER_NOT_AVAILABLE | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -885,6 +912,9 @@ paths:
         '403':
           $ref: '#/components/responses/Error'
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
@@ -966,6 +996,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DRIVER_ON_BREAK | DUTY_REQUIRED | EVENT_NOT_OPEN | IDEMPOTENCY_IN_PROGRESS | MOVEMENT_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -1177,6 +1210,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_TAG_IN_USE | PAPER_SERIAL_IN_USE | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | PLATE_INVALID | VALIDATION_FAILED
@@ -1269,7 +1305,7 @@ paths:
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
         '413':
           $ref: '#/components/responses/Error'
-          description: MEDIA_TOO_LARGE
+          description: MEDIA_TOO_LARGE | PAYLOAD_TOO_LARGE
         '415':
           $ref: '#/components/responses/Error'
           description: MEDIA_TYPE_UNSUPPORTED
@@ -1339,7 +1375,7 @@ paths:
           description: IDEMPOTENCY_IN_PROGRESS | MEDIA_UPLOAD_INCOMPLETE
         '413':
           $ref: '#/components/responses/Error'
-          description: MEDIA_TOO_LARGE
+          description: MEDIA_TOO_LARGE | PAYLOAD_TOO_LARGE
         '415':
           $ref: '#/components/responses/Error'
           description: MEDIA_TYPE_UNSUPPORTED
@@ -1463,6 +1499,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INSPECTION_INCOMPLETE | INVALID_STATE_TRANSITION | VERSION_CONFLICT | WA_CUSTOMER_OPTED_OUT | WA_TEMPLATE_NOT_APPROVED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: CONSENT_REQUIRED | IDEMPOTENCY_KEY_REUSED | INTAKE_INCOMPLETE | VALIDATION_FAILED
@@ -1534,6 +1573,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DRAFT_HAS_DATA | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -1612,6 +1654,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_OPEN | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -1681,6 +1726,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -1759,6 +1807,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | TICKET_CLOSED | WA_CONSENT_MISSING | WA_CUSTOMER_OPTED_OUT | WA_TEMPLATE_NOT_APPROVED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | VALIDATION_FAILED
@@ -1835,6 +1886,9 @@ paths:
         '410':
           $ref: '#/components/responses/Error'
           description: WA_LINK_CODE_EXPIRED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -1915,6 +1969,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | TICKET_CLOSED | VERSION_CONFLICT | WA_CUSTOMER_OPTED_OUT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: CONSENT_REQUIRED | IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | REASON_REQUIRED | VALIDATION_FAILED
@@ -1996,6 +2053,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -2166,6 +2226,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -2251,6 +2314,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DRIVER_ON_BREAK | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | RETRIEVAL_ALREADY_ACTIVE | TICKET_CLOSED | TICKET_NOT_PARKED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -2337,6 +2403,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | CUSTODY_RELEASE_REQUIRED | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -2489,6 +2558,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | TASK_NOT_STARTABLE | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -2556,6 +2628,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_NOT_PICKED_UP | TASK_NOT_STARTABLE | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -2624,6 +2699,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -2766,6 +2844,9 @@ paths:
         '410':
           $ref: '#/components/responses/Error'
           description: HANDOVER_CODE_EXPIRED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: HANDOVER_CODE_INVALID | IDEMPOTENCY_KEY_REUSED | PAPER_STUB_MISMATCH | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | VALIDATION_FAILED
@@ -2941,6 +3022,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3037,6 +3121,9 @@ paths:
           $ref: '#/components/responses/Error'
           description: CUSTODY_RELEASE_REQUIRED | DRIVER_NOT_AVAILABLE | DUTY_REQUIRED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | NEXT_TASK_ALREADY_RESERVED
             | OLDER_REQUEST_PENDING | REASSIGN_BLOCKED_MOVEMENT | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3111,6 +3198,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3196,6 +3286,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3275,6 +3368,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_HOLDER_MISMATCH | IDEMPOTENCY_IN_PROGRESS | KEY_SLOT_OCCUPIED | MOVEMENT_IN_PROGRESS | PARKING_SPOT_OCCUPIED | TICKET_CLOSED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3379,6 +3475,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | KEY_SLOT_OCCUPIED | PARKING_SPOT_OCCUPIED | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3456,6 +3555,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | VALIDATION_FAILED
@@ -3545,6 +3647,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_REVERSED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3616,6 +3721,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED | TICKET_CLOSED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3695,6 +3803,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -3857,6 +3968,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -3966,6 +4080,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4098,6 +4215,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4196,6 +4316,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4264,6 +4387,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4371,6 +4497,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4436,6 +4565,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4595,6 +4727,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4658,6 +4793,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | PARKING_SPOT_OCCUPIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4779,6 +4917,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4860,6 +5001,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -4923,6 +5067,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | KEY_SLOT_OCCUPIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5095,6 +5242,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5225,6 +5375,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5290,6 +5443,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5356,6 +5512,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5467,6 +5626,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | EVENT_CLOSE_BLOCKED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5539,6 +5701,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: EVENT_ALREADY_CLOSED | EVENT_CLOSE_BLOCKED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -5708,6 +5873,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5770,6 +5938,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | SHIFT_ALREADY_OPEN | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5834,6 +6005,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | SHIFT_CLOSE_BLOCKED | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -5994,6 +6168,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | VALIDATION_FAILED
@@ -6101,6 +6278,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | VALIDATION_FAILED
@@ -6168,6 +6348,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_OPEN | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -6400,6 +6583,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: ASSIGNMENT_CONFLICT | DRIVER_DISABLED | IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -6479,6 +6665,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: ASSIGNMENT_CONFLICT | DRIVER_DISABLED | IDEMPOTENCY_IN_PROGRESS | TRANSFER_ALREADY_PENDING | TRANSFER_BLOCKED_CUSTODY
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -6545,6 +6734,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -6613,6 +6805,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: DUTY_END_BLOCKED_CUSTODY | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -6773,6 +6968,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | VALIDATION_FAILED
@@ -6849,6 +7047,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: CUSTODY_OPEN | IDEMPOTENCY_IN_PROGRESS | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | REASON_REQUIRED | VALIDATION_FAILED
@@ -6929,6 +7130,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -6999,6 +7203,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -7135,6 +7342,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -7198,6 +7408,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -7354,6 +7567,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -7468,6 +7684,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -7771,6 +7990,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -7923,6 +8145,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -8333,6 +8558,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -8419,6 +8647,9 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -8484,6 +8715,9 @@ paths:
         '403':
           $ref: '#/components/responses/Error'
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
@@ -8600,6 +8834,9 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
           description: WA_WEBHOOK_SIGNATURE_INVALID
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
         '422':
           $ref: '#/components/responses/Error'
           description: VALIDATION_FAILED
