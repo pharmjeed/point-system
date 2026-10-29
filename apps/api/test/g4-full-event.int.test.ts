@@ -44,11 +44,14 @@ import { err, expectConsistent, ok, one, rows, U, type Res } from './dispatch-fi
  * without a replacement), cash handovers with and without a difference; then start-closing → reconciliation →
  * close, and the shift is closed.
  *
- * Acceptance (PNT-093): no open custody, the amounts match (settlement = recorded payments; cash handed over = cash
- * collected + the recorded differences), the event is closed, the transfer succeeded, and the invariants hold:
- * docs/06_schema_invariants_test.sql (packages/db `runInvariants`), the 10 §14.1 / 11 §1.7 queries (`INVARIANTS`)
- * and infra/backup/consistency.sql. PNT-090 AC2 is proven on the same run: every domain event the run committed
- * — all 71 types of canon §7.1 — has exactly one `analytics_events` row, inside the 15 §3/§7 allow-list.
+ * Acceptance (PNT-093): no open custody, the amounts match (the settlement per collector = the scenario's own ledger
+ * of what each driver took = the recorded payments; the cash handed over = what the drivers took + the recorded
+ * difference), the event is closed, the transfer succeeded, every action carries its actor (TC-036: the tickets'
+ * created/parked/delivered by, and every command's audit rows under its request id in its caller's name), and the
+ * invariants hold: docs/06_schema_invariants_test.sql (packages/db `runInvariants`), the 10 §14.1 / 11 §1.7 queries
+ * (`INVARIANTS`) and infra/backup/consistency.sql. PNT-090 AC2 is proven on the same run: every domain event the
+ * run committed — all 71 types of canon §7.1 — has exactly one `analytics_events` row, inside the 15 §3/§7
+ * allow-list.
  */
 
 const RMS = SEED_IDS.venues.RMS;
@@ -82,6 +85,16 @@ interface Car {
   /** the open retrieve task and cycle, once requested */
   taskId?: string;
   cycleId?: string;
+  /** who the scenario had take it in, park it (last) and deliver it (TC-036 «كل فعل بفاعله») */
+  by: { created: string; parked?: string; delivered?: string };
+}
+
+/** What one collector took during the scenario, from its own commands (13 §10–§11). */
+interface Takings {
+  cash: number;
+  cashCount: number;
+  pos: number;
+  posCount: number;
 }
 
 describe('G4 — a full event through the real routes, closed with nothing open and matching amounts (PNT-093)', () => {
@@ -103,6 +116,27 @@ describe('G4 — a full event through the real routes, closed with nothing open 
   let slotSeq = 0;
   let serialSeq = 400;
   let plateSeq = 3100;
+  /**
+   * The money each collector took, kept from the scenario's own commands — the handovers with a payment, the
+   * separate collection, the exceptional handover, the reconciliation and the reversals — never read back from the
+   * server: the settlement's per-driver amounts and the cash handovers are checked against it (13 §10–§11).
+   */
+  const ledger = new Map<string, Takings>();
+  function took(who: string, method: 'cash' | 'pos', n = 1) {
+    const id = uid(who);
+    const l = ledger.get(id) ?? { cash: 0, cashCount: 0, pos: 0, posCount: 0 };
+    if (method === 'cash') {
+      l.cash += n * FEE;
+      l.cashCount += n;
+    } else {
+      l.pos += n * FEE;
+      l.posCount += n;
+    }
+    ledger.set(id, l);
+  }
+  const sum = (k: keyof Takings) => [...ledger.values()].reduce((s, l) => s + l[k], 0);
+  /** every command that succeeded (canon §9 ✓, with its Idempotency-Key): its request id and its caller */
+  const commands: { requestId: string; actorId: string; route: string }[] = [];
 
   // ------------------------------------------------------------------------------------------------ requests
   const cookieOf = async (as: string) => cookies.get(uid(as)) ?? (await w.sessionFor(as as SeedUserKey));
@@ -118,7 +152,14 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       .set(CSRF)
       .set('Cookie', await cookieOf(as));
     if (key !== null) req = req.set('Idempotency-Key', key);
-    return req.send(body as object);
+    const res = await req.send(body as object);
+    if (key !== null && res.status < 300)
+      commands.push({
+        requestId: res.body?.meta?.request_id,
+        actorId: uid(as),
+        route: `${method.toUpperCase()} ${path.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, '{id}')}`,
+      });
+    return res;
   }
   async function get(as: string, path: string): Promise<Res> {
     return request(w.app.getHttpServer())
@@ -283,6 +324,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       slotId: null,
       slotLabel: null,
       spotLabel: null,
+      by: { created: uid(as) },
     };
     cars.set(key, car);
     if (o.phone) phones.add(o.phone);
@@ -312,6 +354,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     );
     expect(r.ticket.status).toBe(o.status ?? 'parked');
     Object.assign(car, s, k);
+    car.by.parked = uid(as);
     await pump();
     return r;
   }
@@ -401,6 +444,8 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       }),
     );
     expect(r.ticket.status).toBe('delivered');
+    car.by.delivered = uid(as);
+    if (payment) took(as, payment.method as 'cash' | 'pos');
     await pump();
     return r;
   }
@@ -735,6 +780,8 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       pos_reference: 'AP4040',
       collected_by: { id: uid(d2) },
     });
+    took(d2, 'pos', -1); // the slip reversed …
+    took(d2, 'pos'); // … and replaced: still d2's POS collection (13 §7.2)
     expect(
       (await one(w.db, `SELECT payment_status FROM tickets WHERE id = $1`, [k4.ticketId])).payment_status,
     ).toBe('collected');
@@ -857,6 +904,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     // a separate collection before the handover (07 §9.4), then the stub alone
     const paid = ok(await cmd('DRV5', 'post', `/v1/tickets/${k11.ticketId}/payments`, CASH), 201);
     expect(paid.payment).toMatchObject({ method: 'cash', status: 'recorded' });
+    took('DRV5', 'cash');
     await handOver('DRV5', k11);
 
     // the provider is back: only the current state is sent (W-05 with the code, not the late W-03/W-04)
@@ -918,6 +966,8 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     );
     expect(ex.ticket.status).toBe('delivered');
     expect(ex.payment).toMatchObject({ method: 'cash', collected_by: { id: uid(a) } });
+    k14.by.delivered = uid(a); // the assignee delivered, the supervisor approved (07, 11 TT-19)
+    took(a, 'cash'); // the guest's cash is in a's pocket
     expect((await one(w.db, `SELECT status FROM alerts WHERE id = $1`, [lock.id])).status).toBe('resolved');
     await pump();
 
@@ -1025,6 +1075,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       }),
     );
     lyl.slotId = seedKeySlotId('LYL', 1);
+    lyl.by.parked = U.DRV3;
     await tick(120, 10);
     await staffAsks(lyl, 'SUP-RL');
     expect(await singleOfferTo(lyl)).toBe('DRV3');
@@ -1125,6 +1176,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
         reason: 'عملية الشبكة لم تكتمل في تقرير الجهاز',
       }),
     );
+    took(e, 'pos', -1); // the slip never paid
     expect(
       (await one(w.db, `SELECT payment_status FROM tickets WHERE id = $1`, [k2.ticketId])).payment_status,
     ).toBe('due');
@@ -1179,6 +1231,8 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       }),
     );
     expect(reconciled).toMatchObject({ status: 'delivered', payment_status: 'collected' });
+    k15.by.delivered = uid(r); // the paper log's driver, the retrieve task's assignee (13 §8.5)
+    took(r, 'cash');
     expect(
       await rows(
         w.db,
@@ -1244,24 +1298,54 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     await bring(d, k17);
     await handOver(d, k17, CASH);
 
-    // the cash: every driver hands over what he holds; DRV2 is five riyals short (a recorded difference)
+    // the settlement per collector is the ledger of what the scenario's drivers took (13 §11): nothing handed
+    // over yet, so each one owes all of his cash
     const s = ok(await get('SUP-R', `/v1/events/${eventId}/settlement`));
-    const owing = s.drivers.filter(
-      (x: { cash: { outstanding_halalas: number } }) => x.cash.outstanding_halalas > 0,
-    ) as { driver: { id: string }; cash: { outstanding_halalas: number } }[];
-    expect(owing.map((x) => x.driver.id)).toContain(U.DRV2);
-    for (const o of owing) {
-      const short = o.driver.id === U.DRV2 ? 500 : 0;
+    type DriverRow = {
+      driver: { id: string };
+      cash: { count: number; collected_halalas: number; outstanding_halalas: number };
+      pos: { count: number; halalas: number };
+    };
+    const drivers = s.drivers as DriverRow[];
+    expect(drivers.map((x) => x.driver.id).sort()).toEqual([...ledger.keys()].sort());
+    for (const x of drivers) {
+      const l = ledger.get(x.driver.id)!;
+      expect(
+        {
+          cash: x.cash.collected_halalas,
+          cashCount: x.cash.count,
+          outstanding: x.cash.outstanding_halalas,
+          pos: x.pos.halalas,
+          posCount: x.pos.count,
+        },
+        nameOf(x.driver.id),
+      ).toEqual({
+        cash: l.cash,
+        cashCount: l.cashCount,
+        outstanding: l.cash,
+        pos: l.pos,
+        posCount: l.posCount,
+      });
+    }
+    // the cash: every driver hands over what he took; DRV2 counts five riyals short (a recorded difference)
+    const owing = [...ledger.entries()].filter(([, l]) => l.cash > 0);
+    expect(owing.map(([id]) => id)).toContain(U.DRV2);
+    for (const [id, l] of owing) {
+      const short = id === U.DRV2 ? 500 : 0;
       const h = ok(
         await cmd('SUP-R', 'post', '/v1/cash-handovers', {
           event_id: eventId,
-          driver_id: o.driver.id,
-          amount_halalas: o.cash.outstanding_halalas - short,
+          driver_id: id,
+          amount_halalas: l.cash - short,
           ...(short ? { note: 'نقص خمسة ريالات عند العد' } : {}),
         }),
         201,
       );
-      expect(h.difference_halalas).toBe(short ? -short : 0);
+      expect({
+        expected: h.expected_halalas,
+        difference: h.difference_halalas,
+        n: h.payment_ids.length,
+      }).toEqual({ expected: l.cash, difference: short ? -short : 0, n: l.cashCount });
       expect(h.incident_id === null).toBe(short === 0);
     }
     await pump();
@@ -1326,8 +1410,8 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     ])
       expect(await rows(w.db, sql, [eventId]), sql).toEqual([]);
 
-    // the amounts match: the settlement equals the recorded payments; the cash handed over equals the cash
-    // collected plus the recorded differences; nothing outstanding, nothing due
+    // the amounts match: the settlement equals the recorded payments and the scenario's own ledger; the cash handed
+    // over equals the cash the drivers took plus the recorded difference; nothing outstanding, nothing due
     const s = ok(await get('SUP-R', `/v1/events/${eventId}/settlement`));
     const money = await one(
       w.db,
@@ -1346,9 +1430,24 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       [eventId],
     );
     expect(s.amounts.collected_halalas).toBe(money.recorded);
-    expect(handed.expected).toBe(money.cash);
-    expect(handed.amount).toBe(money.cash + handed.difference);
-    expect(handed.difference).toBe(-500);
+    // ten cash collections (handovers, a separate one, the exception, the reconciliation) and four POS slips
+    expect({
+      cash: sum('cash'),
+      cashCount: sum('cashCount'),
+      pos: sum('pos'),
+      posCount: sum('posCount'),
+    }).toEqual({ cash: 10 * FEE, cashCount: 10, pos: 4 * FEE, posCount: 4 });
+    expect({ cash: money.cash, pos: money.pos }).toEqual({ cash: sum('cash'), pos: sum('pos') });
+    expect(s.amounts.by_method).toEqual({
+      cash: { count: sum('cashCount'), halalas: sum('cash') },
+      pos: { count: sum('posCount'), halalas: sum('pos') },
+    });
+    expect(handed).toEqual({
+      amount: sum('cash') - 500,
+      expected: sum('cash'),
+      difference: -500,
+      n: [...ledger.values()].filter((l) => l.cash > 0).length,
+    });
     expect(money.reversed).toBe(2);
     expect(s.amounts.billable_halalas).toBe(
       s.amounts.collected_halalas + s.amounts.waived_halalas + s.amounts.due_halalas,
@@ -1397,7 +1496,33 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       ).n,
     ).toBeGreaterThan(0);
 
-    // every command left its audit row; nothing is left for the worker (no dead, no failed row)
+    // TC-036 «كل فعل بفاعله»: each ticket names who took it in, parked it last and delivered it …
+    for (const car of cars.values())
+      expect(
+        await one(w.db, `SELECT created_by, parked_by, delivered_by FROM tickets WHERE id = $1`, [
+          car.ticketId,
+        ]),
+        car.key,
+      ).toEqual({
+        created_by: car.by.created,
+        parked_by: car.by.parked ?? null,
+        delivered_by: car.by.delivered ?? null,
+      });
+    // … and every command of the run left its audit row(s) under its request id, in its caller's name
+    expect(commands.length).toBeGreaterThan(200);
+    const audits = await rows<{ request_id: string; actor_type: string; actor_id: string; action: string }>(
+      w.db,
+      `SELECT request_id, actor_type, actor_id, action FROM audit_log WHERE request_id = ANY($1::text[])`,
+      [commands.map((c) => c.requestId)],
+    );
+    const caller = new Map(commands.map((c) => [c.requestId, c.actorId]));
+    const audited = new Set(audits.map((a) => a.request_id));
+    expect(commands.filter((c) => !audited.has(c.requestId)).map((c) => c.route)).toEqual([]);
+    expect(audits.filter((a) => a.actor_type !== 'user' || a.actor_id !== caller.get(a.request_id))).toEqual(
+      [],
+    );
+
+    // nothing is left for the worker (no dead, no failed row)
     expect(
       await rows(w.db, `SELECT type, status FROM outbox_events WHERE status IN ('failed','dead')`),
     ).toEqual([]);
@@ -1470,7 +1595,6 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     const props = analytics.map((a) => JSON.stringify(a.properties)).join('\n');
     const secrets: string[] = [];
     for (const p of phones) secrets.push(p, p.replace('+966', '0'), p.replace('+', ''));
-    for (const code of codesSeen) secrets.push(code);
     for (const car of cars.values()) {
       if (car.slotId) secrets.push(car.slotId);
       if (car.spotId) secrets.push(car.spotId);
@@ -1478,8 +1602,13 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       secrets.push(`KT-${car.plateDigits}`);
       expect(props.includes(`"${car.plateDigits}"`), `plate ${car.plateDigits}`).toBe(false);
     }
-    expect(codesSeen.size).toBeGreaterThan(5);
     expect(secrets.filter((x) => all.includes(x))).toEqual([]);
+    // a handover code is six digits: it is looked for as a whole value, never inside the hex of a UUID (the rows
+    // are full of them; a substring match would fail this gate now and then for nothing)
+    expect(codesSeen.size).toBeGreaterThan(5);
+    expect([...codesSeen].filter((c) => new RegExp(`(?<![0-9a-f])${c}(?![0-9a-f])`, 'i').test(all))).toEqual(
+      [],
+    );
     expect(/[؀-ۿ]/.test(props)).toBe(false);
     // nothing was refused by the allow-list and no value fell outside its list (stored as null) during the run
     expect(await serverRejections()).toEqual(rejectedBefore);
