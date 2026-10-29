@@ -1,3 +1,4 @@
+import { resetFakeClock } from './http';
 import { registerDriverRoutes } from './routesDriver';
 import { registerSetupRoutes } from './routesSetup';
 import { FakeServer } from './server';
@@ -13,6 +14,7 @@ export type { SeedOptions, SeedUserKey } from './seed';
 
 /** A fake backend with every route the web app uses, seeded from docs/17 §4. */
 export function createFake(options: SeedOptions = {}): FakeServer {
+  resetFakeClock(); // each test starts on real time
   const server = new FakeServer(options);
   registerSetupRoutes(server);
   registerDriverRoutes(server);

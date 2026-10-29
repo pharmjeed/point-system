@@ -15,7 +15,7 @@ export interface Reply {
 
 const meta = (extra: Record<string, unknown> = {}) => ({
   request_id: `req_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
-  server_time: new Date().toISOString(),
+  server_time: nowIso(),
   ...extra,
 });
 
@@ -116,5 +116,18 @@ export function stable(value: unknown): string {
   return JSON.stringify(norm(value)) ?? 'undefined';
 }
 
-export const nowIso = () => new Date().toISOString();
+/**
+ * The fake server's clock: real time plus a shift a test can add (`fake.advanceClock`) when it moves the page's
+ * clock forward, so a server reply after the jump (a heartbeat, a resync) does not pull the page's server-time
+ * offset back (src/lib/serverClock.ts) and every expiry the fake computes moves with it.
+ */
+let clockShiftMs = 0;
+export const fakeNowMs = () => Date.now() + clockShiftMs;
+export const nowIso = () => new Date(fakeNowMs()).toISOString();
+export function shiftFakeClock(ms: number): void {
+  clockShiftMs += ms;
+}
+export function resetFakeClock(): void {
+  clockShiftMs = 0;
+}
 export const uuid = () => randomUUID();

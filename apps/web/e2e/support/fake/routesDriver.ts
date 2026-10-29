@@ -6,7 +6,7 @@
  * Test code only — the real rules live in packages/server (S2) and are checked there.
  */
 import { randomInt } from 'node:crypto';
-import { fail, ok, page, uuid, validation, type Reply } from './http';
+import { fail, fakeNowMs, ok, page, uuid, validation, type Reply } from './http';
 import type { FCycle, FMedia, FOffer, FTask, FTicket, FUser } from './model';
 import { effectiveSettings, normalizePhone } from './routesSetup';
 import { STORAGE_PREFIX, type Ctx, type FakeServer } from './server';
@@ -339,7 +339,7 @@ export function registerDriverRoutes(s: FakeServer): void {
             }
           : null,
       requested_at: cycle?.requested_at ?? null,
-      waiting_seconds: cycle ? Math.round((Date.now() - Date.parse(cycle.requested_at)) / 1000) : null,
+      waiting_seconds: cycle ? Math.round((fakeNowMs() - Date.parse(cycle.requested_at)) / 1000) : null,
       payment_due:
         t.payment_status === 'due'
           ? {
@@ -373,7 +373,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       status: 'active',
       recipients,
       created_at: now(),
-      expires_at: mode === 'single' ? new Date(Date.now() + ttl * 1000).toISOString() : null,
+      expires_at: mode === 'single' ? new Date(fakeNowMs() + ttl * 1000).toISOString() : null,
       accepted_by: null,
       close_reason: null,
       version: 1,
@@ -389,7 +389,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       if (o.status !== 'active' || o.mode !== 'single' || !o.expires_at) continue;
       const task = w().tasks.find((k) => k.id === o.task_id) as FTask;
       const grace = Number(settingsOf(task.venue_id).dispatch?.accept_grace_ms ?? 1500);
-      if (Date.now() <= Date.parse(o.expires_at) + grace) continue;
+      if (fakeNowMs() <= Date.parse(o.expires_at) + grace) continue;
       o.status = 'expired';
       o.close_reason = 'expired';
       if (task.status === 'offered') {
@@ -459,7 +459,7 @@ export function registerDriverRoutes(s: FakeServer): void {
         vehicle: { make: t.vehicle_make, color: t.vehicle_color },
       },
       requested_at: cycle?.requested_at ?? hit.task.priority_at,
-      waiting_seconds: cycle ? Math.round((Date.now() - Date.parse(cycle.requested_at)) / 1000) : 0,
+      waiting_seconds: cycle ? Math.round((fakeNowMs() - Date.parse(cycle.requested_at)) / 1000) : 0,
       can_accept: eligible === 'accept',
       can_reserve_next: eligible === 'reserve_next',
       safety_note_ar: null,
@@ -958,7 +958,7 @@ export function registerDriverRoutes(s: FakeServer): void {
           method: 'PUT',
           url: `${ctx.origin}${STORAGE_PREFIX}${media.id}`,
           headers: { 'Content-Type': media.content_type },
-          expires_at: new Date(Date.now() + 300_000).toISOString(),
+          expires_at: new Date(fakeNowMs() + 300_000).toISOString(),
         },
       },
       201,
@@ -1024,7 +1024,7 @@ export function registerDriverRoutes(s: FakeServer): void {
     if (!m || !t || !s.inScope(u, t.venue_id) || !fullFor(t, u)) fail('RESOURCE_NOT_FOUND');
     return ok({
       url: `${ctx.origin}${STORAGE_PREFIX}${m.id}`,
-      expires_at: new Date(Date.now() + 300_000).toISOString(),
+      expires_at: new Date(fakeNowMs() + 300_000).toISOString(),
     });
   });
 
@@ -1509,7 +1509,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       attempts: 0,
       max_attempts: Number(h.max_attempts ?? 5),
       issued_at: now(),
-      expires_at: new Date(Date.now() + Number(h.code_ttl_min ?? 30) * 60_000).toISOString(),
+      expires_at: new Date(fakeNowMs() + Number(h.code_ttl_min ?? 30) * 60_000).toISOString(),
       locked_at: null,
       consumed_at: null,
       resend_no: (t.claim?.resend_no ?? -1) + 1,
@@ -1570,7 +1570,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       if (!c) fail('HANDOVER_CODE_EXPIRED');
       if (c.consumed_at) fail('HANDOVER_CODE_CONSUMED');
       if (c.locked_at) fail('HANDOVER_CODE_LOCKED', { locked_at: c.locked_at });
-      if (Date.now() > Date.parse(c.expires_at)) fail('HANDOVER_CODE_EXPIRED');
+      if (fakeNowMs() > Date.parse(c.expires_at)) fail('HANDOVER_CODE_EXPIRED');
       if (v.code !== c.code) {
         // the wrong attempt is kept even though the reply is an error (07 §1.4)
         c.attempts += 1;

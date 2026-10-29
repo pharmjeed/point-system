@@ -11,7 +11,7 @@
  * `task.claimed`, `offer.closed`, `task.updated`, `driver.state_changed`) with their aggregate versions.
  */
 import type { Page, WebSocketRoute } from '@playwright/test';
-import { uuid } from './http';
+import { nowIso, uuid } from './http';
 import type { FakeServer, Session } from './server';
 import { SEED_IDS } from './seed';
 
@@ -128,7 +128,7 @@ export class FakeRealtime {
       this.heartbeats.push({ userId, payload, at: Date.now() });
       if (this.silentAcks) return;
       ack({
-        data: { server_time: new Date().toISOString(), connection_state: 'online', sync_required: false },
+        data: { server_time: nowIso(), connection_state: 'online', sync_required: false },
       });
     } else if (event === 'client.offer_seen') {
       this.offersSeen.push({ userId, payload });
@@ -151,7 +151,7 @@ export class FakeRealtime {
     return {
       id: uuid(),
       type,
-      occurred_at: new Date().toISOString(),
+      occurred_at: nowIso(),
       org_id: SEED_IDS.org,
       venue_id: extra.venueId ?? null,
       dispatch_pool_id: extra.poolId ?? null,

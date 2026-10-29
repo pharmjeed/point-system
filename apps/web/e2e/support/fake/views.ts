@@ -1,6 +1,7 @@
 /**
  * Wire shapes of 07_openapi.yaml built from the fake world (field names exactly as the contract).
  */
+import { fakeNowMs } from './http';
 import type { FAssignment, FDuty, FEvent, FShift, FUser, FVenue } from './model';
 import type { FakeServer, Session } from './server';
 
@@ -99,7 +100,7 @@ export function meView(s: FakeServer, u: FUser, session?: Session) {
     duty_session: duty ? dutyView(duty) : null,
     driver_state: drives ? driverState(s, u.id) : null,
     session: {
-      expires_at: new Date(Date.now() + 12 * 3600_000).toISOString(),
+      expires_at: new Date(fakeNowMs() + 12 * 3600_000).toISOString(),
       mfa_verified: true,
       restricted: u.must_change_secret,
       pending: u.must_change_secret ? ['secret_change'] : [],

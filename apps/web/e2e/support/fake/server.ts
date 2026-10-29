@@ -17,6 +17,7 @@ import {
   HttpError,
   matchRoute,
   nowIso,
+  shiftFakeClock,
   stable,
   uuid,
   type Reply,
@@ -464,5 +465,13 @@ export class FakeServer {
 
   now(): string {
     return nowIso();
+  }
+
+  /**
+   * Moves the fake server's clock forward with the page's (`page.clock.fastForward`): call it before the jump, so
+   * the server time of every reply and every expiry the fake computes follow the page.
+   */
+  advanceClock(ms: number): void {
+    shiftFakeClock(ms);
   }
 }

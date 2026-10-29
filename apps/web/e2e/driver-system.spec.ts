@@ -251,8 +251,12 @@ test('PNT-068: D-04 single offer — countdown on server time, the reminder, «�
   });
   await expect(card).toHaveAttribute('data-offer-state', 'reminded');
   await expect(card.locator('.pt-ring--low')).toBeVisible();
-  // the round ends: «انتهى العرض», the button stops, then the card leaves
-  await page.clock.fastForward('00:31');
+  // the round ends: «انتهى العرض» and the button stops. Both clocks jump to just past expires_at, inside the
+  // server's accept grace (so the fake does not re-dispatch yet), and the server's clock moves with the page's
+  // so a reply right after the jump — the heartbeat — keeps the server-time offset
+  const pastExpiry = Date.parse(offer.expires_at!) - Date.parse(fake.now()) + 200;
+  fake.advanceClock(pastExpiry);
+  await page.clock.fastForward(pastExpiry);
   await expect(card).toHaveAttribute('data-offer-state', 'expired');
   await expect(card).toContainText('انتهى العرض');
   await expect(card.getByRole('button', { name: 'قبول الطلب' })).toBeDisabled();
