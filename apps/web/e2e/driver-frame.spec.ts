@@ -109,7 +109,7 @@ test('PNT-067/068: the promotion of the reserved next task is announced on D-14 
   await expect(dialog).toContainText(`بدأت مهمتك التالية: #${next!.displayNumber}`);
   await expect.poll(async () => (await audioLog(page)).started).toContain('next_due');
   expect((await audioLog(page)).vibrate).toContainEqual([100, 60, 100, 60, 200]);
-  await expect(page.getByRole('heading', { name: 'حسابي' })).toBeVisible(); // D-14 is still the screen
+  await expect(page).toHaveURL(/\/d\/account$/); // D-14 is still the screen, under the modal dialog
   await dialog.getByRole('button', { name: 'الانتقال' }).click();
   await expect(page).toHaveURL(new RegExp(`/d/tasks/${nextTask}$`));
   // announced once: back on D-04 nothing is shown again
@@ -150,34 +150,32 @@ test('PNT-068: a cancel of the current retrieval says so without a sound; a with
   await expect(canceled).toHaveCount(0);
 
   // a withdrawal before the movement (14 §3.2 task.withdrawn: a Task view without the assignee)
-  const second = arrangeRetrieval(fake, 'DRV1', 'accepted', { serial: '009202', keyTag: '193' });
+  const second = arrangeRetrieval(fake, 'DRV1', 'accepted', {
+    serial: '009202',
+    keyTag: '193',
+    spot: 'A-11',
+    slot: '21',
+  });
   await expect
     .poll(() => fake.realtime.delivered.some((d) => d.frame.payload?.task?.id === second.taskId))
     .toBe(true);
+  const soundsAtWithdrawal = (await audioLog(page)).started.length;
+  // the supervisor withdraws it (10 §9): back to the queue without an assignee; the hub publishes the
+  // Task view to the old assignee, as the API's planner does
   const task = fake.world.tasks.find((k) => k.id === second.taskId)!;
   task.assignee_id = null;
   task.status = 'queued';
   task.version += 1;
-  fake.realtime.emit(
-    'DRV1',
-    'task.updated',
-    {
-      cause: 'task.withdrawn',
-      id: task.id,
-      ticket_id: task.ticket_id,
-      type: 'retrieve',
-      status: 'queued',
-      version: task.version,
-      assignee: null,
-    },
-    { aggregate: { type: 'task', id: task.id, version: task.version } },
-  );
+  fake.realtime.afterChange();
   const withdrawn = page.locator('[data-notice="withdrawn"]');
   await expect(withdrawn).toContainText(
     `سحب المشرف المهمة — تذكرة ${second.displayNumber}. لا تُحضر السيارة.`,
   );
   await expect(withdrawn.getByRole('alert')).toBeVisible();
-  await expect.poll(async () => (await audioLog(page)).started.at(-1)).toBe('reminder');
+  // `reminder` for the withdrawal (the task goes back to the queue: its next round may sound after it)
+  await expect
+    .poll(async () => (await audioLog(page)).started.slice(soundsAtWithdrawal))
+    .toContain('reminder');
 });
 
 test('PNT-068 (DEC-30): the repark after a cancel during the movement → D-08 with next_due; the early request during parking with `reminder`', async ({

@@ -297,9 +297,45 @@ export class FakeRealtime {
         );
       }
     }
-    // 2. task cards that changed (newer version), appeared or left this driver
+    // 2. task cards that left this driver, then the ones that changed (newer version) or appeared — the API's
+    // order within one commit: the cancel or completion of a task before the repark or promotion it causes
     const beforeById = new Map(before.tasks.map((c) => [c.task.id, c]));
     const afterById = new Map(after.tasks.map((c) => [c.task.id, c]));
+    for (const [id] of beforeById) {
+      if (afterById.has(id)) continue;
+      const task = w.tasks.find((k) => k.id === id);
+      if (task && task.assignee_id !== userId && task.status !== 'completed' && task.status !== 'canceled') {
+        // withdrawn or reassigned away (realtime.ts `taskView(…, [rooms.user(from)])`): the Task view
+        this.sendTo(
+          userId,
+          this.envelope(
+            'task.updated',
+            {
+              cause: task.assignee_id ? 'task.reassigned' : 'task.withdrawn',
+              id: task.id,
+              ticket_id: task.ticket_id,
+              cycle_id: task.cycle_id,
+              type: task.type,
+              status: task.status,
+              version: task.version,
+              assignee: task.assignee_id ? { id: task.assignee_id } : null,
+            },
+            { ...where, aggregate: { type: 'task', id, version: task.version } },
+          ),
+        );
+        continue;
+      }
+      const card = this.server.taskCardOf?.(id, userId);
+      if (!card) continue;
+      this.sendTo(
+        userId,
+        this.envelope(
+          'task.updated',
+          { cause: card.task.status === 'canceled' ? 'task.canceled' : 'task.completed', ...card },
+          { ...where, aggregate: { type: 'task', id, version: card.task.version } },
+        ),
+      );
+    }
     for (const [id, card] of afterById) {
       const old = beforeById.get(id);
       if (old && old.task.version >= card.task.version) continue;
@@ -317,19 +353,6 @@ export class FakeRealtime {
         this.envelope(
           'task.updated',
           { cause, ...card },
-          { ...where, aggregate: { type: 'task', id, version: card.task.version } },
-        ),
-      );
-    }
-    for (const [id] of beforeById) {
-      if (afterById.has(id)) continue;
-      const card = this.server.taskCardOf?.(id, userId);
-      if (!card) continue;
-      this.sendTo(
-        userId,
-        this.envelope(
-          'task.updated',
-          { cause: card.task.status === 'canceled' ? 'task.canceled' : 'task.completed', ...card },
           { ...where, aggregate: { type: 'task', id, version: card.task.version } },
         ),
       );

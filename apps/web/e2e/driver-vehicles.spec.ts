@@ -169,8 +169,10 @@ test('PNT-069: a next page that fails stops loading and offers «إعادة ال
   await expect(rows(page)).toHaveCount(50);
   const pages = () => fake.callsTo('GET /v1/tickets').filter((c) => c.query?.get('cursor')).length;
 
-  // 503 on the next page (read retries included): rows stay, one inline retry, no request loop
-  fake.failNext('GET /v1/tickets', errorReply('SERVICE_UNAVAILABLE'), 3);
+  // 503 on the next page (read retries included): rows stay, one inline retry, no request loop — the first
+  // page is not touched (the start resync may read it again meanwhile)
+  const nextPage = { when: (query: URLSearchParams) => !!query.get('cursor') };
+  fake.failNext('GET /v1/tickets', errorReply('SERVICE_UNAVAILABLE'), 3, nextPage);
   await rows(page).nth(49).scrollIntoViewIfNeeded();
   await page.mouse.wheel(0, 4000);
   const retry = page.getByRole('alert').filter({ hasText: errorMessagesAr.SERVICE_UNAVAILABLE });
@@ -186,7 +188,7 @@ test('PNT-069: a next page that fails stops loading and offers «إعادة ال
   await page.reload();
   await expect(rows(page)).toHaveCount(50);
   const firstPages = fake.callsTo('GET /v1/tickets').filter((c) => !c.query?.get('cursor')).length;
-  fake.failNext('GET /v1/tickets', errorReply('PAGINATION_CURSOR_INVALID'));
+  fake.failNext('GET /v1/tickets', errorReply('PAGINATION_CURSOR_INVALID'), 1, nextPage);
   await rows(page).nth(49).scrollIntoViewIfNeeded();
   await page.mouse.wheel(0, 4000);
   await expect

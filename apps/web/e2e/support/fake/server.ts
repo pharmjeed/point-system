@@ -100,7 +100,12 @@ export class FakeServer {
   readonly calls: FakeCall[] = [];
   private readonly routes: RouteDef[] = [];
   private readonly idem = new Map<string, { fingerprint: string; reply: Reply }>();
-  private readonly faults: Array<{ pattern: RoutePattern; reply: Reply | 'abort'; times: number }> = [];
+  private readonly faults: Array<{
+    pattern: RoutePattern;
+    reply: Reply | 'abort';
+    times: number;
+    when?: (query: URLSearchParams) => boolean;
+  }> = [];
   private readonly delays: Array<{ pattern: RoutePattern; ms: number; times: number }> = [];
   /** Uploaded objects by media id (the fake private object storage). */
   readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
@@ -147,9 +152,17 @@ export class FakeServer {
     return this;
   }
 
-  /** Answers the next `times` matching requests with `reply` (or a dropped connection). */
-  failNext(spec: string, reply: Reply | 'abort', times = 1): this {
-    this.faults.push({ pattern: compile(spec), reply, times });
+  /**
+   * Answers the next `times` matching requests with `reply` (or a dropped connection); `when` narrows them by
+   * the query string (D-12: only the requests with a `cursor`).
+   */
+  failNext(
+    spec: string,
+    reply: Reply | 'abort',
+    times = 1,
+    options: { when?: (query: URLSearchParams) => boolean } = {},
+  ): this {
+    this.faults.push({ pattern: compile(spec), reply, times, when: options.when });
     return this;
   }
 
@@ -227,8 +240,12 @@ export class FakeServer {
     return u;
   }
 
-  private take<T extends { pattern: RoutePattern; times: number }>(list: T[], method: string, path: string) {
-    const i = list.findIndex((f) => f.times > 0 && matchRoute(f.pattern, method, path));
+  private take<
+    T extends { pattern: RoutePattern; times: number; when?: (query: URLSearchParams) => boolean },
+  >(list: T[], method: string, path: string, query: URLSearchParams = new URLSearchParams()) {
+    const i = list.findIndex(
+      (f) => f.times > 0 && matchRoute(f.pattern, method, path) && (!f.when || f.when(query)),
+    );
     if (i < 0) return null;
     const hit = list[i] as T;
     hit.times -= 1;
@@ -252,7 +269,7 @@ export class FakeServer {
     }
     const delay = this.take(this.delays, method, url.pathname);
     if (delay) await new Promise((r) => setTimeout(r, delay.ms));
-    const fault = this.take(this.faults, method, url.pathname);
+    const fault = this.take(this.faults, method, url.pathname, url.searchParams);
     const def = this.routes.find((r) => matchRoute(r.pattern, method, url.pathname));
     const call: FakeCall = {
       method,
