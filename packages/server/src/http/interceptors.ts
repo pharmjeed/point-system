@@ -72,7 +72,8 @@ export class CommandInterceptor implements NestInterceptor {
     if (!meta) return next.handle();
     const req = ctx.switchToHttp().getRequest<Req>();
     const res = ctx.switchToHttp().getResponse<Response>();
-    const header = req.header('Idempotency-Key') ?? undefined;
+    // a route that ignores the key runs keyless whatever the client sends (CommandMeta.ignoreKey)
+    const header = meta.ignoreKey ? undefined : (req.header('Idempotency-Key') ?? undefined);
     const handlerFn = async (tx: unknown) => {
       req.tx = tx;
       try {
