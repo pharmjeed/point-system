@@ -197,3 +197,22 @@ entry, `job.heartbeat_sweep` at duty start, `job.retention_purge` by the SystemM
   cause, so it answers `422 VALIDATION_FAILED` with empty `details`; the filter's `fields: body / malformed_json`
   branch for a plain body-parser error is no longer reached. 08 asks nothing more (the real client never sends one);
   left as is.
+- **S-04 and the quota alerts (for the staff UI).** `alertContext()` shows only `details.display_number` or
+  `details.driver_name`, so a quota row reads «فشل إرسال رسالة واتساب» with no context and no ticket link. A context
+  line from `details.quota` / `count` / `threshold` needs UI copy, best together with the canon type of
+  DEC-PROPOSED-1.
+
+## Not done, and why
+
+- A dedicated canon alert type for the quotas: a canon change (§5.7, 14 §8, and a migration widening the
+  `alerts.type` check of 06) — proposed as DEC-PROPOSED-1; the rows use `wa_send_failed` until then.
+- The other «عتبة تنبيه مقترحة» of 12 §13 (send p95, webhook p50, inbound backlog, orphan statuses, channel health)
+  and the «مراقبة» rows of 15 §12 are rules of the external monitoring stack; this repository holds no Prometheus
+  rules file. Every metric they read is now exported with a value.
+- `wa_webhook_silent` stays evaluated when the sender accepts a message (DEC-146), not by the SystemMonitor.
+- `point_ws_reconnects_total` counts a reconnect on the same api process only, and `point_dispatch_publish_seconds`
+  starts at the producing transaction's start (an upper bound of «commit → publish») — DEC-PROPOSED-5.
+- The billing month of F-03 is counted in Asia/Riyadh; Meta's own documentation could not be read from this
+  session (DEC-PROPOSED-2: re-verify before go-live). WhatsApp Manager stays the billing reference.
+- The served-errors test reaches each route with dummy ids and an empty or oversized body; the codes a route returns
+  only with real data are covered by its module's tests, not re-proven here.

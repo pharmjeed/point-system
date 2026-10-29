@@ -26,7 +26,7 @@ export const WA_MESSAGING_LIMIT_DEFAULT = 250;
 export const WA_SERVICE_WINDOW_HOURS = 24;
 /**
  * The calendar month of the free tier. Meta counts it in the WhatsApp Business Account's time zone (secondary
- * sources; re-verify at implementation), which for the «مصاف» account is Saudi time.
+ * sources; re-verify at implementation), which for the customer channel's account is Saudi time.
  */
 export const WA_QUOTA_MONTH_TIME_ZONE = 'Asia/Riyadh';
 /** The counts move slowly: each process refreshes them at most once a minute. */
