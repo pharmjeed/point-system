@@ -12,6 +12,8 @@ export interface TransferChecklist {
   movement: number[];
   acceptedBeforeKey: number[];
   nextTask: number[];
+  /** display number → ticket id, for «فتح» on each row (02 S-06, S-07: transfer it officially first). */
+  ticketIds: Record<number, string>;
   /** Any ✗ (blocks an immediate transfer). */
   blocked: boolean;
 }
@@ -28,12 +30,17 @@ export function checklistFrom(
   const keys = new Set<number>();
   const movement = new Set<number>();
   const acceptedBeforeKey = new Set<number>();
+  const ticketIds: Record<number, string> = {};
+  for (const c of [...active, ...next]) ticketIds[c.ticket.display_number] = c.ticket.id;
   for (const c of active) {
     const n = c.ticket.display_number;
     if (c.task.status === 'in_progress') {
       movement.add(n);
       vehicles.add(n);
       keys.add(n);
+    } else if (c.task.status === 'accepted' && c.task.type !== 'retrieve') {
+      // an accepted park/repark is an active park/repark (DEC-32), as the server counts it
+      movement.add(n);
     } else if (c.task.status === 'accepted') {
       if (c.task.key_picked_up_at) keys.add(n);
       else acceptedBeforeKey.add(n);
@@ -41,8 +48,10 @@ export function checklistFrom(
   }
   for (const b of boards)
     for (const issue of b.custody_issues)
-      if (issue.holder.type === 'driver' && issue.holder.id === driverId)
+      if (issue.holder.type === 'driver' && issue.holder.id === driverId) {
         (issue.subject === 'vehicle' ? vehicles : keys).add(issue.ticket.display_number);
+        ticketIds[issue.ticket.display_number] = issue.ticket.id;
+      }
   // a park/repark of an event the boards do not cover still shows as a movement through driver_state
   if (live?.driver_state === 'intake_parking' && !movement.size) movement.add(0);
   const out = {
@@ -51,11 +60,15 @@ export function checklistFrom(
     movement: [...movement],
     acceptedBeforeKey: [...acceptedBeforeKey],
     nextTask: next.map((c) => c.ticket.display_number),
+    ticketIds,
   };
   return { ...out, blocked: !!(out.vehicles.length || out.keys.length || out.movement.length) };
 }
 
-/** The checklist from the server's `details.items` of TRANSFER_BLOCKED_CUSTODY (08 §4.11). */
+/**
+ * The checklist from the server's `details.items` (08 §4.11): TRANSFER_BLOCKED_CUSTODY (S-07), and the same
+ * list of DUTY_END_BLOCKED_CUSTODY / CUSTODY_OPEN (S-06, 02 S-06).
+ */
 export function fromBlockItems(
   items: readonly CustodyBlockItem[],
   previous: TransferChecklist,
@@ -64,7 +77,9 @@ export function fromBlockItems(
   const vehicles = items.filter((i) => i.type === 'vehicle').map(n);
   const keys = items.filter((i) => i.type === 'key').map(n);
   const movement = items.filter((i) => i.type === 'task' || i.type === 'draft').map(n);
-  return { ...previous, vehicles, keys, movement, blocked: true };
+  const ticketIds = { ...previous.ticketIds };
+  for (const i of items) if (i.ticket_id && i.display_number) ticketIds[i.display_number] = i.ticket_id;
+  return { ...previous, vehicles, keys, movement, ticketIds, blocked: true };
 }
 
 /**

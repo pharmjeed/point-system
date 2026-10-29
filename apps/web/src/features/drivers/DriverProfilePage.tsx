@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, MapPin, Pencil, UserCheck, UserX } from 'lucide-react';
+import { ArrowLeftRight, KeyRound, LogOut, MapPin, Pencil, UserCheck, UserX } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
@@ -14,7 +14,7 @@ import {
 import { ApiError, displayMessage } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
 import { listVenues } from '@/api/setup';
-import type { CustodyItem, DriverAssignment, DriverListItem, Me, Venue } from '@/api/types';
+import type { CustodyBlockItem, CustodyItem, DriverAssignment, DriverListItem, Me, Venue } from '@/api/types';
 import { paths } from '@/app/paths';
 import { can } from '@/app/permissions';
 import {
@@ -36,7 +36,13 @@ import { fieldError, NO_ERRORS, toFormErrors, type FormErrors } from '@/features
 import { QueryView } from '@/features/common/QueryView';
 import { UserStatusChip } from '@/features/common/StateChip';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { CustodyItemList } from '@/features/venues/BlockingList';
+import { CustodyChecklist, ticketNumbers, useCustodySnapshot } from '@/features/supervisor/CustodyChecklist';
+import { can as canStaff } from '@/features/supervisor/permissions';
+import { commands, staffKeys } from '@/features/supervisor/staffApi';
+import { staffPaths } from '@/features/supervisor/staffPaths';
+import { fromBlockItems, type TransferChecklist } from '@/features/supervisor/transferModel';
+import { ReasonDialog } from '@/features/supervisor/ui';
+import { useStaffCommand } from '@/features/supervisor/useStaffCommand';
 import { useCommand } from '@/hooks/useCommand';
 import { ui } from '@/i18n/ar';
 import { s05, s06 } from '@/i18n/ar.staff';
@@ -48,9 +54,10 @@ import { useUiStore } from '@/stores/ui';
 import { TempSecretDialog } from './TempSecretDialog';
 
 /**
- * S-06 — driver profile (`/drivers/:driverId`): card, current duty, assignment history, and the account
- * actions of 02 S-06 for whoever holds `driver.assign` / `driver.manage`. Transfer (S-07, PNT-086) and the
- * forced duty end (PNT-084) come with their tickets.
+ * S-06 — driver profile (`/drivers/:driverId`): card, current duty, assignment history, and the actions of the
+ * 02 S-06 table: «نقل إلى موقع آخر» → S-07 (`driver.transfer`, GAP-5), «تعيين على موقع» (`driver.assign`), the
+ * account actions (`driver.manage`) and «إنهاء المناوبة قسرًا» (`duty.force_end`, the supervisor's alone, GAP-6).
+ * The confirmations of «تعطيل الحساب» and «إنهاء المناوبة قسرًا» show the custody snapshot (DEC-32).
  */
 export function DriverProfilePage() {
   const { driverId = '' } = useParams();
@@ -79,6 +86,7 @@ export function DriverProfilePage() {
 
 function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const pushToast = useUiStore((s) => s.pushToast);
   const user = driver.user;
   const history = useQuery({
@@ -92,6 +100,8 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
   });
   const [sheet, setSheet] = useState<'assign' | 'edit' | null>(null);
   const [disabling, setDisabling] = useState(false);
+  /** the duty session «إنهاء المناوبة قسرًا» was opened for (kept while its Dialog is open) */
+  const [forceEnding, setForceEnding] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const manage = can(me, 'driver.manage');
@@ -126,6 +136,7 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
 
   const live = driver.live;
   const onDuty = !!live && live.driver_state !== 'off_duty';
+  const dutySessionId = onDuty ? (live?.duty_session_id ?? null) : null;
   const actionError = enable.error;
   return (
     <>
@@ -183,6 +194,11 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
       </Card>
 
       <div className="pt-record__actions">
+        {can(me, 'driver.transfer') && active && driver.active_assignment ? (
+          <Button compact iconStart={ArrowLeftRight} onClick={() => navigate(staffPaths.transfer(user.id))}>
+            {s06.transfer}
+          </Button>
+        ) : null}
         {can(me, 'driver.assign') && active && !driver.active_assignment ? (
           <Button compact iconStart={MapPin} onClick={() => setSheet('assign')}>
             {s06.assign}
@@ -208,6 +224,11 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
             {s06.enable}
           </Button>
         ) : null}
+        {canStaff(me, 'duty.force_end') && dutySessionId ? (
+          <Button compact variant="ghost" iconStart={LogOut} onClick={() => setForceEnding(dutySessionId)}>
+            {s06.forceEnd}
+          </Button>
+        ) : null}
       </div>
       {actionError ? <FieldError role="alert">{displayMessage(actionError)}</FieldError> : null}
 
@@ -229,12 +250,15 @@ function Profile({ me, driver }: { me: Me; driver: DriverListItem }) {
           driver={driver}
         />
       ) : null}
-      {manage && active ? (
-        <DisableDialog
-          open={disabling}
-          onOpenChange={setDisabling}
-          driverId={user.id}
-          name={user.full_name}
+      {manage && disabling ? (
+        <DisableDialog me={me} driver={driver} onClose={() => setDisabling(false)} />
+      ) : null}
+      {forceEnding ? (
+        <ForceEndDialog
+          me={me}
+          driver={driver}
+          sessionId={forceEnding}
+          onClose={() => setForceEnding(null)}
         />
       ) : null}
       {manage && active ? (
@@ -452,67 +476,160 @@ function EditDriverSheet({
   );
 }
 
+/** «مفتاح #125، مركبة #125» — the items of `details.items` (08 §4) as one line. */
+function itemsText(items: readonly CustodyItem[]): string {
+  return items
+    .map((i) => {
+      const label = (s06.itemType as Record<string, string>)[i.type] ?? i.type;
+      return i.display_number ? `${label} #${i.display_number}` : label;
+    })
+    .join('، ');
+}
+
+/** `details.items` of a custody refusal (CUSTODY_OPEN, DUTY_END_BLOCKED_CUSTODY), or null. */
+function custodyRefusal(error: unknown, code: string): CustodyItem[] | null {
+  return error instanceof ApiError && error.code === code && Array.isArray(error.details.items)
+    ? (error.details.items as CustodyItem[])
+    : null;
+}
+
+/**
+ * The DEC-32 part of both confirmations (02 S-06): from the snapshot, what blocks the action (a vehicle or a key
+ * held, a movement in progress, an active park/repark) with «فتح» on each item to transfer it officially first, and
+ * what happens automatically. The server's `details.items` replace the snapshot; the server stays the judge
+ * (the confirm stays enabled: a stale snapshot never blocks a valid command, a refusal lists the items).
+ */
+function CustodyPreview({ checklist, known }: { checklist: TransferChecklist; known: boolean }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {known ? <CustodyChecklist checklist={checklist} scope="blocking" testId="custody-checklist" /> : null}
+      <p className="pt-record__meta m-0">
+        {fmt(s06.autoRelease, { next: ticketNumbers(checklist.nextTask) }).replace(/\s{2,}/g, ' ')}
+      </p>
+    </div>
+  );
+}
+
 /**
  * «تعطيل الحساب» with a mandatory reason (02 S-06, DEC-32). `CUSTODY_OPEN` lists what the driver holds
- * (`details.items`); the server decides, there is no override.
+ * (`details.items`) in place of the snapshot, with the S-06 text; the server decides, there is no override.
  */
-function DisableDialog({
-  open,
-  onOpenChange,
-  driverId,
-  name,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  driverId: string;
-  name: string;
-}) {
+function DisableDialog({ me, driver, onClose }: { me: Me; driver: DriverListItem; onClose: () => void }) {
   const qc = useQueryClient();
   const pushToast = useUiStore((s) => s.pushToast);
+  const user = driver.user;
+  const { snapshot, known } = useCustodySnapshot(
+    me,
+    user.id,
+    driver.active_assignment?.venue_id ?? null,
+    driver.live,
+  );
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<{ message: string; items: CustodyItem[] } | null>(null);
-  const disable = useCommand((body: { reason: string }, key: string) => disableDriver(driverId, body, key));
-  const close = () => {
-    onOpenChange(false);
-    setError(null);
-    setReason('');
-  };
+  /** under the reason field: the local check and the server's REASON_REQUIRED */
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  /** under the list: the refusal (CUSTODY_OPEN with its items, or the server's text) */
+  const [failure, setFailure] = useState<{ message: string; items: CustodyItem[] } | null>(null);
+  const disable = useCommand((body: { reason: string }, key: string) => disableDriver(user.id, body, key));
   const confirm = async () => {
     if (reason.trim().length < 3) {
-      setError({ message: ui.reasonRequired, items: [] });
+      setReasonError(ui.reasonRequired);
       return;
     }
-    setError(null);
+    setReasonError(null);
+    setFailure(null);
     try {
       await disable.run({ reason: reason.trim() });
       pushToast({ message: ui.saved, tone: 'success' });
-      close();
+      onClose();
     } catch (e) {
-      const items =
-        e instanceof ApiError && Array.isArray(e.details.items) ? (e.details.items as CustodyItem[]) : [];
-      setError({ message: displayMessage(e), items });
+      const items = custodyRefusal(e, 'CUSTODY_OPEN');
+      if (e instanceof ApiError && e.code === 'REASON_REQUIRED') setReasonError(e.message_ar);
+      else
+        setFailure(
+          items?.length
+            ? { message: fmt(s06.custodyOpen, { items: itemsText(items) }), items }
+            : { message: displayMessage(e), items: [] },
+        );
     } finally {
       void qc.invalidateQueries({ queryKey: queryKeys.drivers });
+      void qc.invalidateQueries({ queryKey: staffKeys.boards() });
     }
   };
+  const checklist = failure?.items.length
+    ? fromBlockItems(failure.items as CustodyBlockItem[], snapshot)
+    : snapshot;
   return (
     <Dialog
       id="disable-driver"
-      open={open}
-      onOpenChange={(o) => (o ? onOpenChange(true) : close())}
+      open
+      onOpenChange={(o) => (o ? undefined : onClose())}
       title={s06.disable}
-      body={name}
+      body={user.full_name}
       reasonRequired
       reason={reason}
       onReasonChange={setReason}
       destructive
       confirmLabel={s06.disable}
       loading={disable.pending}
-      error={error?.message}
+      error={reasonError ?? undefined}
       onConfirm={confirm}
-      onCancel={close}
+      onCancel={onClose}
     >
-      {error?.items.length ? <CustodyItemList items={error.items} /> : null}
+      <CustodyPreview checklist={checklist} known={known || !!failure?.items.length} />
+      {failure ? <FieldError role="alert">{failure.message}</FieldError> : null}
     </Dialog>
+  );
+}
+
+/**
+ * «إنهاء المناوبة قسرًا» (02 S-06; `POST /v1/duty-sessions/{sessionId}/force-end`, `duty.force_end` is the
+ * supervisor's alone; 10 §9.5): mandatory reason and the DEC-32 snapshot; DUTY_END_BLOCKED_CUSTODY lists
+ * `details.items` with the S-06 text. The reserved next task and a retrieval accepted before the key pickup go
+ * back to the queue with their priority and the single offers are withdrawn (server side).
+ */
+function ForceEndDialog({
+  me,
+  driver,
+  sessionId,
+  onClose,
+}: {
+  me: Me;
+  driver: DriverListItem;
+  sessionId: string;
+  onClose: () => void;
+}) {
+  const user = driver.user;
+  const { snapshot, known } = useCustodySnapshot(
+    me,
+    user.id,
+    driver.active_assignment?.venue_id ?? null,
+    driver.live,
+  );
+  const cmd = useStaffCommand(
+    (reason: string, key: string) => commands.forceEndDuty(sessionId, { reason }, key),
+    {
+      invalidate: [queryKeys.drivers, staffKeys.driver(user.id), ['staff', 'drivers'], staffKeys.boards()],
+      onSuccess: onClose,
+      onPermissionDenied: onClose,
+    },
+  );
+  const items = custodyRefusal(cmd.error, 'DUTY_END_BLOCKED_CUSTODY');
+  const checklist = items?.length ? fromBlockItems(items as CustodyBlockItem[], snapshot) : snapshot;
+  return (
+    <ReasonDialog
+      open
+      onOpenChange={(o) => (o ? undefined : onClose())}
+      id="force-end-duty"
+      title={s06.forceEnd}
+      body={user.full_name}
+      destructive
+      confirmLabel={s06.forceEnd}
+      pending={cmd.pending}
+      error={items?.length ? fmt(s06.custodyOpen, { items: itemsText(items) }) : cmd.message}
+      reasonError={cmd.fields.reason}
+      onConfirm={(reason) => cmd.run(reason)}
+    >
+      <CustodyPreview checklist={checklist} known={known || !!items?.length} />
+    </ReasonDialog>
   );
 }

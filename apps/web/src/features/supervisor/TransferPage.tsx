@@ -1,15 +1,7 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
-import { Check, Info, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import type {
-  CustodyBlockItem,
-  DriverListItem,
-  DriverTransfer,
-  Me,
-  OperationsBoard,
-  Venue,
-} from '@/api/types';
+import type { CustodyBlockItem, DriverListItem, DriverTransfer, Me, Venue } from '@/api/types';
 import { paths } from '@/app/paths';
 import {
   Banner,
@@ -17,7 +9,6 @@ import {
   Card,
   FieldError,
   Header,
-  Icon,
   SegmentedControl,
   Select,
   Stepper,
@@ -32,24 +23,12 @@ import { fmt } from '@/i18n/fmt';
 import { cx } from '@/lib/cx';
 import { formatDateTime, formatTime } from '@/lib/format';
 import { serverNow } from '@/lib/serverClock';
+import { CustodyChecklist, useCustodySnapshot } from './CustodyChecklist';
 import { can } from './permissions';
-import { LIVE_EVENT_STATUSES, useVenues } from './selection';
-import {
-  commands,
-  fetchBoard,
-  fetchDriver,
-  fetchDriverAssignments,
-  fetchVenueEvents,
-  staffKeys,
-} from './staffApi';
+import { useVenues } from './selection';
+import { commands, fetchDriver, fetchDriverAssignments, staffKeys } from './staffApi';
 import { staffPaths } from './staffPaths';
-import {
-  checklistFrom,
-  fromBlockItems,
-  riyadhLocalToUtcIso,
-  utcIsoToRiyadhLocal,
-  type TransferChecklist,
-} from './transferModel';
+import { fromBlockItems, riyadhLocalToUtcIso, utcIsoToRiyadhLocal } from './transferModel';
 import { ForbiddenPage, PageSkeleton, ReadError, ReasonDialog, reasonOk, Section } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 import './staff.css';
@@ -71,8 +50,8 @@ export function TransferPage() {
     enabled: can(me, 'driver.read'),
   });
   if (!can(me, 'driver.transfer')) return <ForbiddenPage title={s07.screen} backTo={paths.drivers} />;
-  // S-06 (driver detail) belongs to the driver-screens stream: back in history, else the drivers list
-  const back = () => (window.history.length > 1 ? navigate(-1) : navigate(paths.drivers));
+  // S-06 «نقل إلى موقع آخر» leads here (GAP-5): back in history, else the driver's profile
+  const back = () => (window.history.length > 1 ? navigate(-1) : navigate(staffPaths.driver(driverId)));
   if (driver.isPending)
     return (
       <div className="st-page">
@@ -106,28 +85,7 @@ function TransferForm({ me, item, onBack }: { me: Me; item: DriverListItem; onBa
     queryKey: staffKeys.driverAssignments(driverId),
     queryFn: ({ signal }) => fetchDriverAssignments(driverId, signal),
   });
-  const events = useQuery({
-    queryKey: staffKeys.venueEvents(fromVenueId ?? '-', LIVE_EVENT_STATUSES),
-    queryFn: ({ signal }) => fetchVenueEvents(fromVenueId as string, LIVE_EVENT_STATUSES, signal),
-    enabled: !!fromVenueId && can(me, 'event.manage'),
-  });
-  const boards = useQueries({
-    queries: (events.data?.items ?? []).map((e) => ({
-      queryKey: staffKeys.board(e.id),
-      queryFn: ({ signal }: { signal: AbortSignal }) => fetchBoard(e.id, signal),
-      enabled: can(me, 'alert.read'),
-    })),
-  });
-  const stamp = boards.map((b) => b.dataUpdatedAt).join('|');
-  const snapshot = useMemo(
-    () =>
-      checklistFrom(
-        driverId,
-        item.live,
-        boards.filter((b) => b.data).map((b) => b.data as OperationsBoard),
-      ),
-    [driverId, item.live, stamp], // boards data changes with dataUpdatedAt
-  );
+  const { snapshot } = useCustodySnapshot(me, driverId, fromVenueId, item.live);
   const [serverItems, setServerItems] = useState<CustodyBlockItem[] | null>(null);
   const checklist = serverItems ? fromBlockItems(serverItems, snapshot) : snapshot;
 
@@ -235,12 +193,7 @@ function TransferForm({ me, item, onBack }: { me: Me; item: DriverListItem; onBa
         title={s07.checklist}
         className={cx(checklist.blocked && when === 'now' && 'pt-card st-flagged')}
       >
-        <Checklist
-          checklist={checklist}
-          fromName={fromName}
-          blockedByServer={!!serverItems}
-          items={serverItems}
-        />
+        <CustodyChecklist checklist={checklist} fromName={fromName} />
         <p className="st-muted">{fmt(s07.after, { venue: fromName })}</p>
       </Section>
       <TextArea
@@ -261,90 +214,6 @@ function TransferForm({ me, item, onBack }: { me: Me; item: DriverListItem; onBa
         {s07.confirm}
       </Button>
     </div>
-  );
-}
-
-function Mark({ state }: { state: 'ok' | 'bad' | 'info' }) {
-  const icon = state === 'ok' ? Check : state === 'bad' ? X : Info;
-  return (
-    <span className={cx('st-check__mark', `is-${state}`)}>
-      <Icon icon={icon} size={20} label={state === 'ok' ? '✓' : state === 'bad' ? '✗' : undefined} />
-    </span>
-  );
-}
-
-const nums = (list: number[]) =>
-  list
-    .filter((n) => n > 0)
-    .map((n) => `#${n}`)
-    .join('، ');
-
-function Checklist({
-  checklist,
-  fromName,
-  items,
-}: {
-  checklist: TransferChecklist;
-  fromName: string;
-  blockedByServer: boolean;
-  items: CustodyBlockItem[] | null;
-}) {
-  const navigate = useNavigate();
-  const link = (displayNumber: number) => {
-    const found = items?.find((i) => i.display_number === displayNumber && i.ticket_id);
-    return found?.ticket_id ? (
-      <Button variant="ghost" compact onClick={() => navigate(staffPaths.ticket(found.ticket_id as string))}>
-        {buttons.open}
-      </Button>
-    ) : null;
-  };
-  const yesNo = (list: number[]) => (list.length ? `${staff.yes} ${nums(list)}`.trim() : staff.no);
-  return (
-    <ul className="st-checklist" data-testid="transfer-checklist">
-      <li className="st-check">
-        <Mark state={checklist.vehicles.length ? 'bad' : 'ok'} />
-        <span>{fmt(s07.vehicles, { n: checklist.vehicles.length })}</span>
-        {checklist.vehicles.map((n) => (
-          <span key={`v${n}`} className="st-inline-list">
-            {n > 0 ? fmt(s07.mustRelease, { n }) : null}
-            {link(n)}
-          </span>
-        ))}
-      </li>
-      <li className="st-check">
-        <Mark state={checklist.keys.length ? 'bad' : 'ok'} />
-        <span>{fmt(s07.keys, { n: checklist.keys.length })}</span>
-        {checklist.keys.map((n) => (
-          <span key={`k${n}`} className="st-inline-list">
-            {n > 0 ? fmt(s07.mustRelease, { n }) : null}
-            {link(n)}
-          </span>
-        ))}
-      </li>
-      <li className="st-check">
-        <Mark state={checklist.movement.length ? 'bad' : 'ok'} />
-        <span>{fmt(s07.movement, { v: yesNo(checklist.movement) })}</span>
-      </li>
-      <li className="st-check">
-        <Mark state="info" />
-        <span>{fmt(s07.acceptedBeforeKey, { v: yesNo(checklist.acceptedBeforeKey) })}</span>
-        <span className="st-muted">{s07.acceptedNote}</span>
-      </li>
-      <li className="st-check">
-        <Mark state="info" />
-        <span>
-          {fmt(s07.nextTask, { v: checklist.nextTask.length ? nums(checklist.nextTask) : staff.no })}
-        </span>
-        {checklist.nextTask.length ? (
-          <span className="st-muted">{fmt(s07.nextNote, { venue: fromName })}</span>
-        ) : null}
-      </li>
-      <li className="st-check">
-        <Mark state="info" />
-        <span>{s07.offers}</span>
-        <span className="st-muted">{s07.offersNote}</span>
-      </li>
-    </ul>
   );
 }
 

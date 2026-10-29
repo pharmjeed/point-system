@@ -12,17 +12,19 @@ describe('S-07 transfer checklist (DEC-32)', () => {
   it('lists what blocks an immediate transfer and what returns to the queue', () => {
     const b = board({
       active_tasks: [
-        taskCard({ id: 'k-1', status: 'in_progress', assignee: me }, { display_number: 41 }),
-        taskCard({ id: 'k-2', status: 'accepted', assignee: me }, { display_number: 42 }),
+        taskCard({ id: 'k-1', status: 'in_progress', assignee: me }, { display_number: 41, id: 't-41' }),
+        taskCard({ id: 'k-2', status: 'accepted', assignee: me }, { display_number: 42, id: 't-42' }),
         taskCard(
           { id: 'k-3', status: 'in_progress', assignee: { id: 'd-2', full_name: 'سعد' } },
-          { display_number: 43 },
+          { display_number: 43, id: 't-43' },
         ),
       ],
-      next_tasks: [taskCard({ id: 'k-4', status: 'assigned_waiting', assignee: me }, { display_number: 44 })],
+      next_tasks: [
+        taskCard({ id: 'k-4', status: 'assigned_waiting', assignee: me }, { display_number: 44, id: 't-44' }),
+      ],
       custody_issues: [
         {
-          ticket: ticketSummary({ display_number: 45 }),
+          ticket: ticketSummary({ display_number: 45, id: 't-45' }),
           subject: 'key',
           holder: { type: 'driver', id: 'd-1' },
           since: ago(900),
@@ -35,6 +37,8 @@ describe('S-07 transfer checklist (DEC-32)', () => {
       movement: [41],
       acceptedBeforeKey: [42],
       nextTask: [44],
+      // «فتح» on each row (02 S-06, S-07)
+      ticketIds: { 41: 't-41', 42: 't-42', 44: 't-44', 45: 't-45' },
       blocked: true,
     });
     const free = checklistFrom('d-9', driverLive('d-9'), [b]);
@@ -60,18 +64,37 @@ describe('S-07 transfer checklist (DEC-32)', () => {
     });
   });
 
+  it('an accepted park or repark is an active park/repark: it blocks, it does not go back to the queue', () => {
+    const b = board({
+      active_tasks: [
+        taskCard({ id: 'k-1', type: 'repark', status: 'accepted', assignee: me }, { display_number: 41 }),
+      ],
+    });
+    expect(checklistFrom('d-1', driverLive('d-1'), [b])).toMatchObject({
+      movement: [41],
+      acceptedBeforeKey: [],
+      blocked: true,
+    });
+  });
+
   it('the server items of TRANSFER_BLOCKED_CUSTODY replace the local view', () => {
     const local = checklistFrom('d-1', driverLive('d-1'), [board()]);
     expect(
       fromBlockItems(
         [
-          { type: 'vehicle', display_number: 47 },
-          { type: 'key', display_number: 47 },
-          { type: 'task', display_number: 48 },
+          { type: 'vehicle', display_number: 47, ticket_id: 't-47' },
+          { type: 'key', display_number: 47, ticket_id: 't-47' },
+          { type: 'task', display_number: 48, ticket_id: 't-48', task_id: 'k-48' },
         ],
         local,
       ),
-    ).toMatchObject({ vehicles: [47], keys: [47], movement: [48], blocked: true });
+    ).toMatchObject({
+      vehicles: [47],
+      keys: [47],
+      movement: [48],
+      ticketIds: { 47: 't-47', 48: 't-48' },
+      blocked: true,
+    });
   });
 
   it('reads a scheduled time as Riyadh wall-clock time (UTC+3, no DST)', () => {
