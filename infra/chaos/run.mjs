@@ -1165,7 +1165,7 @@ async function waOutageTemporary(st) {
     `W-02 per request (seconds after the outage began): ${JSON.stringify(outcome)}. ` +
       `${failed.length} request(s) made up to ${failed.length ? Math.max(...failed.map((f) => f.pressed_s)) : 0} s into the outage ended failed with wa_send_failed (down came at ${after.toFixed(0)} s): the five attempts of 12 §5.9 ` +
       `(1 + 4 + 16 + 64 s) run out before the 2-minute streak of §5.14 turns the channel down, so those customers do not get ` +
-      `their «request received» after the recovery (DEC-PROPOSED in docs/progress/notes/load-chaos.md).`,
+      `their «request received» after the recovery (DEC-PROPOSED-6 in docs/progress/notes/load-chaos.md).`,
   );
   await st.consistent();
 }
