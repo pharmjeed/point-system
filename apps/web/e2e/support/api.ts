@@ -1,5 +1,6 @@
 import type { Page, Request, Route } from '@playwright/test';
 import { errorMessagesAr } from '../../src/i18n/errors';
+import type { FakeRealtime } from './fake/realtime';
 
 /**
  * In-browser API mock for e2e (the backend is not part of these tests). Every /v1 request is answered by
@@ -103,16 +104,25 @@ export class MockApi {
     return this.calls.filter((c) => c.method === method && c.path === path);
   }
 
+  /**
+   * A realtime hub for this page (`FakeRealtime.standalone()`): the spec emits canon §7 events to the signed-in
+   * user. Without one, `/ws` is refused at once (the screens poll; PNT-065).
+   */
+  realtime: FakeRealtime | null = null;
+
   async install(): Promise<this> {
-    // no realtime server in the static mock: `/ws` is refused at once (the screens poll; PNT-065)
-    await this.page.routeWebSocket(
-      (url) => url.pathname.startsWith('/ws'),
-      (ws) => void ws.close({ code: 1011, reason: 'unavailable' }),
-    );
-    await this.page.route(
-      (url) => url.pathname.startsWith('/ws'),
-      (route) => route.fulfill({ status: 400, contentType: 'application/json', body: '{"code":0}' }),
-    );
+    const userId = (this.me as { user?: { id?: string } } | null)?.user?.id ?? null;
+    if (this.realtime) await this.realtime.attach(this.page, { userId, deviceId: null });
+    else {
+      await this.page.routeWebSocket(
+        (url) => url.pathname.startsWith('/ws'),
+        (ws) => void ws.close({ code: 1011, reason: 'unavailable' }),
+      );
+      await this.page.route(
+        (url) => url.pathname.startsWith('/ws'),
+        (route) => route.fulfill({ status: 400, contentType: 'application/json', body: '{"code":0}' }),
+      );
+    }
     await this.page.route(
       (url) => url.pathname.startsWith('/v1/'),
       async (route: Route) => {

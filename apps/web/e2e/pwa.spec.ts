@@ -1,7 +1,8 @@
 import { chromium, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { fakeOnly } from './support/backend';
+import { actorPage } from './support/actors';
+import { fakeOnly, uiSignIn } from './support/backend';
 import { runOnlyAt390 } from './support/checks';
-import { startDuty } from './support/driver';
+import { arrangeRetrieval, startDuty } from './support/driver';
 import { createFake, type FakeServer } from './support/fake';
 
 /**
@@ -10,7 +11,9 @@ import { createFake, type FakeServer } from './support/fake';
  * the manifest and the installability report of Chrome (CDP `Page.getInstallabilityErrors`), the precache
  * of the shell without any `/v1` response, the shell from the cache when offline, a push delivered through
  * CDP shown with its tag and replaced quietly by `closed`, a tapped notification (`push.click`) opening its
- * screen with a resync, and the subscription sent with `PUT /v1/me/devices/{deviceId}`.
+ * screen with a resync, and the subscription sent with `PUT /v1/me/devices/{deviceId}`; the notifications
+ * closed at sign-out and the held subscription re-linked at the next sign-in; and the D-15 و update flow
+ * against a stubbed registration with a waiting worker.
  */
 runOnlyAt390();
 fakeOnly();
@@ -261,4 +264,178 @@ test('PNT-072: a tapped notification opens its screen and resyncs; the subscript
   await expect(page).toHaveURL(/\/d$/);
   await expect.poll(() => fake.callsTo('GET /v1/me/home').length).toBeGreaterThan(homeReads);
   await context.close();
+});
+
+test('02 D-15 ج / PNT-072: sign-out closes the notifications shown; the next sign-in re-links the subscription the browser holds — no prompt, no new subscription', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  const context = await pwaContext(browser);
+  await context.grantPermissions(['notifications']);
+  const page = await context.newPage();
+  const session = await fake.attach(page, undefined, { context: true });
+  // headless Chromium has no push service: the subscription an earlier shift created, held by the browser
+  await page.addInitScript(() => {
+    const held = {
+      endpoint: 'https://push.example.test/send/held',
+      toJSON: () => ({
+        endpoint: 'https://push.example.test/send/held',
+        keys: { p256dh: 'BHeld', auth: 'aGVsZA' },
+      }),
+    };
+    const calls = { subscribe: 0, request: 0 };
+    (window as unknown as { __push: typeof calls }).__push = calls;
+    PushManager.prototype.getSubscription = () => Promise.resolve(held as unknown as PushSubscription);
+    PushManager.prototype.subscribe = () => {
+      calls.subscribe += 1;
+      return Promise.resolve(held as unknown as PushSubscription);
+    };
+    const request = Notification.requestPermission.bind(Notification);
+    Notification.requestPermission = (callback?: NotificationPermissionCallback) => {
+      calls.request += 1;
+      return request(callback);
+    };
+  });
+  const endpointOf = (deviceId: string | null) =>
+    (deviceId && fake.devices.get(deviceId)?.push_subscription?.endpoint) || null;
+
+  // first sign-in: the frame sends the held subscription to the new device row
+  await uiSignIn(page, 'DRV1');
+  await controlled(page);
+  const first = session.deviceId;
+  await expect.poll(() => endpointOf(first)).toBe('https://push.example.test/send/held');
+
+  // a request was notified meanwhile; signing out takes it out of the notification centre
+  const deliver = await pushTarget(context, page);
+  const task = crypto.randomUUID();
+  await deliver({
+    v: 1,
+    kind: 'offer',
+    tag: `task:${task}`,
+    title: 'x',
+    body: 'تذكرة 125 — افتح التطبيق للقبول',
+    ticket_no: 125,
+    task_id: task,
+    offer_id: crypto.randomUUID(),
+    url: '/d',
+    renotify: true,
+    silent: false,
+    sent_at: new Date().toISOString(),
+    expires_at: null,
+  });
+  await expect.poll(() => shownNotifications(page)).toHaveLength(1);
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => shownNotifications(page)).toHaveLength(0);
+
+  // the next shift: a new device row, re-linked the same way
+  await uiSignIn(page, 'DRV1');
+  const second = session.deviceId;
+  expect(second).not.toBe(first);
+  await expect.poll(() => endpointOf(second)).toBe('https://push.example.test/send/held');
+  expect(fake.callsTo('PUT /v1/me/devices/:deviceId').map((c) => c.path)).toEqual([
+    `/v1/me/devices/${first}`,
+    `/v1/me/devices/${second}`,
+  ]);
+  expect(await page.evaluate(() => (window as unknown as { __push: unknown }).__push)).toEqual({
+    subscribe: 0,
+    request: 0,
+  });
+  await context.close();
+});
+
+/**
+ * A Service Worker container whose registration holds a waiting worker (a new version installed while the
+ * current one controls the page). `SKIP_WAITING` is recorded in sessionStorage and answered with
+ * `controllerchange`, as sw.js's `skipWaiting()` + `clients.claim()` do; after that reload nothing waits.
+ */
+async function stubWaitingWorker(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const KEY = '__e2e_sw';
+    type Log = { loads: number; skips: number };
+    const read = (): Log => JSON.parse(sessionStorage.getItem(KEY) ?? '{"loads":0,"skips":0}') as Log;
+    const write = (log: Log) => sessionStorage.setItem(KEY, JSON.stringify(log));
+    const log = read();
+    log.loads += 1;
+    write(log);
+    const listeners: Record<string, Array<(e: Event) => void>> = {};
+    const noop = () => undefined;
+    const script = `${location.origin}/sw.js`;
+    const active = { scriptURL: script, state: 'activated', postMessage: noop, addEventListener: noop };
+    const waiting =
+      log.skips > 0
+        ? null
+        : {
+            scriptURL: script,
+            state: 'installed',
+            addEventListener: noop,
+            postMessage(message: { type?: string } | null) {
+              if (message?.type !== 'SKIP_WAITING') return;
+              const now = read();
+              now.skips += 1;
+              write(now);
+              setTimeout(() => {
+                for (const fn of listeners.controllerchange ?? []) fn(new Event('controllerchange'));
+              }, 50);
+            },
+          };
+    const registration = {
+      scope: `${location.origin}/`,
+      active,
+      waiting,
+      installing: null,
+      addEventListener: noop,
+      update: () => Promise.resolve(),
+      getNotifications: () => Promise.resolve([]),
+      pushManager: { getSubscription: () => Promise.resolve(null) },
+    };
+    const container = {
+      controller: active,
+      ready: Promise.resolve(registration),
+      register: () => Promise.resolve(registration),
+      getRegistration: () => Promise.resolve(registration),
+      addEventListener(type: string, fn: (e: Event) => void) {
+        (listeners[type] ??= []).push(fn);
+      },
+      removeEventListener: noop,
+    };
+    Object.defineProperty(Navigator.prototype, 'serviceWorker', { configurable: true, get: () => container });
+  });
+}
+
+const swLog = (page: Page) =>
+  page.evaluate(() => JSON.parse(sessionStorage.getItem('__e2e_sw') ?? '{}') as Record<string, number>);
+
+test('02 D-15 و: the update is not offered during a task; «تحديث الآن» posts SKIP_WAITING and reloads once', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  fake.realtime.enable();
+  startDuty(fake, 'DRV1');
+  const r = arrangeRetrieval(fake, 'DRV1', 'accepted', { serial: '009701', keyTag: '199' });
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await stubWaitingWorker(page);
+  await page.goto('/d');
+  await expect(page.getByRole('heading', { name: 'الرئيسية' })).toBeVisible();
+  const update = page.getByRole('status').filter({ hasText: /يتوفر تحديث ل/ });
+  await page.waitForTimeout(500);
+  await expect(update).toHaveCount(0); // a retrieval is in hand: never during a task (02 D-15 و)
+
+  // the supervisor cancels the request: nothing in hand any more, the update is offered
+  const cycle = fake.world.cycles.find((c) => c.ticket_id === r.ticketId && !c.closed_at)!;
+  fake.exec(
+    'SUP-R',
+    'POST /v1/retrieval-cycles/:cycleId/cancel',
+    { cycleId: cycle.id },
+    { reason: 'العميل غيّر رأيه' },
+  );
+  await expect(update).toBeVisible({ timeout: 15_000 });
+  expect(await swLog(page)).toEqual({ loads: 1, skips: 0 }); // never applied by itself
+  await update.getByRole('button', { name: 'تحديث الآن' }).click();
+  await expect.poll(() => swLog(page)).toEqual({ loads: 2, skips: 1 });
+  await expect(page.getByRole('heading', { name: 'الرئيسية' })).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(await swLog(page)).toEqual({ loads: 2, skips: 1 }); // one reload
+  await expect(update).toHaveCount(0); // the new version runs: nothing waits any more
 });

@@ -32,6 +32,57 @@ function newIntake(fake: FakeServer): string {
   return fake.exec('DRV1', 'POST /v1/tickets', {}, { event_id: EVENT_R1 }).ticket.id as string;
 }
 
+/** The keys of one store of the local intake database (`point-field`). */
+function localRows(page: Page, store: 'drafts' | 'photos'): Promise<string[]> {
+  return page.evaluate(async (s) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('point-field', 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('drafts', { keyPath: 'id' });
+        req.result.createObjectStore('photos', { keyPath: 'id' }).createIndex('draft', 'draftId');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const keys = await new Promise<string[]>((resolve) => {
+      const r = db.transaction(s, 'readonly').objectStore(s).getAllKeys();
+      r.onsuccess = () => resolve((r.result as IDBValidKey[]).map(String));
+      r.onerror = () => resolve([]);
+    });
+    db.close();
+    return keys.sort();
+  }, store);
+}
+
+/** Writes rows into the local intake database, as an earlier app session would have left them. */
+function putRows(
+  page: Page,
+  rows: { drafts?: Array<Record<string, unknown>>; photos?: Array<Record<string, unknown>> },
+): Promise<void> {
+  return page.evaluate(async ({ drafts, photos }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('point-field', 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('drafts', { keyPath: 'id' });
+        req.result.createObjectStore('photos', { keyPath: 'id' }).createIndex('draft', 'draftId');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(['drafts', 'photos'], 'readwrite');
+      for (const d of drafts ?? []) tx.objectStore('drafts').put(d);
+      for (const p of photos ?? [])
+        tx.objectStore('photos').put({
+          ...p,
+          blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
+        });
+      tx.oncomplete = () => resolve();
+    });
+    db.close();
+  }, rows);
+}
+
 test('PNT-071 / AC-21 TC-061: a cut at the submit, a reload, the same Idempotency-Key and one effect', async ({
   browser,
 }) => {
@@ -95,6 +146,110 @@ test('PNT-071 / AC-21 TC-061: a cut at the submit, a reload, the same Idempotenc
   await expect.poll(async () => (await browserStorageDump(page)).includes(SERIAL)).toBe(false);
 });
 
+test('PNT-071: «المتابعة دون انتظار», then a reload — the photo still uploading completes from the frame', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const fake = createFake();
+  const ticketId = newIntake(fake);
+  const userId = fake.userByKey('DRV1').id;
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await fillVehicleStep(page);
+  await page.locator('#intake-next').click();
+  await expect(page).toHaveURL(/\/key-photos$/);
+  await page.getByLabel('رقم علاقة المفتاح').fill('57');
+  for (const angle of ['الأمام', 'الخلف', 'الجانب الأيسر'])
+    await page.getByLabel(`تصوير ${angle}`).setInputFiles(PHOTO);
+  await expect(page.getByRole('heading', { name: 'صور الحالة (3 من 4)' })).toBeVisible({ timeout: 20_000 });
+
+  // the fourth photo's bytes are still travelling when the driver goes on (02 D-06)
+  fake.delayNext('PUT /__e2e_storage/:mediaId', 20_000);
+  await page.getByLabel('تصوير الجانب الأيمن').setInputFiles(PHOTO);
+  await page.getByRole('button', { name: 'المتابعة دون انتظار' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'متابعة وإبلاغ المشرف' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^تذكرة ورقية · #\d+$/);
+  expect(fake.world.tickets.find((t) => t.id === ticketId)?.status).toBe('parking');
+  // the inputs and the draft row are gone; the pending photo stays with its bytes
+  await expect.poll(() => localRows(page, 'drafts')).toEqual([]);
+  expect(await localRows(page, 'photos')).toEqual([`${userId}:${ticketId}:photo_right`]);
+
+  // the app is closed and opened again before the bytes arrived: the frame resumes the photo (same media
+  // request, the same media row) and the late photo completes the inspection
+  await page.reload();
+  await expect
+    .poll(
+      () => fake.world.media.find((m) => m.ticket_id === ticketId && m.kind === 'photo_right')?.upload_status,
+      { timeout: 30_000 },
+    )
+    .toBe('uploaded');
+  expect(fake.world.media.filter((m) => m.ticket_id === ticketId && m.kind === 'photo_right')).toHaveLength(
+    1,
+  );
+  expect(fake.world.tickets.find((t) => t.id === ticketId)?.inspection_status).toBe('complete');
+  await expect.poll(() => localRows(page, 'photos')).toEqual([]);
+});
+
+test('PNT-071: rows of tickets the driver never reopens go at the next app start; the current intake stays', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  const current = newIntake(fake);
+  const gone = crypto.randomUUID(); // voided by a supervisor / finished on another device: not his any more
+  const userId = fake.userByKey('DRV1').id;
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto('/d/account');
+  await expect(page.getByRole('heading', { name: 'حسابي' })).toBeVisible();
+  await putRows(page, {
+    drafts: [
+      { id: `${userId}:${current}`, userId, ticketId: current, paperSerial: SERIAL },
+      { id: `${userId}:${gone}`, userId, ticketId: gone, paperSerial: '888888' },
+    ],
+    photos: [
+      {
+        id: `${userId}:${gone}:photo_front`,
+        draftId: `${userId}:${gone}`,
+        userId,
+        ticketId: gone,
+        slot: 'photo_front',
+        kind: 'photo_front',
+        capturedAt: new Date().toISOString(),
+        state: 'failed',
+        retriable: true,
+        intent: null,
+        savedAt: 0,
+      },
+    ],
+  });
+  await page.reload();
+  await expect.poll(() => localRows(page, 'drafts')).toEqual([`${userId}:${current}`]);
+  await expect.poll(() => localRows(page, 'photos')).toEqual([]);
+  const dump = await browserStorageDump(page);
+  expect(dump).not.toContain('888888');
+});
+
+test('PNT-071: a session revoked for a transfer takes the drafts of the previous venue with it (02 §1.11)', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  const ticketId = newIntake(fake);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await fillVehicleStep(page);
+  await expect.poll(async () => (await browserStorageDump(page)).includes(SERIAL)).toBe(true);
+  fake.failNext(
+    'PATCH /v1/tickets/:ticketId/intake',
+    errorReply('AUTH_SESSION_REVOKED', { reason: 'transfer', venue_name_ar: 'قاعة ليالي' }),
+  );
+  await page.locator('#intake-next').click();
+  await expect(page).toHaveURL(/\/session-ended$/);
+  await expect(
+    page.getByText('تم نقلك إلى قاعة ليالي. سجّل الدخول لمتابعة العمل في موقعك الجديد.'),
+  ).toBeVisible();
+  await expect.poll(async () => (await browserStorageDump(page)).includes(SERIAL)).toBe(false);
+  expect(await localRows(page, 'drafts')).toEqual([]);
+});
+
 test('PNT-071: a session that ends by itself keeps the draft for the same user (02 §1.9)', async ({
   browser,
 }) => {
@@ -119,7 +274,10 @@ test('PNT-071: sign-out takes the local drafts of the user with it', async ({ br
   const { page } = await actorPage(browser, fake, 'DRV1');
   await page.goto('/d/account');
   await expect(page.getByRole('heading', { name: 'حسابي' })).toBeVisible();
-  // a draft left from an earlier session of DRV1 (its ticket is gone) and one of another user
+  // the frame settles the local rows at the first snapshot of the session; this test's rows come after it
+  await expect.poll(() => fake.callsTo('GET /v1/me/home').length).toBeGreaterThan(0);
+  await page.waitForTimeout(500);
+  // a draft written after that by DRV1 and one of another user
   const userId = fake.userByKey('DRV1').id;
   await page.evaluate(
     async ({ mine, serial }) => {

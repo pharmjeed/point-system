@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { actorPage } from './support/actors';
 import { fakeOnly } from './support/backend';
 import { runOnlyAt390 } from './support/checks';
-import { arrangeRetrieval, pressCommand, startDuty } from './support/driver';
+import { arrangeParked, arrangeRetrieval, pressCommand, requestRetrieval, startDuty } from './support/driver';
 import { audioLog, installFakeAudio } from './support/fakeAudio';
 import { createFake } from './support/fake';
 import { permissionRequests, standaloneDisplay, stubNotifications } from './support/notifications';
@@ -107,6 +107,68 @@ test('PNT-070 AC2 / AC-22: no permission prompt without a tap; refused → the i
     .getByRole('button', { name: /حفل تجريبي — ريماس 1/ })
     .click();
   await expect(page).toHaveURL(/\/d\/intake\/.+\/vehicle$/);
+});
+
+test('TC-062 / AC-22: notifications refused — a request still sounds in the page, is accepted on D-04, retrieved on D-10 and handed over on D-11', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const parked = arrangeParked(fake, 'DRV1', { serial: '009601', keyTag: '198' });
+  const n = parked.displayNumber;
+  const { page, session } = await actorPage(browser, fake, 'DRV1');
+  await stubNotifications(page, { permission: 'default', answer: 'denied' });
+  await installFakeAudio(page);
+
+  // D-14: refused from the tap — the in-page alert mode is said plainly; the device row stores «denied»
+  await page.goto('/d/account');
+  await page.getByRole('button', { name: 'تفعيل الإشعارات' }).click();
+  const mode = page.getByRole('status').filter({ hasText: 'وضع التنبيه: داخل الصفحة فقط' });
+  await expect(mode).toContainText('الإشعارات مرفوضة؛ أبقِ');
+  await expect
+    .poll(() => fake.devices.get(session.deviceId as string)?.notification_permission)
+    .toBe('denied');
+  await page.getByRole('button', { name: 'تفعيل واختبار الصوت' }).click();
+  await page.getByRole('button', { name: 'نعم، سمعتها' }).click();
+  await page.getByRole('link', { name: 'الرئيسية' }).click();
+
+  // the request: the single offer of the only free driver, on D-04 with its in-page sound
+  requestRetrieval(fake, parked.ticketId);
+  const offer = page.getByRole('region', { name: `طلب إحضار جديد، تذكرة ${n}` });
+  await expect(offer).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => (await audioLog(page)).started).toContain('offer');
+  await pressCommand(
+    fake,
+    'POST /v1/task-offers/:offerId/accept',
+    offer.getByRole('button', { name: 'قبول الطلب' }),
+  );
+  await expect(page.getByText(`قبلت الطلب #${n}`)).toBeVisible();
+
+  // D-10 → D-11
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(`إحضار · #${n}`);
+  await pressCommand(
+    fake,
+    'POST /v1/tasks/:taskId/key-pickup',
+    page.getByRole('button', { name: 'استلمت المفتاح' }),
+  );
+  await pressCommand(
+    fake,
+    'POST /v1/tasks/:taskId/start-retrieval',
+    page.getByRole('button', { name: 'بدء الإحضار' }),
+  );
+  await pressCommand(
+    fake,
+    'POST /v1/tasks/:taskId/ready',
+    page.getByRole('button', { name: 'وصلت — جاهزة' }),
+  );
+  await page.getByRole('button', { name: 'التسليم' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(`التسليم · #${n}`);
+  await page.getByLabel('رقم الكعب').fill('009601');
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/handover', page.locator('#handover-submit'));
+  await expect(page.getByText(`تم تسليم #${n}`)).toBeVisible();
+  expect(fake.world.tickets.find((t) => t.id === parked.ticketId)?.status).toBe('delivered');
+  expect(await permissionRequests(page)).toBe(1); // the tap only: a refused permission is never asked again
 });
 
 test('PNT-070: granted from the tap — the device stores the permission (no subscription without a worker)', async ({

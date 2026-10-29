@@ -1,6 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
-import { alertFixture, MockApi, mockStaffApi, roleMe, warningAlertFixture } from './support/api';
+import {
+  alertFixture,
+  MockApi,
+  mockStaffApi,
+  roleMe,
+  STAFF_USER_ID,
+  warningAlertFixture,
+} from './support/api';
 import { runOnlyAt390 } from './support/checks';
+import { FakeRealtime } from './support/fake/realtime';
 
 /**
  * S-04 — مركز التنبيهات (PNT-075, 14 §7–§10): nothing sounds before the unlock tap; a critical alert plays the
@@ -77,6 +85,60 @@ test('acknowledging a critical alert stops the escalation sound; no repeat follo
 
   await page.clock.runFor(5 * 60_000);
   expect(await count(page, 'point-escalation.mp3', 'play')).toBe(2);
+});
+
+test('PNT-065 (staff): `alert.updated` over the socket marks the alert «أُقِرّ» and stops the escalation before the next refresh; `alert.raised` re-reads the list', async ({
+  page,
+}) => {
+  await page.clock.install();
+  // the socket payloads are checked against the canon schemas: ids are UUIDs there
+  const alertId = crypto.randomUUID();
+  const venueId = crypto.randomUUID();
+  const api = new MockApi(page, roleMe('supervisor'));
+  const state = mockStaffApi(api, { alerts: [alertFixture({ id: alertId, venue_id: venueId })] });
+  const hub = FakeRealtime.standalone();
+  api.realtime = hub;
+  await api.install();
+  await page.goto('/ops/alerts');
+  const critical = page.locator(`li[data-alert-id="${alertId}"]`);
+  await expect(critical).toContainText('طلب لم يُقبل في الوقت المحدد');
+  await page.getByRole('button', { name: 'تفعيل صوت التنبيهات' }).click();
+  await expect.poll(() => count(page, 'point-escalation.mp3', 'play')).toBe(1);
+  await expect.poll(() => hub.connectedUsers()).toEqual([STAFF_USER_ID]);
+
+  // another supervisor acknowledges it: the server publishes alert.updated (07 §4.2) — no poll needed
+  const acknowledged = {
+    ...state.alerts[0],
+    status: 'acknowledged',
+    acknowledged_at: new Date().toISOString(),
+    acknowledged_by: crypto.randomUUID(),
+  };
+  state.alerts = [acknowledged];
+  const reads = api.callsTo('GET', '/v1/alerts').length;
+  hub.emit(
+    STAFF_USER_ID,
+    'alert.updated',
+    { cause: 'alert.acknowledged', ...acknowledged },
+    { venueId, aggregate: { type: 'alert', id: alertId, version: null } },
+  );
+  await expect(critical).toContainText('أُقِرّ');
+  await expect.poll(() => count(page, 'point-escalation.mp3', 'pause')).toBeGreaterThan(0);
+  await expect.poll(() => api.callsTo('GET', '/v1/alerts').length).toBeGreaterThan(reads); // then re-read
+
+  // a new alert: alert.raised invalidates the lists, the warning shows and plays its reminder once
+  const warningId = crypto.randomUUID();
+  const warning = warningAlertFixture({ id: warningId, venue_id: venueId });
+  state.alerts = [acknowledged, warning];
+  hub.emit(
+    STAFF_USER_ID,
+    'alert.raised',
+    { cause: 'alert.raised', ...warning },
+    { venueId, aggregate: { type: 'alert', id: warningId, version: null } },
+  );
+  await expect(page.locator(`li[data-alert-id="${warningId}"]`)).toBeVisible();
+  await expect.poll(() => count(page, 'point-reminder.mp3', 'play')).toBe(1);
+  await page.clock.runFor(5 * 60_000);
+  expect(await count(page, 'point-escalation.mp3', 'play')).toBe(1);
 });
 
 test('the escalation repeats at most 3 times; a new warning plays the reminder once', async ({ page }) => {

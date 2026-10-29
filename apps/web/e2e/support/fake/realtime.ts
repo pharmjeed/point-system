@@ -18,7 +18,7 @@ import { SEED_IDS } from './seed';
 /** What one driver sees (the parts the API publishes realtime messages for). */
 export interface LiveView {
   offer: (Record<string, any> & { offer_id: string; task_id: string; mode: string }) | null;
-  tasks: Array<Record<string, any> & { task: { id: string; version: number; status: string } }>;
+  tasks: Array<Record<string, any> & { task: { id: string; version: number; status: string; type: string } }>;
   driverState: string;
   poolId: string | null;
   venueId: string | null;
@@ -199,6 +199,32 @@ export class FakeRealtime {
     }
   }
 
+  /**
+   * The server's `socket.disconnect(true)` (realtime-server.ts after `session.revoked` or a failed
+   * revalidation): a Socket.IO DISCONNECT packet (`41`). The client sees `io server disconnect`, which
+   * Socket.IO never reconnects by itself.
+   */
+  serverDisconnect(userKey?: string): number {
+    const userId = userKey ? this.server.userByKey(userKey as never).id : null;
+    let n = 0;
+    for (const c of this.connections) {
+      if (!c.connected || (userId && c.session.userId !== userId)) continue;
+      c.connected = false;
+      c.ws.send('41');
+      n += 1;
+    }
+    return n;
+  }
+
+  /** A hub without the stateful fake (the static MockApi of the staff specs): explicit events only. */
+  static standalone(): FakeRealtime {
+    const stub = {
+      userByKey: (key: string) => ({ id: key }),
+      world: { offers: [], tasks: [], users: [] },
+    };
+    return new FakeRealtime(stub as unknown as FakeServer).enable({ auto: false });
+  }
+
   connectedUsers(): string[] {
     return [...new Set(this.connections.filter((c) => c.connected).map((c) => c.session.userId))].filter(
       (u): u is string => !!u,
@@ -277,11 +303,20 @@ export class FakeRealtime {
     for (const [id, card] of afterById) {
       const old = beforeById.get(id);
       if (old && old.task.version >= card.task.version) continue;
+      // the API's causes (dispatch/application/realtime.ts): the promotion of the reserved next task, the
+      // repark task of a supervisor's cancel after the movement (DEC-30), this driver's claim, a step
+      const cause = old
+        ? old.task.status === 'assigned_waiting' && card.task.status !== 'assigned_waiting'
+          ? 'task.promoted'
+          : 'task.started'
+        : card.task.type === 'repark'
+          ? 'ticket.reparking'
+          : 'task.claimed';
       this.sendTo(
         userId,
         this.envelope(
           'task.updated',
-          { cause: old ? 'task.started' : 'task.claimed', ...card },
+          { cause, ...card },
           { ...where, aggregate: { type: 'task', id, version: card.task.version } },
         ),
       );
@@ -294,7 +329,7 @@ export class FakeRealtime {
         userId,
         this.envelope(
           'task.updated',
-          { cause: 'task.completed', ...card },
+          { cause: card.task.status === 'canceled' ? 'task.canceled' : 'task.completed', ...card },
           { ...where, aggregate: { type: 'task', id, version: card.task.version } },
         ),
       );
