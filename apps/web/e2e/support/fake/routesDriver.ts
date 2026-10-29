@@ -449,6 +449,27 @@ export function registerDriverRoutes(s: FakeServer): void {
     return { driver_state: driverState(s, driver.id), promoted_next_task: null };
   };
 
+  // ---------------------------------------------------------------- live views (the realtime hub)
+
+  s.liveView = (userId: string) => {
+    const u = user(userId);
+    const duty = openDuty(s, userId);
+    const mine = w().tasks.filter((k) => k.assignee_id === userId);
+    const live = mine.filter((k) => ['accepted', 'in_progress', 'assigned_waiting'].includes(k.status));
+    return {
+      offer: u && duty?.status === 'on_duty' ? (offerFor(u) as never) : null,
+      tasks: u ? (live.map((k) => taskCard(k, u)) as never[]) : [],
+      driverState: driverState(s, userId),
+      poolId: duty?.dispatch_pool_id ?? null,
+      venueId: duty?.venue_id ?? null,
+    };
+  };
+  s.taskCardOf = (taskId: string, viewerId: string) => {
+    const k = w().tasks.find((x) => x.id === taskId);
+    const u = user(viewerId);
+    return k && u ? (taskCard(k, u) as never) : null;
+  };
+
   // ---------------------------------------------------------------- guards
 
   const onDuty = (u: FUser) => {
@@ -649,6 +670,13 @@ export function registerDriverRoutes(s: FakeServer): void {
     if (ctx.body?.notification_permission) d.notification_permission = ctx.body.notification_permission;
     if (ctx.body?.display_mode) d.display_mode = ctx.body.display_mode;
     return ok(deviceView(d.id));
+  });
+
+  // `POST /v1/me/heartbeat`: the HTTP fallback of client.heartbeat (07 §4.4), not a command with a key
+  s.on('POST /v1/me/heartbeat', (ctx) => {
+    s.need(ctx, 'auth.self');
+    if (typeof ctx.body?.visible !== 'boolean') validation([{ field: 'visible', issue: 'required' }]);
+    return ok({ server_time: now(), connection_state: 'online', sync_required: false });
   });
 
   // ---------------------------------------------------------------- intake (07 §2.2)

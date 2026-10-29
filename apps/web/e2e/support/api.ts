@@ -79,6 +79,10 @@ export class MockApi {
       this.me = null;
       return ok(undefined, 204);
     });
+    // the HTTP fallback of client.heartbeat while no socket is connected (07 §4.4)
+    this.on('POST', '/v1/me/heartbeat', () =>
+      ok({ server_time: new Date().toISOString(), connection_state: 'online', sync_required: false }),
+    );
   }
 
   on(method: string, path: string, handler: Handler | Reply): this {
@@ -100,6 +104,15 @@ export class MockApi {
   }
 
   async install(): Promise<this> {
+    // no realtime server in the static mock: `/ws` is refused at once (the screens poll; PNT-065)
+    await this.page.routeWebSocket(
+      (url) => url.pathname.startsWith('/ws'),
+      (ws) => void ws.close({ code: 1011, reason: 'unavailable' }),
+    );
+    await this.page.route(
+      (url) => url.pathname.startsWith('/ws'),
+      (route) => route.fulfill({ status: 400, contentType: 'application/json', body: '{"code":0}' }),
+    );
     await this.page.route(
       (url) => url.pathname.startsWith('/v1/'),
       async (route: Route) => {

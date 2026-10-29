@@ -23,6 +23,7 @@ import {
   type RoutePattern,
 } from './http';
 import type { FUser, World } from './model';
+import { FakeRealtime, type LiveView } from './realtime';
 import { seedWorld, type SeedOptions, type SeedUserKey } from './seed';
 
 export interface Session {
@@ -98,6 +99,12 @@ export class FakeServer {
   /** Uploaded objects by media id (the fake private object storage). */
   readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
   readonly devices = new Map<string, FDevice>();
+  /** `/ws` (off until a spec enables it): Socket.IO frames over `page.routeWebSocket` (PNT-065). */
+  readonly realtime = new FakeRealtime(this);
+  /** What a driver sees live (set by the driver routes; read by the realtime hub). */
+  liveView?: (userId: string) => LiveView;
+  /** The TaskCard of a task for a viewer (set by the driver routes). */
+  taskCardOf?: (taskId: string, viewerId: string) => (LiveView['tasks'][number] & object) | null;
 
   constructor(options: SeedOptions = {}) {
     this.world = seedWorld(options);
@@ -155,6 +162,7 @@ export class FakeServer {
       (url) => url.pathname.startsWith('/v1/') || url.pathname.startsWith(STORAGE_PREFIX),
       (route) => this.serve(route, session),
     );
+    await this.realtime.attach(page, session);
     return session;
   }
 
@@ -186,6 +194,7 @@ export class FakeServer {
       headers: { 'x-requested-with': 'point-web', 'idempotency-key': uuid() },
       session: { userId: user.id, deviceId: null },
     });
+    this.realtime.afterChange();
     if (reply.status >= 400)
       throw new Error(`fake exec ${spec} → ${reply.status} ${JSON.stringify(reply.body)}`);
     return (reply.body as { data?: T } | undefined)?.data as T;
@@ -252,6 +261,7 @@ export class FakeServer {
           session,
         });
     call.status = reply.status;
+    this.realtime.afterChange(); // what the API's planners publish at commit (before the HTTP reply)
     if (reply.raw) {
       await route.fulfill({
         status: reply.status,

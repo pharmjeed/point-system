@@ -43,6 +43,9 @@ export default defineConfig({
     timezoneId: 'Asia/Riyadh',
     trace: 'retain-on-failure',
     launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},
+    // page.route() does not see requests a Service Worker handles: the mocked runs block the SW; the PWA
+    // spec (e2e/pwa.spec.ts) opens its own context with service workers allowed (PNT-070)
+    serviceWorkers: 'block',
   },
   projects: [
     { name: 'mobile-360', use: mobile(360, 740), testIgnore: LIVE_SPECS },
