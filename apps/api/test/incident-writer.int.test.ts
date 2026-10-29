@@ -1,11 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import {
-  hasIncidentOpener,
-  openIncident,
-  openIncidentViaHook,
-  registerIncidentOpener,
-} from '@point/server';
+import { hasIncidentOpener, openIncident, openIncidentViaHook, registerIncidentOpener } from '@point/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from './harness.js';
 import {
@@ -33,11 +28,10 @@ import { readyRetrieval } from './supervisor-fixtures.js';
  */
 
 const envelopes = (t: TestApp, type: string, incidentId: string) =>
-  rows(
-    t.db,
-    `SELECT payload FROM outbox_events WHERE type = $1 AND aggregate_id = $2 ORDER BY seq`,
-    [type, incidentId],
-  ).then((r) => r.map((x) => x.payload));
+  rows(t.db, `SELECT payload FROM outbox_events WHERE type = $1 AND aggregate_id = $2 ORDER BY seq`, [
+    type,
+    incidentId,
+  ]).then((r) => r.map((x) => x.payload));
 
 const timelineOf = (t: TestApp, ticketId: string) =>
   rows(
@@ -195,9 +189,8 @@ describe('incident writer — the system-opened incidents go through openInciden
       await cashHandover(t, 'SUP-R', { event_id: EVT_R2, driver_id: U.DRV1, amount_halalas: FEE - 500 }),
       201,
     );
-    const pool = (
-      await one(t.db, `SELECT dispatch_pool_id FROM events WHERE id = $1`, [EVT_R2])
-    ).dispatch_pool_id;
+    const pool = (await one(t.db, `SELECT dispatch_pool_id FROM events WHERE id = $1`, [EVT_R2]))
+      .dispatch_pool_id;
     const incidents = await rows(
       t.db,
       `SELECT * FROM incidents WHERE type = 'payment_discrepancy' ORDER BY created_at, ticket_id NULLS LAST`,
