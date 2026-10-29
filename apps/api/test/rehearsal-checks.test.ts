@@ -32,6 +32,39 @@ describe('rehearsal checks (apps/api/rehearsal/checks.mjs)', () => {
     expect(checks.percentile([7], 1)).toBe(7);
   });
 
+  it('reads a histogram of the /metrics text and bounds its percentiles by the buckets (M1, 05 §12.2)', () => {
+    const text = [
+      '# HELP point_retrieval_request_ingest_seconds Webhook button press to committed retrieval cycle',
+      '# TYPE point_retrieval_request_ingest_seconds histogram',
+      'point_retrieval_request_ingest_seconds_bucket{le="0.005"} 1',
+      'point_retrieval_request_ingest_seconds_bucket{le="0.01"} 1',
+      'point_retrieval_request_ingest_seconds_bucket{le="0.1"} 18',
+      'point_retrieval_request_ingest_seconds_bucket{le="1"} 20',
+      'point_retrieval_request_ingest_seconds_bucket{le="+Inf"} 20',
+      'point_retrieval_request_ingest_seconds_sum 1.25',
+      'point_retrieval_request_ingest_seconds_count 20',
+      'point_other_seconds_bucket{le="0.1"} 99',
+      'point_other_seconds_count 99',
+    ].join('\n');
+    const h = checks.promHistogram(text, 'point_retrieval_request_ingest_seconds');
+    expect(h).toEqual({
+      buckets: [
+        { le: 0.005, count: 1 },
+        { le: 0.01, count: 1 },
+        { le: 0.1, count: 18 },
+        { le: 1, count: 20 },
+        { le: Infinity, count: 20 },
+      ],
+      sum: 1.25,
+      count: 20,
+    });
+    expect(checks.bucketQuantile(h, 5)).toBe(0.005);
+    expect(checks.bucketQuantile(h, 50)).toBe(0.1);
+    expect(checks.bucketQuantile(h, 90)).toBe(0.1);
+    expect(checks.bucketQuantile(h, 95)).toBe(1);
+    expect(checks.bucketQuantile(checks.promHistogram('', 'x'), 95)).toBeNull();
+  });
+
   it('formats seconds, riyals, tables and routes for the report', () => {
     expect(checks.secs(1.26)).toBe('1.3 s');
     expect(checks.secs(null)).toBe('—');
