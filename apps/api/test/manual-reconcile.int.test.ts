@@ -1,3 +1,4 @@
+import { metrics } from '@point/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from './harness.js';
 import {
@@ -80,6 +81,9 @@ describe('manual reconcile after an outage', () => {
     const accepted = await one(t.db, `SELECT status FROM tasks WHERE id = $1`, [r.task.id]);
     expect(accepted.status).toBe('accepted');
     const before = await one(t.db, `SELECT count(*)::int AS n FROM notifications WHERE channel = 'whatsapp'`);
+    const superseded = async () =>
+      (await metrics.waSkipped.get()).values.find((v) => v.labels.reason === 'superseded')?.value ?? 0;
+    const supersededBefore = await superseded();
     t.clock.advanceSeconds(1800);
 
     const res = ok(await reconcile('SUP-R', w.ticketId, { target_status: 'delivered' }));
@@ -147,6 +151,13 @@ describe('manual reconcile after an outage', () => {
       status: 'skipped',
       skipped_reason: 'superseded',
     });
+    // point_wa_skipped_total{reason="superseded"} counts them like the sender's own skips (05 §12.2)
+    const skippedNow = await one(
+      t.db,
+      `SELECT count(*)::int AS n FROM notifications WHERE ticket_id = $1 AND skipped_reason = 'superseded'`,
+      [w.ticketId],
+    );
+    expect(await superseded()).toBe(supersededBefore + skippedNow.n);
     expect(
       await one(t.db, `SELECT count(*)::int AS n FROM notifications WHERE channel = 'whatsapp'`),
     ).toEqual(before);

@@ -169,8 +169,11 @@ export class RealtimeServer {
   private onConnection(socket: Socket) {
     const data = socket.data as SocketData;
     this.applyRooms(socket, roomsFor(data.actor));
-    metrics.wsConnections.inc({ venue: data.actor.venueId ?? 'none' });
-    socket.on('disconnect', () => metrics.wsConnections.dec({ venue: data.actor.venueId ?? 'none' }));
+    // the label of the connection, kept: revalidate() replaces data.actor (assignment, scope) while it lives, and the
+    // decrement must hit the series the increment did, or the gauge drifts (+1 on one venue, −1 on another)
+    const venue = data.actor.venueId ?? 'none';
+    metrics.wsConnections.inc({ venue });
+    socket.on('disconnect', () => metrics.wsConnections.dec({ venue }));
 
     socket.on('client.heartbeat', async (payload: HeartbeatPayload, ack?: (r: unknown) => void) => {
       try {

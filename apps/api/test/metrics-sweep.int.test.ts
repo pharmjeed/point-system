@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startDuty } from './dispatch-fixtures.js';
 import { CSRF, ORIGIN } from './test-env.js';
 import { SEED_IDS, createTestApp, type SeedUserKey, type TestApp } from './harness.js';
+import { realtimeOf } from '../src/bootstrap.js';
 
 type Sample = { labels: Record<string, unknown>; value: number; metricName?: string };
 type Readable = { get(): Promise<{ values: Sample[] }> };
@@ -171,5 +172,32 @@ describe('05 §12.2 metrics populated by the api', () => {
     t.clock.advanceSeconds(11 * 60); // beyond RECONNECT_WINDOW_MS: a new visit, not a reconnection
     await connect('SUP-R');
     expect(await read(metrics.wsReconnects, '')).toBe(start + 1);
+  });
+
+  it('point_ws_connections{venue}: a connection is counted down on the label it was counted up with', async () => {
+    const at = (venue: string) => read(metrics.wsConnections, '', { venue }).then((n) => n);
+    const s = io(url, {
+      path: '/ws',
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { origin: ORIGIN, cookie: await t.sessionFor('DRV5') },
+    });
+    sockets.push(s);
+    await new Promise<void>((resolve, reject) => {
+      s.once('connect', () => resolve());
+      s.once('connect_error', (e) => reject(e));
+    });
+    const server = realtimeOf(t.app)!;
+    const live = [...server.io!.of('/').sockets.values()].find(
+      (x) => x.data?.actor?.userId === SEED_IDS.users.DRV5,
+    )!;
+    const venue = (live.data.actor.venueId as string | null) ?? 'none';
+    const counted = await at(venue);
+    expect(counted).toBeGreaterThanOrEqual(1);
+    // the actor is re-read while the socket lives (assignment or scope changed): another venue now
+    live.data.actor = { ...live.data.actor, venueId: '00000000-0000-4000-8000-00000000beef' };
+    s.close();
+    await until(async () => (await at(venue)) === counted - 1);
+    expect(await at('00000000-0000-4000-8000-00000000beef')).toBe(0); // no −1 series elsewhere
   });
 });
