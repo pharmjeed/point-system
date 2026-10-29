@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Car, SearchX } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { displayMessage, isApiError } from '@/api/errors';
 import { listVehicles } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
@@ -29,6 +29,8 @@ import { FILTER_STATUSES, nextFilter, searchDigits, VEHICLE_FILTERS, type Vehicl
 /** 02 D-12: the search runs 300 ms after the last keystroke. */
 const DEBOUNCE_MS = 300;
 const PAGE_SIZE = 50;
+/** A PAGINATION_CURSOR_INVALID this soon after the last reload waits for the tap (no request loop). */
+const CURSOR_RESET_GUARD_MS = 10_000;
 
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -82,12 +84,21 @@ export function VehiclesPage() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
-  // 02 §1.9 PAGINATION_CURSOR_INVALID «إعادة تحميل القائمة من البداية»
+  // 02 §1.9 PAGINATION_CURSOR_INVALID «إعادة تحميل القائمة من البداية» — by itself once; refused again right after
+  // (a lasting refusal), the inline «إعادة المحاولة» reloads it, so a list end in view never loops
+  const lastReset = useRef(0);
+  const [resetHeld, setResetHeld] = useState(false);
+  const resetList = useCallback(() => {
+    lastReset.current = Date.now();
+    setResetHeld(false);
+    void qc.resetQueries({ queryKey: queryKeys.vehicleSearch(q, statusList), exact: true });
+  }, [qc, q, statusList]);
   const cursorInvalid = isFetchNextPageError && isApiError(list.error, 'PAGINATION_CURSOR_INVALID');
   useEffect(() => {
-    if (cursorInvalid)
-      void qc.resetQueries({ queryKey: queryKeys.vehicleSearch(q, statusList), exact: true });
-  }, [cursorInvalid, qc, q, statusList]);
+    if (!cursorInvalid) return;
+    if (Date.now() - lastReset.current < CURSOR_RESET_GUARD_MS) setResetHeld(true);
+    else resetList();
+  }, [cursorInvalid, resetList]);
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="page-title">
@@ -132,13 +143,13 @@ export function VehiclesPage() {
               ))}
             </ul>
             {list.isFetchingNextPage ? <Skeleton variant="line" /> : null}
-            {isFetchNextPageError && !cursorInvalid ? (
+            {isFetchNextPageError && (!cursorInvalid || resetHeld) ? (
               <Banner
                 kind="error"
                 rounded
                 message={displayMessage(list.error)}
                 actionLabel={buttons.retry}
-                onAction={() => void fetchNextPage()}
+                onAction={cursorInvalid ? resetList : () => void fetchNextPage()}
               />
             ) : null}
             <div ref={sentinel} aria-hidden="true" />

@@ -4,7 +4,14 @@ import { actorPage, expectCommandContract } from './support/actors';
 import { fakeOnly } from './support/backend';
 import { runOnlyAt390 } from './support/checks';
 import { acceptOfferOf, arrangeParked, EVENT_R1, requestRetrieval, startDuty } from './support/driver';
-import { createFake, errorReply, SEED_IDS, type FakeServer, type FTicket } from './support/fake';
+import {
+  createFake,
+  errorReply,
+  SEED_IDS,
+  type FakeCall,
+  type FakeServer,
+  type FTicket,
+} from './support/fake';
 import { parkedCars } from './support/live';
 
 /**
@@ -184,16 +191,32 @@ test('PNT-069: a next page that fails stops loading and offers «إعادة ال
   await retry.getByRole('button', { name: 'إعادة المحاولة' }).click();
   await expect(rows(page)).toHaveCount(55);
 
-  // 02 §1.9 PAGINATION_CURSOR_INVALID: the list reloads from its first page
+  // 02 §1.9 PAGINATION_CURSOR_INVALID: the list reloads from its first page by itself — once; refused again
+  // right after, it waits for «إعادة المحاولة» (no reload loop with the end of the list in view)
   await page.reload();
   await expect(rows(page)).toHaveCount(50);
-  const firstPages = fake.callsTo('GET /v1/tickets').filter((c) => !c.query?.get('cursor')).length;
-  fake.failNext('GET /v1/tickets', errorReply('PAGINATION_CURSOR_INVALID'), 1, nextPage);
+  const calls = () => fake.callsTo('GET /v1/tickets');
+  const refusal = (n: number) => calls().filter((c) => c.status === 400)[n];
+  const firstPageAfter = (call: FakeCall | undefined) =>
+    !!call &&
+    calls()
+      .slice(calls().indexOf(call) + 1)
+      .some((c) => !c.query?.get('cursor'));
+  fake.failNext('GET /v1/tickets', errorReply('PAGINATION_CURSOR_INVALID'), 2, nextPage);
   await rows(page).nth(49).scrollIntoViewIfNeeded();
   await page.mouse.wheel(0, 4000);
-  await expect
-    .poll(() => fake.callsTo('GET /v1/tickets').filter((c) => !c.query?.get('cursor')).length)
-    .toBeGreaterThan(firstPages);
+  await expect.poll(() => !!refusal(0)).toBe(true);
+  await expect.poll(() => firstPageAfter(refusal(0))).toBe(true);
+
+  await rows(page).nth(49).scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 4000);
+  const invalid = page.getByRole('alert').filter({ hasText: errorMessagesAr.PAGINATION_CURSOR_INVALID });
+  await expect(invalid).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(firstPageAfter(refusal(1))).toBe(false);
+  await invalid.getByRole('button', { name: 'إعادة المحاولة' }).click();
+  await expect.poll(() => firstPageAfter(refusal(1))).toBe(true);
+  await expect(invalid).toHaveCount(0);
   await expect(rows(page).first()).toBeVisible();
   expect(await rows(page).count()).toBeGreaterThanOrEqual(50); // page 1 again (page 2 if in view again)
   await expect(page.getByRole('alert')).toHaveCount(0);
