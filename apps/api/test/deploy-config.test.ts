@@ -29,7 +29,13 @@ describe('reverse proxy (infra/caddy/Caddyfile)', () => {
     for (const d of ['base-uri', 'form-action', 'font-src', 'worker-src', 'manifest-src', 'media-src']) {
       expect(directives.get(d), d).toEqual(["'self'"]);
     }
-    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
+    // DEC-192: inline <style> elements only (the Radix scroll lock); style attributes and scripts stay blocked
+    expect(directives.get('style-src-elem')).toEqual(["'self'", "'unsafe-inline'"]);
+    const others = [...directives.entries()]
+      .filter(([name]) => name !== 'style-src-elem')
+      .map(([name, values]) => `${name} ${values.join(' ')}`)
+      .join('; ');
+    expect(others).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
   });
 
   it('security headers, one origin for /v1, /ws, the webhook and health; /metrics never proxied', () => {
