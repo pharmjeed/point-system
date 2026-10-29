@@ -597,12 +597,22 @@ async function measure({ world, tickets, presses, bots, simc, k6, k6Result, wind
     `SELECT type, status, count(*)::int AS n FROM tasks WHERE status NOT IN ('completed','canceled') GROUP BY 1, 2`,
   );
   const notDelivered = perPress.filter((p) => p.status !== 'delivered');
-  // rows that should have run (due, in flight, failed, dead) vs timers scheduled later (no-ops once they fire)
+  // stuck rows by the system monitor's own rule (14 §8 outbox_lag): due longer than ops.outbox_lag_alert_s (30 s),
+  // a lapsed lease, failed or dead — a timer that fell due a moment ago is the worker's next poll, not stuck work;
+  // timers scheduled later are listed apart (no-ops once they fire)
   const outboxLeft = await q(
     `SELECT status, type, count(*)::int AS n FROM outbox_events
-      WHERE (status = 'pending' AND available_at <= now()) OR status IN ('processing', 'failed', 'dead')
+      WHERE (status = 'pending' AND available_at <= now() - interval '30 seconds')
+         OR (status = 'processing' AND locked_until < now())
+         OR status IN ('failed', 'dead')
       GROUP BY 1, 2 ORDER BY 1, 2`,
   );
+  const dueAtEnd = (
+    await q(
+      `SELECT count(*)::int AS n, EXTRACT(EPOCH FROM (now() - min(available_at)))::float AS oldest_s
+         FROM outbox_events WHERE status = 'pending' AND available_at <= now()`,
+    )
+  )[0];
   const timersLater = await q(
     `SELECT type, count(*)::int AS n FROM outbox_events WHERE status = 'pending' AND available_at > now() GROUP BY 1 ORDER BY 1`,
   );
@@ -740,6 +750,7 @@ async function measure({ world, tickets, presses, bots, simc, k6, k6Result, wind
       openTasks,
       notDelivered: notDelivered.length,
       outboxLeft,
+      dueAtEnd,
       timersLater,
       pendingNotifications,
       stuckAlerts,
@@ -785,7 +796,7 @@ function verdict(r) {
     ['M3 server errors < 0.1 %', r.m3.errorRate < 0.001],
     ['every request delivered, no stuck task', r.stuck.notDelivered === 0 && r.stuck.openTasks.length === 0],
     [
-      'no due, failed or dead outbox row; no pending notification',
+      'no stuck outbox row (due > 30 s, lapsed lease, failed, dead); no pending notification',
       r.stuck.outboxLeft.length === 0 && r.stuck.pendingNotifications.length === 0,
     ],
     ['no task_stuck / outbox_lag alert', r.stuck.stuckAlerts.length === 0],
@@ -837,7 +848,7 @@ function report(r) {
     '',
     `M3: ${r.m3.errors} server errors / ${r.m3.total} requests = ${(r.m3.errorRate * 100).toFixed(3)} % (generator ${r.m3.generator.count}, presses ${r.m3.presses.count}, simulator webhooks ${r.m3.simulatorWebhooks.count}). Expected 4xx (not errors): ${JSON.stringify(r.m3.expected4xx)}.`,
     '',
-    `Drain: ${r.world.presses - r.stuck.notDelivered}/${r.world.presses} delivered ${r.durations.drainS.toFixed(1)} s after the first press; open tasks ${JSON.stringify(r.stuck.openTasks)}; outbox rows due/failed/dead ${JSON.stringify(r.stuck.outboxLeft)}; pending notifications ${JSON.stringify(r.stuck.pendingNotifications)}; timers scheduled later (no-ops when they fire) ${JSON.stringify(r.stuck.timersLater)}; WhatsApp per customer ${JSON.stringify(r.whatsapp.purposeTotals)} (duplicates ${r.whatsapp.duplicates}).`,
+    `Drain: ${r.world.presses - r.stuck.notDelivered}/${r.world.presses} delivered ${r.durations.drainS.toFixed(1)} s after the first press; open tasks ${JSON.stringify(r.stuck.openTasks)}; stuck outbox rows ${JSON.stringify(r.stuck.outboxLeft)} (due at the end: ${JSON.stringify(r.stuck.dueAtEnd)}); pending notifications ${JSON.stringify(r.stuck.pendingNotifications)}; timers scheduled later (no-ops when they fire) ${JSON.stringify(r.stuck.timersLater)}; WhatsApp per customer ${JSON.stringify(r.whatsapp.purposeTotals)} (duplicates ${r.whatsapp.duplicates}).`,
     '',
     table(
       ['Process', 'CPU % p50 / p95 / max', 'RSS max MB'],
@@ -848,7 +859,7 @@ function report(r) {
       ]),
     ),
     '',
-    `DB connections (max per application): ${JSON.stringify(r.m5.dbConnectionsMax)}.`,
+    `DB connections (max per application; each process pools at most DATABASE_POOL_MAX = ${r.knobs.poolMax ?? 20}): ${JSON.stringify(r.m5.dbConnectionsMax)}.`,
     '',
     table(
       ['Route', 'n', 'p50', 'p95', 'max', '4xx', '5xx'],
