@@ -334,8 +334,8 @@ stateDiagram-v2
 - العميل: W-06 (مرتبطة بـ`ticket.delivered` فقط لتفادي التكرار).
 
 **TT-19 · `ready` ← `delivered` — `POST /v1/tickets/{ticketId}/handover-exception`**
-- الحراس: التذكرة `ready`؛ سبب وأدلة تحقق هوية موثقة (الحقول في 07)؛ رقم اللوحة وحده لا يكفي (المعمارية §4ز)؛ بوابة الدفع بوابة TT-18 بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210): `due` بلا `payment` ← `PAYMENT_PENDING`، ومع `payment` قواعد 13 §5.2 على `payment.*` (`PAYMENT_AMOUNT_MISMATCH`، `PAYMENT_METHOD_NOT_ALLOWED`)؛ `collected` مع `payment` ← `PAYMENT_ALREADY_RECORDED`؛ `not_required` أو `waived` مع `payment` ← `VALIDATION_FAILED` (`not_applicable`)؛ و`payment.collected_by` مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4، وإلا `VALIDATION_FAILED` بـ`not_eligible`)؛ ويُقفل الحفل `FOR SHARE` (L2) حين تكون التذكرة `due` أو يُرسل `payment`.
-- الآثار: كـTT-18 مع: الرمز الحي (إن وُجد، ولو مقفلًا) ← `revoked` بسبب `exception_handover`؛ `delivered_by` = المكلّف الذي سلّم فعليًا، والمشرف يظهر كمعتمد في الحدث والتدقيق؛ واقعة `manual_verification` (أو `lost_ticket` عند فقد الكعب الورقي) تُنشأ موثقة بحالة `resolved` (`auto_created: true`)؛ والتحصيل المضمّن يُسجَّل بـ`collected_by` من الجسم و`source = exception` فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22).
+- الحراس: التذكرة `ready`؛ سبب وأدلة تحقق هوية موثقة (الحقول في 07)؛ رقم اللوحة وحده لا يكفي (المعمارية §4ز)؛ بوابة الدفع بوابة TT-18 بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210): `due` بلا `payment` ← `PAYMENT_PENDING`، ومع `payment` قواعد 13 §5.2 على `payment.*` (`PAYMENT_AMOUNT_MISMATCH`، `PAYMENT_METHOD_NOT_ALLOWED`)؛ `collected` مع `payment` ← `PAYMENT_ALREADY_RECORDED`؛ `not_required` أو `waived` مع `payment` ← `VALIDATION_FAILED` (`not_applicable`)؛ و`payment.collected_by` مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4، وإلا `VALIDATION_FAILED` بـ`not_eligible`)؛ ويُقفل الحفل `FOR SHARE` (L2) بين المجموعة والمهمة حين تكون التذكرة `due` أو يُرسل `payment`؛ والبوابة `check` خطاف التحصيل لكل حالة مالية، وبوابة S2 لخطاف بلا `check` (DEC-365).
+- الآثار: كـTT-18 مع: الرمز الحي (إن وُجد، ولو مقفلًا) ← `revoked` بسبب `exception_handover`؛ `delivered_by` = المكلّف الذي سلّم فعليًا، والمشرف يظهر كمعتمد في الحدث والتدقيق؛ واقعة `manual_verification` (أو `lost_ticket` عند فقد الكعب الورقي) تُنشأ موثقة بحالة `resolved` (`auto_created: true`)؛ والتحصيل المضمّن يُسجَّل بـ`collected_by` من الجسم و`source = exception` فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22)؛ وصفا التدقيق `handover.exception` ثم `payment.record` بمعرّف طلب واحد (13 §8.4، DEC-365).
 - الأحداث: `handover.exception_approved`، `handover.completed`، `ticket.delivered`، `task.completed`، `custody.changed` ×2، `incident.opened`، `incident.resolved`، و`payment.recorded` عند التحصيل.
 - العميل: W-06.
 
@@ -963,6 +963,7 @@ interface TicketParked {
 interface TicketRetrievalRequested {
   ticket: TicketRef; cycle_id: UUID; cycle_no: number; task_id: UUID;
   requested_at: ISODateTime; request_source: 'whatsapp' | 'staff'; requested_early: boolean;
+  ingest_latency_ms?: number;   // ضغطة واتساب فتحت الدورة فقط: من whatsapp_inbound_events.received_at حتى كتابة الدورة (DEC-367)
 }
 interface TicketRetrievalRequestedEarly {   // من زر واتساب فقط (DEC-25)؛ لا حقول موظف
   ticket: TicketRef; pending_retrieval_at: ISODateTime; request_source: 'whatsapp';

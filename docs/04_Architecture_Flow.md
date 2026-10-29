@@ -247,6 +247,7 @@ flowchart BT
 | `AcceptOffer` | `POST /v1/task-offers/{offerId}/accept` | dispatch + tickets-custody + notifications (W-03 عند الحجز التالي) | نعم |
 | `KeyPickup` / `StartRetrieval` / `MarkReady` | `/v1/tasks/{taskId}/...` | dispatch + tickets-custody + notifications (W-04، W-05) | لا |
 | `Handover` | `POST /v1/tickets/{ticketId}/handover` | tickets-custody + payments-reports (خطاف التحصيل المضمّن: `check` بلا أثر قبل الرمز، ثم `collect` بعد التحقق، DEC-277) + dispatch (تحرير أو ترقية) + notifications (W-06) | نعم (ثم الحفل `FOR SHARE` L2 حين تكون التذكرة `due` أو يُرسل `payment`) |
+| `HandoverException` | `POST /v1/tickets/{ticketId}/handover-exception` (`use-cases/customer-flows/handover-exception.ts`) | tickets-custody + payments-reports (الخطاف نفسه: `check` لكل حالة مالية قبل إبطال الرمز، ثم `collect` بـ`collected_by` من الجسم و`source = exception`، وصف تدقيقه بعد `handover.exception`، DEC-365) + incidents (`openIncident()`، DEC-240) + dispatch (تحرير أو ترقية) + notifications (W-06) | نعم (ثم L2 `FOR SHARE` قبل L4 حين تكون التذكرة `due` أو يُرسل `payment`، DEC-365) |
 | `CancelRetrieval` | `POST /v1/retrieval-cycles/{cycleId}/cancel` | tickets-custody + dispatch + notifications (W-07) | نعم |
 | `ReassignTask` | `POST /v1/tasks/{taskId}/reassign` | dispatch + tickets-custody + incidents | نعم |
 | `Repark` | `POST /v1/tickets/{ticketId}/repark` | tickets-custody + dispatch + notifications (W-08) | نعم |
@@ -343,7 +344,7 @@ flowchart TD
 | `RequestRetrieval` | ✓ | | | ✓ إدراج | ✓ | ✓ إدراج | | | ✓ |
 | `AcceptOffer` | ✓ | | | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `KeyPickup` / `StartRetrieval` / `MarkReady` | | | | ✓ | ✓ | ✓ | | | — |
-| `Handover` | ✓ | ✓ `FOR SHARE` (عند التحصيل المضمّن) | | ✓ | ✓ | ✓ | | ✓ | ✓ |
+| `Handover` / `HandoverException` | ✓ | ✓ `FOR SHARE` (عند التحصيل المضمّن، أو تذكرة `due`، DEC-365) | | ✓ | ✓ | ✓ | | ✓ | ✓ |
 | `CancelRetrieval` / `ReassignTask` / `Repark` | ✓ | | | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | مؤقتات العرض والبث (`job.offer_expire` ...) | ✓ | | | ✓ | | | ✓ | ✓ | ✓ |
 | `ActivateTransfer` | ✓ (مجموعتان) | | ✓ | ✓ | ✓ | | ✓ | ✓ | ✓ |

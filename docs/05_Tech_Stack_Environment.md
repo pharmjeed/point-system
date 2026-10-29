@@ -514,7 +514,7 @@ volumes:
 | المقياس | النوع | الوصف |
 |---|---|---|
 | `point_http_request_duration_seconds{route,status}` | Histogram | زمن الأوامر والاستعلامات (هدف p95 لحفظ الطلب أقل من ثانيتين) |
-| `point_retrieval_request_ingest_seconds` | Histogram | من استلام Webhook زر «طلب السيارة» إلى التزام دورة الإحضار |
+| `point_retrieval_request_ingest_seconds` | Histogram | من استلام Webhook زر «طلب السيارة» (`whatsapp_inbound_events.received_at`) إلى التزام دورة الإحضار؛ يرصده العامل بعد التزام معاملة الوارد للضغطة التي فتحت دورة وحدها، وهو مرجع هدف «حفظ الطلب» (15 §10، 17 H-08 M1؛ DEC-367) |
 | `point_dispatch_publish_seconds` | Histogram | من التزام الإسناد أو العرض إلى نشر حدث WebSocket (هدف p95 أقل من 3 ثوانٍ) |
 | `point_dispatch_time_to_claim_seconds` | Histogram | من دخول الطابور إلى القبول المؤكد — المؤشر الأهم |
 | `point_dispatch_pass_duration_seconds{reason}` | Histogram | زمن تمريرة التوزيع (هدف p95 أقل من 50 ms) |
@@ -706,7 +706,7 @@ pnpm test:e2e                       # Playwright
 pnpm --filter @point/web test:e2e:live   # G1 في المتصفح مقابل الـAPI الحقيقي وقاعدة مبذورة (TEST_DATABASE_URL)، DEC-359
 pnpm lint && pnpm typecheck
 pnpm db:drift                       # مقارنة الترحيلات مع docs/06_schema.sql
-pnpm load:k6                        # حمل محلي مصغر
+pnpm ops:rehearsal                  # البروفة الآلية (17 H-10 الخطوة 1، TC-036) على قاعدة مؤقتة بالعمليات الحقيقية والمحاكي، DEC-366
 ```
 
 ### 18.2 بيانات `seed` للتطوير
