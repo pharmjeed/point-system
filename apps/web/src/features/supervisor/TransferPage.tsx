@@ -26,7 +26,8 @@ import {
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { useOnline } from '@/hooks/useOnline';
-import { buttons, s07, staff, transferStatus } from '@/i18n/ar';
+import { buttons, transferStatus } from '@/i18n/ar';
+import { s07, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { cx } from '@/lib/cx';
 import { formatDateTime, formatTime } from '@/lib/format';

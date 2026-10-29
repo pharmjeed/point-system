@@ -31,18 +31,8 @@ import type { KpiTileProps } from '@/components/Kpi';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { useOnline } from '@/hooks/useOnline';
 import { useServerNow } from '@/hooks/useNow';
-import {
-  alertType,
-  buttons,
-  custodyHolder,
-  custodySubject,
-  s02,
-  s12,
-  staff,
-  taskStatus,
-  taskType,
-  waMessageStatus,
-} from '@/i18n/ar';
+import { alertType, buttons, custodyHolder, taskStatus, taskType, waMessageStatus } from '@/i18n/ar';
+import { custodySubject, s02, s12, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { cx } from '@/lib/cx';
 import { formatClock, formatSinceMinutes, formatTime } from '@/lib/format';

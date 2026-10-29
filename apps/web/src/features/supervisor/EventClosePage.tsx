@@ -21,7 +21,8 @@ import {
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { useOnline } from '@/hooks/useOnline';
-import { buttons, eventStatus, s10, staff, taskStatus, taskType } from '@/i18n/ar';
+import { buttons, eventStatus, taskStatus, taskType } from '@/i18n/ar';
+import { s10, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { cx } from '@/lib/cx';
 import { formatHalalas } from '@/lib/format';

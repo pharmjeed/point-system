@@ -26,12 +26,10 @@ import {
   inspectionStatus,
   mediaKind,
   paymentMethod,
-  paymentRecordStatus,
   paymentStatus,
-  s03,
-  staff,
   waLinkStatus,
 } from '@/i18n/ar';
+import { paymentRecordStatus, s03, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatHalalas, formatTime } from '@/lib/format';
 import { plateText, plateValue, vehicleSummary } from './opsModel';

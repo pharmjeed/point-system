@@ -1,5 +1,6 @@
 import { Dialog } from '@/components';
-import { buttons, s05 } from '@/i18n/ar';
+import { buttons } from '@/i18n/ar';
+import { s05 } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 
 /**

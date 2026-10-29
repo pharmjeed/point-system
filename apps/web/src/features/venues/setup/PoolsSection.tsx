@@ -9,7 +9,8 @@ import { Banner, Button, Card, EmptyState, FieldError } from '@/components';
 import { QueryView } from '@/features/common/QueryView';
 import { SetupStatusChip, StateChip } from '@/features/common/StateChip';
 import { useCommand } from '@/hooks/useCommand';
-import { s09, ui } from '@/i18n/ar';
+import { ui } from '@/i18n/ar';
+import { s09 } from '@/i18n/ar.staff';
 import { useUiStore } from '@/stores/ui';
 import { NameSheet } from './SetupSheets';
 

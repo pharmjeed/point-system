@@ -11,7 +11,8 @@ import type {
   WaHealthStatus,
 } from '@/api/types';
 import type { PlateValue } from '@/components';
-import { s02, staff, vehicleColor, vehicleMake } from '@/i18n/ar';
+import { vehicleColor, vehicleMake } from '@/i18n/ar';
+import { s02, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 
 /**

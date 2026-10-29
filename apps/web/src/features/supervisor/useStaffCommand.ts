@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { ApiError, displayMessage } from '@/api/errors';
 import type { FieldError } from '@/api/types';
 import { useCommand } from '@/hooks/useCommand';
-import { staff } from '@/i18n/ar';
+import { staff } from '@/i18n/ar.staff';
 import { useUiStore } from '@/stores/ui';
 
 /**

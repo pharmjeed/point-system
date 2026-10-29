@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import * as ar from '@/i18n/ar';
+import * as arMain from '@/i18n/ar';
+import * as arStaff from '@/i18n/ar.staff';
 
 /**
  * Screen copy is 02's text word for word (05 §7.8). Every string of the screen dictionaries below must occur
  * in docs/02_Wireframes_Spec.md (a `{placeholder}` matches 02's own placeholder or its example value), except
  * the keys listed as not in 02 — those are proposed for 02 §8 in docs/progress/notes/pnt-023.md / pnt-035.md.
  */
+/** The dictionary is split by area (driver first load vs the lazy staff chunks); the checks cover both. */
+const ar = { ...arMain, ...arStaff };
+
 const spec = readFileSync(new URL('../../../docs/02_Wireframes_Spec.md', import.meta.url), 'utf8');
 const canon = readFileSync(new URL('../../../docs/00_Glossary_Canon.md', import.meta.url), 'utf8');
 

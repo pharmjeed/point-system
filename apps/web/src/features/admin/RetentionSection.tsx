@@ -7,7 +7,8 @@ import { commands, fetchRetention, staffKeys } from '@/features/supervisor/staff
 import { PageSkeleton, ReadError } from '@/features/supervisor/ui';
 import { useStaffCommand } from '@/features/supervisor/useStaffCommand';
 import { useOnline } from '@/hooks/useOnline';
-import { buttons, s13, staff } from '@/i18n/ar';
+import { buttons } from '@/i18n/ar';
+import { s13, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatDateTime } from '@/lib/format';
 import {

@@ -4,7 +4,7 @@ import { Outlet } from 'react-router';
 import type { Alert, Me } from '@/api/types';
 import { Banner } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { staff } from '@/i18n/ar';
+import { staff } from '@/i18n/ar.staff';
 import { AlertSoundController, htmlAudioPlayer, SOUND_FILES } from './alertSound';
 import { can } from './permissions';
 import { fetchAlerts, LIVE_REFETCH_MS, staffKeys, type AlertFilters } from './staffApi';

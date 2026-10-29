@@ -1,5 +1,5 @@
 import type { OrgSettings, RetentionPolicy } from '@/api/types';
-import { s13, staff } from '@/i18n/ar';
+import { s13, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { toLatinDigits } from '@/lib/digits';
 
