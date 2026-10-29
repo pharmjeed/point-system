@@ -8208,7 +8208,7 @@ paths:
       summary: مزامنة حالة القوالب من Meta
       tags: [Admin]
       description: |-
-        مزامنة حالة القوالب من Meta، وإنشاء الناقص من تعريفات WA_TEMPLATE_DEFINITIONS (DEC-139). ويقرأ GET /{phone_number_id} في المرحلة نفسها فيحفظ quality_rating وmessaging_limit_tier للقناة (12 §3.1) دون أن يفشل الأمر بفشل هذه القراءة.
+        مزامنة حالة القوالب من Meta، وإنشاء الناقص من تعريفات WA_TEMPLATE_DEFINITIONS (DEC-139). ويقرأ GET /{phone_number_id}?fields=quality_rating,health_status,whatsapp_business_manager_messaging_limit في المرحلة نفسها فيحفظ quality_rating وmessaging_limit_tier للقناة (12 §3.1) دون أن يفشل الأمر بفشل هذه القراءة.
 
         يستدعي Graph في حارس بعد الجلسة والصلاحية وقبل معاملة الأمر (لا شبكة داخل المعاملة)، ويتخطى الاستدعاء إن كان مفتاح التكرار مكتملًا. المهلة ← DEPENDENCY_TIMEOUT؛ التعطل أو 5xx أو خطأ فئة القناة ← WA_CHANNEL_UNAVAILABLE (503 مع Retry-After)؛ وغير ذلك ← WA_SEND_FAILED (DEC-142).
       parameters:

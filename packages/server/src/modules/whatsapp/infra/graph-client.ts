@@ -28,9 +28,20 @@ export interface GraphTemplate {
 export interface GraphPhoneNumber {
   quality_rating?: string;
   whatsapp_business_manager_messaging_limit?: string;
+  /** deprecated by Meta in favour of `whatsapp_business_manager_messaging_limit`: read when present, never requested */
   messaging_limit_tier?: string;
   health_status?: { can_send_message?: string };
 }
+
+/**
+ * The phone-number fields requested by `phoneNumber()`: the quality rating (12 §5.14), the health status (its
+ * `can_send_message`, 12 §5.14) and the messaging limit of the business portfolio (F-18, GAP-9).
+ */
+export const PHONE_NUMBER_FIELDS = [
+  'quality_rating',
+  'health_status',
+  'whatsapp_business_manager_messaging_limit',
+] as const;
 
 export interface GraphClientOptions {
   /** WA_GRAPH_BASE_URL: https://graph.facebook.com, or the simulator */
@@ -110,9 +121,22 @@ export class GraphClient {
     return this.request<GraphSendResponse>('POST', this.url(ch, ch.phone_number_id, 'messages'), token, body);
   }
 
-  /** GET /{v}/{phone_number_id} — the health probe of 12 §5.14 */
-  phoneNumber(ch: GraphChannel, token: string) {
-    return this.request<GraphPhoneNumber>('GET', this.url(ch, ch.phone_number_id), token);
+  /**
+   * GET /{v}/{phone_number_id}?fields=… — the health probe of 12 §5.14 and the number's facts of 12 §3.1. The Graph
+   * API returns a field outside the node's default set only when `fields` names it, which is the case of the
+   * messaging limit and of `health_status` (12 [R19]). Should the pinned version refuse a field (#100), the plain
+   * read still answers the probe.
+   */
+  async phoneNumber(ch: GraphChannel, token: string): Promise<GraphResult<GraphPhoneNumber>> {
+    const url = this.url(ch, ch.phone_number_id);
+    const res = await this.request<GraphPhoneNumber>(
+      'GET',
+      `${url}?fields=${PHONE_NUMBER_FIELDS.join(',')}`,
+      token,
+    );
+    if (!res.ok && res.kind === 'http' && res.code === 100)
+      return this.request<GraphPhoneNumber>('GET', url, token);
+    return res;
   }
 
   /** GET /{v}/{waba_id}/message_templates (first page of 100; the catalog has eight) */
