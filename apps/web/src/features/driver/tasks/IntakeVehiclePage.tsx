@@ -110,9 +110,10 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   );
   const [link, setLink] = useState<ChannelForm>(() => channelForm(ticket, draft));
   const [checked, setChecked] = useState(false);
-  // a number on the server without this device's copy (a draft resumed elsewhere): kept until another is typed
+  // a number on the server without this device's copy (a draft resumed elsewhere): kept until another is typed;
+  // an input shown once stays (clearing the typed number to retype it does not swap it for the recorded row)
   const recorded = ticket.customer?.phone_masked ?? null;
-  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(() => !recorded || !!link.phone);
   const keepRecorded = keepsRecordedPhone(link, recorded);
   const save = useCommand(
     (body: IntakePatch, key: string) => patchIntake(ticket.id, body, key),
