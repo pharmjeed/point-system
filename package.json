@@ -19,14 +19,14 @@
     "check:brand": "node scripts/check-brand.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "audit:prod": "pnpm audit --prod --audit-level high",
+    "ops:rehearsal": "node apps/api/rehearsal/run.mjs",
     "db:migrate": "pnpm --filter @point/db migrate",
     "db:reset": "pnpm --filter @point/db reset",
     "db:seed": "pnpm --filter @point/db seed",
     "db:invariants": "pnpm --filter @point/db invariants",
     "db:drift": "pnpm --filter @point/db drift",
     "progress": "node tools/progress/build.mjs",
-    "ops:restore-drill": "bash infra/backup/restore-drill.sh",
-    "ops:rehearsal": "node apps/api/rehearsal/run.mjs"
+    "ops:restore-drill": "bash infra/backup/restore-drill.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
