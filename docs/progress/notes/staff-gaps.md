@@ -12,7 +12,7 @@ proposals below from DEC-365; `docs/DECISIONS.md`, `STATUS.md`, `state.json` and
 | GAP-3 | S-13 «الموظفون» | `/admin/staff` (`StaffSection.tsx`, `staffModel.ts`): the list (`GET /v1/staff`, every page), «إضافة موظف» with the temporary password once, «تعديل البيانات», «النطاقات» (venues of a supervisor, the org scope of an admin), «تعطيل الحساب» / «تفعيل الحساب» with a reason and CUSTODY_OPEN items, «إعادة ضبط التحقق الثنائي» (owner) | `test/staff/staffModel.test.ts` (6), `test/staff/permissions.test.ts` (sections), `e2e/staff-team.spec.ts` (5) |
 | GAP-4 | S-08 table «بدء الإغلاق │ S-10» | `VenuePage.tsx` event card: «بدء الإغلاق» (open), «إغلاق الحفل والمطابقة» and «إعادة فتح الحفل» behind a confirmation (closing; `POST /v1/events/{eventId}/open`, closing → open, 07, 11 §6.4), «عرض التقرير» (closed, `report.read`); S-10 goes back to the venue page | `e2e/staff-event-links.spec.ts` (2) |
 | GAP-5 | S-06 table «نقل إلى موقع آخر │ S-07» | `DriverProfilePage.tsx`: the button for `driver.transfer`, an active driver with an active assignment; S-07 goes back in history, else to S-06 | `e2e/staff-driver-profile.spec.ts` (2 of 6) |
-| GAP-6 | S-06 table «إنهاء المناوبة قسرًا» + «تأكيد التعطيل وإنهاء المناوبة قسرًا (Dialog، DEC-32)» | `ForceEndDialog` (`duty.force_end`, the supervisor's alone; `live.duty_session_id`; `POST /v1/duty-sessions/{sessionId}/force-end` with the mandatory reason): the DEC-32 snapshot (`CustodyChecklist.tsx`, shared with S-07) with «فتح» on each item and the 02 sentence «المهمة التالية المحجوزة … وتُسحب عروضه الفردية.»; DUTY_END_BLOCKED_CUSTODY replaces it with `details.items` and «لا يمكن تنفيذ الإجراء وبعهدة السائق: {العناصر}.» | `e2e/staff-driver-profile.spec.ts` (4 of 6), `test/staff/transferModel.test.ts` |
+| GAP-6 | S-06 table «إنهاء المناوبة قسرًا» + «تأكيد التعطيل وإنهاء المناوبة قسرًا (Dialog، DEC-32)» | `ForceEndDialog` (`duty.force_end`, the supervisor's alone; `live.duty_session_id`; `POST /v1/duty-sessions/{sessionId}/force-end` with the mandatory reason): the DEC-32 snapshot (`CustodyChecklist.tsx`, shared with S-07) with «فتح» on each item and the 02 sentence «المهمة التالية المحجوزة … وتُسحب عروضه الفردية.»; DUTY_END_BLOCKED_CUSTODY replaces it with `details.items` and «لا يمكن تنفيذ الإجراء وبعهدة السائق: {العناصر}.» | `e2e/staff-driver-profile.spec.ts` (3 of 6; the sixth is the same confirmation for «تعطيل الحساب»), `test/staff/transferModel.test.ts` |
 
 ## Sweep of S-01 … S-13 against 02
 
@@ -142,3 +142,26 @@ checks the s06/s08 ones).
 - `docs/training/supervisor-guide.md`: the five build-status rows of these gaps, §1 (MFA reset in S-13), §5 (the three S-03
   rows), §9 (S-06 buttons and the forced end), §10 (the way in from S-08, the custody row), the appendix as a fallback.
 - `docs/runbooks/paper-fallback.md`: §5.3 step 0 (reopen from the S-08 card), §5.4 (the S-03 sheet), the appendix as a fallback.
+
+## Test results
+
+Local PostgreSQL 16 (`TEST_DATABASE_URL`), Chromium (`/opt/pw-browsers`), each full run as one holder of the shared heavy
+lock. Final run at `2e7e5b2`:
+
+| Suite | Command | Result |
+|---|---|---|
+| lint | `pnpm lint` (eslint, prettier, brand, secrets) | clean |
+| typecheck | `pnpm typecheck` | clean |
+| unit | `pnpm test` | 81 files, 1313 tests passed |
+| integration | `pnpm test:int` | 78 files passed, 1 skipped; 636 tests passed, 1 skipped |
+| e2e | `playwright test --workers=2` (360, 390, 430) | 870 tests: 500 passed, 370 skipped (390-only flows at 360/430), 0 failed |
+
+The first full run (at `01993ec`) had one failure in each suite, both stale expectations, fixed in this branch:
+`apps/api/test/manual-reconcile-paper-draft.int.test.ts` compared `payment.recorded` without `cycle_id` (11
+`PaymentRecorded`, DEC-285: `cycle_id: UUID | null`; already failing on `34ffe37`, `2e7e5b2`), and `e2e/staff-ticket.spec.ts`
+expected «فتح واقعة» alone in the administration's S-03 panel, from before GAP-2 (`ef9fc38`).
+
+New specs (390 px unless stated): `staff-recovery` 9, `staff-team` 5, `staff-event-links` 2, `staff-driver-profile` 6,
+`staff-sweep` 3, `staff-gaps-layout` 5 at each of 360/390/430; unit `test/staff/staffModel.test.ts` 6, the recovery-action and
+section cases of `test/staff/permissions.test.ts`, `test/staff/transferModel.test.ts` (ticket ids, accepted park/repark),
+`test/realtime/staffRuntime.test.ts` (`driver.state_changed` → S-05/S-06).
