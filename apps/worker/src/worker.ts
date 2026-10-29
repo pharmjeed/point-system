@@ -32,6 +32,7 @@ export function createWorker(deps: WorkerDeps) {
         poolMax: deps.env.DATABASE_POOL_MAX,
         lockTimeoutMs: deps.env.DATABASE_LOCK_TIMEOUT_MS,
         statementTimeoutMs: deps.env.DATABASE_STATEMENT_TIMEOUT_MS,
+        connectTimeoutMs: deps.env.DATABASE_CONNECT_TIMEOUT_MS,
         ssl: deps.env.DATABASE_SSL,
         applicationName: 'point-worker',
       },

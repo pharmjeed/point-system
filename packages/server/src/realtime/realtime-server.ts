@@ -255,23 +255,29 @@ export class RealtimeServer {
   private async listen() {
     const connect = async () => {
       if (this.closed) return;
+      // bounded like the pool (DEC-PROPOSED-8): a database that does not answer must not hold the attach
+      const c = new pg.Client(this.deps.db.listenClientConfig('realtime'));
+      let ready = false;
+      c.on('error', (err) => {
+        if (!ready) return; // reported by connect/LISTEN below
+        this.deps.logger.warn({ err: err.message }, 'realtime listener error; reconnecting');
+        this.listener = null;
+        setTimeout(() => void connect(), 1000);
+      });
       try {
-        const c = new pg.Client({ connectionString: this.deps.db.config.connectionString });
         await c.connect();
         await c.query(`LISTEN ${REALTIME_NOTIFY_CHANNEL}`);
-        c.on('notification', (n) => {
-          if (n.payload) void this.relay(n.payload);
-        });
-        c.on('error', (err) => {
-          this.deps.logger.warn({ err: err.message }, 'realtime listener error; reconnecting');
-          this.listener = null;
-          setTimeout(() => void connect(), 1000);
-        });
-        this.listener = c;
       } catch (err) {
+        void c.end().catch(() => {});
         this.deps.logger.warn({ err: (err as Error).message }, 'realtime listener unavailable; retrying');
         setTimeout(() => void connect(), 2000);
+        return;
       }
+      ready = true;
+      c.on('notification', (n) => {
+        if (n.payload) void this.relay(n.payload).catch(() => {});
+      });
+      this.listener = c;
     };
     await connect();
   }

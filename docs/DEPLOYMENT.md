@@ -220,6 +220,7 @@ STORAGE_ORIGIN=
 | `DATABASE_URL` | — (إلزامي) | يضبطه compose من `MIGRATION_/API_/WORKER_DATABASE_URL` لكل خدمة |
 | `DATABASE_POOL_MAX` | `20` | اتصالات لكل عملية |
 | `DATABASE_STATEMENT_TIMEOUT_MS` / `DATABASE_LOCK_TIMEOUT_MS` | `5000` / `3000` | مهل المعاملات (05 §7.4) |
+| `DATABASE_CONNECT_TIMEOUT_MS` | `5000` | أقصى انتظار لمقعد في المجمّع أو اتصال جديد؛ وقراءة الرد محدودة بمهلة الجملة + 2 ثانية؛ بعدهما `SERVICE_UNAVAILABLE` (05 §7.4، 17 §12) |
 | `DATABASE_SSL` | `false` | `true` مع قاعدة مُدارة (يتحقق من الشهادة) |
 | `SESSION_SECRET`، `CODE_PEPPER`، `AUTH_SECRET_PEPPER` | — (إلزامية) | 32 بايت على الأقل base64 (§5) |
 | `DATA_ENCRYPTION_KEY` / `DATA_ENCRYPTION_KEY_ID` | — / `k1` | AES-256-GCM لأسرار TOTP ونسخة رمز التسليم |
