@@ -238,6 +238,8 @@ export async function playSound(name: SoundName, options: PlayOptions = {}): Pro
     return false;
   }
   if (playing && waitsFor(name, playing.name)) return false;
+  // a higher sound still decoding is not replaced by a lower one asked in the same moment (14 §7 rule 4)
+  if (pendingKey && waitsFor(name, pendingKey.name)) return false;
   ticket += 1;
   const mine = ticket;
   const key = options.key ?? null;

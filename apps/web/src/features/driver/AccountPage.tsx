@@ -16,12 +16,11 @@ import { fmt } from '@/i18n/fmt';
 import { isStandalone } from '@/lib/deviceChecks';
 import { formatHalalas, formatTime } from '@/lib/format';
 import { usePrefs } from '@/lib/prefs';
-import { pushSupported, vapidPublicKey } from '@/lib/push';
 import { THEME_PREFS, type ThemePref } from '@/lib/theme';
 import { useCommandGate } from '@/realtime/hooks';
 import { useLogout } from '@/features/session/useLogout';
 import { useUiStore } from '@/stores/ui';
-import { useAudioCheck, useNotificationSetup } from './deviceSetup';
+import { pushNotReaching, useAudioCheck, useNotificationSetup } from './deviceSetup';
 import { useDriverMe } from './DriverLayout';
 import { InstallGuideSheet } from './InstallGuideSheet';
 import { useCachedHome } from './useDriverHome';
@@ -81,13 +80,8 @@ export function AccountPage() {
   const deviceId = me.session.device_id ?? null;
   const check = notifications.check;
   const inPageOnly = check === 'denied' || check === 'unsupported' || check === 'needsInstall';
-  // 14 §6.6: the push service dropped the subscription (404/410) — permission granted, nothing stored
-  const notReaching =
-    check === 'on' &&
-    !!vapidPublicKey() &&
-    pushSupported() &&
-    home?.checks.push_enabled === false &&
-    notifications.subscribed !== true;
+  // permission granted, nothing stored for this device (a new sign-in, or 14 §6.6 a dropped subscription)
+  const notReaching = pushNotReaching(check, home, notifications.subscribed);
 
   const refreshMe = () => qc.invalidateQueries({ queryKey: queryKeys.me });
 

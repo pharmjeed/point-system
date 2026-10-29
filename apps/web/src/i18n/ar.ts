@@ -614,8 +614,7 @@ export const d13 = {
   onBehalfDone: 'سُجّل طلب الإحضار #{n}.',
   cancel: 'إلغاء طلب الإحضار',
   cancelTitle: 'إلغاء طلب الإحضار #{n}؟ سيُبلغ العميل بالإلغاء.',
-  /** INVALID_STATE_TRANSITION on the cancel (02 D-13 errors table). */
-  cancelAfterAssignment: 'لا يمكن الإلغاء بعد إسناد الطلب. تواصل مع المشرف.',
+  // INVALID_STATE_TRANSITION on the cancel shows the server's text (DEC-80; notes/s5-web.md DEC-PROPOSED-16)
   changePhone: 'تغيير رقم الجوال',
   newPhone: 'الرقم الجديد',
   verified: 'تحققت من صاحب المركبة أمامي',

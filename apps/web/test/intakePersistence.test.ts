@@ -176,6 +176,49 @@ describe('intake drafts in IndexedDB (PNT-071)', () => {
     expect([...rows.drafts.keys()]).toEqual([`${DRV2}:${T1}`]);
   });
 
+  it('a submitted intake keeps the photos still uploading (02 D-06, 09 §6.2); a refused one goes', async () => {
+    await hydrateIntake(DRV1, T1);
+    useIntakeStore.getState().update(T1, { keyTag: '57' });
+    await flush();
+    const photo = (slot: string, state: 'uploading' | 'failed', retriable: boolean) =>
+      savePhoto(T1, {
+        slot,
+        kind: 'photo_front',
+        blob: new Blob([new Uint8Array([1])]),
+        capturedAt: '2026-10-29T18:00:00.000Z',
+        state,
+        retriable,
+        intent: null,
+      });
+    await photo('photo_front', 'uploading', true);
+    await photo('photo_rear', 'failed', true); // the network dropped: resumed later
+    await photo('photo_left', 'failed', false); // the server refused it
+    await forgetIntake(T1, { keepPendingPhotos: true }); // «إتمام التسجيل» / «المتابعة دون انتظار»
+    expect(rows.drafts.has(`${DRV1}:${T1}`)).toBe(false);
+    expect(useIntakeStore.getState().drafts[T1]).toBeUndefined();
+    expect([...rows.photos.keys()].sort()).toEqual([`${DRV1}:${T1}:photo_front`, `${DRV1}:${T1}:photo_rear`]);
+    // the in-memory draft is not recreated by a later write of its row
+    await flush();
+    expect(rows.drafts.has(`${DRV1}:${T1}`)).toBe(false);
+  });
+
+  it('an intake that ends while its saved draft is being read stays out of memory', async () => {
+    rows.drafts.set(`${DRV1}:${T2}`, {
+      id: `${DRV1}:${T2}`,
+      userId: DRV1,
+      ticketId: T2,
+      keyTag: '58',
+      pendingSave: null,
+      step1Error: null,
+    });
+    const reading = hydrateIntake(DRV1, T2);
+    await forgetIntake(T2, { keepPendingPhotos: true }); // the ticket was seen in `parking` meanwhile
+    expect(await reading).toEqual([]);
+    expect(useIntakeStore.getState().drafts[T2]).toBeUndefined();
+    await flush();
+    expect(rows.drafts.has(`${DRV1}:${T2}`)).toBe(false);
+  });
+
   it('a session that ends by itself writes the last keystrokes now and keeps the rows (02 §1.9)', async () => {
     await hydrateIntake(DRV1, T1);
     useIntakeStore.getState().update(T1, { notes: 'خدش' });

@@ -9,6 +9,7 @@ import { forgetUserDrafts } from '@/features/driver/intakePersistence';
 import { clearFieldData } from '@/features/driver/intakeStore';
 import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useSubmitGuard } from '@/hooks/useCommand';
+import { closeShownNotifications } from '@/pwa/register';
 import { stopRealtime } from '@/realtime/manager';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
@@ -41,6 +42,7 @@ export function useLogout(area: 'driver' | 'staff') {
       qc.clear();
       reset();
       clearFieldData();
+      void closeShownNotifications(); // no request of this session stays in the notification centre
       navigate(area === 'staff' ? paths.staffLogin : paths.login, { replace: true });
     });
   return { run, pending };

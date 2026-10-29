@@ -311,7 +311,7 @@ test('PNT-069: «إلغاء طلب الإحضار» before the assignment; after
     reason: 'العميل غيّر رأيه',
   });
 
-  // assigned behind the open screen: the server refuses, with the 02 D-13 sentence
+  // assigned behind the open screen: the server refuses; its 08 text is shown (DEC-80)
   requestRetrieval(fake, b!.ticketId);
   await page.goto(`/d/vehicles/${b!.ticketId}`);
   await page.getByRole('button', { name: 'إلغاء طلب الإحضار' }).click();
@@ -322,8 +322,11 @@ test('PNT-069: «إلغاء طلب الإحضار» before the assignment; after
   fake.exec('DRV2', 'POST /v1/me/duty/break', {}, { active: false });
   acceptOfferOf(fake, 'DRV1', b!.ticketId);
   await page.getByRole('alertdialog').getByRole('button', { name: 'إلغاء طلب الإحضار' }).click();
-  await expect(page.getByRole('alertdialog')).toContainText(
-    'لا يمكن الإلغاء بعد إسناد الطلب. تواصل مع المشرف.',
+  await expect(page.getByRole('alertdialog')).toContainText(errorMessagesAr.INVALID_STATE_TRANSITION);
+  const refusal = fake.callsTo('POST /v1/retrieval-cycles/:cycleId/cancel').at(-1);
+  expect(refusal?.status).toBe(409);
+  expect((refusal?.reply as { error: { details: { reason?: string } } }).error.details.reason).toBe(
+    'driver_cancel_after_assignment',
   );
 });
 

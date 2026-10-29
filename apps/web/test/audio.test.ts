@@ -148,6 +148,27 @@ describe('in-page sound', () => {
     expect(playingSound()).toEqual({ name: 'broadcast', key: 'offer:b' });
   });
 
+  it('a lower sound asked while a higher one still decodes does not replace it (same tick)', async () => {
+    const { ctx, started } = fakeContext();
+    setAudioContextFactory(() => ctx);
+    okFetch();
+    await unlockAudio();
+    // a head card that arrives already reminded: the announce and the reminder effects run together
+    const broadcast = playSound('broadcast', { key: 'offer:a' });
+    const reminder = playSound('reminder', { key: 'offer:a' });
+    expect(await reminder).toBe(false);
+    expect(await broadcast).toBe(true);
+    expect(started).toEqual(['buffer1']);
+    expect(playingSound()).toEqual({ name: 'broadcast', key: 'offer:a' });
+    // the other way round: the higher one replaces the lower one still decoding
+    stopSound();
+    const low = playSound('reminder', { key: 'offer:b' });
+    const high = playSound('offer', { key: 'offer:c' });
+    expect(await low).toBe(false);
+    expect(await high).toBe(true);
+    expect(playingSound()).toEqual({ name: 'offer', key: 'offer:c' });
+  });
+
   it('the test tone never holds back an alert: any alert replaces it; the tap plays it over a reminder', async () => {
     const { ctx, started, stopped } = fakeContext();
     setAudioContextFactory(() => ctx);

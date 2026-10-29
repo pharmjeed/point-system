@@ -25,6 +25,23 @@ function watch(registration: ServiceWorkerRegistration): void {
   });
 }
 
+/**
+ * 02 D-15 ج «عند الإبطال: … إغلاق أي إشعار نظامي قديم ممكن» (and sign-out, 02 D-14): the system
+ * notifications this app's worker showed (tags `task:<id>` / `alert:<id>`) are closed, best effort — no
+ * worker, no permission or no API simply leaves nothing to close.
+ */
+export async function closeShownNotifications(): Promise<number> {
+  try {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return 0;
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const shown = (await registration?.getNotifications()) ?? [];
+    for (const notification of shown) notification.close();
+    return shown.length;
+  } catch {
+    return 0;
+  }
+}
+
 export function registerServiceWorker(): void {
   if (!import.meta.env.PROD || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {

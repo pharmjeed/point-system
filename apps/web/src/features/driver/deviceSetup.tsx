@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { newIdempotencyKey } from '@/api/command';
 import { recordAudioTest, updateDevice, type PushSubscriptionBody } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
-import type { AudioTestResult, Me } from '@/api/types';
+import type { AudioTestResult, DriverHome, Me } from '@/api/types';
 import { Dialog } from '@/components';
 import { d03 } from '@/i18n/ar';
 import { runAudioTest } from '@/lib/audio';
@@ -14,7 +14,7 @@ import {
   requestNotifications,
   type NotificationCheck,
 } from '@/lib/deviceChecks';
-import { subscribePush } from '@/lib/push';
+import { existingSubscription, pushSupported, subscribePush, vapidPublicKey } from '@/lib/push';
 import { heartbeatNow } from '@/realtime/manager';
 import { useFieldStore, type AudioCheck } from '@/stores/field';
 
@@ -74,6 +74,54 @@ export function useAudioCheck(me: Me): {
     />
   );
   return { audio, testedAt, test, dialog };
+}
+
+/**
+ * 14 §5.1 «الإشعارات لا تصل لجهازك — أعد تفعيلها»: the permission is granted here, the build can push, but the
+ * server holds no subscription for this session's device (a new sign-in links a new device; 14 §6.6 a dropped
+ * one). D-03 and D-14 then offer «إعداد» (a tap that subscribes).
+ */
+export function pushNotReaching(
+  check: NotificationCheck,
+  home: DriverHome | undefined,
+  subscribed: boolean | null,
+): boolean {
+  return (
+    check === 'on' &&
+    !!vapidPublicKey() &&
+    pushSupported() &&
+    home?.checks.push_enabled === false &&
+    subscribed !== true
+  );
+}
+
+/** Devices whose existing subscription was sent again in this app session. */
+const relinked = new Set<string>();
+
+/**
+ * PNT-072: every sign-in links a new `devices` row with no push endpoint, so a driver who granted the
+ * permission once would stop receiving Web Push from his second shift on. The frame sends the subscription
+ * this browser already holds to the session's device — no permission prompt and no new subscription (14
+ * §6.4.1: those come from a tap only) — when the snapshot says the server has none.
+ */
+export function usePushRelink(me: Me, home: DriverHome | undefined): void {
+  const qc = useQueryClient();
+  const deviceId = me.session.device_id ?? null;
+  const missing = home?.checks.push_enabled === false;
+  useEffect(() => {
+    if (!deviceId || !missing || relinked.has(deviceId) || notificationCheck() !== 'on') return;
+    relinked.add(deviceId);
+    void (async () => {
+      const subscription = await existingSubscription();
+      if (!subscription) return; // none yet: D-03 / D-14 offer «إعداد»
+      await updateDevice(
+        deviceId,
+        { notification_permission: 'granted', display_mode: displayMode(), push_subscription: subscription },
+        newIdempotencyKey(),
+      );
+      void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true }); // checks.push_enabled
+    })().catch(() => relinked.delete(deviceId)); // offline: the next snapshot tries again
+  }, [deviceId, missing, qc]);
 }
 
 export function useNotificationSetup(me: Me): {

@@ -22,6 +22,7 @@ import {
   stepOfMissing,
   vehicleSummary,
 } from '../fieldModel';
+import { forgetIntake } from '../intakePersistence';
 import { intakeSession, step1Session, useIntakeDraft, useIntakeStore, type PhotoSlot } from '../intakeStore';
 import { useCachedHome, useRefreshHome } from '../useDriverHome';
 import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
@@ -83,7 +84,6 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
   const settings = fieldSettings(home);
   const draft = useIntakeDraft(ticket.id);
   const update = useIntakeStore((s) => s.update);
-  const clear = useIntakeStore((s) => s.clear);
   const [keyTag, setKeyTag] = useState(() => draft.keyTag ?? ticket.key_tag ?? '');
   const [notes, setNotes] = useState(() => draft.notes ?? ticket.notes ?? '');
   const [keyTagLocal, setKeyTagLocal] = useState<string | null>(null);
@@ -192,7 +192,9 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         ...(acknowledge ? { acknowledge_incomplete_inspection: true } : {}),
       });
       storeTicket(submitted);
-      clear(ticket.id);
+      // the inputs and the draft row go; photos still uploading stay until the server confirmed them (the
+      // ticket is `parking`: 09 §6.2 takes them, 02 D-06 completes the inspection with them; PNT-071)
+      void forgetIntake(ticket.id, { keepPendingPhotos: true });
       void refresh();
       navigate(driverPaths.intakeLink(ticket.id), { replace: true });
     } catch (error) {

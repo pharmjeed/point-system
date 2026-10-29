@@ -28,12 +28,12 @@ import { useCommand } from '@/hooks/useCommand';
 import { useBrand } from '@/hooks/useMe';
 import { useCommandGate } from '@/realtime/hooks';
 import { useThemeArea } from '@/hooks/useThemeArea';
-import { buttons, d03 } from '@/i18n/ar';
+import { buttons, d03, d14, live } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { wakeLockSupported, type NotificationCheck } from '@/lib/deviceChecks';
 import { formatTime } from '@/lib/format';
 import type { AudioCheck } from '@/stores/field';
-import { useAudioCheck, useNotificationSetup } from './deviceSetup';
+import { pushNotReaching, useAudioCheck, useNotificationSetup } from './deviceSetup';
 import { DriverFrame } from './DriverLayout';
 import { intakeEvents } from './fieldModel';
 import { InstallGuideSheet } from './InstallGuideSheet';
@@ -210,6 +210,18 @@ function StartShift({ me }: { me: Me }) {
             <Button variant="secondary" fullWidth onClick={() => setGuideOpen(true)}>
               {d03.how}
             </Button>
+          ) : null}
+          {pushNotReaching(notifications, home.data, notificationSetup.subscribed) ? (
+            // granted on this browser, but this sign-in's device has no subscription and the browser held
+            // none to send again (the frame tries that first): the tap subscribes (14 §6.4.1)
+            <Banner
+              kind="notifications"
+              rounded
+              message={live.pushNotReaching}
+              actionLabel={d14.setup}
+              loading={notificationSetup.pending}
+              onAction={notificationSetup.enable}
+            />
           ) : null}
         </CheckRow>
         <CheckRow

@@ -54,6 +54,23 @@ async function readyRegistration(): Promise<ServiceWorkerRegistration | null> {
   ]);
 }
 
+/**
+ * The subscription this browser already holds (no permission request, no new subscription): every sign-in
+ * links a new `devices` row without a push endpoint, so the frame sends it again to the session's device.
+ */
+export async function existingSubscription(): Promise<PushSubscriptionBody | null> {
+  if (!vapidPublicKey() || typeof Notification === 'undefined' || Notification.permission !== 'granted')
+    return null;
+  const registration = await readyRegistration();
+  if (!registration) return null;
+  try {
+    const current = await registration.pushManager.getSubscription();
+    return current ? subscriptionBody(current.toJSON()) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Subscribes (or reuses the subscription) once the permission is granted; null when not possible. */
 export async function subscribePush(): Promise<PushSubscriptionBody | null> {
   const key = vapidPublicKey();

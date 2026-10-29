@@ -3,13 +3,14 @@ import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { onApiError, onApiSuccess } from '@/api/client';
 import { queryKeys } from '@/api/queryClient';
-import { detachDrafts } from '@/features/driver/intakePersistence';
+import type { Me } from '@/api/types';
+import { currentOwner, detachDrafts, forgetUserDrafts } from '@/features/driver/intakePersistence';
 import { clearFieldData } from '@/features/driver/intakeStore';
 import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useOnlineListener } from '@/hooks/useOnline';
 import { applyTheme } from '@/lib/theme';
 import { ui } from '@/i18n/ar';
-import { PUSH_CLICK_EVENT } from '@/pwa/register';
+import { closeShownNotifications, PUSH_CLICK_EVENT } from '@/pwa/register';
 import { requestResync, stopRealtime } from '@/realtime/manager';
 import { noteContact } from '@/realtime/syncStore';
 import { useSessionStore } from '@/stores/session';
@@ -59,12 +60,18 @@ export function RootLayout() {
         const area = areaOf(pathname);
         if (isSessionEndError(error)) {
           const end = sessionEndFrom(error);
+          const userId = qc.getQueryData<Me>(queryKeys.me)?.user.id ?? currentOwner();
           endSession(end);
           stopRealtime(); // 02 D-15 ج: the realtime connection closes, the local snapshots are dropped
           resetHomeRegistry();
           qc.clear();
-          detachDrafts(); // 02 §1.9: the local intake drafts are saved and kept for this user (PNT-071)
+          if (end.reason === 'transfer' || end.reason === 'disabled')
+            // 02 §1.11 «بيانات موقع سابق بعد نقل السائق … تُمسح من التخزين المحلي عند الإبطال»: the
+            // previous venue's drafts and photos never stay on the device
+            void forgetUserDrafts(userId);
+          else detachDrafts(); // 02 §1.9, DEC-88: saved and kept for this user (PNT-071)
           clearFieldData();
+          void closeShownNotifications(); // 02 D-15 ج «إغلاق أي إشعار نظامي قديم ممكن»
           navigate(sessionEndPath(end, area), { replace: true });
         } else if (error.code === 'AUTH_SECRET_CHANGE_REQUIRED') {
           if (area === 'staff') goToStaffStep('password');

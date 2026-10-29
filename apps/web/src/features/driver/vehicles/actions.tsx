@@ -93,7 +93,11 @@ export function OnBehalfSheet({ ticket, open, onOpenChange, onDone }: ActionProp
   );
 }
 
-/** «إلغاء طلب الإحضار» before the assignment; after it the server refuses (02 D-13 text). */
+/**
+ * «إلغاء طلب الإحضار» before the assignment; after it the server refuses with INVALID_STATE_TRANSITION
+ * (`details.reason = driver_cancel_after_assignment`), shown with its `message_ar` like every server answer
+ * (DEC-80: no 02 screen text for a server code; docs/progress/notes/s5-web.md DEC-PROPOSED-16).
+ */
 export function CancelRetrievalDialog({
   ticket,
   cycleId,
@@ -104,11 +108,7 @@ export function CancelRetrievalDialog({
   const gate = useCommandGate();
   const [reason, setReason] = useState('');
   const cmd = useCommand((body: { reason: string }, key: string) => cancelRetrieval(cycleId, body, key));
-  const error = cmd.error
-    ? isApiError(cmd.error, 'INVALID_STATE_TRANSITION')
-      ? d13.cancelAfterAssignment
-      : displayMessage(cmd.error)
-    : undefined;
+  const error = cmd.error ? displayMessage(cmd.error) : undefined;
   return (
     <Dialog
       open={open}

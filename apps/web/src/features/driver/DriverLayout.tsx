@@ -24,7 +24,9 @@ import { useAudioStore } from '@/stores/audio';
 import { useFieldStore, type DriverNotice } from '@/stores/field';
 import { ConnectionSheet } from '@/features/session/ConnectionSheet';
 import { useConnection } from '@/features/session/useConnection';
+import { usePushRelink } from './deviceSetup';
 import { driverPaths, offerAction } from './fieldModel';
+import { claimSettle } from './intakePersistence';
 import { OfferSheetBanner, useOfferAlerts } from './LiveOffer';
 import { FramePromotion } from './PromotionDialog';
 import { useDriverHome } from './useDriverHome';
@@ -197,6 +199,28 @@ function ServiceUnavailable() {
   );
 }
 
+/**
+ * PNT-071: the local rows of intakes no longer open on a screen are settled at the first snapshot of an app
+ * session and whenever the browser is back online — pending photos of a submitted intake upload on their
+ * own, rows of tickets that can no longer take them go (./tasks/uploads.ts `settleLocalIntake`, a lazy
+ * chunk).
+ */
+function useLocalIntake(me: Me, home: DriverHome | undefined) {
+  const userId = me.user.id;
+  const draft = useRef<string | null>(null);
+  draft.current = home?.draft_ticket_id ?? null;
+  const ready = !!home;
+  useEffect(() => {
+    const settle = () =>
+      void import('./tasks/uploads')
+        .then((m) => m.settleLocalIntake(userId, draft.current))
+        .catch(() => undefined); // IndexedDB or the chunk unavailable: the next attempt
+    if (ready && claimSettle(userId)) settle();
+    window.addEventListener('online', settle);
+    return () => window.removeEventListener('online', settle);
+  }, [ready, userId]);
+}
+
 /** 14 §7 rule 2: a sound that was due on a stopped AudioContext is recorded once as `blocked`. */
 function useReportBlockedAudio(me: Me) {
   const status = useAudioStore((s) => s.status);
@@ -231,6 +255,8 @@ export function DriverFrame({ me, withNav, children }: { me: Me; withNav: boolea
   useScreenWakeLock(onDuty && wakeLockPref);
   useOfferAlerts(onDuty ? home?.offer : null);
   useReportBlockedAudio(me);
+  useLocalIntake(me, home);
+  usePushRelink(me, home);
   const [sheetOpen, setSheetOpen] = useState(false);
   const title = home?.venue?.name_ar || me.active_assignment?.venue_name_ar || brand.staffNameAr;
   return (
