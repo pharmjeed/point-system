@@ -49,6 +49,13 @@ const visible = () => typeof document === 'undefined' || document.visibilityStat
 
 const MOVING = new Set(['accepted', 'in_progress']);
 
+/** `ticket.updated` causes that change the handover code's state, not the ticket's version (14 §3.4). */
+const CODE_CAUSES: ReadonlySet<string> = new Set([
+  'handover.code_issued',
+  'handover.code_attempt_failed',
+  'handover.code_locked',
+]);
+
 function stopOfferSounds(offerIds: readonly string[], head: OfferCard | null | undefined, taskId: string) {
   for (const id of offerIds) stopSound(`offer:${id}`);
   if (head && (head.task_id === taskId || offerIds.includes(head.offer_id)))
@@ -73,14 +80,16 @@ interface MessageState {
 /**
  * The WhatsApp notices of a ticket this driver created or holds (the API sends `ticket.updated` to the creator
  * and the assignee): W-01 failed (02 D-07 «بعد المغادرة»; D-07 itself clears it while open) — gone once the link
- * is no longer `failed` —, and the customer who stopped the messages (14 §5.1).
+ * is no longer `failed` —, and the customer who stopped the messages (14 §5.1). A W-01 failure counts only
+ * while the link itself is `failed`: the failure of an older W-01, superseded by a resend (link_version + 1),
+ * leaves the link as it is (ticket-link applyW01Outcome) and is no notice.
  */
 export function waNotices(summary: TicketSummary, cause: string | undefined, message?: MessageState): void {
   const store = useFieldStore.getState();
   const base = { taskId: summary.id, ticketId: summary.id, ticketNumber: summary.display_number };
   const w01Failed =
-    (cause === 'ticket.wa_link_changed' && summary.wa_link_status === 'failed') ||
-    (message?.purpose === 'W-01' && message.status === 'failed');
+    summary.wa_link_status === 'failed' &&
+    (cause === 'ticket.wa_link_changed' || (message?.purpose === 'W-01' && message.status === 'failed'));
   if (w01Failed) store.addNotice({ kind: 'waFailed', ...base });
   else if (summary.wa_link_status !== 'failed') store.dismissNotice(`waFailed:${summary.id}`);
   if (cause === 'ticket.wa_link_changed' && summary.wa_link_status === 'opted_out')
@@ -216,14 +225,21 @@ export function driverEvents(options: AcquireOptions) {
         const fresh = summary.version >= (ticketVersions.get(summary.id) ?? 0);
         if (fresh) {
           ticketVersions.set(summary.id, summary.version);
-          // 09 §5.1: the pending QR confirmation reaches the privileged viewer only; D-07's dialog keeps it
-          if (wa_link_pending !== undefined) useLinkStore.getState().notePending(summary.id, wa_link_pending);
+          // 09 §5.1: the pending QR confirmation reaches the privileged viewer only; D-07's dialog keeps it. The
+          // API leaves the field out when nothing waits, so any other link state clears the one kept
+          const links = useLinkStore.getState();
+          if (summary.wa_link_status !== 'pending_confirmation') links.notePending(summary.id, null);
+          else if (wa_link_pending !== undefined) links.notePending(summary.id, wa_link_pending);
           waNotices(summary as TicketSummary, cause, message);
         }
         const detail = qc.getQueryData<TicketDetail>(queryKeys.ticket(summary.id));
-        // a message state (W-05 failed on D-10 / D-11) does not move the ticket's version: read it again
-        if (detail && (detail.version < summary.version || message))
+        // a message state (W-05 failed on D-10 / D-11) and the handover code's changes (a code issued — also
+        // the supervisor's reissue, DEC-207 —, locked) do not move the ticket's version: read it again, and the
+        // task card's code state with it (D-11 follows the live code, 14 §3.4)
+        const codeChanged = !!cause && CODE_CAUSES.has(cause);
+        if (detail && (detail.version < summary.version || message || codeChanged))
           void qc.invalidateQueries({ queryKey: queryKeys.ticket(summary.id) });
+        if (codeChanged) refreshHome();
         qc.setQueriesData<VehiclePages>({ queryKey: queryKeys.vehicles }, (data) =>
           patchVehicles(data, summary as TicketSummary),
         );

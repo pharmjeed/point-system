@@ -419,6 +419,30 @@ describe('ticket.updated and the WhatsApp link (02 D-07, D-10, D-11; 14 §5.1; 0
     expect(useFieldStore.getState().notices).toEqual([]);
   });
 
+  it('the failure of an older W-01 (superseded by a resend) on a ticket not failed raises no notice', () => {
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'linked',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'pending_send',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
   it('an older ticket.updated arriving late raises no notice (versions)', () => {
     onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 7 })));
     onEvent(
@@ -454,8 +478,54 @@ describe('ticket.updated and the WhatsApp link (02 D-07, D-10, D-11; 14 §5.1; 0
       ),
     );
     expect(useLinkStore.getState().pending[IDS.ticketA]).toEqual(pending);
-    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_pending: null })));
+    // the API leaves the field out when nothing waits (ticket-updates.ts): any other link state clears it
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'none', version: 6 }),
+      ),
+    );
     expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a pending confirmation without the field (a viewer the API does not privilege) keeps nothing stale', () => {
+    const first = {
+      link_code_id: globalThis.crypto.randomUUID(),
+      inbound_phone_masked: '05•••••887',
+      received_at: '2026-10-29T18:00:00.000Z',
+    };
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'ticket.wa_link_changed',
+          wa_link_status: 'pending_confirmation',
+          wa_link_pending: first,
+        }),
+      ),
+    );
+    // the code expired unanswered (none), then another message waits — announced without the field
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'none', version: 6 }),
+      ),
+    );
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'pending_confirmation', version: 7 }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a handover code issued or locked (no version move) re-reads the ticket and the task card (14 §3.4)', () => {
+    detail(5);
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    onEvent(event('ticket.updated', summary({ cause: 'handover.code_issued', status: 'ready' })));
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.home, exact: true });
   });
 
   it('a message state re-reads the ticket although its version did not move (W-05 on D-10 / D-11)', () => {
