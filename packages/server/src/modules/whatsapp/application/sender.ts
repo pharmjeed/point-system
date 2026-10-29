@@ -14,6 +14,7 @@ import {
   type WaSendJobPayload,
 } from '@point/shared';
 import { raiseAlert } from '../../../core/alerts/alerts.js';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import { decrypt } from '../../../core/crypto/crypto.js';
 import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
@@ -769,6 +770,9 @@ export class WhatsappSender {
       const body = res.body as GraphSendResponse;
       const wamid = body.messages?.[0]?.id;
       if (wamid) {
+        // 17 H-03 KP-4: accepted by the provider, nothing recorded yet — the status webhooks (matched by
+        // biz_opaque_callback_data) or the CRASH_WAIT_MS retry decide; one duplicate at most (TC-016)
+        killPoint('wa_send_after_provider_ok_before_done');
         const contact = body.contacts?.[0];
         await this.db.transaction((tx) =>
           this.recordAccepted(
@@ -1239,6 +1243,8 @@ export function waSendHandler(runtime: () => WhatsappRuntime): JobHandler {
     type: 'job.wa_send',
     mode: 'external',
     async handle(ctx) {
+      // 17 H-03 KP-3: the outbox row is leased (`processing`, locked_until) and nothing else happened (TC-015)
+      killPoint('outbox_after_lock_before_send');
       await new WhatsappSender(runtime(), ctx).run();
     },
   };

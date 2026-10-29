@@ -1,5 +1,6 @@
 import { WA_TEMPLATE_DEFINITIONS, type WaMessageKind } from '@point/shared';
 import { autoResolveAlerts, raiseAlert } from '../../../core/alerts/alerts.js';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import { sha256Hex } from '../../../core/crypto/crypto.js';
 import type { Database } from '../../../core/db/database.js';
 import { lockTickets } from '../../../core/db/locks.js';
@@ -143,6 +144,8 @@ export class WhatsappInboundProcessor {
         }
         for (const m of Array.isArray(v.messages) ? v.messages : []) {
           await this.message(channel, m, v.contacts);
+          // 17 H-03 KP-2: the press's transaction (the cycle) committed, the event not yet `processed` (TC-014)
+          if (m?.type === 'button') killPoint('inbound_after_cycle_commit');
           relevant++;
         }
         for (const s of Array.isArray(v.statuses) ? v.statuses : []) {

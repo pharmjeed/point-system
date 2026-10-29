@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import type { Clock } from '../../../core/clock/clock.js';
 import { sha256Hex } from '../../../core/crypto/crypto.js';
 import type { Database } from '../../../core/db/database.js';
@@ -114,6 +115,8 @@ export class WhatsappWebhookIntake {
       }
       return { id: r?.id ?? null, duplicate: !r };
     });
+    // 17 H-03 KP-1: the row committed and the 200 not written — Meta redelivers, body_sha256 deduplicates (TC-013)
+    if (stored.id) killPoint('webhook_after_store_before_ack');
     metrics.waWebhookReceived.inc();
     metrics.waWebhookLastReceived.set(now.getTime() / 1000);
     metrics.waWebhookDuration.observe(Number(process.hrtime.bigint() - started) / 1e9);

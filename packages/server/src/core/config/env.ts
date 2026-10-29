@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { unknownKillPoints } from '../chaos/kill-points.js';
 
 const bool = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1');
 const int = (def: number) => z.coerce.number().int().nonnegative().default(def);
@@ -196,6 +197,10 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
   }
   if (env.APP_ENV === 'production' && source.CHAOS_KILL_AT?.trim()) {
     out.push('CHAOS_KILL_AT is refused in production (17 H-03)');
+  } else if (source.CHAOS_KILL_AT?.trim()) {
+    // a misspelt point would leave a chaos run silently unarmed
+    const unknown = unknownKillPoints(source.CHAOS_KILL_AT);
+    if (unknown.length) out.push(`CHAOS_KILL_AT names unknown kill points: ${unknown.join(', ')} (17 H-03)`);
   }
   return out;
 }
