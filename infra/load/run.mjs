@@ -362,6 +362,7 @@ async function main() {
     k6Result,
     windows: { prepStart, prepEnd, burstStart, burstEnd, drainEnd, settleEnd },
   });
+  results.metrics = await metricsSnapshot();
   results.consistency = await consistency(pool);
   results.invariants = await schemaInvariants();
   results.verdict = verdict(results);
@@ -755,6 +756,28 @@ async function measure({ world, tickets, presses, bots, simc, k6, k6Result, wind
   };
 }
 
+/** The api's and the worker's /metrics at the end of the run (17 §11 «لقطة لوحات المراقبة»): files + selected series. */
+async function metricsSnapshot() {
+  const pick =
+    /^point_(dispatch_accept_rejections_total|dispatch_offers_total|dispatch_escalations_total|db_tx_retries_total|ws_connections|wa_send_total|wa_skipped_total|push_send_total|outbox_events_total\{[^}]*status="(failed|dead)"|outbox_dead|tasks_stuck|(db_lock_wait|wa_webhook_duration|dispatch_time_to_claim|dispatch_pass_duration|timer_lag)_seconds_(sum|count))/;
+  const out = {};
+  for (const [name, port] of [
+    ['api', ports.metrics],
+    ['worker', ports.metrics + 1],
+  ]) {
+    try {
+      const text = await fetch(`http://127.0.0.1:${port}/metrics`, {
+        signal: AbortSignal.timeout(5000),
+      }).then((r) => r.text());
+      writeFileSync(join(OUT, `metrics-${name}.txt`), text);
+      out[name] = text.split('\n').filter((l) => pick.test(l));
+    } catch (e) {
+      out[name] = [`unavailable: ${e.message}`];
+    }
+  }
+  return out;
+}
+
 function verdict(r) {
   const checks = [
     ['M1 p95 request save < 2 s (observed commit)', (r.m1.observed.p95 ?? Infinity) < 2000],
@@ -840,6 +863,12 @@ function report(r) {
     ),
     '',
     `Consistency: ${JSON.stringify(r.consistency)}. Schema invariants: ${r.invariants.passed ? 'ALL INVARIANT TESTS PASSED' : 'FAILED'}.`,
+    '',
+    'Metrics snapshot at the end of the run (selected series; full text in metrics-api.txt / metrics-worker.txt):',
+    '',
+    '```',
+    ...Object.entries(r.metrics ?? {}).flatMap(([proc, lines]) => lines.map((l) => `${proc}  ${l}`)),
+    '```',
   ];
   return lines.join('\n');
 }
