@@ -29,9 +29,18 @@ import { fmtNode, Ltr, withTicket } from '@/i18n/fmtNode';
 import { formatClock } from '@/lib/format';
 import { useCommandGate } from '@/realtime/hooks';
 import { useFieldStore } from '@/stores/field';
-import { useDriverMe } from '../DriverLayout';
+import { useChannelHealth, useDriverMe } from '../DriverLayout';
 import { driverPaths } from '../fieldModel';
-import { linkActions, linkMode, phoneTail, qrRemainingMs, type LinkActions } from '../linkModel';
+import {
+  linkActions,
+  linkBody,
+  linkMode,
+  ownParkTask,
+  pendingConfirmation,
+  phoneTail,
+  qrRemainingMs,
+  type LinkActions,
+} from '../linkModel';
 import { useLinkStore } from '../linkStore';
 import { useCachedHome, useRefreshHome } from '../useDriverHome';
 import { ChangePhoneSheet } from '../vehicles/actions';
@@ -107,6 +116,7 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
   const home = useCachedHome();
   const refresh = useRefreshHome();
   const gate = useCommandGate();
+  const health = useChannelHealth(home);
   const storeTicket = useStoreTicket();
   const chosen = useLinkStore((s) => s.method[ticket.id]);
   const qr = useLinkStore((s) => s.qr[ticket.id]);
@@ -114,26 +124,26 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
   const now = useServerNow(1000);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [fullscreen, setFullscreen] = useState(false);
-  const [confirmedHere, setConfirmedHere] = useState(false);
   const [stubGiven, setStubGiven] = useState(false);
   /** A pending confirmation the server refused to settle here (expired, not this driver's code). */
   const [dismissed, setDismissed] = useState<string | null>(null);
 
   const status = ticket.wa_link_status;
   const mode = linkMode(ticket, chosen, !!qr);
+  const view = linkBody(mode, status);
   const actions = linkActions(ticket);
   const qrLeft = qr ? qrRemainingMs(qr, now) : 0;
   const qrLive = !!qr && qr.status === 'active' && qrLeft > 0;
-  const waiting =
-    mode === 'qr'
-      ? status === 'pending_confirmation' || qrLive
-      : mode === 'direct' && status === 'pending_send';
+  // W-01 on its way, a message waiting for the answer, or a code the customer may scan
+  const waiting = status === 'pending_send' || status === 'pending_confirmation' || (mode === 'qr' && qrLive);
   useTicket(ticket.id, { poll: waiting ? LINK_POLL_MS : false });
 
-  const pending = ticket.wa_link_pending ?? notedPending ?? null;
-  const pendingCodeId =
-    status === 'pending_confirmation' ? (pending?.link_code_id ?? qr?.link_code_id ?? null) : null;
+  const confirmation = pendingConfirmation(ticket, notedPending, qr);
+  const pending = confirmation?.pending ?? null;
+  const pendingCodeId = confirmation?.linkCodeId ?? null;
   const confirmOpen = !!pendingCodeId && pendingCodeId !== dismissed;
+  // 12 §7.3 «القناة down وقت الاستلام»: W-01 waits for the channel — the paper stub as a fallback
+  const channelDown = health === 'down' && (status === 'none' || status === 'pending_send');
   // this screen shows the send state itself: the frame's «تعذر إرسال تذكرة #n» notice goes (02 D-07)
   useEffect(() => {
     useFieldStore.getState().dismissNotice(`waFailed:${ticket.id}`);
@@ -144,16 +154,20 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
     if (qr && (status === 'linked' || ticket.channel === 'paper'))
       useLinkStore.getState().setQr(ticket.id, null);
   }, [qr, status, ticket.channel, ticket.id]);
+  // a code the customer sent is used up (it never becomes active again, 11 §5.2): if nobody answers before it
+  // expires, the panel offers «رمز جديد» instead of drawing it again
+  useEffect(() => {
+    if (qr?.status === 'active' && pendingCodeId === qr.link_code_id)
+      useLinkStore.getState().setQr(ticket.id, { ...qr, status: 'pending_confirmation' });
+  }, [qr, pendingCodeId, ticket.id]);
 
-  const parkTask =
-    ticket.open_task && (ticket.open_task.type === 'park' || ticket.open_task.type === 'repark')
-      ? ticket.open_task.id
-      : home?.current_task?.ticket.id === ticket.id
-        ? home.current_task.task.id
-        : null;
+  // «متابعة إلى الصف» and DEC-40's «تذكرة ورقية» belong to the driver who parks it; on another driver's ticket
+  // (D-13 relink) D-07 returns to D-13
+  const parkTask = ownParkTask(ticket, home, me.user.id);
   const onward = parkTask
     ? { label: d07.toParking, go: () => navigate(driverPaths.park(parkTask)) }
     : { label: buttons.back, go: () => navigate(`${paths.driverVehicles}/${ticket.id}`) };
+  const shown: LinkActions = { ...actions, paper: actions.paper && !!parkTask };
 
   const afterCommand = (updated?: TicketDetail) => {
     if (updated) storeTicket(updated);
@@ -179,8 +193,8 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
       await direct.run({ method: 'direct' });
       const links = useLinkStore.getState();
       links.setQr(ticket.id, null); // the direct link revokes the live code (`linked_direct`)
+      links.notePending(ticket.id, null);
       links.setMethod(ticket.id, 'direct');
-      setConfirmedHere(false);
       afterCommand(); // pending_send: version + 1 — the ticket is read again
     } catch (error) {
       onCommandError(error);
@@ -193,6 +207,7 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
       const result = await issue.run({ method: 'qr' });
       const links = useLinkStore.getState();
       if (result.qr) links.setQr(ticket.id, result.qr);
+      links.notePending(ticket.id, null); // a code is issued only while no message waits (07)
       links.setMethod(ticket.id, 'qr');
       setDismissed(null);
     } catch (error) {
@@ -205,12 +220,22 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
       const updated = await confirm.run({ link_code_id: pendingCodeId, matches });
       useLinkStore.getState().setQr(ticket.id, null); // used (yes) or revoked (no): «رمز جديد» next
       useLinkStore.getState().notePending(ticket.id, null);
-      setConfirmedHere(matches);
       afterCommand(updated);
     } catch (error) {
-      // the code expired, is not this driver's, or is gone: the dialog closes, the message stays on screen
-      if (isApiError(error, 'WA_LINK_CODE_EXPIRED', 'RESOURCE_NOT_FOUND', 'PERMISSION_DENIED'))
+      // the code expired, is not this driver's, is gone or no longer waits (revoked meanwhile): the dialog
+      // closes, the message stays on screen
+      if (
+        isApiError(
+          error,
+          'WA_LINK_CODE_EXPIRED',
+          'RESOURCE_NOT_FOUND',
+          'PERMISSION_DENIED',
+          'INVALID_STATE_TRANSITION',
+        )
+      ) {
         setDismissed(pendingCodeId);
+        useLinkStore.getState().notePending(ticket.id, null);
+      }
       onCommandError(error);
       afterCommand();
     }
@@ -218,7 +243,7 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
 
   const optionButtons = (
     <LinkOptions
-      actions={actions}
+      actions={shown}
       disabled={!gate.ready}
       resendLoading={direct.pending}
       qrLoading={issue.pending}
@@ -227,11 +252,23 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
       onPaper={() => setSheet('paper')}
     />
   );
+  const paperButton = (
+    <LinkOptions
+      actions={{ resend: false, qr: false, paper: shown.paper }}
+      disabled={!gate.ready}
+      resendLoading={false}
+      qrLoading={false}
+      onResend={resend}
+      onQr={newQr}
+      onPaper={() => setSheet('paper')}
+    />
+  );
+  const channelBanner = channelDown ? <Banner kind="whatsapp" rounded message={d07.channelDown} /> : null;
   const canChangePhone = vehicleActions(me, ticket).changePhone;
   const digits = phoneTail(ticket.customer?.phone_masked);
 
   let body: ReactNode;
-  if (mode === 'paper') {
+  if (view === 'paper') {
     body = (
       <>
         <p className="m-0 text-lg">
@@ -245,16 +282,15 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
         />
       </>
     );
-  } else if (mode === 'direct' || (SENDING.includes(status) && !qrLive)) {
-    // الوضع أ — and the QR mode once the customer was confirmed (W-01 on its way); a code issued while an
-    // earlier W-01 is still pending keeps the panel (12 §7.2: whichever links first wins)
+  } else if (view === 'status') {
+    // الوضع أ — and the QR method once the ticket is linked (the customer confirmed, W-01 on its way)
     body = (
       <>
         <LinkStatusChip status={status} />
         {SENDING.includes(status) ? (
           <>
             <p className="m-0 text-lg" data-link-sent>
-              {confirmedHere || mode === 'qr'
+              {mode === 'qr'
                 ? d07.linked
                 : digits
                   ? fmtNode(d07.sentTo, { digits: <Ltr>{digits}</Ltr> })
@@ -265,35 +301,35 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
         ) : null}
         {status === 'failed' ? <Banner kind="error" rounded message={d07.failed} /> : null}
         {status === 'opted_out' ? <Banner kind="warning" rounded message={live.optedOut} /> : null}
-        {!SENDING.includes(status) ? optionButtons : null}
+        {channelBanner}
+        {!SENDING.includes(status) ? optionButtons : channelDown ? paperButton : null}
       </>
     );
   } else {
-    // الوضع ب — the customer panel, then the driver area
+    // الوضع ب — the customer panel, then the driver area; a code issued while an earlier W-01 is still
+    // pending keeps the panel until one of them links (12 §7.2), «انتهت صلاحية الرمز.» once it ran out
     body = (
       <>
         {status === 'failed' ? <Banner kind="error" rounded message={d07.failed} /> : null}
         {status === 'opted_out' ? <Banner kind="warning" rounded message={live.optedOut} /> : null}
+        {channelBanner}
         <QrArea
           ticketNumber={ticket.display_number}
           venue={ticket.venue_name_ar ?? home?.venue?.name_ar ?? ''}
           qrText={qr && qr.status === 'active' ? qr.qr_text : null}
           left={qrLeft}
+          canIssue={actions.qr}
           fullscreen={fullscreen}
           onExitFullscreen={() => setFullscreen(false)}
         />
         <div className="flex flex-wrap gap-2" data-driver-area>
           {actions.qr ? (
-            <Button
-              variant={qrLive ? 'secondary' : 'primary'}
-              loading={issue.pending}
-              disabled={!gate.ready}
-              onClick={newQr}
-            >
+            // 03 §1 rule 2: «متابعة إلى الصف» is the one primary action of the screen
+            <Button variant="secondary" loading={issue.pending} disabled={!gate.ready} onClick={newQr}>
               {d07.newCode}
             </Button>
           ) : null}
-          {actions.paper || canChangePhone ? (
+          {shown.paper || canChangePhone ? (
             <Button variant="secondary" onClick={() => setSheet('changeMethod')}>
               {d07.changeMethod}
             </Button>
@@ -309,7 +345,12 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
   }
 
   return (
-    <section className="flex flex-col gap-4" data-link-mode={mode} data-link-status={status}>
+    <section
+      className="flex flex-col gap-4"
+      data-link-mode={mode}
+      data-link-view={view}
+      data-link-status={status}
+    >
       <Header title={withTicket(mode === 'paper' ? d07.paperTitle : d07.title, ticket.display_number)} />
       {body}
       {commandError ? (
@@ -325,7 +366,7 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
       <Button size="lg" id="to-parking" onClick={onward.go}>
         {onward.label}
       </Button>
-      {mode === 'direct' && SENDING.includes(status) ? (
+      {view === 'status' && mode === 'direct' && SENDING.includes(status) ? (
         <button type="button" className="pt-link self-center" onClick={() => setSheet('notReceived')}>
           {d07.notReceived}
         </button>
@@ -357,7 +398,7 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
               {d05.methods.direct}
             </Button>
           ) : null}
-          {actions.paper ? (
+          {shown.paper ? (
             <Button variant="secondary" fullWidth onClick={() => setSheet('paper')}>
               {d07.paper}
             </Button>
@@ -382,8 +423,8 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
           onDone={(updated) => {
             const links = useLinkStore.getState();
             links.setQr(ticket.id, null);
+            links.notePending(ticket.id, null);
             links.setMethod(ticket.id, 'direct');
-            setConfirmedHere(false);
             setFullscreen(false);
             afterCommand(updated);
           }}
@@ -470,12 +511,14 @@ function LinkOptions({
 /**
  * The customer panel (02 D-07 ب): the code with its countdown, «بانتظار رسالتك…», «انتهت صلاحية الرمز.» at
  * zero; «ملء الشاشة» shows the panel alone, «إغلاق» in the corner or a long press brings the driver area back.
+ * Without a code in memory it says «اضغط «رمز جديد»…» when the button is there (`canIssue`), else nothing.
  */
 function QrArea({
   ticketNumber,
   venue,
   qrText,
   left,
+  canIssue,
   fullscreen,
   onExitFullscreen,
 }: {
@@ -483,6 +526,7 @@ function QrArea({
   venue: string;
   qrText: string | null;
   left: number;
+  canIssue: boolean;
   fullscreen: boolean;
   onExitFullscreen: () => void;
 }) {
@@ -493,6 +537,7 @@ function QrArea({
     if (expired && fullscreen) onExitFullscreen();
   }, [expired, fullscreen, onExitFullscreen]);
   if (!qrText || !svg) {
+    if (!qrText && !canIssue) return null;
     return (
       <p className="m-0 text-text-muted" data-qr-none>
         {qrText ? ui.loading : d07.noCode}
@@ -519,8 +564,11 @@ function QrArea({
       </div>
       {expired ? <Banner kind="warning" rounded message={d07.expired} /> : null}
       {fullscreen ? (
+        // the overlay is the customer panel's white surface in both themes: its «إغلاق» takes the light ink
+        // (03 §1.1 contrast; the panel itself is always light, 03 §3.13)
         <div
           className="pt-qr-full"
+          data-theme="light"
           role="dialog"
           aria-modal="true"
           aria-label={d07.fullscreen}

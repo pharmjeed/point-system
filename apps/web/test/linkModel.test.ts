@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { LinkCodeQr, TicketDetail } from '@/api/types';
+import type { DriverHome, LinkCodeQr, Task, TaskCard, TicketDetail } from '@/api/types';
 import {
+  canRelink,
   channelBody,
   channelForm,
   channelIssues,
   DEFAULT_CHANNEL_FORM,
+  keepsRecordedPhone,
   linkActions,
+  linkBody,
   linkMode,
   needsQrAtSubmit,
+  ownParkTask,
+  pendingConfirmation,
   phoneTail,
   qrRemainingMs,
   QR_REUSE_MIN_MS,
@@ -104,6 +109,39 @@ describe('D-05 local checks before «التالي» (DEC-356)', () => {
     });
     expect(channelForm(ticket({}), { channel: 'whatsapp', paperSerial: '004521' }).channel).toBe('whatsapp');
   });
+
+  it("without this device's draft the method follows the number on record (a QR draft stays QR)", () => {
+    const saved = { plate: { country: 'SA', digits: '1234', display: '1234' } } as Partial<TicketDetail>;
+    // saved in the QR mode: WhatsApp, the first step on the server, no number
+    expect(channelForm({ ...ticket({ status: 'received' }), ...saved }, {}).method).toBe('qr');
+    // saved with a number: direct
+    expect(
+      channelForm(
+        { ...ticket({ status: 'received', customer: { phone_masked: '05•••••567' } }), ...saved },
+        {},
+      ).method,
+    ).toBe('direct');
+    // a fresh draft (nothing saved yet) starts with «رقم جوال العميل» (02 D-05)
+    expect(channelForm(ticket({ status: 'received' }), {}).method).toBe('direct');
+    // this device's choice wins
+    expect(channelForm({ ...ticket({ status: 'received' }), ...saved }, { method: 'direct' }).method).toBe(
+      'direct',
+    );
+  });
+
+  it('a number on record without the local copy is kept: nothing to type, neither it nor the consent sent', () => {
+    const recorded = '05•••••567';
+    expect(keepsRecordedPhone(form({}), recorded)).toBe(true);
+    expect(keepsRecordedPhone(form({ phone: '0501112222' }), recorded)).toBe(false);
+    expect(keepsRecordedPhone(form({ method: 'qr' }), recorded)).toBe(false);
+    expect(keepsRecordedPhone(form({}), null)).toBe(false);
+    expect(channelIssues(form({}), null, recorded)).toEqual([]);
+    expect(channelBody(form({}), null, recorded)).toEqual({ channel: 'whatsapp', paper_serial: null });
+    // another number typed: the number and a new consent are needed again
+    expect(channelIssues(form({ phone: '0501112222' }), '+966501112222', recorded)).toEqual(['consent']);
+    // QR still empties the number on record (02 D-05)
+    expect(channelBody(form({ method: 'qr' }), null, recorded)).toMatchObject({ customer_phone: null });
+  });
 });
 
 describe('D-06 QR right before the submit', () => {
@@ -170,5 +208,87 @@ describe('D-07 mode and actions', () => {
     expect(phoneTail('05•••••567')).toBe('567');
     expect(phoneTail('')).toBe('');
     expect(phoneTail(undefined)).toBe('');
+  });
+});
+
+describe('D-07 body (review: the QR method shows the panel until the ticket is linked)', () => {
+  it('a code issued while W-01 is pending keeps the panel — also once it expired; linked → mode أ', () => {
+    expect(linkBody('qr', 'pending_send')).toBe('panel');
+    expect(linkBody('qr', 'none')).toBe('panel');
+    expect(linkBody('qr', 'failed')).toBe('panel');
+    expect(linkBody('qr', 'pending_confirmation')).toBe('panel');
+    expect(linkBody('qr', 'linked')).toBe('status');
+    expect(linkBody('direct', 'pending_send')).toBe('status');
+    expect(linkBody('direct', 'failed')).toBe('status');
+    expect(linkBody('paper', 'none')).toBe('paper');
+  });
+});
+
+describe('D-07 pending confirmation (review: a stale message never answers for a newer code)', () => {
+  const c1 = { link_code_id: 'c1', inbound_phone_masked: '05•••••887', received_at: '2026-06-01T18:00:00Z' };
+  const c2 = { ...c1, link_code_id: 'c2', inbound_phone_masked: '05•••••223' };
+
+  it('the projection decides when it carries the field (null = none)', () => {
+    const t = { wa_link_status: 'pending_confirmation' as const, wa_link_pending: c2 };
+    expect(pendingConfirmation(t, c1, qr({ link_code_id: 'c2' }))).toEqual({ linkCodeId: 'c2', pending: c2 });
+  });
+
+  it('a noted message for another code than the one issued since is ignored; the issued code answers', () => {
+    const t = { wa_link_status: 'pending_confirmation' as const };
+    expect(pendingConfirmation(t, c1, qr({ link_code_id: 'c2' }))).toEqual({
+      linkCodeId: 'c2',
+      pending: null,
+    });
+    expect(pendingConfirmation(t, c2, qr({ link_code_id: 'c2' }))).toEqual({ linkCodeId: 'c2', pending: c2 });
+    // no code issued here (the creator of a parked ticket): the noted message
+    expect(pendingConfirmation(t, c1, undefined)).toEqual({ linkCodeId: 'c1', pending: c1 });
+    expect(pendingConfirmation(t, null, undefined)).toBeNull();
+  });
+
+  it('nothing to confirm unless a message waits', () => {
+    expect(pendingConfirmation({ wa_link_status: 'none' }, c1, qr())).toBeNull();
+  });
+});
+
+describe('D-13 relink and D-07 own task (review)', () => {
+  it('«إعادة الربط بواتساب» only when D-07 can act: a QR until parked, or a resend to a number on record', () => {
+    expect(canRelink(ticket({ status: 'parked', wa_link_status: 'failed' }))).toBe(true);
+    expect(canRelink(ticket({ status: 'requested', wa_link_status: 'failed' }))).toBe(false);
+    expect(
+      canRelink(
+        ticket({ status: 'requested', wa_link_status: 'failed', customer: { phone_masked: '05•••••567' } }),
+      ),
+    ).toBe(true);
+    expect(canRelink(ticket({ status: 'parked', wa_link_status: 'linked' }))).toBe(false);
+    expect(canRelink(ticket({ status: 'parked', wa_link_status: 'pending_send' }))).toBe(false);
+  });
+
+  const task = (patch: Partial<Task>): Task => ({
+    id: 'park-1',
+    ticket_id: 't1',
+    type: 'park',
+    status: 'in_progress',
+    priority_at: '2026-06-01T18:00:00Z',
+    seq: 1,
+    version: 1,
+    ...patch,
+  });
+  const home = (current: Partial<TaskCard> | null): Pick<DriverHome, 'current_task'> => ({
+    current_task: current as TaskCard | null,
+  });
+
+  it("«متابعة إلى الصف» and the paper stub only on the park task in this driver's hands", () => {
+    const mine = { id: 't1', open_task: task({ assignee: { id: 'me', full_name: 'أحمد' } }) };
+    expect(ownParkTask(mine, undefined, 'me')).toBe('park-1');
+    // another driver's park task: the assignee is hidden from the minimal projection
+    const theirs = { id: 't1', open_task: task({ assignee: null }) };
+    expect(ownParkTask(theirs, home(null), 'me')).toBeNull();
+    // the home snapshot's current task (the detail may not show the assignee yet)
+    expect(
+      ownParkTask(theirs, home({ task: task({}), ticket: { id: 't1' } as TaskCard['ticket'] }), 'me'),
+    ).toBe('park-1');
+    // a retrieval is not a parking task
+    const retrieval = task({ type: 'retrieve', assignee: { id: 'me', full_name: 'أحمد' } });
+    expect(ownParkTask({ id: 't1', open_task: retrieval }, undefined, 'me')).toBeNull();
   });
 });

@@ -52,7 +52,7 @@ export function driverNav(home: DriverHome | undefined): NavItem[] {
 }
 
 /** WhatsApp health from `channel.status` when newer than the snapshot's `channel_health` (07 §4.3). */
-function useChannelHealth(home: DriverHome | undefined) {
+export function useChannelHealth(home: DriverHome | undefined) {
   const channel = useSyncStore((s) => s.channel);
   if (channel && (!home || Date.parse(channel.changedAt) >= Date.parse(home.server_time)))
     return channel.health;

@@ -1,5 +1,6 @@
 import type { Me, TicketDetail, TicketStatus } from '@/api/types';
 import { onlyDigits } from '@/lib/digits';
+import { canRelink } from '../linkModel';
 
 /** The D-12 chips (02 D-12 «ربط الفلاتر بالحالات»); `all` sends no status filter. */
 export type VehicleFilter = 'all' | 'parked' | 'requested' | 'retrieving' | 'ready' | 'intake';
@@ -43,8 +44,8 @@ export function unassignedRetrieval(ticket: TicketDetail): { cycleId: string } |
  * - «إلغاء طلب الإحضار» while the request is not assigned (`retrieval.cancel`);
  * - «تغيير رقم الجوال» for the creator or the assignee (the full projection) of a WhatsApp ticket after the
  *   intake (07: the draft's number is edited in D-05, a paper ticket has no conversation to move);
- * - «إعادة الربط بواتساب» on a WhatsApp ticket after the intake whose link is `none` or `failed` (`wa.link`):
- *   it opens D-07, which offers what the server takes now (02 D-13);
+ * - «إعادة الربط بواتساب» on a WhatsApp ticket after the intake whose link is `none` or `failed` (`wa.link`),
+ *   when D-07 can act on it (a QR until parked, or the resend to a number on record): it opens D-07 (02 D-13);
  * - «إبلاغ عن واقعة» always (`incident.create`).
  */
 export function vehicleActions(me: Me, ticket: TicketDetail) {
@@ -54,7 +55,7 @@ export function vehicleActions(me: Me, ticket: TicketDetail) {
       open &&
       ticket.channel === 'whatsapp' &&
       ticket.status !== 'received' &&
-      (ticket.wa_link_status === 'none' || ticket.wa_link_status === 'failed') &&
+      canRelink(ticket) &&
       hasPermission(me, 'wa.link'),
     onBehalf: open && ticket.status === 'parked' && hasPermission(me, 'retrieval.request_on_behalf'),
     cancel:
