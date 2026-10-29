@@ -198,8 +198,9 @@ D-13's sentence goes. — affected files: 02 D-13 (or 08, if a dedicated code fo
 
 ## Review responses
 
-Two reviewers, 28 findings (numbered as received). Every finding was checked against the code; all were real. Fixed
-in `75df9a1`, `d65b882`, `dc62021`, `db21c59`; the e2e proof in `3578668`, `1ede0dd` and the commit after these notes.
+Two reviewers, 28 findings (numbered as received). Every finding was checked against the code; all were real (four
+are duplicates: 18 = 1, 19 = 2, 22 ⊂ 5, 26 = 13). Fixed in `75df9a1`, `d65b882`, `dc62021`, `db21c59`, `7195a3e`; the
+e2e proof in `3578668`, `1ede0dd`, `1250598`.
 
 | # | Finding | Response |
 |---|---|---|
@@ -232,30 +233,31 @@ Found while proving them: the fake hub published a task card for a withdrawal an
 left (the API publishes the Task view, and the cancel before the repark it causes); fixed in the fake, and the client
 now handles either order (DEC-PROPOSED-19).
 
-## Test results (this branch, 2026-10-29)
+## Test results (this branch, 2026-10-29, after the review fixes)
 
-- `pnpm test:e2e` (mocked, Chromium, 360/390/430, `--workers=2`): 440 passed, 280 skipped (the functional specs run at
-  390 only), 0 failed — including the new driver-vehicles (9), driver-persistence (3), pwa (4), driver-account (6),
-  driver-system (7) specs and the layout entries for D-12, D-13 and D-14.
-- `pnpm test:int` (PostgreSQL 16): 68 files passed, 1 skipped; 586 tests passed, 1 skipped.
-- `pnpm lint` and `pnpm typecheck`: clean.
-- `pnpm test` (unit + web-unit): 1235 passed, 1 failed — `apps/api/test/deploy-config.test.ts` «CSP of the PWA», a
-  failure of the wave base (the Caddyfile of DEC-192 allows `'unsafe-inline'` in `style-src-elem`; the test was not
-  updated). This branch does not touch either file; `wave4/load-chaos` (c6a93cb) and `wave4/g4-rehearsal` (b0f881a)
-  each carry the test fix.
+- `pnpm test:e2e` (mocked, Chromium, 360/390/430, `--workers=2`, at `1250598`): 458 passed, 316 skipped (the
+  functional specs run at 390 only), 0 failed (11.5 min) — including the new driver-frame (8), the extended
+  driver-live (8), driver-vehicles (10), driver-persistence (6), driver-account (7), pwa (6) and staff-alerts (5)
+  specs. After `7195a3e` (the D-12 reload guard): `driver-vehicles.spec.ts` at 390 ×2 — 20 passed; `driver-frame.spec.ts`
+  ×3 before it — 21 passed (the withdrawal and repark cases are timing-sensitive; they were made deterministic, see the
+  fake hub note above).
+- `pnpm test:int` (PostgreSQL 16, under the lock, at `7195a3e`): 68 files passed, 1 skipped; 586 tests passed, 1
+  skipped.
+- `pnpm lint` and `pnpm typecheck` (at `7195a3e`): clean.
+- `pnpm test` (unit + web-unit, at `7195a3e`): 76 files, 1281 tests passed (web-unit: 34 files, 423 tests).
 
 ## Bundle
 
-`vite build` (e2e build of this branch): the entry chunk `index-*.js` 278 kB and the largest preloaded chunk 203 kB
-— no chunk reaches Vite's 500 kB warning; the realtime runtime (Socket.IO, the zod schemas), the staff copy, the
-task screens and D-12/D-13 are lazy chunks.
+`vite build` (e2e build of this branch, after the review fixes): the entry chunk `index-*.js` 290 kB (278 kB before:
+the frame now carries the notices, the promotion dialog, the request banner and D-15 ح) and the largest preloaded
+chunk 196 kB — no chunk reaches Vite's 500 kB warning; the realtime runtime (Socket.IO, the zod schemas), the staff
+copy, the task screens and D-12/D-13 are lazy chunks.
 
 ## Observations for the lead
 
-- `pnpm lint` (`scripts/check-secrets.mjs`) scans `apps/web/dist` when it exists: the S-13 WhatsApp settings
-  (`src/features/admin/WhatsAppSections.tsx`, web-supervisor stream) show `env://WA_ACCESS_TOKEN`-style references,
-  which put server-only variable names into the bundle and fail the check after any local build. CI lints before
-  building, so it stays green there; either the placeholders or the check's dist rule needs a decision.
+- `pnpm lint` (`scripts/check-secrets.mjs`) scans `apps/web/dist` when it exists. The S-13 `env://WA_ACCESS_TOKEN`-style
+  placeholders that failed it after a local build are gone on the current base: the check passes with this branch's
+  e2e build present (1266 files).
 - The Service Worker matches its cache with `ignoreVary` (DEC-PROPOSED-9): `vite preview` (and any server adding
   `Vary: Origin`) otherwise misses every module script offline.
 
