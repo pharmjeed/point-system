@@ -806,7 +806,7 @@ export class WhatsappSender {
     const next = await this.db.transaction((tx) => this.recordFailure(tx, ch, s, r, failure, c));
     if (next.kind === 'retry')
       throw new RetryableJobError(`whatsapp send retry (${c.providerCode})`, next.delayMs);
-    if (next.kind === 'defer') return this.defer(r.n.id, next.delayMs, 'channel_down');
+    if (next.kind === 'defer') return this.defer(r.n.id, next.delayMs, next.reason);
   }
 
   /** Locks the ticket (L5) before the notification (L9) for outcome transactions (canon §14ب). */
@@ -887,12 +887,18 @@ export class WhatsappSender {
     r: Reservation,
     f: GraphFailure,
     c: WaErrorClassification,
-  ): Promise<{ kind: 'retry' | 'defer'; delayMs: number } | { kind: 'final' }> {
+  ): Promise<
+    | { kind: 'retry'; delayMs: number }
+    | { kind: 'defer'; delayMs: number; reason: string }
+    | { kind: 'final' }
+  > {
     type Verdict =
       | { kind: 'defer' }
+      | { kind: 'hold' }
       | { kind: 'skip'; reason: NotificationSkippedReason }
       | { kind: 'retry'; delayMs: number }
       | { kind: 'fail'; exhausted: boolean };
+    const exhausted = c.retryable && r.counted >= s.send_max_attempts;
     const verdict: Verdict =
       c.cls === 'channel'
         ? r.sendKind === 'session'
@@ -901,8 +907,12 @@ export class WhatsappSender {
         : c.cls === 'outside_window' && r.sendKind === 'session'
           ? { kind: 'skip', reason: 'stale' }
           : c.retryable
-            ? r.counted >= s.send_max_attempts
-              ? { kind: 'fail', exhausted: true }
+            ? exhausted
+              ? r.sendKind === 'template' &&
+                c.cls !== 'pair_limit' &&
+                (await this.channelFailingThroughout(tx, r.n))
+                ? { kind: 'hold' }
+                : { kind: 'fail', exhausted: true }
               : { kind: 'retry', delayMs: sendRetryDelayMs(r.counted) }
             : { kind: 'fail', exhausted: false };
     const message = sanitizeProviderMessage(f.message);
@@ -949,7 +959,28 @@ export class WhatsappSender {
           ],
         );
         this.ctx.logger.error(log, 'whatsapp channel error: sending stopped until the channel is healthy');
-        return { kind: 'defer', delayMs: CHANNEL_DOWN_DEFER_MS };
+        return { kind: 'defer', delayMs: CHANNEL_DOWN_DEFER_MS, reason: 'channel_down' };
+      case 'hold':
+        // DEC-PROPOSED-6: the attempts ran out while every attempt of the channel has been failing since this
+        // message's first one — a provider outage, not this message. It waits like a `down` channel (the
+        // attempt does not count) until the channel works again or the 2-minute rule turns it down; the
+        // send-time skip rules then leave only the current state (source §14, 12 §5.14)
+        await tx.query(
+          `UPDATE notifications SET attempts = GREATEST(attempts - 1, 0), last_error_code = $2, last_error_message = $3,
+                  next_attempt_at = $4 WHERE id = $1`,
+          [
+            n.id,
+            c.internalCode,
+            `provider ${c.providerCode}`,
+            new Date(tx.now.getTime() + CHANNEL_DOWN_DEFER_MS),
+          ],
+        );
+        await this.temporaryHealthRules(tx, ch, n.org_id);
+        this.ctx.logger.warn(
+          { ...log, retry_in_ms: CHANNEL_DOWN_DEFER_MS },
+          'whatsapp send held: every attempt of the channel is failing',
+        );
+        return { kind: 'defer', delayMs: CHANNEL_DOWN_DEFER_MS, reason: 'channel_failing' };
       case 'skip':
         await this.skip(tx, n, verdict.reason);
         return { kind: 'final' };
@@ -1158,6 +1189,35 @@ export class WhatsappSender {
       if (approved.n < WA_TEMPLATE_NAMES.length) return;
     }
     await setChannelHealth(tx, ch.id, 'healthy', 'probe_and_send_ok', 'job.wa_send');
+  }
+
+  /**
+   * DEC-PROPOSED-6: has every attempt of the channel been failing since this notification's first attempt? True
+   * when no attempt of the organization's channel succeeded since then and another notification's temporary
+   * attempts failed after the last success too — the provider is failing, not this message. A message that fails
+   * alone keeps the 5 attempts of 12 §5.9 (131056, the pair limit of one recipient, never counts).
+   */
+  private async channelFailingThroughout(tx: Tx, n: NotificationRow): Promise<boolean> {
+    const lookback = new Date(tx.now.getTime() - 15 * 60_000);
+    const r = await tx.one<{ failing: boolean }>(
+      `WITH own AS (
+         SELECT min(started_at) AS first FROM notification_attempts WHERE notification_id = $2
+       ), last_ok AS (
+         SELECT max(a.finished_at) AS at
+           FROM notification_attempts a JOIN notifications x ON x.id = a.notification_id
+          WHERE x.org_id = $1 AND x.channel = 'whatsapp' AND a.outcome = 'success' AND a.finished_at > $3
+       )
+       SELECT (own.first IS NOT NULL
+               AND (last_ok.at IS NULL OR last_ok.at < own.first)
+               AND EXISTS (
+                 SELECT 1 FROM notification_attempts a JOIN notifications x ON x.id = a.notification_id
+                  WHERE x.org_id = $1 AND x.channel = 'whatsapp' AND a.notification_id <> $2
+                    AND a.outcome = 'retryable_error' AND a.provider_error_code IS DISTINCT FROM '131056'
+                    AND a.started_at > COALESCE(last_ok.at, $3))) AS failing
+         FROM own, last_ok`,
+      [n.org_id, n.id, lookback],
+    );
+    return r.failing;
   }
 
   /** Temporary error rate > 20 % in 5 min → degraded; every attempt failing for 2 min → down. */
