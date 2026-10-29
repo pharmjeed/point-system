@@ -14,8 +14,9 @@
 | [`../test-evidence/devices/PROTOCOL.md`](../test-evidence/devices/PROTOCOL.md) | فريق الاختبار | مصفوفة الأجهزة الفعلية (17 H-07، G3 وPNT-099) |
 | [`../test-evidence/devices/TEMPLATE.md`](../test-evidence/devices/TEMPLATE.md) | فريق الاختبار | قالب تسجيل كل جولة أجهزة |
 
-النماذج المطبوعة في `brand/print/`: دفتر تذاكر «مصاف» (`masaf-paper-ticket.pdf`)، وسجل الانقطاع المرقّم (`point-outage-log.html`)،
-وتسليم النقد للمشرف (`point-cash-handover.html`).
+النماذج المطبوعة في `brand/print/`، جاهزة للطباعة: دفتر تذاكر «مصاف» (`masaf-paper-ticket.pdf`)، وسجل الانقطاع المرقّم
+(`point-outage-log.pdf`: غلاف ثم P01…P50؛ يُطبع العدد المحسوب لكل موقع في `paper-fallback.md` §2)، وتسليم النقد للمشرف
+(`point-cash-handover.pdf`). ملفات HTML بجانبها هي المصدر، وتُفتح من مجلد `brand/print/` داخل المستودع فقط.
 
 الأدلة اليدوية تُحفظ في `docs/test-evidence/`: `devices/<التاريخ>/`، `restore/<التاريخ>.md`، `g2/<التاريخ>.md`،
 `rehearsal/<التاريخ>.md`. لا رقم عميل ولا رمز تسليم ولا سر في أي دليل؛ الفيديو خارج المستودع برابطه وبصمته `sha256`.
