@@ -615,6 +615,11 @@ export const d10 = {
 export const d11 = {
   title: 'التسليم · #{n}',
   askCode: 'اطلب من العميل رمز التسليم',
+  /**
+   * 02 D-11's «[Hint] الرمز من 6 أرقام ووصل العميل في رسالة «…».» without the customer brand (canon §1 rule 2
+   * keeps it on D-07, S-03 and S-13 only): not in 02 as worded — docs/progress/notes/driver-gaps.md.
+   */
+  codeHint: 'الرمز من 6 أرقام ووصل العميل في رسالة واتساب.',
   codeMeta: 'المحاولات المتبقية: {n} · صالح حتى {time}',
   askStub: 'اطلب من العميل كعب التذكرة الورقية',
   stub: 'رقم الكعب',

@@ -331,6 +331,7 @@ function HandoverForm({
           <h2 className="pt-section-title" id="verify-title">
             {d11.askCode}
           </h2>
+          <p className="m-0 text-sm text-text-muted">{d11.codeHint}</p>
           <CodeInput
             id="handover-code"
             value={code}

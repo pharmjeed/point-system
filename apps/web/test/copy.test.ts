@@ -83,6 +83,7 @@ const NOT_IN_02: Record<string, string[]> = {
   // 02 D-07 without the customer brand (canon §1 rule 2), the dialog without a sender number, the panel with
   // no code to show — docs/progress/notes/driver-gaps.md
   d07: ['sentTo', 'confirmTitleUnknown', 'noCode'],
+  d11: ['codeHint'], // 02 D-11's hint without the customer brand (canon §1 rule 2) — notes/driver-gaps.md
   d13: ['consent'], // 02 D-05's sentence without the customer brand (canon §1 rule 2) — notes/s5-web.md
 };
 
