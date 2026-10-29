@@ -518,6 +518,38 @@ describe('PNT-079 — POST /v1/tickets/{ticketId}/custody-transfers', () => {
     await expectConsistent(t.db);
   });
 
+  it('key with holder unknown handed to another driver: the accepted retrieval follows him, picked up (task.reassigned + task.key_picked_up)', async () => {
+    const p = await parkedPaperTicket(t, 'DRV2');
+    ok(await transfer('SUP-R', p.ticketId, { subject: 'key', to_holder_type: 'unknown' }), 201);
+    t.clock.advanceSeconds(1);
+    const r = ok(await requestRetrieval(t, 'SUP-R', p.ticketId), 201);
+    const offer = (await liveOffer(t.db, U.DRV1))!;
+    ok(await accept(t, 'DRV1', offer.id));
+    t.clock.advanceSeconds(2);
+    ok(
+      await transfer('SUP-R', p.ticketId, { subject: 'key', to_holder_type: 'driver', to_holder_id: U.DRV3 }),
+      201,
+    );
+    expect(
+      (await one(t.db, `SELECT status, key_picked_up_at, assignee_id FROM tasks WHERE id = $1`, [
+        r.task.id,
+      ])) as unknown,
+    ).toEqual({ status: 'accepted', key_picked_up_at: t.clock.now(), assignee_id: U.DRV3 });
+    expect((await outboxEvents(t.db, 'task.reassigned')).at(-1).payload.payload).toMatchObject({
+      task_id: r.task.id,
+      from_assignee_id: U.DRV1,
+      to_assignee_id: U.DRV3,
+      from_status: 'accepted',
+      trigger: 'custody_transfer',
+    });
+    expect((await outboxEvents(t.db, 'task.key_picked_up')).map((e) => e.payload.payload)).toEqual([
+      { task_id: r.task.id, ticket_id: p.ticketId, assignee_id: U.DRV3, key_slot_id: null },
+    ]);
+    expect(await state(U.DRV1)).toBe('available');
+    ok(await startRetrieval(t, 'DRV3', r.task.id));
+    await expectConsistent(t.db);
+  });
+
   it('validation, permission, closed and unknown tickets', async () => {
     const d = await paperTicketInParking(t, 'DRV1');
     expect(
