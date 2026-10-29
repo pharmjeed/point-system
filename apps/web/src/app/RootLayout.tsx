@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { onApiError, onApiSuccess } from '@/api/client';
 import { queryKeys } from '@/api/queryClient';
+import { detachDrafts } from '@/features/driver/intakePersistence';
 import { clearFieldData } from '@/features/driver/intakeStore';
 import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useOnlineListener } from '@/hooks/useOnline';
@@ -62,6 +63,7 @@ export function RootLayout() {
           stopRealtime(); // 02 D-15 ج: the realtime connection closes, the local snapshots are dropped
           resetHomeRegistry();
           qc.clear();
+          detachDrafts(); // 02 §1.9: the local intake drafts are saved and kept for this user (PNT-071)
           clearFieldData();
           navigate(sessionEndPath(end, area), { replace: true });
         } else if (error.code === 'AUTH_SECRET_CHANGE_REQUIRED') {

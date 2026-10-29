@@ -30,7 +30,8 @@ import {
 } from '../fieldModel';
 import { step1Session, useIntakeDraft, useIntakeStore } from '../intakeStore';
 import { useRefreshHome } from '../useDriverHome';
-import { TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
+import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
+import { useIntakeTicket } from './intakeDraft';
 import { DiscardDraft } from './DiscardDraft';
 
 /** Field keys a server error points at on D-05 (08 field / code mapping). */
@@ -77,11 +78,12 @@ const SAUDI_STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos 
  */
 export function IntakeVehiclePage() {
   const { ticketId = '' } = useParams();
-  const ticket = useTicket(ticketId);
+  const { ticket, hydrated } = useIntakeTicket(ticketId);
   if (ticket.data) {
     if (ticket.data.status === 'parking') return <Navigate to={driverPaths.intakeLink(ticketId)} replace />;
     if (ticket.data.status !== 'received') return <Navigate to={paths.driverHome} replace />;
-    return <VehicleStep ticket={ticket.data} />;
+    // the draft saved before a reload comes back first (PNT-071)
+    return hydrated ? <VehicleStep ticket={ticket.data} /> : <TaskSkeleton />;
   }
   if (ticket.error)
     return <LoadError error={ticket.error} onRetry={() => void ticket.refetch()} backTo={paths.driverHome} />;
@@ -111,7 +113,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
     step1Session(ticket.id),
   );
 
-  // keep what the driver typed for this ticket while the app runs (02 D-05; IndexedDB is PNT-071)
+  // keep what the driver typed for this ticket: memory now, IndexedDB 300 ms later (02 D-05, PNT-071)
   useEffect(() => {
     update(ticket.id, { plate, vehicle, paperSerial });
   }, [ticket.id, plate, vehicle, paperSerial, update]);

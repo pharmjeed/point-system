@@ -77,6 +77,30 @@ describe('Idempotency-Key per user intent (02 §1.8, 03 §3.1, 07 §1.4)', () =>
     expect(session.busy).toBe(false);
   });
 
+  it('reports the unfinished intent and resumes it after a reload: same body → same key (PNT-071)', async () => {
+    const reported: Array<string | null> = [];
+    const before = new CommandSession<{ a: number }>({ onIntent: (i) => reported.push(i?.key ?? null) });
+    const keys: string[] = [];
+    const failing = async (_: { a: number }, key: string) => {
+      keys.push(key);
+      throw new NetworkError('offline');
+    };
+    await expect(before.run({ a: 1 }, failing, { sleep: noSleep })).rejects.toBeInstanceOf(NetworkError);
+    expect(reported).toEqual([keys[0]]); // kept: the outcome is unknown
+    const saved = before.intent;
+
+    // the page reloads: a new session resumes the saved intent
+    const after = new CommandSession<{ a: number }>({ onIntent: (i) => reported.push(i?.key ?? null) });
+    after.restore(saved);
+    await after.run({ a: 1 }, async (_, key) => keys.push(key), { sleep: noSleep });
+    expect(new Set(keys).size).toBe(1);
+    expect(reported).toEqual([keys[0], null]); // the success ends the intent
+    // a changed body after the reload is a new intent
+    const other = new CommandSession<{ a: number }>();
+    other.restore(saved);
+    expect(other.keyFor({ a: 2 })).not.toBe(keys[0]);
+  });
+
   it('fingerprints inputs independently of key order', () => {
     expect(fingerprint({ a: 1, b: { c: 2, d: 3 } })).toBe(fingerprint({ b: { d: 3, c: 2 }, a: 1 }));
     expect(fingerprint({ a: 1 })).not.toBe(fingerprint({ a: 2 }));

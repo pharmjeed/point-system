@@ -2,7 +2,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { logout } from '@/api/auth';
 import { ApiError, displayMessage } from '@/api/errors';
+import { queryKeys } from '@/api/queryClient';
+import type { Me } from '@/api/types';
 import { paths } from '@/app/paths';
+import { forgetUserDrafts } from '@/features/driver/intakePersistence';
 import { clearFieldData } from '@/features/driver/intakeStore';
 import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useSubmitGuard } from '@/hooks/useCommand';
@@ -33,6 +36,8 @@ export function useLogout(area: 'driver' | 'staff') {
       }
       stopRealtime();
       resetHomeRegistry();
+      // sign-out takes the local intake drafts of this user with it (03 §4.3, 05 §14; PNT-071)
+      await forgetUserDrafts(qc.getQueryData<Me>(queryKeys.me)?.user.id);
       qc.clear();
       reset();
       clearFieldData();

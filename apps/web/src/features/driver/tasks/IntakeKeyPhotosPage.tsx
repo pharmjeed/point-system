@@ -22,13 +22,16 @@ import {
   stepOfMissing,
   vehicleSummary,
 } from '../fieldModel';
-import { step1Session, useIntakeDraft, useIntakeStore, type PhotoSlot } from '../intakeStore';
+import { intakeSession, step1Session, useIntakeDraft, useIntakeStore, type PhotoSlot } from '../intakeStore';
 import { useCachedHome, useRefreshHome } from '../useDriverHome';
-import { TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
+import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
+import { useIntakeTicket } from './intakeDraft';
 import { DiscardDraft } from './DiscardDraft';
 import { startPhotoUpload } from './uploads';
 
 const STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos }];
+
+type SubmitBody = { expected_version: number; acknowledge_incomplete_inspection?: boolean };
 
 /** Codes that send the driver back to D-05 with the field highlighted (02 D-06 table). */
 const STEP1_CODES = [
@@ -47,11 +50,12 @@ const STEP1_CODES = [
  */
 export function IntakeKeyPhotosPage() {
   const { ticketId = '' } = useParams();
-  const ticket = useTicket(ticketId);
+  const { ticket, hydrated } = useIntakeTicket(ticketId);
   if (ticket.data) {
     if (ticket.data.status === 'parking') return <Navigate to={driverPaths.intakeLink(ticketId)} replace />;
     if (ticket.data.status !== 'received') return <Navigate to={paths.driverHome} replace />;
-    return <KeyPhotosStep ticket={ticket.data} />;
+    // the draft and the pending photos saved before a reload come back first (PNT-071)
+    return hydrated ? <KeyPhotosStep ticket={ticket.data} /> : <TaskSkeleton />;
   }
   if (ticket.error)
     return <LoadError error={ticket.error} onRetry={() => void ticket.refetch()} backTo={paths.driverHome} />;
@@ -90,10 +94,16 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     undefined,
     step1Session(ticket.id),
   );
-  const save = useCommand((body: IntakePatch, key: string) => patchIntake(ticket.id, body, key));
+  // their unfinished intents survive a reload: the resend is the same key (02 §1.8 item 1, TC-061)
+  const save = useCommand(
+    (body: IntakePatch, key: string) => patchIntake(ticket.id, body, key),
+    undefined,
+    intakeSession<IntakePatch>(ticket.id, 'save'),
+  );
   const submit = useCommand(
-    (body: { expected_version: number; acknowledge_incomplete_inspection?: boolean }, key: string) =>
-      submitIntake(ticket.id, body, key),
+    (body: SubmitBody, key: string) => submitIntake(ticket.id, body, key),
+    undefined,
+    intakeSession<SubmitBody>(ticket.id, 'submit'),
   );
 
   useEffect(() => {
