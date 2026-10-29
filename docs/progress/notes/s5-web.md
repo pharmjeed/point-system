@@ -120,6 +120,18 @@ worker posts `{type: 'push.click', url, kind, age_ms}` to the focused window (a 
 otherwise); the app navigates and resyncs; sending the analytics event is left to the analytics ticket. — affected
 files: 15 (event source).
 
+## Test results (this branch, 2026-10-29)
+
+- `pnpm test:e2e` (mocked, Chromium, 360/390/430, `--workers=2`): 440 passed, 280 skipped (the functional specs run at
+  390 only), 0 failed — including the new driver-vehicles (9), driver-persistence (3), pwa (4), driver-account (6),
+  driver-system (7) specs and the layout entries for D-12, D-13 and D-14.
+- `pnpm test:int` (PostgreSQL 16): 68 files passed, 1 skipped; 586 tests passed, 1 skipped.
+- `pnpm lint` and `pnpm typecheck`: clean.
+- `pnpm test` (unit + web-unit): 1235 passed, 1 failed — `apps/api/test/deploy-config.test.ts` «CSP of the PWA», a
+  failure of the wave base (the Caddyfile of DEC-192 allows `'unsafe-inline'` in `style-src-elem`; the test was not
+  updated). This branch does not touch either file; `wave4/load-chaos` (c6a93cb) and `wave4/g4-rehearsal` (b0f881a)
+  each carry the test fix.
+
 ## Bundle
 
 `vite build` (e2e build of this branch): the entry chunk `index-*.js` 278 kB and the largest preloaded chunk 203 kB
