@@ -253,6 +253,8 @@ describe('an outage intake re-entered as a paper draft, then reconciled (paper-f
       {
         payment_id: p.id,
         ticket_id: d.ticketId,
+        // 11 `PaymentRecorded` (DEC-285): `cycle_id: UUID | null` — a paper draft has no retrieval cycle
+        cycle_id: null,
         method: 'cash',
         amount_halalas: 2000,
         collected_by: U.DRV1,
