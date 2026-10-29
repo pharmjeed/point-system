@@ -8,7 +8,7 @@ import {
 } from '../../../core/crypto/crypto.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
-import type { JobHandler } from '../../../core/outbox/dispatcher.js';
+import { STALE_TIMER, type JobHandler } from '../../../core/outbox/dispatcher.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import { venueSettingsFor } from '../../venues-events/index.js';
 import type { CycleRow, TicketRow } from '../infra/rows.js';
@@ -365,7 +365,7 @@ export const claimCodeExpireHandler: JobHandler = {
       `SELECT c.*, t.venue_id FROM claim_codes c JOIN tickets t ON t.id = c.ticket_id WHERE c.id = $1 FOR NO KEY UPDATE OF c`,
       [id],
     );
-    if (!c || c.consumed_at || c.revoked_at) return;
+    if (!c || c.consumed_at || c.revoked_at) return STALE_TIMER; // consumed, revoked or already cleaned up
     if (new Date(c.expires_at).getTime() > tx.now.getTime()) {
       await schedule(tx, 'job.claim_code_expire', new Date(c.expires_at), {
         orgId: c.org_id,

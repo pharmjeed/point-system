@@ -523,6 +523,7 @@ volumes:
 | `point_dispatch_open_tasks{pool}` · `point_dispatch_broadcast_open{pool}` | Gauge | الطلبات المفتوحة وجولات البث القائمة لكل مجموعة |
 | `point_dispatch_oldest_open_request_seconds{pool}` | Gauge | عمر أقدم طلب إحضار مفتوح لم يبلغ الجاهزية (`now() - priority_at`) لكل مجموعة نشطة، وصفر بلا طلب (15 §12 «تجاوز زمن الانتظار الكلي»؛ مقترح في `docs/progress/notes/server-gaps.md`) |
 | `point_timer_lag_seconds{job}` | Histogram | تأخر تنفيذ المؤقت عن `available_at` (تنبيه إذا p95 أكبر من ثانيتين) |
+| `point_timer_stale_total{job}` | Counter | مؤقتات وجدت كيانها تغيّر أو علامة حلقتها تقدمت فانتهت `done` بلا أثر («مهام قديمة»، 11 §8.11؛ مقترح في `docs/progress/notes/server-gaps.md`) |
 | `point_outbox_due{type}` | Gauge | صفوف Outbox المستحقة غير المعالجة |
 | `point_outbox_oldest_pending_seconds{type}` | Gauge | عمر أقدم صف مستحق |
 | `point_outbox_events_total{type,status}` | Counter | نتائج المعالجة (`done`، `failed`، `dead`، `canceled`) |

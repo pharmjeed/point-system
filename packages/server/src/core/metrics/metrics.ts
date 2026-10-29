@@ -72,6 +72,11 @@ export const metrics = {
     ['pool'],
   ),
   timerLag: h('point_timer_lag_seconds', 'Timer execution lag behind available_at', ['job'], FAST),
+  timerStale: c(
+    'point_timer_stale_total',
+    'Timers that found their aggregate changed or their episode mark moved on, done with no effect (11 §8.11)',
+    ['job'],
+  ),
   outboxDue: g('point_outbox_due', 'Due unprocessed outbox rows', ['type']),
   outboxOldestPending: g('point_outbox_oldest_pending_seconds', 'Age of the oldest due row', ['type']),
   outboxEvents: c('point_outbox_events_total', 'Outbox processing results', ['type', 'status']),

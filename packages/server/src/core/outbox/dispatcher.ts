@@ -4,6 +4,7 @@ import type { Clock } from '../clock/clock.js';
 import type { Database } from '../db/database.js';
 import type { Tx } from '../db/tx.js';
 import type { Logger } from '../logging/logger.js';
+import { metrics } from '../metrics/metrics.js';
 import { OUTBOX_NOTIFY_CHANNEL } from './outbox-writer.js';
 
 export interface OutboxRow {
@@ -57,6 +58,13 @@ export interface JobContext {
   renewLease(): Promise<void>;
 }
 
+/**
+ * What a timer handler returns when its aggregate changed or its episode mark moved on (11 §8.11: «تنتهي المهمة done
+ * بلا أثر وتُحسب في مقياس مهام قديمة»): the row still ends `done`, and `point_timer_stale_total{job}` counts it.
+ */
+export const STALE_TIMER = 'stale' as const;
+export type JobResult = void | typeof STALE_TIMER;
+
 export interface JobHandler {
   type: string;
   /**
@@ -65,7 +73,7 @@ export interface JobHandler {
    * 'external': the handler talks to the network (Graph API, Push) and opens its own short transactions.
    */
   mode: 'tx' | 'external';
-  handle(ctx: JobContext): Promise<void>;
+  handle(ctx: JobContext): Promise<JobResult>;
 }
 
 /** Consumer of domain events (AnalyticsProjector, AlertAutoResolver…): idempotent and order-independent. */
@@ -212,16 +220,19 @@ export class OutboxDispatcher {
       }
       const handler = this.handlers.get(row.type);
       if (!handler) throw new PermanentJobError(`no handler registered for ${row.type}`);
+      let result: JobResult = undefined;
       if (handler.mode === 'tx') {
         await this.db.transaction(async (tx) => {
+          result = undefined;
           if (!(await this.markDone(tx, row))) return;
-          await handler.handle({ row, tx, db: this.db, clock: this.clock, logger: log, renewLease });
+          result = await handler.handle({ row, tx, db: this.db, clock: this.clock, logger: log, renewLease });
         });
       } else {
-        await handler.handle({ row, db: this.db, clock: this.clock, logger: log, renewLease });
+        result = await handler.handle({ row, db: this.db, clock: this.clock, logger: log, renewLease });
         await this.markDone(this.db, row);
       }
       this.hooks.onOutcome?.(row, 'done', lagMs);
+      if (result === STALE_TIMER) metrics.timerStale.inc({ job: row.type });
     } catch (e) {
       await this.fail(row, e, log, lagMs);
     }

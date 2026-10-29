@@ -1,4 +1,4 @@
-# Prometheus alerting rules of «بوينت · POINT» for the operator: the «مراقبة» routing of 15 §12, the suggested
+# Prometheus alerting rules of the platform for the operator: the «مراقبة» routing of 15 §12, the suggested
 # thresholds of 12 §13, the timer lag of 10 §12.2 and the backup failure of 05 §12.3 (initial values, tuned after the
 # pilot). The supervisors' alerts stay in the application (14 §8); these watch the system around it.
 #
@@ -179,14 +179,14 @@ groups:
           severity: warning
           spec: '12 §13 point_wa_channel_health'
         annotations:
-          summary: 'قناة «مصاف» degraded (12 §5.14)'
+          summary: 'قناة واتساب العملاء degraded (12 §5.14)'
       - alert: PointWaChannelDown
         expr: max(point_wa_channel_health) == 2
         labels:
           severity: critical
           spec: '12 §13 point_wa_channel_health'
         annotations:
-          summary: 'قناة «مصاف» down (wa_channel_down في التطبيق، 12 §5.14)'
+          summary: 'قناة واتساب العملاء down (wa_channel_down في التطبيق، 12 §5.14)'
           runbook: 'docs/12_WhatsApp_Integration_Spec.md §14'
       - alert: PointWaServiceMessagesMonth
         expr: max(point_wa_service_messages_month) >= 800

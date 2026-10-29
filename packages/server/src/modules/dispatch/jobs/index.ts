@@ -2,7 +2,7 @@ import { raiseAlert } from '../../../core/alerts/alerts.js';
 import { audit } from '../../../core/audit/audit-writer.js';
 import { lockOffers, lockTasks } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
-import type { JobHandler } from '../../../core/outbox/dispatcher.js';
+import { STALE_TIMER, type JobHandler } from '../../../core/outbox/dispatcher.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import { metrics } from '../../../core/metrics/metrics.js';
 import { orgSettings } from '../../../core/settings/settings-service.js';
@@ -42,13 +42,13 @@ export const offerExpireHandler: JobHandler = {
     const pre = await tx.maybeOne<
       Pick<OfferRow, 'id' | 'task_id' | 'dispatch_pool_id' | 'status' | 'version'>
     >(`SELECT id, task_id, dispatch_pool_id, status, version FROM task_offers WHERE id = $1`, [offerId]);
-    if (!pre || pre.status !== 'active') return; // accepted, revoked or already expired
-    if (row.aggregate_version != null && pre.version !== row.aggregate_version) return; // stale
+    if (!pre || pre.status !== 'active') return STALE_TIMER; // accepted, revoked or already expired
+    if (row.aggregate_version != null && pre.version !== row.aggregate_version) return STALE_TIMER;
     const pool = await ensurePoolLocked(tx, pre.dispatch_pool_id); // L1
     await lockTasks(tx, [pre.task_id]); // L4
     const [offer] = (await lockOffers(tx, [pre.id])) as OfferRow[]; // L7
-    if (!offer || offer.status !== 'active') return;
-    if (row.aggregate_version != null && offer.version !== row.aggregate_version) return;
+    if (!offer || offer.status !== 'active') return STALE_TIMER;
+    if (row.aggregate_version != null && offer.version !== row.aggregate_version) return STALE_TIMER;
     const cfg = await dispatchSettings(tx, pool.venue_id);
     const due = addMs(new Date(offer.expires_at!), cfg.acceptGraceMs);
     if (due.getTime() > tx.now.getTime()) {
@@ -99,11 +99,11 @@ function remindHandler(
         o.reminded_at == null &&
         (mode === 'broadcast' || row.aggregate_version == null || o.version === row.aggregate_version);
       const pre = await tx.maybeOne<OfferRow>(`SELECT * FROM task_offers WHERE id = $1`, [offerId]);
-      if (!applies(pre)) return; // claimed, expired, revoked, converted or already reminded
+      if (!applies(pre)) return STALE_TIMER; // claimed, expired, revoked, converted or already reminded
       const pool = await ensurePoolLocked(tx, pre!.dispatch_pool_id); // L1
       await lockTasks(tx, [pre!.task_id]); // L4
       const [offer] = (await lockOffers(tx, [pre!.id])) as OfferRow[]; // L7
-      if (!applies(offer)) return;
+      if (!applies(offer)) return STALE_TIMER;
       if (offer!.reminder_at && new Date(offer!.reminder_at).getTime() > tx.now.getTime()) {
         await schedule(tx, type, new Date(offer!.reminder_at), {
           orgId: offer!.org_id,
@@ -142,10 +142,10 @@ export const escalateUnacceptedHandler: JobHandler = {
       iso(t.queued_at) === new Date(mark).toISOString() &&
       t.escalated_at == null;
     const pre = await tx.maybeOne<TaskRow>(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
-    if (!waiting(pre)) return; // claimed, canceled, requeued (new episode) or already escalated
+    if (!waiting(pre)) return STALE_TIMER; // claimed, canceled, requeued (new episode) or already escalated
     const pool = await ensurePoolLocked(tx, pre!.dispatch_pool_id); // L1
     const [task] = (await lockTasks(tx, [taskId])) as TaskRow[]; // L4
-    if (!waiting(task)) return;
+    if (!waiting(task)) return STALE_TIMER;
     await tx.query(`UPDATE tasks SET escalated_at = $2 WHERE id = $1`, [task!.id, tx.now]); // 10 §2.7: no version bump
     const counts = await tx.one<{ on_duty: number; available: number }>(
       `SELECT count(*) FILTER (WHERE duty_status = 'on_duty')::int AS on_duty,
@@ -213,10 +213,10 @@ export const nextTaskWaitCheckHandler: JobHandler = {
     const waiting = (t: Pick<TaskRow, 'status' | 'assigned_waiting_at'> | null | undefined) =>
       !!t && t.status === 'assigned_waiting' && iso(t.assigned_waiting_at) === new Date(mark).toISOString();
     const pre = await tx.maybeOne<TaskRow>(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
-    if (!waiting(pre)) return;
+    if (!waiting(pre)) return STALE_TIMER; // started, reassigned, withdrawn, canceled or a new episode
     const pool = await ensurePoolLocked(tx, pre!.dispatch_pool_id); // L1
     const [task] = (await lockTasks(tx, [taskId])) as TaskRow[]; // L4
-    if (!waiting(task)) return;
+    if (!waiting(task)) return STALE_TIMER;
     const ticket = await loadTicketCtx(tx, task!.ticket_id);
     await raiseAlert(tx, {
       orgId: task!.org_id,
@@ -260,7 +260,7 @@ export const dispatchPassHandler: JobHandler = {
     const active = await tx.maybeOne(`SELECT 1 FROM dispatch_pools WHERE id = $1 AND status = 'active'`, [
       poolId,
     ]);
-    if (!active) return;
+    if (!active) return STALE_TIMER; // the pool closed since
     await ensurePoolLocked(tx, poolId);
     await runDispatchPass(
       tx,

@@ -454,9 +454,13 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
   });
 
   it('a stale timer is a no-op after the accept; an early timer reschedules itself', async () => {
+    /** point_timer_stale_total{job} (05 §12.2; 11 §8.11 «مهام قديمة») */
+    const staleCount = async (job: string) =>
+      (await metrics.timerStale.get()).values.find((v) => v.labels.job === job)?.value ?? 0;
     await threeDrivers(t);
     await requested(t);
     const offer = (await liveOffer(t.db, U.DRV3))!;
+    const staleBefore = await staleCount('job.offer_expire');
     ok(await accept(t, 'DRV3', offer.id));
     t.clock.advanceSeconds(32);
     await worker.drain();
@@ -464,6 +468,11 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
       'accepted',
     );
     expect((await outboxEvents(t.db, 'offer.expired')).length).toBe(0);
+    // the timer ended done with no effect and is counted as stale (one row: the accepted round's expiry)
+    expect(
+      await one(t.db, `SELECT status FROM outbox_events WHERE dedupe_key = $1`, [`offer_expire:${offer.id}`]),
+    ).toEqual({ status: 'done' });
+    expect(await staleCount('job.offer_expire')).toBe(staleBefore + 1);
 
     const r2 = await requested(t);
     const o2 = (await liveOffer(t.db, U.DRV2))!;
@@ -485,6 +494,8 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     t.clock.advanceSeconds(1);
     await worker.drain();
     expect((await one(t.db, `SELECT status FROM task_offers WHERE id = $1`, [o2.id])).status).toBe('expired');
+    // neither the early timer (rescheduled) nor the one that expired the round is stale
+    expect(await staleCount('job.offer_expire')).toBe(staleBefore + 1);
     await expectConsistent(t.db);
   });
 
