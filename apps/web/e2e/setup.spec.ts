@@ -258,8 +258,18 @@ test('disabling a driver who holds a key lists the items (CUSTODY_OPEN); reset-s
   expect(drv2.status).toBe('active');
   await dialog.getByRole('button', { name: 'إلغاء' }).click();
 
+  // the reset ends the driver's sessions: nothing is sent before the confirmation Dialog (03 §4.5, DEC-344)
   await admin.page.getByRole('button', { name: 'إعادة تعيين الرقم السري' }).click();
+  const confirmReset = admin.page.getByRole('alertdialog');
+  await expect(confirmReset).toContainText(`إعادة تعيين الرقم السري لـ${drv2.full_name}؟`);
+  expect(fake.callsTo('POST /v1/drivers/:driverId/reset-secret')).toHaveLength(0);
+  await confirmReset.getByRole('button', { name: 'إلغاء' }).click();
+  await expect(confirmReset).toBeHidden();
+  expect(fake.callsTo('POST /v1/drivers/:driverId/reset-secret')).toHaveLength(0);
+  await admin.page.getByRole('button', { name: 'إعادة تعيين الرقم السري' }).click();
+  await admin.page.getByRole('alertdialog').getByRole('button', { name: 'إعادة تعيين الرقم السري' }).click();
   await expect(admin.page.getByRole('alertdialog')).toContainText(`الرقم السري المؤقت: ${drv2.secret}.`);
+  expect(fake.callsTo('POST /v1/drivers/:driverId/reset-secret')).toHaveLength(1);
   expect(drv2.must_change_secret).toBe(true);
 });
 

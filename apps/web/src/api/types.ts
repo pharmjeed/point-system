@@ -612,7 +612,11 @@ export interface TaskCard {
   waiting_seconds?: number | null;
   payment_due?: { amount_halalas: number; allowed_methods: PaymentMethod[] } | null;
   claim_code?: ClaimCodeState | null;
+  /** operations board only (DEC-241): the server's escalation badges of the card */
+  badges?: TaskCardBadge[];
 }
+
+export type TaskCardBadge = 'not_collected' | 'long_wait';
 
 /** The single offer card shown to the driver: the oldest actionable request (D-09). */
 export interface OfferCard {
@@ -1099,10 +1103,16 @@ export interface QueueItem {
     round_no?: number;
     expires_at?: string | null;
     recipients?: number;
+    /** the recipient of a single round («معروض على {سائق}», DEC-241); null for a broadcast */
+    recipient?: UserRef | null;
   } | null;
   escalated_at?: string | null;
   assignee?: UserRef | null;
+  /** the server's escalation badges (DEC-241) */
+  badges?: QueueBadge[];
 }
+
+export type QueueBadge = 'late' | 'long_wait';
 
 /** `TaskCard` of 07 (the driver's current/next task; also the board's active and next tasks). */
 

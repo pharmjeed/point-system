@@ -12,6 +12,7 @@ import {
   secondsSince,
   sortQueue,
   stageSince,
+  taskWaitsLong,
   thresholdsFrom,
   vehicleSummary,
 } from '@/features/supervisor/opsModel';
@@ -48,6 +49,18 @@ describe('S-02 queue (oldest requested_at first, canon §2 rule 6)', () => {
       'جارٍ الإحضار — خالد',
     );
   });
+
+  it('names the recipient of a single round from offer.recipient (DEC-316)', () => {
+    const offer = { offer_id: 'o-1', mode: 'single' as const, round_no: 1, recipients: 1 };
+    expect(
+      queueStateText(
+        queueItem({ status: 'offered', offer: { ...offer, recipient: { id: 'd-2', full_name: 'سعد' } } }),
+      ),
+    ).toBe('معروض على سعد');
+    expect(queueStateText(queueItem({ status: 'offered', offer: { ...offer, recipient: null } }))).toBe(
+      'معروض',
+    );
+  });
 });
 
 describe('S-02 escalation badges', () => {
@@ -67,6 +80,34 @@ describe('S-02 escalation badges', () => {
     expect(queueBadges(queueItem({ requested_at: ago(5) }), { ...ctx, alerts })).toHaveLength(1);
     const resolved = [alert({ task_id: 'k-1', status: 'resolved' })];
     expect(queueBadges(queueItem({ requested_at: ago(5) }), { ...ctx, alerts: resolved })).toEqual([]);
+  });
+
+  it('the server badges of the snapshot are the reference (DEC-241, DEC-315)', () => {
+    expect(queueBadges(queueItem({ requested_at: ago(5), badges: ['late'] }), ctx)).toEqual([
+      { level: 'critical', label: 'متأخر' },
+    ]);
+    const waiting = queueItem({ status: 'assigned_waiting', requested_at: ago(5), badges: ['long_wait'] });
+    expect(queueBadges(waiting, { ...ctx, nextSince: ago(1) })).toEqual([
+      { level: 'warning', label: 'انتظار طويل' },
+    ]);
+    // a `late` badge never shows once the request was taken
+    expect(queueBadges(queueItem({ status: 'accepted', badges: ['late'] }), ctx)).toEqual([]);
+    const ready = {
+      ...taskCard({ status: 'in_progress' }, { status: 'ready' }),
+      badges: ['not_collected' as const],
+    };
+    expect(notCollected(ready, { ...ctx, readySince: ago(5) })).toBe(true);
+    const next = { ...taskCard({ status: 'assigned_waiting' }), badges: ['long_wait' as const] };
+    expect(taskWaitsLong(next, { ...ctx, since: ago(5) })).toBe(true);
+  });
+
+  it('«انتظار طويل» on a next task card: badge, open alert or the local clock', () => {
+    const next = taskCard({ status: 'assigned_waiting', id: 'k-9' });
+    expect(taskWaitsLong(next, { ...ctx, since: ago(299) })).toBe(false);
+    expect(taskWaitsLong(next, { ...ctx, since: ago(300) })).toBe(true);
+    const alerts = [alert({ type: 'next_task_waiting_long', task_id: 'k-9', severity: 'warning' })];
+    expect(taskWaitsLong(next, { ...ctx, alerts, since: ago(5) })).toBe(true);
+    expect(taskWaitsLong(taskCard({ status: 'accepted' }), { ...ctx, since: ago(900) })).toBe(false);
   });
 
   it('no «متأخر» once accepted; «انتظار طويل» for a reserved next task past next_task_wait_alert_s', () => {

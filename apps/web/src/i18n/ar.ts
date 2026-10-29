@@ -697,6 +697,8 @@ export const s06 = {
   disable: 'تعطيل الحساب',
   enable: 'تفعيل الحساب',
   resetSecret: 'إعادة تعيين الرقم السري',
+  resetConfirm:
+    'إعادة تعيين الرقم السري لـ{name}؟ ستنتهي جلساته الحالية، ويظهر رقم مؤقت مرة واحدة يغيّره عند أول دخول.',
   // not in 02 (docs/progress/notes/pnt-023.md)
   venue: 'الموقع',
   assignReason: 'السبب (اختياري)',

@@ -56,14 +56,19 @@ export function sortQueue(queue: readonly QueueItem[]): QueueItem[] {
   });
 }
 
-/** The queue line under the ticket number (02 S-02 «حالة عنصر الطابور»). */
+/**
+ * The queue line under the ticket number (02 S-02 «حالة عنصر الطابور»). An offered request names the recipient
+ * of its single round from `offer.recipient` (DEC-316); without one, «معروض».
+ */
 export function queueStateText(item: QueueItem): string {
   const driver = item.assignee?.full_name ?? '';
   switch (item.status) {
     case 'queued':
       return s02.queueState.queued;
-    case 'offered':
-      return driver ? fmt(s02.queueState.offered, { driver }) : s02.queueState.offeredAnyone;
+    case 'offered': {
+      const recipient = item.offer?.recipient?.full_name ?? driver;
+      return recipient ? fmt(s02.queueState.offered, { driver: recipient }) : s02.queueState.offeredAnyone;
+    }
     case 'broadcast':
       return s02.queueState.broadcast;
     case 'assigned_waiting':
@@ -88,18 +93,21 @@ const openAlertFor = (alerts: readonly Alert[], type: Alert['type'], match: (a: 
 /**
  * Escalation badges (02 S-02): «متأخر» after `dispatch.unaccepted_escalation_s` without acceptance (or once
  * the server escalated it), «انتظار طويل» for a reserved next task past `dispatch.next_task_wait_alert_s`.
- * The server's own signals (`escalated_at`, open alerts) win over the local clock.
+ * The server's `badges` of the snapshot are the reference (DEC-241, DEC-315); its other signals (`escalated_at`,
+ * open alerts) and the local clock between two snapshots add to them.
  */
 export function queueBadges(
   item: QueueItem,
   ctx: { alerts: readonly Alert[]; thresholds: Thresholds; nowMs: number; nextSince?: string | null },
 ): Badge[] {
   const badges: Badge[] = [];
+  const server = item.badges ?? [];
   const unaccepted = ['queued', 'offered', 'broadcast'].includes(item.status);
   const waited = secondsSince(item.requested_at, ctx.nowMs) ?? item.waiting_seconds;
   if (
     unaccepted &&
-    (!!item.escalated_at ||
+    (server.includes('late') ||
+      !!item.escalated_at ||
       waited >= ctx.thresholds.unacceptedEscalationS ||
       openAlertFor(ctx.alerts, 'request_unaccepted', (a) => a.task_id === item.task_id))
   )
@@ -107,6 +115,7 @@ export function queueBadges(
   if (item.status === 'assigned_waiting') {
     const since = secondsSince(ctx.nextSince ?? null, ctx.nowMs);
     if (
+      server.includes('long_wait') ||
       (since != null && since >= ctx.thresholds.nextTaskWaitAlertS) ||
       openAlertFor(ctx.alerts, 'next_task_waiting_long', (a) => a.task_id === item.task_id)
     )
@@ -115,16 +124,34 @@ export function queueBadges(
   return badges;
 }
 
-/** «لم تُستلم» for a ready vehicle past `ready.uncollected_alert_min` (02 S-02), or its open alert. */
+/**
+ * «لم تُستلم» for a ready vehicle past `ready.uncollected_alert_min` (02 S-02): the card's server badge
+ * (DEC-241), its open alert, or the local clock.
+ */
 export function notCollected(
   card: TaskCard,
   ctx: { alerts: readonly Alert[]; thresholds: Thresholds; nowMs: number; readySince?: string | null },
 ): boolean {
   if (card.ticket.status !== 'ready') return false;
+  if (card.badges?.includes('not_collected')) return true;
   const since = secondsSince(ctx.readySince ?? null, ctx.nowMs);
   return (
     (since != null && since >= ctx.thresholds.readyUncollectedS) ||
     openAlertFor(ctx.alerts, 'ready_not_collected', (a) => a.ticket_id === card.ticket.id)
+  );
+}
+
+/** «انتظار طويل» on a reserved next task card (02 S-02): its server badge, its open alert, or the local clock. */
+export function taskWaitsLong(
+  card: TaskCard,
+  ctx: { alerts: readonly Alert[]; thresholds: Thresholds; nowMs: number; since?: string | null },
+): boolean {
+  if (card.task.status !== 'assigned_waiting') return false;
+  if (card.badges?.includes('long_wait')) return true;
+  const elapsed = secondsSince(ctx.since ?? null, ctx.nowMs);
+  return (
+    (elapsed != null && elapsed >= ctx.thresholds.nextTaskWaitAlertS) ||
+    openAlertFor(ctx.alerts, 'next_task_waiting_long', (a) => a.task_id === card.task.id)
   );
 }
 

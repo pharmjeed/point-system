@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { adminSectionsFor, can, ticketActions } from '@/features/supervisor/permissions';
+import {
+  adminSectionsFor,
+  can,
+  custodyTransferHolders,
+  ticketActions,
+} from '@/features/supervisor/permissions';
 import { ago, meWith, task, ticketDetail } from './fixtures';
 
 /** 02 S-03 action table × canon §10 permissions (09 §3): hidden buttons are UX only, the server re-checks. */
@@ -143,6 +148,23 @@ describe('S-03 action panel (ticketActions)', () => {
     expect(ticketActions(supervisor, ticketDetail({ channel: 'paper', customer: null }))).not.toContain(
       'revealPhone',
     );
+  });
+});
+
+describe('S-03 custody transfer holders (DEC-250, DEC-328)', () => {
+  it('a parked vehicle goes only to a free spot; a moving one and a key also to a driver or the supervisor', () => {
+    expect(custodyTransferHolders('vehicle', { status: 'parked' })).toEqual(['spot']);
+    expect(custodyTransferHolders('vehicle', { status: 'retrieving' })).toEqual([
+      'driver',
+      'supervisor',
+      'spot',
+    ]);
+    expect(custodyTransferHolders('vehicle', { status: 'parking' })).toEqual([
+      'driver',
+      'supervisor',
+      'spot',
+    ]);
+    expect(custodyTransferHolders('key', { status: 'parked' })).toEqual(['driver', 'supervisor', 'key_slot']);
   });
 });
 
