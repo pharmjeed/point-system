@@ -556,16 +556,33 @@ async function measure({ world, tickets, presses, bots, simc, k6, k6Result, wind
   );
   const m2 = [];
   const m2PerTask = new Map();
+  const m2Seen = new Map(); // taskId → recipients that saw task.claimed (the winner excluded)
   for (const c of observed.claimed) {
     const at = claimedAt.get(c.taskId);
     if (!at || c.userId === c.winnerId) continue;
     const d = c.at - at;
     m2.push(d);
     m2PerTask.set(c.taskId, Math.max(m2PerTask.get(c.taskId) ?? 0, d));
+    m2Seen.set(c.taskId, (m2Seen.get(c.taskId) ?? 0) + 1);
   }
+  // coverage (review finding): delivery is at most once with no replay (07 §4.5), so a lost sample is the slow
+  // or broken case — every claimed task of the run must reach every other connected driver of its pool (each
+  // venue is one pool with all its drivers on duty and connected), and every press must be observed
+  const driversOf = new Map(world.venues.map((v) => [v.code, bots.filter((b) => b.venue === v).length]));
+  const m2Expected = [];
+  for (const p of presses) {
+    const c = cycles.get(p.ticketId);
+    if (!c?.task_id || !claimedAt.has(c.task_id)) continue;
+    const expected = (driversOf.get(p.venue) ?? 0) - 1;
+    const seen = m2Seen.get(c.task_id) ?? 0;
+    m2Expected.push({ taskId: c.task_id, venue: p.venue, expected, seen });
+  }
+  const m2Missing = m2Expected.filter((x) => x.seen < x.expected);
+  const m2ExpectedTotal = m2Expected.reduce((n, x) => n + x.expected, 0);
 
   // M3 — server errors over every HTTP exchange of the measured window (generator, presses, simulator webhooks)
   const inWindow = (r) => r.at >= W.burstStart - 1000 && r.at <= W.settleEnd;
+  const socketIssues = observed.socketIssues.filter(inWindow);
   const generator = httpLog.filter((r) => r.client !== 'meta' && inWindow(r));
   const prep = httpLog.filter((r) => r.at >= W.prepStart && r.at < W.burstStart - 1000);
   const deliveries = (await simc.webhookDeliveries()).filter((d) => {
@@ -709,10 +726,21 @@ async function measure({ world, tickets, presses, bots, simc, k6, k6Result, wind
     m1: {
       observed: summary(m1Observed),
       lowerBound: summary(m1Lower),
+      presses: presses.length,
       missingInbound: perPress.filter((p) => !p.received).length,
       missingCycle: perPress.filter((p) => !p.cycleCreated).length,
+      missingObserved: perPress.filter((p) => p.received && p.cycleCreated && !p.observed).length,
     },
-    m2: { perRecipient: summary(m2), perTaskMax: summary([...m2PerTask.values()]), tasks: m2PerTask.size },
+    m2: {
+      perRecipient: summary(m2),
+      perTaskMax: summary([...m2PerTask.values()]),
+      tasks: m2PerTask.size,
+      claimedTasks: m2Expected.length,
+      expectedSamples: m2ExpectedTotal,
+      samples: m2.length,
+      missing: m2Missing.slice(0, 20),
+      missingTasks: m2Missing.length,
+    },
     m3: {
       total,
       errors,
@@ -769,6 +797,8 @@ async function measure({ world, tickets, presses, bots, simc, k6, k6Result, wind
       deliveries: bots.reduce((n, b) => n + b.done, 0),
       failures: bots.flatMap((b) => b.failures),
       socketIssues: observed.socketIssues.length,
+      socketIssuesInWindow: socketIssues.length,
+      socketIssueList: socketIssues.slice(0, 20),
       offersSeen: observed.offers.length,
     },
   };
@@ -799,7 +829,22 @@ async function metricsSnapshot() {
 function verdict(r) {
   const checks = [
     ['M1 p95 request save < 2 s (observed commit)', (r.m1.observed.p95 ?? Infinity) < 2000],
+    [
+      'M1 coverage: every press stored, its cycle created and its commit observed (no sample lost)',
+      r.m1.missingInbound === 0 &&
+        r.m1.missingCycle === 0 &&
+        r.m1.missingObserved === 0 &&
+        (r.m1.observed.count ?? 0) === r.m1.presses,
+    ],
     ['M2 p95 assignment publish < 3 s', (r.m2.perRecipient.p95 ?? Infinity) < 3000],
+    [
+      'M2 coverage: every claimed task reached every other connected driver of its pool (no sample lost)',
+      r.m2.claimedTasks === r.m1.presses && r.m2.missingTasks === 0 && r.m2.samples === r.m2.expectedSamples,
+    ],
+    [
+      'no socket disconnect or connect_error during the measured window',
+      r.drivers.socketIssuesInWindow === 0,
+    ],
     ['M3 server errors < 0.1 %', r.m3.errorRate < 0.001],
     ['every request delivered, no stuck task', r.stuck.notDelivered === 0 && r.stuck.openTasks.length === 0],
     [
@@ -841,6 +886,11 @@ function report(r) {
           'p95 < 3 s',
         ],
         ['M2 per task, slowest recipient', s(r.m2.perTaskMax), '—'],
+        [
+          'Coverage — M1 presses observed / M2 recipient samples',
+          `${r.m1.observed.count ?? 0}/${r.m1.presses} · ${r.m2.samples}/${r.m2.expectedSamples} (${r.m2.claimedTasks} claimed tasks; socket issues in the window ${r.drivers.socketIssuesInWindow})`,
+          'complete',
+        ],
         [
           'Webhook acknowledgement (press → 200)',
           r.m3.pressAck.p95 !== undefined

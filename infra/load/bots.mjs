@@ -274,6 +274,14 @@ export class SupervisorWatcher {
       const id = p.task?.id ?? p.id ?? p.task_id;
       if (id && !observed.firstTaskUpdate.has(id)) observed.firstTaskUpdate.set(id, Date.now());
     });
+    // a supervisor socket that drops loses M1 observations: its issues count like a driver's
+    const user = this.venue.supervisor.id;
+    this.socket.on('connect_error', (e) =>
+      observed.socketIssues.push({ user, kind: 'connect_error', code: e?.data?.code, at: Date.now() }),
+    );
+    this.socket.on('disconnect', (reason) =>
+      observed.socketIssues.push({ user, kind: 'disconnect', reason, at: Date.now() }),
+    );
     await connected(this.socket);
   }
 

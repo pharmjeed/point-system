@@ -88,6 +88,7 @@ export class ApiClient {
         data: json?.data,
         error: json?.error ?? null,
         replayed: res.headers.get('idempotent-replayed') === 'true',
+        retryAfter: res.headers.get('retry-after'),
         key: idempotencyKey,
         ms: rec.ms,
       };
@@ -101,6 +102,7 @@ export class ApiClient {
         data: null,
         error: { code: rec.error },
         replayed: false,
+        retryAfter: null,
         key: idempotencyKey,
         ms: rec.ms,
       };

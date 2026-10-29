@@ -6,17 +6,19 @@
 //   kp1 … kp5        the kill points of H-03 (CHAOS_KILL_AT, SIGKILL): TC-013 … TC-017 / AC-06 — nothing lost,
 //                    nothing duplicated, the outbox resumes, a retried command replays its stored answer
 //   kp4_silent       KP-4 without any status webhook: at most one duplicate message, recorded as attempt 2
-//   db_outage        backends terminated, then the database refusing connections for 60 s: SERVICE_UNAVAILABLE,
-//                    no request lost (Meta redelivers), timers run late and once, the processes survive
+//   db_outage        backends terminated, then the database refusing connections for 60 s: SERVICE_UNAVAILABLE
+//                    (Retry-After), a connected socket keeps its session, no request lost (Meta redelivers),
+//                    timers run late and once, the processes survive
+//   db_freeze        the database paused 60 s behind a relay (connections and bytes accepted, nothing answered):
+//                    the expectations of db_outage, every answer within the PWA's 10 s (DEC-PROPOSED-8)
 //   wa_outage        the simulator's `channel_down` (Graph 190) for 10 min: wa_channel_down, internal operations go
 //                    on, after recovery only the current state of each ticket is sent (TC-WA-22)
 //   wa_outage_temporary  the provider failing with 131016 for 180 s while requests keep coming: down after the
-//                    2-minute streak (12 §5.14), then only current states
+//                    2-minute streak (12 §5.14); every request gets its current state after the recovery, the
+//                    early ones included (DEC-PROPOSED-6)
 //   push_outage      the test Push service stopped: failures counted, push_failed_repeatedly, dispatch unaffected
 //   worker_stop      the worker stopped 2 min: outbox_lag raised, escalations due meanwhile run once afterwards
 //   worker_x3        three workers on one outbox: no row processed twice, every message sent once
-//   db_freeze        (opt-in, --only db_freeze) the database paused 60 s behind a relay: connections and bytes
-//                    accepted, nothing answered — the expectations of db_outage; records DEC-PROPOSED-8
 //
 // Knobs: --only kp1,kp5,… · --out DIR · --port CHAOS_PORT_BASE (4120) · --keep-db · --no-build ·
 // CHAOS_DB_OUTAGE_S (60) · CHAOS_WA_OUTAGE_S (600) · CHAOS_WA_TEMP_OUTAGE_S (180) · CHAOS_WORKER_STOP_S (120) ·
@@ -29,7 +31,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
-import { ApiClient } from '../harness/api.mjs';
+import { ApiClient, connected } from '../harness/api.mjs';
 import { consistency, createDb, dropDb, migrateDb, withAdmin } from '../harness/db.mjs';
 import { ROOT, importDist, pg } from '../harness/deps.mjs';
 import { serverEnv, simulatorEnv } from '../harness/env.mjs';
@@ -37,7 +39,6 @@ import { intakeAndPark, must } from '../harness/flows.mjs';
 import { Proc, SCRIPTS, waitHttp } from '../harness/procs.mjs';
 import { runId, seedWorld } from '../harness/seed.mjs';
 import { table } from '../harness/stats.mjs';
-import { freezableProxy } from '../harness/tcp-proxy.mjs';
 import { DriverBot, prng } from '../load/bots.mjs';
 
 const { values: a } = parseArgs({
@@ -162,16 +163,11 @@ class Stage {
     });
     if (o.dbProxy) {
       // the api and the worker reach the database through a relay the scenario can freeze; the harness does not
+      // (startFreezeProxy of @point/server/testing, the one the integration tests use)
+      const { startFreezeProxy } = await importDist('packages/server/dist/testing/index.js');
       const u = new URL(this.url);
-      this.dbProxy = freezableProxy({
-        port: P.dbProxy,
-        targetHost: u.hostname,
-        targetPort: Number(u.port || 5432),
-      });
-      await this.dbProxy.start();
-      u.hostname = '127.0.0.1';
-      u.port = String(P.dbProxy);
-      this.srv.DATABASE_URL = u.toString();
+      this.dbProxy = await startFreezeProxy({ host: u.hostname, port: Number(u.port || 5432) }, P.dbProxy);
+      this.srv.DATABASE_URL = this.dbProxy.via(this.url);
     }
     this.world = await seedWorld(this.url, { venues: 2, driversPerVenue: o.drivers ?? 4, env: this.srv });
     this.venue = this.world.venues[0];
@@ -344,6 +340,37 @@ class Stage {
 }
 
 const killed = (p, point) => p.exit?.signal === 'SIGKILL' && p.killPoint === point;
+
+/**
+ * A device's Socket.IO connection that records what the server sends it, without reconnecting by itself: a
+ * session.revoked or a server disconnect stays visible (07 §4; review: the outage must not sign devices out).
+ */
+async function watchSocket(api) {
+  const socket = api.socket({ reconnection: false });
+  const events = [];
+  socket.onAny((ev) => events.push(ev));
+  socket.on('disconnect', (reason) => events.push(`disconnect:${reason}`));
+  await connected(socket);
+  return {
+    socket,
+    events,
+    /** the heartbeat ack within the PWA's request timeout: { data } | { error: { code } } | { transport } */
+    heartbeat: () =>
+      socket
+        .timeout(PWA_TIMEOUT_MS)
+        .emitWithAck('client.heartbeat', {
+          visible: true,
+          audio_unlocked: true,
+          last_event_id: null,
+          app_version: 'chaos',
+        })
+        .catch((e) => ({ transport: e?.message ?? String(e) })),
+    /** still connected, never told its session was revoked, never disconnected by the server */
+    kept: () =>
+      socket.connected && !events.some((e) => e === 'session.revoked' || e.startsWith('disconnect:')),
+    close: () => socket.close(),
+  };
+}
 
 // ------------------------------------------------------------------------------------------------ kill points
 
@@ -697,6 +724,7 @@ async function dbOutage(st) {
   // B — 60 s outage: a request with a live single offer whose timers fall inside the outage
   await st.simc.pressButton({ to: t2.phone, purpose: 'W-01' });
   const offer = await st.waitFor(() => st.liveOffer(t2.ticketId), 30_000, 'a live offer for T2');
+  const ws = await watchSocket(second); // a device connected through the outage
   await withAdmin((c) => c.query(`ALTER DATABASE ${st.dbName} ALLOW_CONNECTIONS false`));
   await terminate();
   const cutAt = Date.now();
@@ -704,18 +732,24 @@ async function dbOutage(st) {
   await sleep(2000);
   const home = await second.get('/v1/me/home');
   st.check(
-    'during the outage a read answers 503 SERVICE_UNAVAILABLE with Retry-After',
-    home.status === 503 && home.error?.code === 'SERVICE_UNAVAILABLE',
-    { status: home.status, code: home.error?.code },
+    'during the outage a read answers 503 SERVICE_UNAVAILABLE with Retry-After: 2',
+    home.status === 503 && home.error?.code === 'SERVICE_UNAVAILABLE' && home.retryAfter === '2',
+    { status: home.status, code: home.error?.code, retryAfter: home.retryAfter },
   );
   const ready = await fetch(`${st.base}/health/ready`).then((r) => r.status);
   st.check('readiness answers 503 during the outage', ready === 503, `${ready}`);
   const key = `chaos-${randomUUID()}`;
   const cmd = await late.request('POST', '/v1/me/duty/start', { body: {}, key });
   st.check(
-    'a command answers 503 SERVICE_UNAVAILABLE (nothing kept for its key)',
-    cmd.status === 503 && cmd.error?.code === 'SERVICE_UNAVAILABLE',
-    { status: cmd.status, code: cmd.error?.code },
+    'a command answers 503 SERVICE_UNAVAILABLE with Retry-After (nothing kept for its key)',
+    cmd.status === 503 && cmd.error?.code === 'SERVICE_UNAVAILABLE' && !!cmd.retryAfter,
+    { status: cmd.status, code: cmd.error?.code, retryAfter: cmd.retryAfter },
+  );
+  const beat = await ws.heartbeat();
+  st.check(
+    'a connected socket: the heartbeat acks SERVICE_UNAVAILABLE and the device keeps its session (no session.revoked, not disconnected)',
+    beat?.error?.code === 'SERVICE_UNAVAILABLE' && ws.kept(),
+    { ack: beat, events: ws.events },
   );
   const press3 = st.simcLong.pressButton({ to: t3.phone, purpose: 'W-01' }); // Meta keeps redelivering
   await sleep(Math.max(0, cutAt + DB_OUTAGE_MS - Date.now()));
@@ -724,6 +758,13 @@ async function dbOutage(st) {
   const backAt = Date.now();
   await waitHttp(`${st.base}/health/ready`, { timeoutMs: 30_000 });
   st.check('readiness back within 30 s of the recovery', true, `${Date.now() - backAt} ms`);
+  const beatAfter = await ws.heartbeat();
+  st.check(
+    "after the recovery the same socket's heartbeat succeeds (its session was never dropped)",
+    !!beatAfter?.data && ws.kept(),
+    { ack: beatAfter?.data ? 'data' : beatAfter, events: ws.events },
+  );
+  ws.close();
   const retried = await late.request('POST', '/v1/me/duty/start', { body: {}, key });
   st.check(
     'the command retried with the same key runs once now (201, not a replay)',
@@ -806,11 +847,11 @@ async function timersRanOnce(st, { offer, label, backAt, during }) {
 }
 
 /**
- * 17 §12 read as `docker pause` (or a stalled network link): the database accepts connections and bytes but answers
- * nothing for CHAOS_DB_FREEZE_S (60) — the api and the worker reach it through a relay that freezes. The expectations
- * are those of the 60 s database outage: SERVICE_UNAVAILABLE while it lasts (within the PWA's 10 s request
- * timeout, apps/web/src/api/client.ts), nothing lost or repeated afterwards, timers late and once. Opt-in
- * (`--only db_freeze`): it records the gap of DEC-PROPOSED-8 (docs/progress/notes/load-chaos.md).
+ * 17 §12 «إيقاف الحاوية مؤقتًا» read as `docker pause` (or a stalled network link): the database accepts connections
+ * and bytes but answers nothing for CHAOS_DB_FREEZE_S (60) — the api and the worker reach it through a relay that
+ * freezes. The expectations are those of the 60 s database outage: SERVICE_UNAVAILABLE while it lasts, within the
+ * PWA's 10 s request timeout (apps/web/src/api/client.ts) thanks to the bounded waits of DEC-PROPOSED-8, a connected
+ * socket keeps its session, nothing lost or repeated afterwards, timers late and once.
  */
 async function dbFreeze(st) {
   const parker = await st.driver(0);
@@ -824,6 +865,7 @@ async function dbFreeze(st) {
   // a request with a live single offer whose timers fall inside the freeze
   await st.simc.pressButton({ to: t1.phone, purpose: 'W-01' });
   const offer = await st.waitFor(() => st.liveOffer(t1.ticketId), 30_000, 'a live offer for T1');
+  const ws = await watchSocket(second); // a device connected through the freeze
   st.dbProxy.freeze();
   const cutAt = Date.now();
   log(`db_freeze: database frozen for ${dur(DB_FREEZE_MS)}`);
@@ -838,16 +880,27 @@ async function dbFreeze(st) {
       return { status: 0, error: e?.name, ms: Math.round(performance.now() - s) };
     }
   };
-  const [home, ready, cmd] = await Promise.all([
+  const timedBeat = async () => {
+    const s = performance.now();
+    const ack = await ws.heartbeat();
+    return { ack, ms: Math.round(performance.now() - s) };
+  };
+  const [home, ready, cmd, beat] = await Promise.all([
     second.request('GET', '/v1/me/home', { timeoutMs: 15_000 }),
     readyProbe(),
     late.request('POST', '/v1/me/duty/start', { body: {}, key, timeoutMs: 15_000 }),
+    timedBeat(),
   ]);
-  const seen = (r) => ({ status: r.status, code: r.error?.code ?? null, ms: Math.round(r.ms) });
+  const seen = (r) => ({
+    status: r.status,
+    code: r.error?.code ?? null,
+    retryAfter: r.retryAfter ?? null,
+    ms: Math.round(r.ms),
+  });
   const answered = (r) => r.status === 503 && r.ms <= PWA_TIMEOUT_MS;
   st.check(
-    `during the freeze a read answers 503 SERVICE_UNAVAILABLE within the PWA's ${PWA_TIMEOUT_MS / 1000} s`,
-    answered(home) && home.error?.code === 'SERVICE_UNAVAILABLE',
+    `during the freeze a read answers 503 SERVICE_UNAVAILABLE (Retry-After: 2) within the PWA's ${PWA_TIMEOUT_MS / 1000} s`,
+    answered(home) && home.error?.code === 'SERVICE_UNAVAILABLE' && home.retryAfter === '2',
     seen(home),
   );
   st.check(
@@ -860,6 +913,11 @@ async function dbFreeze(st) {
     answered(cmd) && cmd.error?.code === 'SERVICE_UNAVAILABLE',
     seen(cmd),
   );
+  st.check(
+    `a connected socket: the heartbeat acks SERVICE_UNAVAILABLE within ${PWA_TIMEOUT_MS / 1000} s, the device keeps its session`,
+    beat.ack?.error?.code === 'SERVICE_UNAVAILABLE' && beat.ms <= PWA_TIMEOUT_MS && ws.kept(),
+    { ack: beat.ack, ms: beat.ms, events: ws.events },
+  );
   const press2 = st.simcLong.pressButton({ to: t2.phone, purpose: 'W-01' }); // Meta keeps redelivering
   await sleep(Math.max(0, cutAt + DB_FREEZE_MS - Date.now()));
   st.alive(st.api, st.worker);
@@ -870,6 +928,13 @@ async function dbFreeze(st) {
   const backAt = Date.now();
   await waitHttp(`${st.base}/health/ready`, { timeoutMs: 30_000 });
   st.check('readiness back within 30 s of the thaw', true, `${Date.now() - backAt} ms`);
+  const beatAfter = await ws.heartbeat();
+  st.check(
+    "after the thaw the same socket's heartbeat succeeds (its session was never dropped)",
+    !!beatAfter?.data && ws.kept(),
+    { ack: beatAfter?.data ? 'data' : beatAfter, events: ws.events },
+  );
+  ws.close();
   // the PWA retries an unanswered command with the same key (08 §8.1): it runs once, whichever attempt lands
   let retried;
   for (let i = 0; i < 6; i++) {
@@ -932,6 +997,16 @@ async function toReady(st, ticketId) {
   await must(driver.command('POST', `/v1/tasks/${taskId}/ready`, {}), 'ready');
   return { driver, taskId };
 }
+
+/** The message of a ticket's state (12 §5.2): what a customer must have received last after an outage. */
+const STATE_MESSAGE = {
+  requested: 'W-02',
+  assigned: 'W-02', // an accept sends nothing: «request received» stays the current state
+  assigned_waiting: 'W-03',
+  retrieving: 'W-04',
+  ready: 'W-05',
+  delivered: 'W-06',
+};
 
 /** Purposes received by a phone after `since` (epoch ms). */
 async function receivedSince(st, phone, since) {
@@ -1053,9 +1128,10 @@ async function waOutage(st) {
 
 /**
  * 12 §5.14 with temporary errors (131016, as a provider outage during an event): a new request every 20 s keeps
- * the failures going; the channel turns `down` once every attempt failed for 2 minutes; after the recovery only
- * the current states are sent. The W-02 of the requests made before `down` exhaust the 5 attempts of 12 §5.9
- * (1 + 4 + 16 + 64 s) first — that outcome is recorded (it is the subject of a proposed decision).
+ * the failures going; the channel turns `down` once every attempt failed for 2 minutes; after the recovery every
+ * request gets its current state, and only that (source §14). The W-02 of the requests made before `down` run out
+ * of the 5 attempts of 12 §5.9 (1 + 4 + 16 + 64 s) before the 2-minute streak: they are held while every attempt
+ * of the channel fails (DEC-PROPOSED-6), so the early customers are not left without a message.
  */
 async function waOutageTemporary(st) {
   const parker = await st.driver(0);
@@ -1139,33 +1215,49 @@ async function waOutageTemporary(st) {
   for (const t of tickets.filter((x) => pressedAt.has(x.ticketId))) {
     const w02 = (
       await st.rows(
-        `SELECT status, attempts, last_error_code FROM notifications WHERE ticket_id = $1 AND purpose = 'W-02'`,
+        `SELECT status, attempts, skipped_reason FROM notifications WHERE ticket_id = $1 AND purpose = 'W-02'`,
         [t.ticketId],
       )
     )[0];
+    const ticket = (await st.rows(`SELECT status FROM tickets WHERE id = $1`, [t.ticketId]))[0];
     outcome.push({
       pressed_s: Math.round((pressedAt.get(t.ticketId) - since) / 1000),
+      ticket: ticket?.status,
+      expected: STATE_MESSAGE[ticket?.status] ?? null,
       w02: w02?.status,
+      w02_skipped: w02?.skipped_reason ?? undefined,
       attempts: w02?.attempts,
       received: await receivedSince(st, t.phone, since),
     });
   }
-  const lateOnes = outcome.filter((o) => o.pressed_s > after - 50);
+  // review finding: every pressed request, the earliest included — no window that leaves the failing ones out
   st.check(
-    'requests made shortly before or during `down` get their current state after the recovery',
-    lateOnes.every((o) => o.w02 !== 'failed'),
-    lateOnes,
+    `every request (${outcome.length}) received exactly its current state after the recovery, the early ones included`,
+    outcome.length === pressedAt.size &&
+      outcome.every((o) => o.expected && o.received.length === 1 && o.received[0] === o.expected),
+    outcome,
   );
   st.check(
-    'no duplicate and no superseded message after the recovery',
-    outcome.every((o) => new Set(o.received).size === o.received.length),
+    'no status message of a pressed request ended failed (no wa_send_failed)',
+    outcome.every((o) => o.w02 !== 'failed') &&
+      count(
+        await st.rows(
+          `SELECT count(*)::int AS n FROM alerts WHERE type = 'wa_send_failed' AND ticket_id = ANY($1::uuid[])`,
+          [tickets.map((t) => t.ticketId)],
+        ),
+      ) === 0,
+    outcome.map((o) => ({ pressed_s: o.pressed_s, w02: o.w02 })),
   );
-  const failed = outcome.filter((o) => o.w02 === 'failed');
+  const held = await st.rows(
+    `SELECT count(DISTINCT a.notification_id)::int AS n FROM notification_attempts a
+       JOIN notifications n ON n.id = a.notification_id
+      WHERE n.ticket_id = ANY($1::uuid[]) AND n.purpose = 'W-02' AND a.attempt_no > 5`,
+    [tickets.map((t) => t.ticketId)],
+  );
   st.note(
-    `W-02 per request (seconds after the outage began): ${JSON.stringify(outcome)}. ` +
-      `${failed.length} request(s) made up to ${failed.length ? Math.max(...failed.map((f) => f.pressed_s)) : 0} s into the outage ended failed with wa_send_failed (down came at ${after.toFixed(0)} s): the five attempts of 12 §5.9 ` +
-      `(1 + 4 + 16 + 64 s) run out before the 2-minute streak of §5.14 turns the channel down, so those customers do not get ` +
-      `their «request received» after the recovery (DEC-PROPOSED-6 in docs/progress/notes/load-chaos.md).`,
+    `W-02 per request (seconds after the outage began; ticket state and the message expected for it): ${JSON.stringify(outcome)}. ` +
+      `down came at ${after.toFixed(0)} s; ${count(held)} W-02 made more than the 5 counted attempts of 12 §5.9 because they ` +
+      `were held while every attempt of the channel failed (DEC-PROPOSED-6), then sent or skipped as superseded after the recovery.`,
   );
   await st.consistent();
 }
@@ -1482,6 +1574,11 @@ const SCENARIOS = {
     fn: dbOutage,
     title: `database: backends terminated, then ${dur(DB_OUTAGE_MS)} refusing connections`,
   },
+  db_freeze: {
+    fn: dbFreeze,
+    title: `database paused ${dur(DB_FREEZE_MS)} (connections accepted, nothing answered) — DEC-PROPOSED-8`,
+    stage: () => ({ dbProxy: true }),
+  },
   wa_outage: {
     fn: waOutage,
     title: `WhatsApp outage ${dur(WA_OUTAGE_MS)} (Graph 190, 12 §11.4 channel_down) — TC-WA-22`,
@@ -1497,12 +1594,6 @@ const SCENARIOS = {
   },
   worker_stop: { fn: workerStop, title: `worker stopped ${dur(WORKER_STOP_MS)} (outbox_lag)` },
   worker_x3: { fn: workerX3, title: 'three workers on one outbox' },
-  db_freeze: {
-    fn: dbFreeze,
-    title: `database frozen ${dur(DB_FREEZE_MS)} (paused: connections accepted, nothing answered) — opt-in, DEC-PROPOSED-8`,
-    stage: () => ({ dbProxy: true }),
-    optIn: true,
-  },
 };
 
 function build() {
@@ -1527,7 +1618,7 @@ async function main() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const names = only.length ? only : Object.keys(SCENARIOS).filter((n) => !SCENARIOS[n].optIn);
+  const names = only.length ? only : Object.keys(SCENARIOS);
   for (const n of names)
     if (!SCENARIOS[n]) throw new Error(`unknown scenario ${n} (${Object.keys(SCENARIOS).join(', ')})`);
   if (!a['no-build'] && env.CHAOS_BUILD !== '0') build();
@@ -1588,6 +1679,7 @@ async function main() {
     waOutageS: WA_OUTAGE_MS / 1000,
     waTempOutageS: WA_TEMP_OUTAGE_MS / 1000,
     workerStopS: WORKER_STOP_MS / 1000,
+    dbFreezeS: DB_FREEZE_MS / 1000,
     workerLeaseS: WORKER_LEASE_S,
     portBase: BASE_PORT,
   };
