@@ -55,9 +55,12 @@ const ACTION_ORDER: TicketAction[] = [
   'waiver',
   'reverse',
   'custodyTransfer',
+  'changePhone',
+  'relinkWhatsApp',
   'onBehalf',
   'inspectionException',
   'voidTicket',
+  'manualReconcile',
   'openIncident',
 ];
 
@@ -308,7 +311,13 @@ function TicketView({
         )}
       </Sheet>
       {active ? (
-        <TicketActionDialog action={active} me={me} ticket={ticket} onClose={() => setActive(null)} />
+        <TicketActionDialog
+          action={active}
+          me={me}
+          ticket={ticket}
+          timeline={timeline}
+          onClose={() => setActive(null)}
+        />
       ) : null}
     </div>
   );

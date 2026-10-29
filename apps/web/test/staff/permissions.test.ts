@@ -3,6 +3,8 @@ import {
   adminSectionsFor,
   can,
   custodyTransferHolders,
+  reconcileTargets,
+  relinkMethods,
   ticketActions,
 } from '@/features/supervisor/permissions';
 import { ago, meWith, task, ticketDetail } from './fixtures';
@@ -41,6 +43,8 @@ describe('S-03 action panel (ticketActions)', () => {
       'resendCode',
       'custodyTransfer',
       'revealPhone',
+      'changePhone',
+      'manualReconcile',
       'waiver',
       'openIncident',
     ]);
@@ -119,7 +123,13 @@ describe('S-03 action panel (ticketActions)', () => {
       open_task: task({ status: 'offered' }),
       payment_status: 'due',
     });
-    expect(ticketActions(admin, t)).toEqual(['revealPhone', 'openIncident']);
+    // canon §10: the administration also changes the phone and reconciles after an outage (no wa.link)
+    expect(ticketActions(admin, t)).toEqual([
+      'revealPhone',
+      'changePhone',
+      'manualReconcile',
+      'openIncident',
+    ]);
     expect(ticketActions(owner, t)).toEqual(['revealPhone']);
     expect(ticketActions({ ...supervisor, permissions: ['auth.self'] }, t)).toEqual([]);
   });
@@ -148,6 +158,87 @@ describe('S-03 action panel (ticketActions)', () => {
     expect(ticketActions(supervisor, ticketDetail({ channel: 'paper', customer: null }))).not.toContain(
       'revealPhone',
     );
+  });
+});
+
+describe('S-03 recovery actions (GAP-2: 02 S-03 table × canon §10)', () => {
+  it('«تغيير الجوال»: an open WhatsApp ticket after the intake, for the supervisor and the administration', () => {
+    const parked = ticketDetail({ status: 'parked' });
+    expect(ticketActions(supervisor, parked)).toContain('changePhone');
+    expect(ticketActions(admin, parked)).toContain('changePhone');
+    expect(ticketActions(owner, parked)).not.toContain('changePhone');
+    // a draft's number is edited by PATCH /intake, a paper ticket has no conversation (DEC-211); closed: nothing
+    expect(ticketActions(supervisor, ticketDetail({ status: 'received' }))).not.toContain('changePhone');
+    expect(ticketActions(supervisor, ticketDetail({ channel: 'paper' }))).not.toContain('changePhone');
+    expect(ticketActions(supervisor, ticketDetail({ status: 'delivered' }))).not.toContain('changePhone');
+  });
+
+  it('«إعادة الربط بواتساب»: the supervisor only (wa.link), none/failed, an opt-out by QR, a pending match', () => {
+    const failed = ticketDetail({ status: 'parked', wa_link_status: 'failed' });
+    expect(ticketActions(supervisor, failed)).toContain('relinkWhatsApp');
+    expect(ticketActions(admin, failed)).not.toContain('relinkWhatsApp');
+    expect(relinkMethods(failed)).toEqual({ direct: true, qr: true, confirm: false });
+    // after the parking only the direct send is left (QR is for received/parking/parked, DEC-196)
+    expect(relinkMethods(ticketDetail({ status: 'requested', wa_link_status: 'none' }))).toEqual({
+      direct: true,
+      qr: false,
+      confirm: false,
+    });
+    // a draft links directly at submit-intake: QR only (DEC-193)
+    expect(relinkMethods(ticketDetail({ status: 'received', wa_link_status: 'none' }))).toEqual({
+      direct: false,
+      qr: true,
+      confirm: false,
+    });
+    // an opt-out comes back only on the customer's own initiative (12 §7.6)
+    const optedOut = ticketDetail({
+      status: 'parked',
+      wa_link_status: 'opted_out',
+      customer: { phone_masked: '05•••••123', opted_out: true },
+    });
+    expect(relinkMethods(optedOut)).toEqual({ direct: false, qr: true, confirm: false });
+    expect(ticketActions(supervisor, optedOut)).toContain('relinkWhatsApp');
+    const optedOutRequested = { ...optedOut, status: 'requested' as const };
+    expect(ticketActions(supervisor, optedOutRequested)).not.toContain('relinkWhatsApp');
+    // no number on the ticket: no direct send
+    expect(
+      relinkMethods(ticketDetail({ status: 'parked', wa_link_status: 'none', customer: null })).direct,
+    ).toBe(false);
+    // a QR message waits for «هل هو جوال العميل الذي أمامك؟» (DEC-198)
+    const pending = ticketDetail({
+      status: 'parked',
+      wa_link_status: 'pending_confirmation',
+      wa_link_pending: { link_code_id: 'lc-1', inbound_phone_masked: '05•••••777', received_at: ago(5) },
+    });
+    expect(relinkMethods(pending)).toEqual({ direct: false, qr: false, confirm: true });
+    expect(ticketActions(supervisor, pending)).toContain('relinkWhatsApp');
+    expect(ticketActions(supervisor, ticketDetail({ wa_link_status: 'linked' }))).not.toContain(
+      'relinkWhatsApp',
+    );
+    expect(
+      ticketActions(supervisor, ticketDetail({ channel: 'paper', wa_link_status: 'none' })),
+    ).not.toContain('relinkWhatsApp');
+  });
+
+  it('«مطابقة يدوية بعد انقطاع»: any open ticket, supervisor and administration; the targets the server allows', () => {
+    expect(ticketActions(supervisor, ticketDetail({ status: 'ready' }))).toContain('manualReconcile');
+    expect(ticketActions(admin, ticketDetail({ status: 'parking' }))).toContain('manualReconcile');
+    expect(ticketActions(owner, ticketDetail({ status: 'parked' }))).not.toContain('manualReconcile');
+    expect(ticketActions(supervisor, ticketDetail({ status: 'delivered' }))).not.toContain('manualReconcile');
+    expect(reconcileTargets(ticketDetail({ status: 'parked' }))).toEqual(['parked', 'delivered', 'voided']);
+    // a paper ticket without its stub number only to voided (`paper_serial_missing`, DEC-253)
+    expect(reconcileTargets(ticketDetail({ channel: 'paper', paper_serial: null }))).toEqual(['voided']);
+    expect(reconcileTargets(ticketDetail({ channel: 'paper', paper_serial: '004521' }))).toEqual([
+      'parked',
+      'delivered',
+      'voided',
+    ]);
+    // a recorded payment forbids voided (13 §8.6, `payment_recorded`)
+    expect(reconcileTargets(ticketDetail({ status: 'ready', payment_status: 'collected' }))).toEqual([
+      'parked',
+      'delivered',
+    ]);
+    expect(reconcileTargets(ticketDetail({ status: 'voided' }))).toEqual([]);
   });
 });
 

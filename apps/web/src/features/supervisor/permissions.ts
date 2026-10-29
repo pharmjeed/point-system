@@ -9,10 +9,13 @@ export type Permission =
   | 'ticket.read_full'
   | 'ticket.read_photos'
   | 'ticket.reveal_phone'
+  | 'ticket.change_phone'
   | 'ticket.void'
   | 'ticket.inspection_exception'
   | 'ticket.repark'
   | 'ticket.custody_transfer'
+  | 'ticket.manual_reconcile'
+  | 'wa.link'
   | 'retrieval.request_on_behalf'
   | 'retrieval.cancel'
   | 'task.release_custody'
@@ -27,7 +30,9 @@ export type Permission =
   | 'venue.read'
   | 'venue.layout_read'
   | 'driver.read'
+  | 'driver.manage'
   | 'driver.transfer'
+  | 'duty.force_end'
   | 'alert.read'
   | 'alert.manage'
   | 'incident.read'
@@ -60,9 +65,12 @@ export type TicketAction =
   | 'resendCode'
   | 'custodyTransfer'
   | 'revealPhone'
+  | 'changePhone'
+  | 'relinkWhatsApp'
   | 'onBehalf'
   | 'voidTicket'
   | 'inspectionException'
+  | 'manualReconcile'
   | 'waiver'
   | 'reverse'
   | 'openIncident'
@@ -120,11 +128,16 @@ export function ticketActions(me: Pick<Me, 'permissions' | 'user'>, t: TicketDet
     out.push('resendCode');
   if (can(me, 'ticket.custody_transfer') && open) out.push('custodyTransfer');
   if (can(me, 'ticket.reveal_phone') && !!t.customer?.phone_masked) out.push('revealPhone');
+  // «تغيير الجوال» — an open WhatsApp ticket after the intake (a draft is edited by PATCH /intake; DEC-211)
+  if (can(me, 'ticket.change_phone') && open && t.status !== 'received' && t.channel === 'whatsapp')
+    out.push('changePhone');
+  if (can(me, 'wa.link') && relinkable(t)) out.push('relinkWhatsApp');
   if (can(me, 'retrieval.request_on_behalf') && t.status === 'parked' && !t.active_cycle)
     out.push('onBehalf');
   if (can(me, 'ticket.void') && (t.status === 'received' || t.status === 'parking')) out.push('voidTicket');
   if (can(me, 'ticket.inspection_exception') && t.inspection_status === 'incomplete')
     out.push('inspectionException');
+  if (can(me, 'ticket.manual_reconcile') && open && reconcileTargets(t).length) out.push('manualReconcile');
   if (can(me, 'payment.waive') && t.payment_status === 'due' && t.status !== 'voided') out.push('waiver');
   if (can(me, 'payment.reverse') && isReversible(t.payment)) out.push('reverse');
   if (
@@ -135,6 +148,51 @@ export function ticketActions(me: Pick<Me, 'permissions' | 'user'>, t: TicketDet
   )
     out.push('recordPayment');
   if (can(me, 'incident.create')) out.push('openIncident');
+  return out;
+}
+
+/**
+ * How S-03 «إعادة الربط بواتساب» can re-link this ticket (02 S-03, D-07; 07 `linkWhatsApp`, DEC-193 … DEC-198):
+ * - `direct` — W-01 again to the recorded number (`none` / `failed` after the intake; a number not opted out);
+ * - `qr` — a link code the customer sends himself (`received` / `parking` / `parked`; also after an opt-out,
+ *   the only way back, 12 §7.6);
+ * - `confirm` — a QR message waits for «هل هو جوال العميل الذي أمامك؟» (venue supervisors may answer, DEC-198).
+ * The server stays the judge (consent, channel health, template).
+ */
+export function relinkMethods(t: TicketDetail): { direct: boolean; qr: boolean; confirm: boolean } {
+  if (!isOpenTicket(t) || t.channel !== 'whatsapp') return { direct: false, qr: false, confirm: false };
+  const optedOut = t.wa_link_status === 'opted_out' || !!t.customer?.opted_out;
+  return {
+    direct:
+      t.status !== 'received' &&
+      (t.wa_link_status === 'none' || t.wa_link_status === 'failed') &&
+      !!t.customer?.phone_masked &&
+      !optedOut,
+    qr:
+      ['received', 'parking', 'parked'].includes(t.status) &&
+      ['none', 'failed', 'opted_out'].includes(t.wa_link_status),
+    confirm: t.wa_link_status === 'pending_confirmation' && !!t.wa_link_pending,
+  };
+}
+
+const relinkable = (t: TicketDetail) => {
+  const m = relinkMethods(t);
+  return m.direct || m.qr || m.confirm;
+};
+
+/**
+ * The true states S-03 «مطابقة يدوية بعد انقطاع» may set (07 `manualReconcile`, DEC-252, DEC-253): a paper ticket
+ * without its stub number only to `voided` (`paper_serial_missing`); a recorded payment forbids `voided`
+ * (`payment_recorded`, 13 §8.6). Any open ticket, `parked` → `parked` included (a correction).
+ */
+export function reconcileTargets(
+  t: Pick<TicketDetail, 'status' | 'channel' | 'paper_serial' | 'payment' | 'payment_status'>,
+): Array<'parked' | 'delivered' | 'voided'> {
+  if (!isOpenTicket(t)) return [];
+  const recorded = t.payment?.status === 'recorded' || t.payment_status === 'collected';
+  const noStub = t.channel === 'paper' && !t.paper_serial;
+  const out: Array<'parked' | 'delivered' | 'voided'> = noStub ? [] : ['parked', 'delivered'];
+  if (!recorded) out.push('voided');
   return out;
 }
 
