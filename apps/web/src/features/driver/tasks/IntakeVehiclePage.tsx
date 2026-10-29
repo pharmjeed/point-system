@@ -12,6 +12,7 @@ import {
   Button,
   Checkbox,
   ColorChips,
+  MaskedPhone,
   PhoneInput,
   PlateInput,
   Radio,
@@ -26,7 +27,7 @@ import { useBrand } from '@/hooks/useMe';
 import { useCommandGate } from '@/realtime/hooks';
 import { d01, d05, d13, ui, vehicleColor, vehicleMake } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
-import { withTicket } from '@/i18n/fmtNode';
+import { fmtNode, withTicket } from '@/i18n/fmtNode';
 import { normalizeSaudiMobile } from '@/lib/phone';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -43,67 +44,21 @@ import {
   type PlateForm,
   type VehicleForm,
 } from '../fieldModel';
-import { step1Session, useIntakeDraft, useIntakeStore, type IntakeDraft } from '../intakeStore';
-import { channelBody, channelForm, channelIssues, type ChannelForm, type IntakeChannel } from '../linkModel';
-import type { LinkMethod } from '../linkStore';
+import { errorsOf, shownFields, type IntakeField, type StepError } from '../intakeErrors';
+import { step1Session, useIntakeDraft, useIntakeStore } from '../intakeStore';
+import {
+  channelBody,
+  channelForm,
+  channelIssues,
+  keepsRecordedPhone,
+  type ChannelForm,
+  type IntakeChannel,
+} from '../linkModel';
+import { useLinkStore, type LinkMethod } from '../linkStore';
 import { useRefreshHome } from '../useDriverHome';
 import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
 import { useIntakeTicket } from './intakeDraft';
 import { DiscardDraft } from './DiscardDraft';
-
-/** Field keys a server error points at on D-05 (08 field / code mapping). */
-type Field = 'plate' | 'make' | 'color' | 'paper_serial' | 'phone' | 'consent';
-
-/**
- * 02 D-05 «الأخطاء» (and D-06's row sending the driver back here): the number refused or opted out → under
- * the phone («للعميل الموقف للرسائل: QR أو تذكرة ورقية» — the two other choices stay on the form); the consent
- * box highlighted; the stub number in use.
- */
-const CODE_FIELD: Record<string, Field> = {
-  PLATE_INVALID: 'plate',
-  PAPER_SERIAL_IN_USE: 'paper_serial',
-  PHONE_INVALID: 'phone',
-  WA_CUSTOMER_OPTED_OUT: 'phone',
-  CONSENT_REQUIRED: 'consent',
-};
-
-function fieldOf(path: string): Field | null {
-  if (path.startsWith('plate')) return 'plate';
-  if (path === 'vehicle.make' || path === 'vehicle_make') return 'make';
-  if (path === 'vehicle.color' || path === 'vehicle_color') return 'color';
-  if (path === 'paper_serial') return 'paper_serial';
-  if (path === 'customer_phone') return 'phone';
-  if (path === 'consent') return 'consent';
-  return null;
-}
-
-type StepError =
-  | (NonNullable<IntakeDraft['step1Error']> & { fields?: Array<{ field: string; message_ar?: string }> })
-  | null;
-
-/** Errors of a step-1 save → field messages + a form message (02 §1.9, 08). */
-function errorsOf(error: StepError) {
-  const fields: Partial<Record<Field, string>> = {};
-  let form: string | null = null;
-  if (!error) return { fields, form };
-  const byCode = CODE_FIELD[error.code];
-  if (byCode) fields[byCode] = error.message;
-  else if (error.code === 'VALIDATION_FAILED' && error.fields?.length) {
-    for (const f of error.fields) {
-      const key = fieldOf(f.field);
-      if (key) fields[key] = f.message_ar || error.message;
-    }
-    form = error.message;
-  } else if (error.code === 'INTAKE_INCOMPLETE' && error.missing?.length) {
-    // 02 D-06 «إبراز الحقول في details.missing والانتقال للخطوة التي تحتويها»
-    for (const f of error.missing) {
-      const key = fieldOf(f);
-      if (key) fields[key] = error.message;
-    }
-    if (!Object.keys(fields).length) form = error.message;
-  } else form = error.message;
-  return { fields, form };
-}
 
 const SAUDI_STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos }];
 
@@ -155,6 +110,10 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   );
   const [link, setLink] = useState<ChannelForm>(() => channelForm(ticket, draft));
   const [checked, setChecked] = useState(false);
+  // a number on the server without this device's copy (a draft resumed elsewhere): kept until another is typed
+  const recorded = ticket.customer?.phone_masked ?? null;
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const keepRecorded = keepsRecordedPhone(link, recorded);
   const save = useCommand(
     (body: IntakePatch, key: string) => patchIntake(ticket.id, body, key),
     undefined,
@@ -176,15 +135,16 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   }, [ticket.id, plate, vehicle, link, update]);
 
   const e164 = normalizeSaudiMobile(link.phone);
-  const issues = channelIssues(link, e164);
+  const issues = channelIssues(link, e164, recorded);
   const serverError: StepError =
     save.error instanceof ApiError
       ? { code: save.error.code, message: save.error.message_ar, fields: save.error.fields }
       : save.error
         ? { code: 'NETWORK', message: displayMessage(save.error) }
         : draft.step1Error;
-  const errors = errorsOf(serverError);
-  const local: Partial<Record<Field, string>> = checked
+  const phoneShown = !keepRecorded || phoneOpen;
+  const errors = errorsOf(serverError, shownFields(link, { phone: phoneShown, consent: !keepRecorded }));
+  const local: Partial<Record<IntakeField, string>> = checked
     ? {
         plate: plateComplete(plate) ? undefined : d05.plateIncomplete,
         make: makeComplete(vehicle) ? undefined : ui.validation,
@@ -194,7 +154,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
         consent: issues.includes('consent') ? d05.consentRequired : undefined,
       }
     : {};
-  const err = (f: Field) => local[f] ?? errors.fields[f];
+  const err = (f: IntakeField) => local[f] ?? errors.fields[f];
 
   const onNext = async () => {
     if (gate.stale && online) return; // the button is disabled; Enter in a field must not send either
@@ -205,7 +165,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
       expected_version: ticket.version,
       plate: plateBody(plate),
       vehicle: vehicleBody(vehicle),
-      ...channelBody(link, e164),
+      ...channelBody(link, e164, recorded),
     };
     if (!online) {
       // 02 D-05: offline «التالي» moves on locally; D-06 resends the same step with the same key
@@ -216,6 +176,8 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
     try {
       const saved = await save.run(body);
       storeTicket(saved);
+      // a paper save revokes the live link codes (`channel_paper`): the QR in memory is no longer usable
+      if (body.channel === 'paper') useLinkStore.getState().setQr(ticket.id, null);
       update(ticket.id, { pendingSave: null, step1Error: null });
       navigate(driverPaths.intakeKeyPhotos(ticket.id));
     } catch (error) {
@@ -350,23 +312,42 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
             />
             {link.method === 'direct' ? (
               <>
-                <PhoneInput
-                  id="customer-phone"
-                  label={d05.phone}
-                  placeholder={d01.phonePlaceholder}
-                  value={link.phone}
-                  maxLength={16}
-                  error={err('phone')}
-                  onChange={(e) => setLinkPart({ phone: e.target.value })}
-                />
-                <Checkbox
-                  id="consent"
-                  label={d13.consent}
-                  hint={fmt(d05.consentHint, { customer: brand.customerNameAr })}
-                  checked={link.consent}
-                  error={err('consent')}
-                  onChange={(e) => setLinkPart({ consent: e.target.checked })}
-                />
+                {phoneShown ? (
+                  // the customer's number, never the device owner's: no autofill (05 §14.2)
+                  <PhoneInput
+                    id="customer-phone"
+                    label={d05.phone}
+                    placeholder={d01.phonePlaceholder}
+                    // left empty, the number on record stays
+                    hint={
+                      keepRecorded && recorded
+                        ? fmtNode(d13.phone, { phone: <MaskedPhone phone={recorded} /> })
+                        : undefined
+                    }
+                    value={link.phone}
+                    maxLength={16}
+                    autoComplete="off"
+                    error={err('phone')}
+                    onChange={(e) => setLinkPart({ phone: e.target.value })}
+                  />
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-2" data-phone-recorded>
+                    <span>{fmtNode(d13.phone, { phone: <MaskedPhone phone={recorded ?? ''} /> })}</span>
+                    <Button variant="secondary" onClick={() => setPhoneOpen(true)}>
+                      {d13.changePhone}
+                    </Button>
+                  </div>
+                )}
+                {keepRecorded ? null : (
+                  <Checkbox
+                    id="consent"
+                    label={d13.consent}
+                    hint={fmt(d05.consentHint, { customer: brand.customerNameAr })}
+                    checked={link.consent}
+                    error={err('consent')}
+                    onChange={(e) => setLinkPart({ consent: e.target.checked })}
+                  />
+                )}
               </>
             ) : null}
           </>

@@ -16,6 +16,8 @@ export interface PhoneInputProps extends Omit<InputHTMLAttributes<HTMLInputEleme
 /**
  * Saudi mobile (03 §3.8): fixed +966 prefix, the whole field LTR, 16px. Accepts 05XXXXXXXX or 5XXXXXXXX;
  * the caller normalises to E.164 with `normalizeSaudiMobile` and shows `PHONE_INVALID` under the field.
+ * No autofill by default: most numbers typed here are someone else's (a customer's, a new driver's), and
+ * the browser would offer the device owner's own (05 §14.2); the sign-in pages pass `autoComplete="username"`.
  */
 export function PhoneInput({
   id,
@@ -36,7 +38,7 @@ export function PhoneInput({
           </span>
           <input
             inputMode="tel"
-            autoComplete="tel-national"
+            autoComplete="off"
             {...inputProps}
             ref={ref}
             id={id}

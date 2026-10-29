@@ -37,6 +37,12 @@ const STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos }];
 
 type SubmitBody = { expected_version: number; acknowledge_incomplete_inspection?: boolean };
 
+/** INTAKE_INCOMPLETE naming the customer's number only (a WhatsApp draft with no number and no live code). */
+const onlyPhoneMissing = (error: ApiError) =>
+  Array.isArray(error.details.missing) &&
+  error.details.missing.length === 1 &&
+  error.details.missing[0] === 'customer_phone';
+
 /**
  * Codes that send the driver back to D-05 with the field highlighted (02 D-06 table), and the two channel
  * errors whose way out is a choice on D-05 (02 D-07 rows: «سلّم العميل تذكرة ورقية»): the W-01 template
@@ -132,6 +138,8 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         (saved) => {
           if (!active) return;
           storeTicket(saved);
+          // a paper save revokes the live link codes (`channel_paper`): the QR in memory goes with them
+          if (pendingSave.channel === 'paper') useLinkStore.getState().setQr(ticket.id, null);
           update(ticket.id, { pendingSave: null });
         },
         (error: unknown) => {
@@ -182,6 +190,12 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     draft.pendingSave?.plate ? { ...draft.pendingSave.plate, display: '' } : ticket.plate,
   );
 
+  /** 02 D-05/D-06: the QR mode's code, issued while the ticket is still `received` (no version change). */
+  const issueCode = async () => {
+    const linked = await issueQr.run({ method: 'qr' });
+    if (linked.qr) useLinkStore.getState().setQr(ticket.id, linked.qr);
+  };
+
   const runSubmit = async (acknowledge: boolean) => {
     setInspection(null);
     const tag = keyTag.trim();
@@ -198,17 +212,24 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         storeTicket(saved);
         version = saved.version;
       }
-      // 02 D-05/D-06: the QR mode's code, issued while the ticket is still `received` (no version change)
       const qrMode = needsQrAtSubmit(ticket);
-      const links = useLinkStore.getState();
-      if (qrMode && !reusableQr(links.qr[ticket.id], serverNow())) {
-        const linked = await issueQr.run({ method: 'qr' });
-        if (linked.qr) links.setQr(ticket.id, linked.qr);
-      }
-      const submitted = await submit.run({
+      const reused = qrMode && !!reusableQr(useLinkStore.getState().qr[ticket.id], serverNow());
+      if (qrMode && !reused) await issueCode();
+      const body = {
         expected_version: version,
         ...(acknowledge ? { acknowledge_incomplete_inspection: true } : {}),
-      });
+      };
+      let submitted: TicketDetail;
+      try {
+        submitted = await submit.run(body);
+      } catch (error) {
+        // the code kept in memory was no longer live on the server (revoked or used meanwhile): the server
+        // sees a WhatsApp draft with neither a number nor a code — once more with a fresh code
+        if (!reused || !isApiError(error, 'INTAKE_INCOMPLETE') || !onlyPhoneMissing(error)) throw error;
+        useLinkStore.getState().setQr(ticket.id, null);
+        await issueCode();
+        submitted = await submit.run(body);
+      }
       storeTicket(submitted);
       useLinkStore.getState().setMethod(ticket.id, qrMode ? 'qr' : 'direct');
       // the inputs and the draft row go; photos still uploading stay until the server confirmed them (the
@@ -227,6 +248,8 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
       }
       if (error.is('INTAKE_INCOMPLETE') && stepOfMissing(error.details.missing) === 'vehicle') {
         const missing = Array.isArray(error.details.missing) ? error.details.missing.map(String) : [];
+        // no live code on the server: the next «إتمام التسجيل» issues a fresh one
+        if (missing.includes('customer_phone')) useLinkStore.getState().setQr(ticket.id, null);
         update(ticket.id, { step1Error: { code: error.code, message: error.message_ar, missing } });
         navigate(driverPaths.intakeVehicle(ticket.id));
         return;
