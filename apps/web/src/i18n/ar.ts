@@ -582,6 +582,23 @@ export const d12 = {
 /** D-14 — حسابي */
 export const d14 = {
   title: 'حسابي',
+  venueLine: 'الموقع: {venue} · بدأت الوردية {time}',
+  venueOnly: 'الموقع: {venue}',
+  cash: 'نقد بعهدتك: {amount}',
+  breakToggle: 'استراحة',
+  lastTest: 'آخر اختبار {time}',
+  setup: 'إعداد',
+  wakeLock: 'إبقاء الشاشة مضاءة أثناء الوردية',
+  /** DUTY_END_BLOCKED_CUSTODY (02 D-14): «لا يمكن إنهاء الوردية وبعهدتك: مفتاح #125 · مهمة تالية #131. …» */
+  endBlocked: 'لا يمكن إنهاء الوردية وبعهدتك: {items}. أنهِها أو سلّمها للمشرف.',
+  /** `details.items[].type` in that sentence. */
+  custodyItem: {
+    vehicle: 'مركبة',
+    key: 'مفتاح',
+    task: 'مهمة',
+    next_task: 'مهمة تالية',
+    draft: 'مسودة استلام',
+  },
   alerts: 'التنبيهات',
   appearance: 'المظهر',
   themeSystem: 'تلقائي',

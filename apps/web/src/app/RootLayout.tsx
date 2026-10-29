@@ -8,7 +8,8 @@ import { resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { useOnlineListener } from '@/hooks/useOnline';
 import { applyTheme } from '@/lib/theme';
 import { ui } from '@/i18n/ar';
-import { stopRealtime } from '@/realtime/manager';
+import { PUSH_CLICK_EVENT } from '@/pwa/register';
+import { requestResync, stopRealtime } from '@/realtime/manager';
 import { noteContact } from '@/realtime/syncStore';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
@@ -78,6 +79,18 @@ export function RootLayout() {
       }),
     [endSession, goToStaffStep, navigate, pushToast, qc],
   );
+
+  // a tapped notification (14 §6.4.5): open its screen, then read the snapshot before any button — the
+  // notification itself is never trusted
+  useEffect(() => {
+    const onClick = (event: Event) => {
+      const url = (event as CustomEvent<{ url?: string }>).detail?.url;
+      if (url && url.startsWith('/') && url !== window.location.pathname) navigate(url);
+      requestResync('foreground');
+    };
+    window.addEventListener(PUSH_CLICK_EVENT, onClick);
+    return () => window.removeEventListener(PUSH_CLICK_EVENT, onClick);
+  }, [navigate]);
 
   return <Outlet />;
 }

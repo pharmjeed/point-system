@@ -40,6 +40,8 @@ export interface FDevice {
   notification_permission: 'default' | 'granted' | 'denied' | 'unsupported';
   audio_test_result: 'heard' | 'not_heard' | 'blocked' | null;
   audio_tested_at: string | null;
+  /** The Web Push subscription (`PUT /v1/me/devices/{deviceId}`, PNT-072). */
+  push_subscription: { endpoint: string; keys: { p256dh: string; auth: string } } | null;
   created_at: string;
 }
 
@@ -121,6 +123,7 @@ export class FakeServer {
       notification_permission: 'default',
       audio_test_result: null,
       audio_tested_at: null,
+      push_subscription: null,
       created_at: nowIso(),
     });
     return id;

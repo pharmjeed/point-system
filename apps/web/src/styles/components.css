@@ -635,6 +635,8 @@ body {
   inset-inline-start: auto;
   inset-inline-end: 0;
   inline-size: 52px;
+  /* the (transparent) switch itself takes the tap, above the drawn track */
+  z-index: 1;
 }
 .pt-toggle__track {
   flex: none;

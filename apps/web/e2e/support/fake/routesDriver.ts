@@ -547,8 +547,8 @@ export function registerDriverRoutes(s: FakeServer): void {
       cash_outstanding_halalas: cash,
       checks: {
         audio_tested: device?.audio_test_result === 'heard',
-        push_enabled: false,
-        pwa_installed: false,
+        push_enabled: !!device?.push_subscription,
+        pwa_installed: device?.display_mode === 'standalone',
       },
       channel_health: 'healthy',
     });
@@ -643,7 +643,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       platform: d.platform,
       display_mode: d.display_mode,
       notification_permission: d.notification_permission,
-      push_subscribed: false,
+      push_subscribed: !!d.push_subscription,
       audio_tested_at: d.audio_tested_at,
       audio_test_result: d.audio_test_result,
       last_seen_at: now(),
@@ -669,6 +669,17 @@ export function registerDriverRoutes(s: FakeServer): void {
     const d = ownDevice(ctx, ctx.params.deviceId);
     if (ctx.body?.notification_permission) d.notification_permission = ctx.body.notification_permission;
     if (ctx.body?.display_mode) d.display_mode = ctx.body.display_mode;
+    if (ctx.body?.push_subscription === null) d.push_subscription = null;
+    else if (ctx.body?.push_subscription) {
+      const sub = ctx.body.push_subscription;
+      // 07: the three fields together (ck_devices_push_triplet)
+      if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth)
+        validation([{ field: 'push_subscription', issue: 'invalid' }]);
+      d.push_subscription = {
+        endpoint: sub.endpoint,
+        keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      };
+    }
     return ok(deviceView(d.id));
   });
 

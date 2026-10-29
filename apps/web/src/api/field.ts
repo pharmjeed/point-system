@@ -69,10 +69,20 @@ export async function recordAudioTest(
   return (await api.post<Device>('/v1/me/audio-test', { body, idempotencyKey: key })).data;
 }
 
-/** Permission and display mode only; the Web Push subscription is PNT-072. */
+/** A Web Push subscription as `PUT /v1/me/devices/{deviceId}` stores it (07 §2.1, 14 §6.4). */
+export interface PushSubscriptionBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+/** Permission, display mode and (PNT-072) the Web Push subscription; `null` removes it. */
 export async function updateDevice(
   deviceId: string,
-  body: { display_mode?: DisplayMode; notification_permission?: NotificationPermissionState },
+  body: {
+    display_mode?: DisplayMode;
+    notification_permission?: NotificationPermissionState;
+    push_subscription?: PushSubscriptionBody | null;
+  },
   key: string,
 ): Promise<Device> {
   return (await api.put<Device>(`/v1/me/devices/${enc(deviceId)}`, { body, idempotencyKey: key })).data;
