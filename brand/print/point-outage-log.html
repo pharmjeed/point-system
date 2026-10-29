@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>سجل الانقطاع — بوينت</title>
+<!--
+  نموذج داخلي للطباعة (PNT-101، docs/runbooks/paper-fallback.md). هوية «بوينت» لأنه للموظفين فقط؛ القيم من brand/tokens
+  والخطوط من brand/fonts والشعار ملف brand/logo الأصلي دون إعادة رسم (BRAND_GUIDELINES §2، §4، §5).
+  الطباعة: A4 أفقي. صفحات مرقمة مسبقًا: افتح الملف بالمعامل ?pages=6 (وstart= لرقم أول صفحة) ثم اطبع.
+  مرجع كل سطر P<الصفحة>-R<السطر> هو evidence.paper_log_ref في «مطابقة يدوية بعد انقطاع».
+-->
+<link rel="stylesheet" href="../fonts/fonts.css">
+<link rel="stylesheet" href="../tokens/tokens.css">
+<style>
+  @page { size: A4 landscape; margin: 7mm; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--pt-surface); }
+  body { margin: 0; color: var(--pt-text); font-size: 8.5pt; line-height: 1.3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sheet { width: 283mm; height: 195mm; overflow: hidden; margin: 0 auto; padding: 0; display: flex; flex-direction: column; gap: 2mm; break-after: page; break-inside: avoid; }
+  .sheet:last-of-type { break-after: auto; }
+  @media screen { body { background: var(--pt-bg); padding: 8mm 0; } .sheet { background: var(--pt-surface); padding: 7mm; box-shadow: var(--pt-shadow-md); margin-bottom: 8mm; width: 297mm; height: 210mm; } }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 6mm; border-bottom: 0.6mm solid var(--pt-brand-navy); padding-bottom: 1.6mm; }
+  .top .brand { display: flex; align-items: center; gap: 4mm; }
+  .top img { height: 8mm; width: auto; }
+  .top h1 { margin: 0; font-size: 14pt; font-weight: 700; color: var(--pt-brand-navy); }
+  .top .sub { margin: 0.6mm 0 0; font-size: 8pt; color: var(--pt-text-muted); }
+  .pagebox { border: 0.4mm solid var(--pt-brand-navy); border-radius: var(--pt-radius-sm); padding: 1mm 3mm; text-align: center; min-width: 36mm; }
+  .pagebox b { display: block; font-size: 7.5pt; color: var(--pt-text-muted); font-weight: 600; }
+  .pagebox .no { font-family: var(--pt-font-mono); font-size: 15pt; font-weight: 600; color: var(--pt-brand-navy); direction: ltr; unicode-bidi: isolate; display: block; line-height: 1.1; }
+
+  .meta { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1.6mm; }
+  .field { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-xs); padding: 0.8mm 1.6mm; height: 9.5mm; }
+  .field b { display: block; font-size: 7pt; color: var(--pt-text-muted); font-weight: 600; }
+  .field.wide { grid-column: span 2; }
+
+  table.log { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.log th { background: var(--pt-brand-navy); color: var(--pt-ink-0); font-size: 7.4pt; font-weight: 600; padding: 0.9mm 1mm; border: 0.3mm solid var(--pt-brand-navy); text-align: center; vertical-align: middle; line-height: 1.2; }
+  table.log th small { display: block; font-weight: 400; font-size: 6.4pt; opacity: 0.9; }
+  table.log td { border: 0.3mm solid var(--pt-border-strong); height: 12.2mm; padding: 0.4mm 1mm; vertical-align: top; font-size: 6.5pt; color: var(--pt-text-muted); }
+  table.log td.ref { font-family: var(--pt-font-mono); font-weight: 600; font-size: 7pt; color: var(--pt-brand-navy); text-align: center; vertical-align: middle; background: var(--pt-ink-100); direction: ltr; unicode-bidi: isolate; white-space: nowrap; padding: 0.5mm 0.4mm; }
+  table.log td .l { display: block; border-bottom: 0.2mm dotted var(--pt-ink-300); height: 5.5mm; line-height: 5.4mm; }
+  table.log td .l:last-child { border-bottom: 0; }
+  .boxes { display: flex; flex-wrap: wrap; gap: 0.2mm 1.4mm; line-height: 1.3; }
+  .boxes span::before { content: "☐"; font-size: 7pt; margin-inline-end: 0.5mm; color: var(--pt-brand-navy); }
+  col.c-ref { width: 14mm; } col.c-time { width: 13mm; } col.c-act { width: 31mm; } col.c-ticket { width: 25mm; }
+  col.c-plate { width: 32mm; } col.c-spot { width: 25mm; } col.c-verify { width: 30mm; } col.c-pay { width: 29mm; }
+  col.c-driver { width: 29mm; } col.c-notes { width: 25mm; } col.c-rec { width: 23mm; }
+
+  .rules { display: grid; grid-template-columns: 2.4fr 1fr; gap: 3mm; margin-top: auto; }
+  .rules ol { margin: 0; padding-inline-start: 4.5mm; font-size: 6.8pt; line-height: 1.3; color: var(--pt-text); }
+  .rules li { margin: 0 0 0.2mm; }
+  .sign { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-xs); padding: 1.2mm 2mm; font-size: 7.2pt; display: grid; gap: 1.6mm; }
+  .sign div { border-bottom: 0.2mm dotted var(--pt-ink-400); padding-bottom: 2mm; }
+  .mono { font-family: var(--pt-font-mono); direction: ltr; unicode-bidi: isolate; }
+</style>
+</head>
+<body>
+
+<template id="sheet">
+<section class="sheet" aria-label="صفحة من سجل الانقطاع">
+  <header class="top">
+    <div class="brand">
+      <img src="../logo/point/point-lockup-horizontal-rtl.svg" alt="بوينت · POINT">
+      <div>
+        <h1>سجل الانقطاع المرقّم</h1>
+        <p class="sub">الإجراء الورقي عند تعطل النظام. سطر لكل فعل. يُطابَق كل سطر بعد عودة النظام عبر «مطابقة يدوية بعد انقطاع».</p>
+      </div>
+    </div>
+    <div class="pagebox"><b>الصفحة</b><span class="no" data-page>P__</span><b>من ____</b></div>
+  </header>
+
+  <div class="meta">
+    <div class="field"><b>الموقع</b></div>
+    <div class="field wide"><b>الحفل</b></div>
+    <div class="field"><b>التاريخ</b></div>
+    <div class="field"><b>بدء الانقطاع (24 س)</b></div>
+    <div class="field"><b>عودة النظام (24 س)</b></div>
+    <div class="field"><b>أرقام الدفتر المستخدمة: من … إلى …</b></div>
+  </div>
+
+  <table class="log">
+    <colgroup>
+      <col class="c-ref"><col class="c-time"><col class="c-act"><col class="c-ticket"><col class="c-plate"><col class="c-spot">
+      <col class="c-verify"><col class="c-pay"><col class="c-driver"><col class="c-notes"><col class="c-rec">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>السطر<small>المرجع</small></th>
+        <th>الوقت<small>24 ساعة</small></th>
+        <th>الفعل</th>
+        <th>التذكرة<small># بوينت · رقم الكعب</small></th>
+        <th>المركبة<small>اللوحة · الشركة واللون</small></th>
+        <th>المكان<small>الموقف · خانة المفتاح</small></th>
+        <th>التحقق عند التسليم</th>
+        <th>التحصيل<small>المبلغ · الوسيلة · الإيصال</small></th>
+        <th>السائق<small>الاسم أو الرمز · التوقيع</small></th>
+        <th>ملاحظات<small>أضرار · نقل عهدة إلى</small></th>
+        <th>المطابقة<small>يملؤها المشرف</small></th>
+      </tr>
+    </thead>
+    <tbody data-rows></tbody>
+  </table>
+
+  <div class="rules">
+    <ol>
+      <li>اكتب السطر لحظة الفعل لا بعده. لا تمسح ولا تستخدم مزيلًا: اشطب بخط واحد واكتب سطر «تصحيح» يذكر مرجع السطر الأصلي.</li>
+      <li>الاستلام: أعطِ العميل كعب التذكرة الورقية (ولو كان عميل واتساب) وعلّق بطاقة الرقم نفسه على المفتاح. صف الأضرار كتابةً؛ لا تصوّر بكاميرا الجوال.</li>
+      <li>التسليم: الورقية بمطابقة رقم الكعب مع بطاقة المفتاح. تذكرة واتساب بطريقتين من ثلاث (رسالة التذكرة غير المحوّلة على جوال العميل برقمها ولوحتها، الاستمارة أو الهوية، وصف المحتويات) وتوقيع المشرف. اللوحة وحدها لا تكفي.</li>
+      <li>لا تكتب رمز التسليم ولا رقم بطاقة دفع ولا جوال العميل. للشبكة رقم الإيصال فقط.</li>
+      <li>أي مفتاح أو مركبة تنتقل بين شخصين = سطر «نقل عهدة» باسمَي الطرفين.</li>
+      <li>بعد عودة النظام لا تُدخل شيئًا في التطبيق قبل إذن المشرف؛ المشرف يطابق كل سطر ويكتب في عمود المطابقة الحالة والوقت وأحرفه.</li>
+    </ol>
+    <div class="sign">
+      <div>المشرف المسؤول (الاسم والتوقيع):</div>
+      <div>عدد الأسطر المستخدمة في هذه الصفحة: ____ · طوبقت كلها: ☐</div>
+      <div>وقت الإقفال والمراجعة:</div>
+    </div>
+  </div>
+</section>
+</template>
+
+<template id="row">
+<tr>
+  <td class="ref" data-ref>P__-R__</td>
+  <td></td>
+  <td><div class="boxes"><span>استلام</span><span>صف</span><span>طلب</span><span>إحضار</span><span>تسليم</span><span>نقل عهدة</span><span>تصحيح</span></div></td>
+  <td><span class="l">#</span><span class="l">كعب</span></td>
+  <td><span class="l">اللوحة</span><span class="l">الشركة · اللون</span></td>
+  <td><span class="l">الموقف</span><span class="l">الخانة/العلاقة</span></td>
+  <td><div class="boxes"><span>كعب</span><span>رسالة</span><span>استمارة/هوية</span><span>المحتويات</span></div></td>
+  <td><span class="l">المبلغ</span><div class="boxes"><span>نقد</span><span>شبكة</span></div></td>
+  <td><span class="l">الاسم/الرمز</span><span class="l">التوقيع</span></td>
+  <td></td>
+  <td><div class="boxes"><span>سُوّي</span></div><span class="l">الحالة · الوقت · الأحرف</span></td>
+</tr>
+</template>
+
+<main id="sheets"></main>
+
+<script>
+  // صفحات مرقمة مسبقًا: ?pages=N&start=S (الافتراضي صفحة واحدة تبدأ من 1). دون JavaScript تبقى الأرقام فارغة للكتابة اليدوية.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var pages = Math.min(Math.max(parseInt(q.get('pages') || '1', 10) || 1, 1), 50);
+    var start = Math.min(Math.max(parseInt(q.get('start') || '1', 10) || 1, 1), 99);
+    var rowsPerPage = 10;
+    var sheets = document.getElementById('sheets');
+    var sheetTpl = document.getElementById('sheet');
+    var rowTpl = document.getElementById('row');
+    var two = function (n) { return (n < 10 ? '0' : '') + n; };
+    for (var p = 0; p < pages; p++) {
+      var page = 'P' + two(start + p);
+      var sheet = sheetTpl.content.cloneNode(true);
+      sheet.querySelector('[data-page]').textContent = page;
+      var body = sheet.querySelector('[data-rows]');
+      for (var r = 1; r <= rowsPerPage; r++) {
+        var row = rowTpl.content.cloneNode(true);
+        row.querySelector('[data-ref]').textContent = page + '-R' + two(r);
+        body.appendChild(row);
+      }
+      sheets.appendChild(sheet);
+    }
+  })();
+</script>
+</body>
+</html>

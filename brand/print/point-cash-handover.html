@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تسليم النقد — بوينت</title>
+<!--
+  نموذج داخلي للطباعة (PNT-101، 13، docs/runbooks/paper-fallback.md، docs/training/supervisor-guide.md). يوثق عدّ النقد
+  أمام كل سائق قبل إدخاله في النظام عبر «استلام نقد» في S-10 (POST /v1/cash-handovers). هوية «بوينت» من brand/tokens
+  وbrand/fonts والشعار الأصلي دون إعادة رسم. الطباعة: A4 عمودي.
+-->
+<link rel="stylesheet" href="../fonts/fonts.css">
+<link rel="stylesheet" href="../tokens/tokens.css">
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--pt-surface); }
+  body { margin: 0; color: var(--pt-text); font-size: 9pt; line-height: 1.35; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sheet { width: 194mm; height: 280mm; overflow: hidden; margin: 0 auto; display: flex; flex-direction: column; gap: 2.6mm; }
+  @media screen { body { background: var(--pt-bg); padding: 8mm 0; } .sheet { background: var(--pt-surface); padding: 8mm; width: 210mm; height: 297mm; box-shadow: var(--pt-shadow-md); } }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 6mm; border-bottom: 0.6mm solid var(--pt-brand-navy); padding-bottom: 2mm; }
+  .top .brand { display: flex; align-items: center; gap: 4mm; }
+  .top img { height: 9mm; width: auto; }
+  .top h1 { margin: 0; font-size: 15pt; font-weight: 700; color: var(--pt-brand-navy); }
+  .top .sub { margin: 0.6mm 0 0; font-size: 8pt; color: var(--pt-text-muted); }
+  .pagebox { border: 0.4mm solid var(--pt-brand-navy); border-radius: var(--pt-radius-sm); padding: 1mm 3mm; text-align: center; min-width: 28mm; font-size: 8pt; color: var(--pt-text-muted); }
+
+  .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.6mm; }
+  .field { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-xs); padding: 0.8mm 1.6mm; height: 10mm; }
+  .field b { display: block; font-size: 7.4pt; color: var(--pt-text-muted); font-weight: 600; }
+  .field.wide { grid-column: span 2; }
+
+  h2 { margin: 1mm 0 0; font-size: 10pt; font-weight: 700; color: var(--pt-brand-navy); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { background: var(--pt-brand-navy); color: var(--pt-ink-0); font-size: 7.6pt; font-weight: 600; padding: 1mm; border: 0.3mm solid var(--pt-brand-navy); text-align: center; vertical-align: middle; line-height: 1.2; }
+  th small { display: block; font-weight: 400; font-size: 6.6pt; opacity: 0.9; }
+  td { border: 0.3mm solid var(--pt-border-strong); height: 8.8mm; padding: 0.6mm 1mm; vertical-align: top; font-size: 6.8pt; color: var(--pt-text-muted); }
+  td.n { font-family: var(--pt-font-mono); font-weight: 600; color: var(--pt-brand-navy); text-align: center; vertical-align: middle; background: var(--pt-ink-100); direction: ltr; unicode-bidi: isolate; }
+  tr.total td { height: 8.6mm; background: var(--pt-ink-100); font-weight: 700; color: var(--pt-brand-navy); font-size: 8pt; vertical-align: middle; }
+  .box::before { content: "☐"; color: var(--pt-brand-navy); font-size: 8pt; margin-inline-end: 0.6mm; }
+  table.pos td { height: 7.6mm; }
+
+  .notes { display: grid; grid-template-columns: 1.6fr 1fr; gap: 3mm; margin-top: auto; }
+  .notes ol { margin: 0; padding-inline-start: 4.5mm; font-size: 7.4pt; line-height: 1.35; }
+  .notes li { margin: 0 0 0.4mm; }
+  .sign { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-xs); padding: 1.4mm 2mm; font-size: 7.6pt; display: grid; gap: 2.4mm; align-content: start; }
+  .sign div { border-bottom: 0.2mm dotted var(--pt-ink-400); padding-bottom: 3mm; }
+</style>
+</head>
+<body>
+<main class="sheet" aria-label="نموذج تسليم النقد">
+  <header class="top">
+    <div class="brand">
+      <img src="../logo/point/point-lockup-horizontal-rtl.svg" alt="بوينت · POINT">
+      <div>
+        <h1>تسليم النقد للمشرف</h1>
+        <p class="sub">يُعدّ النقد أمام السائق، ثم يُدخل كل سطر في النظام: S-10 ← «استلام نقد».</p>
+      </div>
+    </div>
+    <div class="pagebox">الصفحة ____ من ____</div>
+  </header>
+
+  <div class="meta">
+    <div class="field"><b>الموقع</b></div>
+    <div class="field"><b>الحفل</b></div>
+    <div class="field"><b>التاريخ</b></div>
+    <div class="field"><b>رسوم المركبة (ر.س)</b></div>
+    <div class="field wide"><b>المشرف المستلم (الاسم والرمز)</b></div>
+    <div class="field"><b>وقت البدء</b></div>
+    <div class="field"><b>وقت الانتهاء</b></div>
+  </div>
+
+  <h2>النقد حسب السائق</h2>
+  <table>
+    <colgroup>
+      <col style="width: 8mm"><col style="width: 33mm"><col style="width: 15mm"><col style="width: 19mm"><col style="width: 19mm">
+      <col style="width: 17mm"><col style="width: 20mm"><col style="width: 12mm"><col style="width: 20mm"><col style="width: 20mm"><col style="width: 11mm">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>السائق<small>الاسم · الرمز الوظيفي</small></th>
+        <th>التحصيلات<small>عددها نقدًا</small></th>
+        <th>المتوقع<small>ر.س</small></th>
+        <th>المستلم<small>ر.س بعد العدّ</small></th>
+        <th>الفرق<small>المستلم − المتوقع</small></th>
+        <th>الواقعة<small>إن وُجد فرق</small></th>
+        <th>الوقت</th>
+        <th>توقيع السائق</th>
+        <th>توقيع المشرف</th>
+        <th>أُدخل<small>في النظام</small></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="n">01</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">02</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">03</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">04</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">05</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">06</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">07</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">08</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">09</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">10</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">11</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr><td class="n">12</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="box"></span></td></tr>
+      <tr class="total"><td></td><td>المجموع</td><td></td><td></td><td></td><td></td><td colspan="5"></td></tr>
+    </tbody>
+  </table>
+
+  <h2>تحصيلات الشبكة (نقاط البيع) — للمطابقة فقط، لا تُسلَّم نقدًا</h2>
+  <table class="pos">
+    <colgroup><col style="width: 8mm"><col style="width: 52mm"><col style="width: 26mm"><col style="width: 30mm"><col></colgroup>
+    <thead>
+      <tr><th>#</th><th>السائق<small>الاسم · الرمز الوظيفي</small></th><th>عدد الإيصالات</th><th>المجموع<small>ر.س</small></th><th>ملاحظة<small>أرقام الإيصالات الناقصة أو المكررة</small></th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="n">01</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td class="n">02</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td class="n">03</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td class="n">04</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td class="n">05</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td class="n">06</td><td></td><td></td><td></td><td></td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <ol>
+      <li>«المتوقع» من S-10 «التحصيل حسب السائق» (النقد المسجّل له غير المسلَّم). أثناء الانقطاع: مجموع مبالغ «نقد» في سطوره بسجل الانقطاع بعد مطابقتها في النظام.</li>
+      <li>عُدّ النقد أمام السائق واكتب «المستلم» قبل التوقيع. لا تقبل نقدًا دون عدّ، ولا تسلّم نقدًا لغير المشرف.</li>
+      <li>أي فرق غير صفري يفتح له النظام واقعة «فرق تحصيل» عند إدخال التسليم (13)؛ اكتب رقمها هنا وتابعها في S-12.</li>
+      <li>المشرف لا يستلم من نفسه؛ نقد المشرف الذي يقود يستلمه مشرف آخر أو الإدارة.</li>
+      <li>للشبكة رقم الإيصال فقط. لا يُكتب رقم بطاقة ولا أي بيانات دفع للعميل في هذا النموذج.</li>
+      <li>بعد إدخال السطر في النظام ضع علامة في عمود «أُدخل». إغلاق الحفل يرفض أي نقد غير مسلَّم.</li>
+    </ol>
+    <div class="sign">
+      <div>المشرف المستلم (الاسم والتوقيع):</div>
+      <div>مجموع النقد المستلم كتابةً:</div>
+      <div>المراجعة (الإدارة) — الاسم والتوقيع والتاريخ:</div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
