@@ -225,7 +225,9 @@ test('PNT-072: a tapped notification opens its screen and resyncs; the subscript
   });
   await page.goto('/d/account');
   await controlled(page);
-  await page.getByRole('button', { name: 'تفعيل الإشعارات' }).click();
+  // the permission is already granted, but nothing reaches the device yet: 14 §5.1's line, then «إعداد»
+  await expect(page.getByText('الإشعارات لا تصل لجهازك — أعد تفعيلها')).toBeVisible();
+  await page.locator('#notifications-setup').click();
   await expect
     .poll(() => fake.devices.get(session.deviceId as string)?.push_subscription ?? null)
     .toEqual({ endpoint: 'https://push.example.test/send/abc', keys: { p256dh: 'BPk3', auth: 'YXV0aA' } });

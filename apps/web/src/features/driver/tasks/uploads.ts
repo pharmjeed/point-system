@@ -148,20 +148,25 @@ export function startPhotoUpload(ticketId: string, slot: string, kind: MediaKind
         profile = PHOTO_PROFILE_SMALL;
         continue;
       }
-      if (outcome === 'too_large') {
-        const text = fallbackMessageAr('MEDIA_TOO_LARGE');
-        useIntakeStore.getState().patchPhoto(ticketId, slot, { state: 'failed', error: text });
-        await updatePhoto(ticketId, slot, { state: 'failed', error: text, retriable: false });
-      }
+      if (outcome === 'too_large') await tooLarge(ticketId, slot);
       return;
     }
   })();
 }
 
+/** Still too large after the stronger compression: the 08 text; not resumed after a reload. */
+async function tooLarge(ticketId: string, slot: string): Promise<void> {
+  const text = fallbackMessageAr('MEDIA_TOO_LARGE');
+  useIntakeStore.getState().patchPhoto(ticketId, slot, { state: 'failed', error: text });
+  await updatePhoto(ticketId, slot, { state: 'failed', error: text, retriable: false });
+}
+
 /** A photo saved before the reload: uploading, or failed on the network — it goes on by itself. */
 function resumePhoto(ticketId: string, row: PhotoRow): void {
   if (row.state === 'failed' && !row.retriable) return;
-  void uploadCompressed(ticketId, row.slot, row.kind, row.blob, row.capturedAt, row.intent);
+  void uploadCompressed(ticketId, row.slot, row.kind, row.blob, row.capturedAt, row.intent).then((outcome) =>
+    outcome === 'too_large' ? tooLarge(ticketId, row.slot) : undefined,
+  );
 }
 
 /**
