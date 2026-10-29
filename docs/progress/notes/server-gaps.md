@@ -67,6 +67,41 @@ the locks of a duty start; the publish histogram for the four dispatch messages 
 `packages/server/test/system-monitor.int.test.ts` (+1: channel health 2/1/0 and the last webhook read from the
 database), `apps/api/test/dispatch-offers.int.test.ts` (+1 assertion: a break revokes the round → `revoked` + 1).
 
+## Sweep 2 — every alert type with a raising path and its resolution
+
+Checked type by type against 14 §8 (raise → resolution in the code):
+
+| Type | Raised by | Resolved by |
+|---|---|---|
+| `no_drivers_on_duty` | dispatch pass (`pass.ts`) | the next pass that finds a driver on duty (duty start, break end) |
+| `request_unaccepted` | `job.escalate_unaccepted` | accept (`accept-offer.ts`), `task.claimed`/`task.canceled` (AlertAutoResolver), manual reconcile, supervisor cancel |
+| `next_task_waiting_long` | `job.next_task_wait_check` | promotion/start/reassign/withdraw/cancel (`tasks.ts`, AlertAutoResolver, `dispatch-ops.ts`) |
+| `idle_driver_while_next_waiting` | dispatch pass | the pass (`no_idle_driver`), start/reassign (`tasks.ts`, resolver) |
+| `ready_not_collected` | `job.ready_uncollected_check` | handover, repark, cancel after start, manual reconcile |
+| `wa_send_failed` | sender, inbound `failed` status, quota (GAP-9) | supervisor ack + resolve; ticket closure (`wa_send_failed:{ticket}:` prefix); quota condition ended |
+| `wa_channel_down` | `setChannelHealth(down)` | `setChannelHealth(healthy)` |
+| `driver_connection_lost_with_custody` | `job.heartbeat_sweep` | the sweep (online again, custody gone, duty ended) and `custody.changed` (resolver) |
+| `handover_code_locked` | handover attempts, claim codes | new code, exception handover, handover, repark, cancel, manual reconcile |
+| `inspection_incomplete` | `submit-intake` | inspection completed / exception approved, void, manual reconcile |
+| `draft_abandoned` | SystemMonitor, refused discard | submit, discard/void, manual reconcile, the monitor (draft left `received`) |
+| `transfer_blocked` | `job.transfer_activate` | transfer completed or canceled (`transfers.ts`) |
+| `outbox_lag` | SystemMonitor | SystemMonitor (2 minutes below the threshold, no dead row) |
+| `push_failed_repeatedly` | push sender | successful push, new subscription (`me-service.ts`) |
+| `task_stuck` | SystemMonitor | SystemMonitor (phase or assignee changed), manual reconcile |
+| `wa_webhook_silent` | sender on acceptance (DEC-146) | any processed webhook (`inbound-processor.ts`) |
+
+No missing path. `packages/server/test/alert-catalog.test.ts` (unit) keeps it so: the 14 §8 table equals canon §5.7, its
+severities equal `ALERT_SEVERITY`, the multi-venue set equals DEC-46's four, and for every type the server code has a
+`raiseAlert({ type })` and a resolution that builds the type's dedupe key.
+
+## Sweep 3 — every job.* with a handler and a producer
+
+All 18 canon §7.2 jobs have exactly one worker handler and at least one producer (a durable timer, an outbox row or a
+notification job descriptor); the recurring ones are seeded and reschedule themselves (`job.dispatch_sweep` at queue
+entry, `job.heartbeat_sweep` at duty start, `job.retention_purge` by the SystemMonitor). Tests:
+`apps/worker/test/handlers.test.ts` (+2: no canon job without a handler; the network jobs run outside a transaction),
+`packages/server/test/job-catalog.test.ts` (18: a producer per job type).
+
 ## Proposed decisions
 
 - DEC-PROPOSED-1: WhatsApp quota alerts without a canon type — context: 12 §13 gives alert thresholds for
