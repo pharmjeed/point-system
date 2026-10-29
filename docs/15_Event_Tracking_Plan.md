@@ -219,7 +219,7 @@ flowchart LR
 | `audio_blocked_detected` | محاولة تشغيل صوت تنبيه رُفضت من المتصفح | `sound` enum(offer/broadcast/reminder/next_due/escalation/test)، `recovered_by_tap` bool | موثوقية التنبيه |
 | `notification_permission_changed` | تغيّر إذن الإشعارات المرصود | `from`، `to` enum(default/granted/denied/unsupported)، `context` enum(duty_start/account/banner) | تبنّي Push |
 | `push_subscription_changed` | اشتراك/إلغاء/فشل Web Push | `status` enum(subscribed/unsubscribed/failed)، `error_name` enum(not_allowed/abort/network/invalid_state/unknown) | تبنّي Push |
-| `push_notification_clicked` | فتح الواجهة من إشعار | `kind` enum(offer/broadcast/reminder/next_due/escalation/closed) (أنواع Push في القاموس §5.7)، `age_ms` int | فعالية Push |
+| `push_notification_clicked` | فتح الواجهة من إشعار (مصدره رسالة `push.click` التي يرسلها Service Worker للنافذة المركّزة بـ`kind` و`age_ms` = الآن − `sent_at` الحمولة؛ إرساله متروك لتذكرة التحليلات، DEC-390) | `kind` enum(offer/broadcast/reminder/next_due/escalation/closed) (أنواع Push في القاموس §5.7)، `age_ms` int | فعالية Push |
 | `pwa_installed` | أول تشغيل بوضع `standalone` أو قبول التثبيت | `platform`، `method` enum(install_prompt/ios_manual/detected_standalone) | تبنّي PWA |
 | `connection_changed` | تغيّر الاتصال من جهة الجهاز | `from`، `to` enum(online/uncertain/offline)، `cause` enum(ws_disconnect/navigator_offline/heartbeat_timeout/recovered)، `offline_ms` int | صحة الاتصال |
 | `sync_completed` | بعد مزامنة كاملة | `sync_reason` enum(startup/reconnect/visibility/sync_required/manual)، `duration_ms` int، `stale_ms` int، `changed` bool | سلامة البيانات المعروضة |

@@ -1023,7 +1023,7 @@ paths:
         schema:
           type: string
           maxLength: 20
-        description: أرقام اللوحة أو رقم التذكرة
+        description: 'أرقام اللوحة (احتواء في أي موضع) أو رقم التذكرة (تطابق تام)، بعد حذف ما ليس رقمًا وتوحيد الأرقام العربية الهندية؛ q بلا أرقام يعيد قائمة فارغة (DEC-388)'
       - name: open_only
         in: query
         required: false
@@ -9730,6 +9730,10 @@ components:
               format: date-time
             mfa_verified:
               type: boolean
+            device_id:
+              type: [string, 'null']
+              format: uuid
+              description: 'صف devices الذي ربطه هذا الدخول (auth_sessions.device_id، 09 §9.5)، و null لجلسة بلا جهاز مربوط؛ هو deviceId في PUT /v1/me/devices/{deviceId} وdevice_id في POST /v1/me/audio-test (DEC-376)'
             restricted:
               type: boolean
               description: true إذا الجلسة مقيدة بتغيير السر أو إعداد MFA
