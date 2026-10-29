@@ -76,6 +76,8 @@ export function ChannelSection({ me }: { me: Me }) {
   );
 }
 
+const SECRET_REF_FORMAT = 'env://NAME · sm://path';
+
 function ChannelForm({ channel, onDone }: { channel: WhatsAppChannel | null; onDone: () => void }) {
   const online = useOnline();
   const qc = useQueryClient();
@@ -158,9 +160,10 @@ function ChannelForm({ channel, onDone }: { channel: WhatsAppChannel | null; onD
       />
       <p className="st-muted m-0">{s13.channel.refsHint}</p>
       <div className="st-grid2">
-        {field('access_token_secret_ref', s13.channel.accessTokenRef, 'env://WA_ACCESS_TOKEN')}
-        {field('app_secret_ref', s13.channel.appSecretRef, 'env://WA_APP_SECRET')}
-        {field('verify_token_secret_ref', s13.channel.verifyTokenRef, 'env://WA_VERIFY_TOKEN')}
+        {/* the format only: server variable names stay out of the bundle (05 §7.7, scripts/check-secrets.mjs) */}
+        {field('access_token_secret_ref', s13.channel.accessTokenRef, SECRET_REF_FORMAT)}
+        {field('app_secret_ref', s13.channel.appSecretRef, SECRET_REF_FORMAT)}
+        {field('verify_token_secret_ref', s13.channel.verifyTokenRef, SECRET_REF_FORMAT)}
       </div>
       {save.message ? <FieldError role="alert">{save.message}</FieldError> : null}
       <div className="st-row-actions">
