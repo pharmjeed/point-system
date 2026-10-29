@@ -33,7 +33,8 @@ import { auditCommand, eventActor } from './shared.js';
  * becomes `requested`. Used by the staff request (TT-06b), the customer's button (TT-06a) and the early-request
  * conversion (TT-08, DEC-13: `requested_at` = the original press time). Caller holds L1 and the ticket (L5),
  * ticket `parked`. `job.escalate_unaccepted` is scheduled from `queued_at` (the escalation measures the time in
- * the queue, not since the original press).
+ * the queue, not since the original press). `ingestFrom` (the button only): when the webhook carrying the press
+ * was received — the event carries `ingest_latency_ms` up to now (15 §10 «حفظ الطلب»).
  */
 export async function openRetrievalCycle(
   tx: Tx,
@@ -46,6 +47,7 @@ export async function openRetrievalCycle(
     customerId?: string | null;
     reason?: string | null;
     actor: EventActor;
+    ingestFrom?: Date | null;
   },
 ): Promise<{ cycle: CycleRow; task: TaskRow; ticket: TicketRow }> {
   const cycle = await tx.one<CycleRow>(
@@ -86,6 +88,9 @@ export async function openRetrievalCycle(
       requested_at: new Date(cycle.requested_at).toISOString(),
       request_source: cycle.request_source,
       requested_early: cycle.requested_early,
+      ...(m.ingestFrom
+        ? { ingest_latency_ms: Math.max(0, tx.clock.now().getTime() - m.ingestFrom.getTime()) }
+        : {}),
     },
   });
   await emitTaskEvent(
@@ -147,7 +152,7 @@ export async function requestRetrievalForCustomer(
 export async function applyCustomerRequest(
   tx: Tx,
   t: TicketRow,
-  m: { customerId: string | null; requestedAt?: Date },
+  m: { customerId: string | null; requestedAt?: Date; ingestFrom?: Date | null },
 ): Promise<CustomerRequestResult> {
   const actor: EventActor = m.customerId
     ? { type: 'customer', id: m.customerId }
@@ -160,6 +165,7 @@ export async function applyCustomerRequest(
       early: false,
       customerId: m.customerId ?? t.customer_id,
       actor,
+      ingestFrom: m.ingestFrom ?? null,
     });
     await runDispatchPass(tx, t.dispatch_pool_id, 'request_created');
     return { kind: 'created', ticketStatus: r.ticket.status, cycleId: r.cycle.id, taskId: r.task.id };

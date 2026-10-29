@@ -21,6 +21,11 @@ export interface InboundMessageRef {
   contextWamid: string | null;
   /** message time from the webhook (`timestamp`) */
   receivedAt: Date;
+  /**
+   * when the api stored the webhook delivery that carried it (`whatsapp_inbound_events.received_at`): the start
+   * of «حفظ الطلب» (15 §10 `ingest_latency_ms`, 05 §12.2 `point_retrieval_request_ingest_seconds`)
+   */
+  webhookReceivedAt?: Date;
 }
 
 // ---------------------------------------------------------------------------------------------

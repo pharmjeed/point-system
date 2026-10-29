@@ -1483,5 +1483,15 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     expect(/[؀-ۿ]/.test(props)).toBe(false);
     // nothing was refused by the allow-list and no value fell outside its list (stored as null) during the run
     expect(await serverRejections()).toEqual(rejectedBefore);
+    // «حفظ الطلب» (15 §10): every press that opened a cycle carries webhook → commit; staff and early ones do not
+    const requests = analytics
+      .filter((a) => a.name === 'ticket_retrieval_requested')
+      .map((a) => a.properties);
+    const pressed = requests.filter((p) => p.request_source === 'whatsapp' && p.requested_early === false);
+    expect(pressed.length).toBeGreaterThan(5);
+    for (const p of pressed)
+      expect(Number.isInteger(p.ingest_latency_ms) && Number(p.ingest_latency_ms) >= 0).toBe(true);
+    for (const p of requests.filter((x) => !pressed.includes(x)))
+      expect(p.ingest_latency_ms ?? null).toBeNull();
   });
 });
