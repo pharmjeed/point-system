@@ -95,12 +95,13 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     expect(problems).toEqual([]);
   });
 
-  it('a body over the limit is 413 PAYLOAD_TOO_LARGE with max_bytes on every route that takes one (08 §4.15, DEC-130)', async () => {
+  it('a body over the limit is 413 PAYLOAD_TOO_LARGE with max_bytes on every route but a GET (08 §4.15, DEC-130)', async () => {
+    // the parsers run before any route: a route that takes no body still reads one sent to it
     const problems: string[] = [];
     let checked = 0;
     for (const r of routes) {
       const op = ops.get(`${r.method} ${r.path}`);
-      if (!op?.requestBody) continue;
+      if (r.method === 'GET' || !op) continue;
       const limit = r.path === '/webhooks/whatsapp' ? 3 * 1024 * 1024 : 1024 * 1024; // raw webhook body vs JSON
       const send = t.http()[r.method.toLowerCase() as 'post' | 'put' | 'patch' | 'delete'];
       const res = await send(r.path.replace(/\{[A-Za-z]+\}/g, DUMMY))
@@ -116,7 +117,35 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(81);
+    expect(checked).toBe(90); // the 81 operations with a requestBody and the 9 without one
+    expect(problems).toEqual([]);
+  });
+
+  it('a body that is not JSON is 422 VALIDATION_FAILED on the field (body) on every JSON route but a GET (08 §4.3, DEC-126)', async () => {
+    const problems: string[] = [];
+    let checked = 0;
+    for (const r of routes) {
+      const op = ops.get(`${r.method} ${r.path}`);
+      // the webhook reads its raw body (signature first, 12 §4.1): no JSON parser runs before it
+      if (r.method === 'GET' || !op || r.path === '/webhooks/whatsapp') continue;
+      const send = t.http()[r.method.toLowerCase() as 'post' | 'put' | 'patch' | 'delete'];
+      const res = await send(r.path.replace(/\{[A-Za-z]+\}/g, DUMMY))
+        .set(CSRF)
+        .set('Idempotency-Key', newKey())
+        .set('Content-Type', 'application/json')
+        .send('{"phone": ');
+      checked++;
+      const where = `${r.method} ${r.path}: ${res.status} ${res.body?.error?.code}`;
+      if (res.status !== 422 || res.body?.error?.code !== 'VALIDATION_FAILED') problems.push(where);
+      else if (
+        JSON.stringify(res.body.error.details) !==
+        JSON.stringify({ fields: [{ field: '(body)', issue: 'malformed_json' }] })
+      )
+        problems.push(`${where} details ${JSON.stringify(res.body.error.details)}`);
+      else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
+        problems.push(`${where} — not documented`);
+    }
+    expect(checked).toBe(89);
     expect(problems).toEqual([]);
   });
 });

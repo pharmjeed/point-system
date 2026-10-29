@@ -72,19 +72,34 @@ export function toHttpAppError(err: unknown): { error: AppError; unexpected: boo
     };
     const code = map[status];
     if (code) {
-      const details = status === 404 ? { resource: 'route' } : status === 413 ? maxBytes(err.cause) : {};
+      const details =
+        status === 404
+          ? { resource: 'route' }
+          : status === 413
+            ? maxBytes(err.cause)
+            : status === 400 && isJsonSyntaxError(err)
+              ? MALFORMED_BODY
+              : {};
       return { error: new AppError(code, details), unexpected: false };
     }
   }
-  // body-parser errors (malformed JSON, too large) are plain errors with a status
+  // body-parser errors (malformed JSON, too large) as plain errors with a status (other adapters)
   const status = (err as { status?: number; type?: string })?.status;
   if (status === 413) return { error: new AppError('PAYLOAD_TOO_LARGE', maxBytes(err)), unexpected: false };
-  if (status === 400)
-    return {
-      error: new AppError('VALIDATION_FAILED', { fields: [{ field: 'body', issue: 'malformed_json' }] }),
-      unexpected: false,
-    };
+  if (status === 400) return { error: new AppError('VALIDATION_FAILED', MALFORMED_BODY), unexpected: false };
   return { error: new AppError('INTERNAL_ERROR'), unexpected: true };
+}
+
+/** 08 §4.3 / DEC-126: a body that is not JSON is a problem at the root of the body, the field `(body)`. */
+const MALFORMED_BODY = { fields: [{ field: '(body)', issue: 'malformed_json' }] };
+
+/**
+ * The Express adapter of Nest 12 turns body-parser's `SyntaxError` (a body that is not JSON) into a
+ * `BadRequestException` carrying only its message, and does the same with Express's `URIError` for a path
+ * parameter that does not decode ("Failed to decode param …"), which is not a body problem.
+ */
+function isJsonSyntaxError(err: HttpException): boolean {
+  return /\bJSON\b/.test(err.message) && !/decode param/i.test(err.message);
 }
 
 /**

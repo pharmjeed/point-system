@@ -62,9 +62,16 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
     expect(ops.filter((o) => o.requestBody)).toHaveLength(81);
   });
 
-  it('every operation with a request body documents 413 PAYLOAD_TOO_LARGE (08 §4.15, DEC-130)', () => {
-    const missing = ops
-      .filter((o) => o.requestBody && !o.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
+  it('every operation but a GET documents 413 PAYLOAD_TOO_LARGE and 422 VALIDATION_FAILED (08 §4.15, DEC-130)', () => {
+    // the body parsers run before any route: one without a requestBody still reads a body sent to it
+    const writes = ops.filter((o) => o.method !== 'GET');
+    expect(writes).toHaveLength(90);
+    const missing = writes
+      .filter(
+        (o) =>
+          !o.responses.get(413)?.includes('PAYLOAD_TOO_LARGE') ||
+          !o.responses.get(422)?.includes('VALIDATION_FAILED'),
+      )
       .map((o) => `${o.method} ${o.path}`);
     expect(missing).toEqual([]);
   });
