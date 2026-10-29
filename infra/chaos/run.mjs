@@ -10,13 +10,14 @@
 //                    no request lost (Meta redelivers), timers run late and once, the processes survive
 //   wa_outage        the simulator's `channel_down` (Graph 190) for 2 min: wa_channel_down, internal operations go
 //                    on, after recovery only the current state of each ticket is sent (TC-WA-22)
-//   wa_outage_temporary  the provider failing with 131016 for 150 s: down after the 2-minute streak (12 §5.14)
+//   wa_outage_temporary  the provider failing with 131016 for 180 s while requests keep coming: down after the
+//                    2-minute streak (12 §5.14), then only current states
 //   push_outage      the test Push service stopped: failures counted, push_failed_repeatedly, dispatch unaffected
 //   worker_stop      the worker stopped 2 min: outbox_lag raised, escalations due meanwhile run once afterwards
 //   worker_x3        three workers on one outbox: no row processed twice, every message sent once
 //
 // Knobs: --only kp1,kp5,… · --out DIR · --port CHAOS_PORT_BASE (4120) · --keep-db · --no-build ·
-// CHAOS_DB_OUTAGE_S (60) · CHAOS_WA_OUTAGE_S (120) · CHAOS_WA_TEMP_OUTAGE_S (150) · CHAOS_WORKER_STOP_S (120).
+// CHAOS_DB_OUTAGE_S (60) · CHAOS_WA_OUTAGE_S (120) · CHAOS_WA_TEMP_OUTAGE_S (180) · CHAOS_WORKER_STOP_S (120).
 import { spawnSync } from 'node:child_process';
 import { createECDH, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -54,7 +55,7 @@ const KEEP = !!a['keep-db'];
 const S = (name, def) => Number(env[name] ?? def) * 1000;
 const DB_OUTAGE_MS = S('CHAOS_DB_OUTAGE_S', 60);
 const WA_OUTAGE_MS = S('CHAOS_WA_OUTAGE_S', 120);
-const WA_TEMP_OUTAGE_MS = S('CHAOS_WA_TEMP_OUTAGE_S', 150);
+const WA_TEMP_OUTAGE_MS = S('CHAOS_WA_TEMP_OUTAGE_S', 180);
 const WORKER_STOP_MS = S('CHAOS_WORKER_STOP_S', 120);
 const t0 = Date.now();
 const log = (m) => console.log(`[chaos ${((Date.now() - t0) / 1000).toFixed(1).padStart(7)} s] ${m}`);
@@ -162,6 +163,8 @@ class Stage {
     await this.startWorker();
     const { SimulatorClient } = await importDist('tools/wa-simulator/dist/index.js');
     this.simc = new SimulatorClient(`http://127.0.0.1:${P.sim}`);
+    // a press during an outage returns only once Meta's (the simulator's) redeliveries succeed
+    this.simcLong = new SimulatorClient({ baseUrl: `http://127.0.0.1:${P.sim}`, timeoutMs: 600_000 });
     this.base = `http://127.0.0.1:${P.api}`;
     const owner = new ApiClient(this.base, { label: 'owner' });
     await owner.login(this.world.owner.phone, this.world.owner.secret, this.world.owner.totpSecret);
@@ -321,7 +324,7 @@ async function kp1(st) {
   await st.settleWebhooks();
   await st.api.stop();
   await st.startApi({ CHAOS_KILL_AT: 'webhook_after_store_before_ack' });
-  const press = st.simc.pressButton({ to: t.phone, purpose: 'W-01' });
+  const press = st.simcLong.pressButton({ to: t.phone, purpose: 'W-01' });
   await st.api.waitExit(20_000);
   st.check(
     'api killed at KP-1 webhook_after_store_before_ack (SIGKILL)',
@@ -685,7 +688,7 @@ async function dbOutage(st) {
     cmd.status === 503 && cmd.error?.code === 'SERVICE_UNAVAILABLE',
     { status: cmd.status, code: cmd.error?.code },
   );
-  const press3 = st.simc.pressButton({ to: t3.phone, purpose: 'W-01' }); // Meta keeps redelivering
+  const press3 = st.simcLong.pressButton({ to: t3.phone, purpose: 'W-01' }); // Meta keeps redelivering
   await sleep(Math.max(0, cutAt + DB_OUTAGE_MS - Date.now()));
   st.alive(st.api, st.worker);
   await withAdmin((c) => c.query(`ALTER DATABASE ${st.dbName} ALLOW_CONNECTIONS true`));
@@ -901,47 +904,63 @@ async function waOutage(st) {
   await st.consistent();
 }
 
-/** 12 §5.14 with temporary errors (131016 for 150 s): `down` only after the 2-minute failing streak. */
+/**
+ * 12 §5.14 with temporary errors (131016, as a provider outage during an event): a new request every 20 s keeps
+ * the failures going; the channel turns `down` once every attempt failed for 2 minutes; after the recovery only
+ * the current states are sent. The W-02 of the requests made before `down` exhaust the 5 attempts of 12 §5.9
+ * (1 + 4 + 16 + 64 s) first — that outcome is recorded (it is the subject of a proposed decision).
+ */
 async function waOutageTemporary(st) {
   const parker = await st.driver(0);
-  await st.driver(1);
-  await st.driver(2);
-  const sup = await st.supervisor();
-  const t1 = await st.parked(parker);
-  const t2 = await st.parked(parker);
+  for (let i = 1; i < st.venue.drivers.length; i++) await st.driver(i);
+  const tickets = [];
+  for (let i = 0; i < 8; i++) tickets.push(await st.parked(parker));
   await st.settleWebhooks();
   const since = Date.now();
   await st.simc.setChannel({ state: 'down', code: 131016, durationMs: WA_TEMP_OUTAGE_MS });
   log(`wa_outage_temporary: Graph answers 131016 for ${WA_TEMP_OUTAGE_MS / 1000} s`);
-  await st.simc.pressButton({ to: t1.phone, purpose: 'W-01' }); // its W-02 retries 1, 4, 16, 64 s
-  // T1 is accepted (and stays `assigned`) so the older request does not hold the drivers T2 needs (10 §5.4)
+  const [t1, ...rest] = tickets;
+  // T1 asks first and is accepted at once; it is taken to `ready` once the channel is down
+  await st.simc.pressButton({ to: t1.phone, purpose: 'W-01' });
   const o1 = await st.waitFor(() => st.liveOffer(t1.ticketId), 60_000, 'T1 offer');
-  await must(
-    st.drivers.get(o1.user_id).command('POST', `/v1/task-offers/${o1.offer_id}/accept`, {}),
-    'accept T1',
-  );
-  await sleep(Math.max(0, since + 60_000 - Date.now()));
-  await must(
-    sup.command('POST', `/v1/tickets/${t2.ticketId}/retrievals`, { reason: 'طلب أثناء تعطل مؤقت' }),
-    'on behalf',
-  );
-  const down = await st.waitFor(
+  const d1 = st.drivers.get(o1.user_id);
+  const acc1 = await must(d1.command('POST', `/v1/task-offers/${o1.offer_id}/accept`, {}), 'accept T1');
+  // the event goes on: a new request every 20 s until the channel is down
+  const pressedAt = new Map([[t1.ticketId, Date.now()]]);
+  let down = null;
+  for (const t of rest) {
+    await sleep(20_000);
+    down = (await st.rows(`SELECT health_changed_at FROM whatsapp_channel WHERE health_status = 'down'`))[0];
+    if (down) break;
+    await st.simc.pressButton({ to: t.phone, purpose: 'W-01' });
+    pressedAt.set(t.ticketId, Date.now());
+  }
+  down ??= await st.waitFor(
     async () =>
       (await st.rows(`SELECT health_changed_at FROM whatsapp_channel WHERE health_status = 'down'`))[0],
-    120_000,
+    90_000,
     'channel down',
   );
   const after = (new Date(down.health_changed_at).getTime() - since) / 1000;
   st.check(
-    'the channel goes down after the 2-minute failing streak (12 §5.14)',
+    'the channel turns down after the 2-minute failing streak (12 §5.14)',
     after >= 115,
     `${after.toFixed(0)} s after the first failure`,
   );
-  const alert = await st.rows(
+  const alerts = await st.rows(
     `SELECT count(*)::int AS n FROM alerts WHERE type = 'wa_channel_down' AND status <> 'resolved'`,
   );
-  st.check('wa_channel_down raised', count(alert) >= 1);
-  await toReady(st, t2.ticketId); // T2 reaches `ready` while the channel is down
+  st.check('wa_channel_down raised', count(alerts) >= 1);
+  // internal work goes on while it is down: T1 reaches `ready` (W-04, W-05 wait for the channel)
+  const home = await must(d1.get('/v1/me/home'), 'home');
+  const taskId = acc1.data.task.id;
+  await must(
+    d1.command('POST', `/v1/tasks/${taskId}/key-pickup`, { key_slot_id: home.data.current_task.key_slot.id }),
+    'key-pickup',
+  );
+  await must(d1.command('POST', `/v1/tasks/${taskId}/start-retrieval`, {}), 'start');
+  await must(d1.command('POST', `/v1/tasks/${taskId}/ready`, {}), 'ready');
+  st.check('internal operations went on while the channel was down (accept, key pickup, start, ready)', true);
   await sleep(Math.max(0, since + WA_TEMP_OUTAGE_MS - Date.now()));
   await st.waitFor(
     async () => (await st.rows(`SELECT health_status FROM whatsapp_channel`))[0]?.health_status === 'healthy',
@@ -953,26 +972,53 @@ async function waOutageTemporary(st) {
       count(
         await st.rows(
           `SELECT count(*)::int AS n FROM notifications WHERE channel = 'whatsapp' AND status = 'pending' AND ticket_id = ANY($1::uuid[])`,
-          [[t1.ticketId, t2.ticketId]],
+          [tickets.map((t) => t.ticketId)],
         ),
       ) === 0,
     180_000,
     'no pending notification',
   );
-  const got2 = await receivedSince(st, t2.phone, since);
-  st.check('T2 (ready at the recovery) receives W-05 only', JSON.stringify(got2) === '["W-05"]', got2);
-  const w02 = (
-    await st.rows(
-      `SELECT status, skipped_reason, last_error_code, attempts FROM notifications WHERE ticket_id = $1 AND purpose = 'W-02'`,
-      [t1.ticketId],
-    )
-  )[0];
+  const resolved = await st.rows(
+    `SELECT count(*)::int AS n FROM alerts WHERE type = 'wa_channel_down' AND status <> 'resolved'`,
+  );
+  st.check('wa_channel_down resolved automatically', count(resolved) === 0);
   const got1 = await receivedSince(st, t1.phone, since);
+  st.check(
+    'T1 (ready at the recovery) receives no intermediate state: W-05 is the last message',
+    got1.at(-1) === 'W-05' && !got1.includes('W-04'),
+    got1,
+  );
+  const outcome = [];
+  for (const t of tickets.filter((x) => pressedAt.has(x.ticketId))) {
+    const w02 = (
+      await st.rows(
+        `SELECT status, attempts, last_error_code FROM notifications WHERE ticket_id = $1 AND purpose = 'W-02'`,
+        [t.ticketId],
+      )
+    )[0];
+    outcome.push({
+      pressed_s: Math.round((pressedAt.get(t.ticketId) - since) / 1000),
+      w02: w02?.status,
+      attempts: w02?.attempts,
+      received: await receivedSince(st, t.phone, since),
+    });
+  }
+  const lateOnes = outcome.filter((o) => o.pressed_s > after - 50);
+  st.check(
+    'requests made shortly before or during `down` get their current state after the recovery',
+    lateOnes.every((o) => o.w02 !== 'failed'),
+    lateOnes,
+  );
+  st.check(
+    'no duplicate and no superseded message after the recovery',
+    outcome.every((o) => new Set(o.received).size === o.received.length),
+  );
+  const failed = outcome.filter((o) => o.w02 === 'failed');
   st.note(
-    `T1 asked at the start of the outage: its W-02 ended ${w02?.status} after ${w02?.attempts} attempts (${w02?.last_error_code}); ` +
-      `received after the recovery: ${JSON.stringify(got1)}. The 5 attempts of 12 §5.9 (1+4+16+64 s) end before the 2-minute streak ` +
-      `of §5.14 turns the channel down, so a request made in the first ~35 s of a temporary outage gets wa_send_failed instead of ` +
-      `its W-02 after the recovery (see DEC-PROPOSED in docs/progress/notes/load-chaos.md).`,
+    `W-02 per request (seconds after the outage began): ${JSON.stringify(outcome)}. ` +
+      `${failed.length} request(s) made up to ${failed.length ? Math.max(...failed.map((f) => f.pressed_s)) : 0} s into the outage ended failed with wa_send_failed (down came at ${after.toFixed(0)} s): the five attempts of 12 §5.9 ` +
+      `(1 + 4 + 16 + 64 s) run out before the 2-minute streak of §5.14 turns the channel down, so those customers do not get ` +
+      `their «request received» after the recovery (DEC-PROPOSED in docs/progress/notes/load-chaos.md).`,
   );
   await st.consistent();
 }
@@ -983,19 +1029,19 @@ async function pushOutage(st) {
   await push.start();
   try {
     const only = await st.driver(0); // the only driver on duty: every offer goes to him
-    const reg = await must(
-      only.command(
-        'POST',
-        '/v1/me/devices',
-        { platform: 'android', display_mode: 'standalone', notification_permission: 'granted' },
-        { key: false },
-      ),
-      'device',
-    );
-    const deviceId = reg.data.id;
+    // the sign-in linked a devices row to the session (09 §9.5); the app grants notifications and subscribes it
+    // (the API does not return that id yet — `me.session.device_id`, proposed in pnt-035 — so it is read here)
+    const deviceId = (
+      await st.rows(
+        `SELECT device_id FROM auth_sessions WHERE user_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1`,
+        [only.userId],
+      )
+    )[0]?.device_id;
     await must(
       only.request('PUT', `/v1/me/devices/${deviceId}`, {
         body: {
+          display_mode: 'standalone',
+          notification_permission: 'granted',
           push_subscription: {
             endpoint: `http://127.0.0.1:${P.push}/push/${deviceId}`,
             keys: subscriptionKeys(),
@@ -1143,18 +1189,36 @@ async function workerStop(st) {
     true,
     `${Math.round((Date.now() - restartedAt) / 1000)} s`,
   );
+  // T2's escalation (queued_at + dispatch.unaccepted_escalation_s = 60 s) fell due while the worker was down
+  await st.waitFor(
+    async () =>
+      count(
+        await st.rows(
+          `SELECT count(*)::int AS n FROM outbox_events
+            WHERE type = 'job.escalate_unaccepted' AND payload->>'task_id' = $1 AND status = 'done'`,
+          [task2],
+        ),
+      ) >= 1,
+    120_000,
+    'the escalation of T2',
+  );
+  await sleep(3000);
   const esc = await st.rows(
-    `SELECT status, attempts FROM outbox_events WHERE type = 'job.escalate_unaccepted' AND payload->>'task_id' = $1`,
+    `SELECT status, attempts, available_at, processed_at FROM outbox_events
+      WHERE type = 'job.escalate_unaccepted' AND payload->>'task_id' = $1`,
     [task2],
   );
   const escalated = await st.rows(
     `SELECT count(*)::int AS n FROM outbox_events WHERE type = 'task.escalated' AND aggregate_id = $1`,
     [task2],
   );
+  const dueDuringStop = esc.some((r) => new Date(r.available_at).getTime() < restartedAt);
   st.check(
-    'the escalation due during the stop ran once after the restart',
+    dueDuringStop
+      ? 'the escalation due during the stop ran once, after the restart'
+      : 'the escalation ran once (the stop was shorter than its 60 s timer)',
     esc.filter((r) => r.status === 'done').length === 1 && count(escalated) === 1,
-    { jobs: esc, events: count(escalated) },
+    { jobs: esc.map((r) => ({ status: r.status, attempts: r.attempts })), events: count(escalated) },
   );
   await st.consistent();
 }
