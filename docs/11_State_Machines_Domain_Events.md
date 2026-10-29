@@ -334,9 +334,9 @@ stateDiagram-v2
 - العميل: W-06 (مرتبطة بـ`ticket.delivered` فقط لتفادي التكرار).
 
 **TT-19 · `ready` ← `delivered` — `POST /v1/tickets/{ticketId}/handover-exception`**
-- الحراس: التذكرة `ready`؛ سبب وأدلة تحقق هوية موثقة (الحقول في 07)؛ رقم اللوحة وحده لا يكفي (المعمارية §4ز)؛ قواعد الدفع كما في TT-18.
-- الآثار: كـTT-18 مع: الرمز الحي (إن وُجد، ولو مقفلًا) ← `revoked` بسبب `exception_handover`؛ `delivered_by` = المكلّف الذي سلّم فعليًا، والمشرف يظهر كمعتمد في الحدث والتدقيق؛ واقعة `manual_verification` (أو `lost_ticket` عند فقد الكعب الورقي) تُنشأ موثقة بحالة `resolved`.
-- الأحداث: `handover.exception_approved`، `handover.completed`، `ticket.delivered`، `task.completed`، `custody.changed` ×2، `incident.opened`، `incident.resolved`.
+- الحراس: التذكرة `ready`؛ سبب وأدلة تحقق هوية موثقة (الحقول في 07)؛ رقم اللوحة وحده لا يكفي (المعمارية §4ز)؛ بوابة الدفع بوابة TT-18 بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210): `due` بلا `payment` ← `PAYMENT_PENDING`، ومع `payment` قواعد 13 §5.2 على `payment.*` (`PAYMENT_AMOUNT_MISMATCH`، `PAYMENT_METHOD_NOT_ALLOWED`)؛ `collected` مع `payment` ← `PAYMENT_ALREADY_RECORDED`؛ `not_required` أو `waived` مع `payment` ← `VALIDATION_FAILED` (`not_applicable`)؛ و`payment.collected_by` مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4، وإلا `VALIDATION_FAILED` بـ`not_eligible`)؛ ويُقفل الحفل `FOR SHARE` (L2) حين تكون التذكرة `due` أو يُرسل `payment`.
+- الآثار: كـTT-18 مع: الرمز الحي (إن وُجد، ولو مقفلًا) ← `revoked` بسبب `exception_handover`؛ `delivered_by` = المكلّف الذي سلّم فعليًا، والمشرف يظهر كمعتمد في الحدث والتدقيق؛ واقعة `manual_verification` (أو `lost_ticket` عند فقد الكعب الورقي) تُنشأ موثقة بحالة `resolved` (`auto_created: true`)؛ والتحصيل المضمّن يُسجَّل بـ`collected_by` من الجسم و`source = exception` فيبقى النقد بعهدة المحصّل حتى تسليمه (13 §9، PAY-TC-22).
+- الأحداث: `handover.exception_approved`، `handover.completed`، `ticket.delivered`، `task.completed`، `custody.changed` ×2، `incident.opened`، `incident.resolved`، و`payment.recorded` عند التحصيل.
 - العميل: W-06.
 
 **TT-20 · `ready` ← `reparking` — `POST /v1/tickets/{ticketId}/repark`**

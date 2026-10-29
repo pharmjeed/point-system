@@ -2862,9 +2862,9 @@ paths:
       description: |-
         للرمز المفقود/المقفل أو التذكرة الضائعة. يلزم تحقق هوية موثق بفحصين مستقلين على الأقل؛ رقم اللوحة وحده غير كافٍ. delivered_by يبقى السائق المكلّف والاعتماد للمشرف.
 
-        الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو بلا جوال ← VALIDATION_FAILED بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (insufficient_checks) (DEC-209) · بوابة الدفع كالتسليم
+        الشروط: ticket.status=ready (التذكرة النهائية ← TICKET_CLOSED، DEC-210) · فحصان على الأقل من phone_last4 (يُحسب إن طابق الرقم المخزن؛ عدم التطابق أو بلا جوال ← VALIDATION_FAILED بـmismatch أو no_customer_phone)، plate_confirmed، vehicle_description_confirmed، document_note غير فارغ؛ اللوحة لا تكفي وحدها (insufficient_checks) (DEC-209) · بوابة الدفع بوابة التسليم بعد فحص الهوية وقبل إبطال الرمز، بلا أثر (DEC-210، DEC-277، DEC-278): due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ payment.collected_by هو مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4؛ غيرهما ← VALIDATION_FAILED بـnot_eligible)؛ ويُقفل الحفل FOR SHARE حين تكون التذكرة due أو يُرسل payment
 
-        الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة manual_verification (أو lost_ticket للورقية) تُنشأ دائمًا resolved بحل handover_exception: <methods> + العهدة من حائزيها الحاليين إلى العميل (DEC-210)
+        الأثر: كالتسليم + claim code revoked (exception_handover، ولو مقفلًا) + واقعة manual_verification (أو lost_ticket للورقية) تُنشأ دائمًا resolved بحل handover_exception: <methods> (auto_created: true) + العهدة من حائزيها الحاليين إلى العميل (DEC-210) + التحصيل المضمّن بـcollected_by من الجسم وpayment.recorded بـsource=exception (النقد بعهدة المحصّل حتى تسليمه، PAY-TC-22)
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2940,7 +2940,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
+          description: HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
@@ -2962,7 +2962,7 @@ paths:
       x-permission: handover.exception
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [HANDOVER_NOT_READY, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [handover.exception_approved, handover.completed, ticket.delivered, task.completed, custody.changed, driver.availability_changed, task.promoted, incident.opened, incident.resolved, payment.recorded]
       x-ws-events: [ticket.updated, task.updated, driver.state_changed]
       x-whatsapp: [W-06]
@@ -9429,7 +9429,7 @@ components:
         collected_by:
           type: string
           format: uuid
-          description: الموظف الذي حصّل فعلًا (السائق المكلّف أو من في السجل الورقي)
+          description: الموظف الذي حصّل فعلًا وبعهدته النقد — في التسليم الاستثنائي مكلّف الإحضار أو المشرف المعتمد نفسه (13 §8.4، وإلا VALIDATION_FAILED بـnot_eligible)، وفي المطابقة اليدوية من في السجل الورقي
       required: [method, amount_halalas, collected_by]
       description: تحصيل منسوب لمحصّل محدد (التسليم الاستثنائي والمطابقة اليدوية) — الملف 13
       additionalProperties: false

@@ -20,9 +20,11 @@ const OPERATION = 'POST /v1/tickets/{ticketId}/handover';
  *   VALIDATION_FAILED (`payment`, `not_applicable`).
  * `collect` writes the payment in the handover transaction once the verification passed (`source = handover`,
  * collected by the assignee). The handover holds L2 (event FOR SHARE) → L4 → L5 → L6 when money is involved.
+ * The supervisor's exceptional handover (TT-19, 13 §8.4) runs the same gate and collects with its body's
+ * `collected_by` and `source = exception`.
  */
 export const handoverPaymentHook: InlinePaymentHook = {
-  async check(tx, { ticket, payment }) {
+  async check(tx, { ticket, payment, operation }) {
     if (ticket.payment_status === 'due') {
       const ev = await loadMoneyEventRow(tx, ticket.event_id);
       if (!payment)
@@ -34,7 +36,7 @@ export const handoverPaymentHook: InlinePaymentHook = {
         ticket,
         event: ev,
         input: payment,
-        command: OPERATION,
+        command: operation ?? OPERATION,
         prefix: 'payment.',
       });
       return;
@@ -44,16 +46,16 @@ export const handoverPaymentHook: InlinePaymentHook = {
     throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
   },
 
-  async collect(tx, { ticket, cycle, payment, actor, requestId }) {
+  async collect(tx, { ticket, cycle, payment, actor, requestId, collectedBy, source, operation }) {
     const { payment: row } = await recordCollection(tx, {
       ticket,
       cycleId: cycle.id,
       input: payment,
-      collectedBy: actor.userId,
+      collectedBy: collectedBy ?? actor.userId,
       actor,
       requestId: requestId ?? '',
-      source: 'handover',
-      operation: OPERATION,
+      source: source ?? 'handover',
+      operation: operation ?? OPERATION,
     });
     const [view] = await loadPaymentViews(tx, [row]);
     return view!;

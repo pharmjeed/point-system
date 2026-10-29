@@ -40,14 +40,15 @@ export interface ClaimCodeHook {
 }
 
 /**
- * PNT-080: payment collected inside the handover (TT-18). S2 default: a due ticket cannot be delivered
- * (PAYMENT_PENDING) even when the body carries a payment.
+ * PNT-080: payment collected inside the handover (TT-18) and the supervisor's exceptional handover (TT-19,
+ * 13 §8.4). S2 default: a due ticket cannot be delivered (PAYMENT_PENDING) even when the body carries a payment.
  */
 export interface InlinePaymentHook {
   /**
    * 13 §5.3 step 5 (PNT-080): the money checks of the handover — after the custody checks, before the code or
-   * stub is verified, without any effect — so a wrong amount or method never consumes an attempt. Without it the
-   * handover keeps the S2 gate.
+   * stub is verified (or the exception's code revoked), without any effect — so a wrong amount or method never
+   * consumes an attempt. Without it the handover keeps the S2 gate. `operation` names the command in the errors
+   * (default: the handover).
    */
   check?(
     tx: Tx,
@@ -55,8 +56,14 @@ export interface InlinePaymentHook {
       ticket: TicketRow;
       payment: { method: 'cash' | 'pos'; amount_halalas: number; pos_reference?: string | null } | null;
       actor: ActorContext;
+      operation?: string;
     },
   ): Promise<void>;
+  /**
+   * Records the collection once the verification passed. The handover's collector is its actor (the assignee);
+   * the exceptional handover passes the body's `collected_by` (the assignee or the approving supervisor,
+   * 13 §8.4), `source: 'exception'` and its own operation.
+   */
   collect(
     tx: Tx,
     ctx: {
@@ -65,6 +72,9 @@ export interface InlinePaymentHook {
       payment: { method: 'cash' | 'pos'; amount_halalas: number; pos_reference?: string | null };
       actor: ActorContext;
       requestId?: string;
+      collectedBy?: string;
+      source?: 'handover' | 'exception';
+      operation?: string;
     },
   ): Promise<Record<string, unknown>>;
 }
