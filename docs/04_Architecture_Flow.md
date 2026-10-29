@@ -178,6 +178,7 @@ flowchart TB
 - المسؤولية: تعريف Outbox وحلقة توزيعه، تخطيط الإشعارات (من الحدث إلى قنوات ومستلمين وفق الملف 14)، إرسال Web Push، النشر الفوري، سجل المحاولات.
 - الجداول: `outbox_events`, `notifications`, `notification_attempts`.
 - الواجهة: `OutboxWriter.append(tx, row)`، `NotificationPlanner.plan(event) → rows` (دالة نقية بلا شبكة تُستدعى داخل المعاملة)، `OutboxDispatcher` (حلقة العامل)، `PushSender`، `RealtimePublisher.publish(tx, room, event)`.
+- مخطِّطات داخل معاملة الأمر: مخطِّط Push للموظفين (عمود «Push» في 14 §3 ← `notifications` بقناة `push` + `job.push_send` لكل جهاز ووسم، DEC-256…DEC-264)، ومخطِّط الاتصال الفوري لغير التوزيع: `ticket.updated` مدمجًا لكل تذكرة يُبنى قبل الالتزام بإسقاط `TicketSummary` تسجّله `use-cases` (فلا تستورد الإشعارات وحدة التذاكر)، و`sync.required` للحفل والوردية، و`channel.status`، و`incident.updated` (DEC-265…DEC-268، DEC-272).
 - معالجات العامل: `job.push_send`, `job.ws_publish`.
 
 **7) Incidents — `incidents`**
@@ -507,9 +508,9 @@ RETURNING e.*;
 
 ### 7.2 النشر عبر `LISTEN/NOTIFY`
 
-- أي معاملة (في `api` أو `worker`) تنشر حدثًا فوريًا بـ`pg_notify('point_realtime', json)` حيث الحمولة `{ "room": "...", "event": <غلاف مختصر> }` أقل من 8000 بايت (معرّفات ونسخ وحقول عرض دنيا).
+- أي معاملة (في `api` أو `worker`) تنشر حدثًا فوريًا بـ`pg_notify('point_realtime', json)` حيث الحمولة `{ "org_id": "...", "rooms": [...], "message": <غلاف مختصر> }` أقل من 8000 بايت (معرّفات ونسخ وحقول عرض دنيا؛ حتى 60 غرفة لكل NOTIFY، DEC-269).
 - كل نسخة `api` تستمع للقناة وتبث للمقابس المتصلة بها محليًا؛ لأن كل النسخ تستقبل الإشعار نفسه، يصل الحدث للجميع **دون Redis** حتى مع عدة نسخ.
-- `job.ws_publish` يُستخدم فقط حين يتعذر النشر داخل معاملة (حمولة كبيرة أو نشر مؤجل)، ويحمل معرف الحدث ليجلب الـapi التفاصيل؛ الحدث الواحد لا يُنشر بالطريقين (DEC-48).
+- `job.ws_publish` يُستخدم فقط حين يتعذر النشر داخل معاملة (حمولة كبيرة)، ويحمل المعرّفات وحدها (`rooms`، `event`، `event_id`، `aggregate`)، فلا تُعاد بناء الرسالة: ينشر معالجه `sync.required` (`reason: publish_overflow`) للغرف نفسها في دفعات من 60 فيعيد العملاء جلب لقطتهم؛ وكل مخطِّط يقسم غرفه 60 لكل NOTIFY؛ الحدث الواحد لا يُنشر بالطريقين (DEC-48، DEC-269).
 - Redis adapter لـSocket.IO يُضاف فقط إذا قيس أن `NOTIFY` صار عنق زجاجة أو احتجنا بثًا من خارج المعاملات.
 - النشر الفوري «مرة على الأكثر» وغير دائم: الدوام في حالة القاعدة، والتعافي بالمزامنة (§7.3).
 

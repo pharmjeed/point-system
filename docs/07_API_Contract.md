@@ -319,7 +319,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 - الصلاحية: `ticket.intake` · مفتاح التكرار: إلزامي · نجاح: `200`
 - الشروط: status=received (كل الحقول)، أو status=parking مع channel=paper وpaper_serial فقط وwa_link_status≠linked (DEC-40)؛ غير ذلك INVALID_STATE_TRANSITION · المستدعي منشئ التذكرة وأثناء مناوبته
 - الأثر: يحدّث حقول المسودة؛ لا رسائل للعميل. تحويل الورقي (DEC-40): channel=paper + wa_link_status=none + link_version+1 + ticket.wa_link_changed
-- أحداث: `ticket.wa_link_changed` · WS: `ticket.updated`
+- أحداث: `ticket.wa_link_changed` · WS: `ticket.updated` لتحويل DEC-40 وحده؛ تعديل المسودة لا يصدر حدثًا نطاقيًا ولا `ticket.updated`، وتتابع S-02 المسودات بـ`ticket.created` و`ticket.intake_submitted` (DEC-274)
 - أخطاء خاصة: `DUTY_REQUIRED`, `INVALID_STATE_TRANSITION`, `KEY_TAG_IN_USE`, `PAPER_SERIAL_IN_USE`, `PHONE_INVALID`, `PLATE_INVALID`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tickets/{ticketId}/media` — طلب رابط رفع صورة فحص
@@ -1204,13 +1204,13 @@ Content-Type: application/json
 | `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
 | `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
-| `ticket.updated` | المشرفون + السائق المعني (المكلّف/المنشئ أثناء التسجيل) | `TicketSummary` + `cause` (+ `wa_link_pending` للسائق في ربط QR) | تحدّث البطاقات والقوائم |
+| `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265) | تحدّث البطاقات والقوائم |
 | `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |
 | `alert.updated` | نفس الغرف | `Alert` | يوقف صوت التصعيد عند الإقرار أو الحل |
-| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
-| `channel.status` | كل الغرف في المؤسسة | `{whatsapp: WaHealthStatus, changed_at}` | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
-| `sync.required` | `user:{userId}` | `{reason}` (و`scope`)؛ منه `reason` = `duty_force_ended` أو `duty_ended` مع `scope: home` لغرفة السائق عند إنهاء مناوبته قسرًا أو ذاتيًا (لأجهزته الأخرى)، أما النقل والتعطيل فيكتفيان بـ`session.revoked` (DEC-221) | تجلب `GET /v1/me/home` (السائق) أو `GET /v1/events/{eventId}/operations` (المشرف) |
+| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` + `cause` (`incident.opened` أو `incident.updated` أو `incident.resolved`) بقراءة طازجة؛ ينشره مخطِّط الإشعارات لا وحدة الوقائع (DEC-272) | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
+| `channel.status` | كل غرف الموظفين في المؤسسة: `org:{orgId}:admins` ومشرفو كل موقع وسائقو كل مجموعة | `{whatsapp: WaHealthStatus, changed_at}` + `cause` (`wa.channel_health_changed`) بـ`aggregate {type: whatsapp_channel, id, version: null}`؛ ناشر واحد هو مخطِّط الإشعارات (DEC-268) | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
+| `sync.required` | حسب `reason` (DEC-267): `duty_force_ended` أو `duty_ended` (`scope: home`) لغرفة السائق عند إنهاء مناوبته قسرًا أو ذاتيًا (لأجهزته الأخرى)، أما النقل والتعطيل فيكتفيان بـ`session.revoked` (DEC-221)؛ `shift_status_changed` (`scope: home`، `shift_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة المجموعة، ومعها عند الفتح غرف `user:` للسائقين ذوي التعيين النشط في الموقع وعند الإغلاق غرف المناوبات المنتهية؛ `event_status_changed` (`scope: events`، `event_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة مجموعة الحفل؛ `settings_changed` (`scope: me`) لكل مستخدم نشط عند تغيير `heartbeat.*`؛ `scope_changed` لغرفة المستخدم عند تغيير نطاقه؛ `publish_overflow` (`cause: job.ws_publish`) لغرف رسالة تعذر نشرها (DEC-269) | `{reason}` (+ `scope` و`cause` والمعرّفات أعلاه حين تنطبق) | تجلب `GET /v1/me/home` (السائق؛ و`scope: events` يحدّث `open_events` فيها، و`scope: me` يجلب `GET /v1/me`) أو `GET /v1/events/{eventId}/operations` (المشرف) |
 | `session.revoked` | `user:{userId}` | `{reason: SessionRevokedReason}` | تمسح البيانات المحلية وتعود لشاشة الدخول |
 
 تنبيه أمني: لا يحمل أي حدث رمز التسليم ولا الجوال الكامل؛ موضع المفتاح والموقف يصلان فقط في `TaskCard` للمكلّف.
@@ -1227,6 +1227,7 @@ Content-Type: application/json
 - التسليم «مرة واحدة على الأكثر» دون إعادة تشغيل للأحداث الفائتة. الترتيب داخل الغرفة أفضل جهد.
 - العميل يتجاهل حدثًا مكرر `id`، وأي تحديث `aggregate.version` فيه ≤ آخر إصدار يعرفه.
 - عند (إعادة) الاتصال، أو العودة من الخلفية، أو `sync.required`، أو فجوة نبضات: مزامنة كاملة قبل السماح بالأوامر — السائق `GET /v1/me/home`، المشرف `GET /v1/events/{eventId}/operations`. تظهر «آخر مزامنة» في الشريط العلوي.
+- رسالة أكبر من حد NOTIFY تُستبدل بـ`sync.required` (`reason: publish_overflow`) لغرفها عبر `job.ws_publish`، لأن صفه يحمل المعرّفات وحدها؛ وكل مخطِّط يقسم غرفه 60 لكل NOTIFY فيبقى ذلك استثناءً (DEC-269، يكمل DEC-48).
 - حالة الاتصال تُحسب على الخادم من آخر نبضة (WebSocket أو `POST /v1/me/heartbeat`): `online` حتى 45 ث، `uncertain` حتى 120 ث، ثم `offline` (إعدادات `heartbeat.*`). الاتصال مؤشر منفصل: لا يغيّر التوفر ولا يسحب مهمة جارية، ولا يُفترض بقاء الاتصال في الخلفية.
 - بلا اتصال مؤكد لا تعرض الواجهة «تم القبول»؛ تنتظر رد HTTP. البيانات المخزنة تُعلَّم «قديمة» ويُعطّل القبول والتسليم حتى المزامنة.
 - الصوت داخل الصفحة يعمل فقط بعد «تفعيل واختبار الصوت» وأثناء ظهور الصفحة؛ في الخلفية يحاول Web Push (حيث يُدعم) بإشعار لا يحمل إلا رقم التذكرة (DEC-23). المؤقتات والتصعيد تعمل على الخادم حتى لو أُغلقت كل الصفحات.

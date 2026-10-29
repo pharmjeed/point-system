@@ -167,7 +167,7 @@ LIMIT 1;
 | `STATEMENT_TIMEOUT` | 5 s | `SET LOCAL statement_timeout` |
 | `TX_RETRY` | 3 محاولات مع تأخير عشوائي 20–80 ms | فقط عند `40001` أو `40P01`؛ `55P03` لا يُعاد على الخادم (§2.1، Canon §14ب) |
 
-**تعليقات لا ترفع `version`:** حقول وصفية لا تمثل حالة ولا ترفع `version` ولا تبطل المؤقتات: `task_offers.reminded_at`، `offer_recipients.notified_ws_at/notified_push_at/seen_at`، `duty_sessions.last_heartbeat_at/connection_state`، `tasks.escalated_at`، `dispatch_pools.last_pass_at/pass_count`، وعداد `events.next_display_number`. كل ما عداها يرفع `version`. يسري ذلك على كل كاتب لـ`connection_state`: `job.heartbeat_sweep`، ونبضة الهوية (`POST /v1/me/heartbeat` و`client.heartbeat`) حين تعيده `online` (DEC-218).
+**تعليقات لا ترفع `version`:** حقول وصفية لا تمثل حالة ولا ترفع `version` ولا تبطل المؤقتات: `task_offers.reminded_at`، `offer_recipients.notified_ws_at/notified_push_at/seen_at` (`notified_push_at` يضبطه `job.push_send` عند أول Push ناجح للمستلم، أولًا في معاملة النتيجة: L7 قبل L9، DEC-273)، `duty_sessions.last_heartbeat_at/connection_state`، `tasks.escalated_at`، `dispatch_pools.last_pass_at/pass_count`، وعداد `events.next_display_number`. كل ما عداها يرفع `version`. يسري ذلك على كل كاتب لـ`connection_state`: `job.heartbeat_sweep`، ونبضة الهوية (`POST /v1/me/heartbeat` و`client.heartbeat`) حين تعيده `online` (DEC-218).
 
 ---
 

@@ -1162,7 +1162,7 @@ interface PaymentWaived { ticket_id: UUID; waived_by: UUID; reason: string }
 | `alert.raised` | أي رفع تنبيه (§6.10) | `venue:{venueId}:supervisors` ← `alert.raised` (صوت `escalation` للحرجة)؛ وللأنواع التي تمس أكثر من موقع (`wa_channel_down`، `outbox_lag`، `wa_webhook_silent`، `transfer_blocked`؛ صف لكل موقع متأثر، DEC-46) `org:{orgId}:admins` أيضًا | `escalation` للحرجة |
 | `alert.acknowledged` | الإقرار | المشرفون ← `alert.updated` | — |
 | `alert.resolved` | الحل اليدوي أو الآلي | المشرفون ← `alert.updated` | — |
-| `incident.opened` | `POST /v1/incidents` أو إنشاء نظامي | المشرفون ← `incident.updated`، و`ticket.updated` إن ارتبطت بتذكرة | — |
+| `incident.opened` | `POST /v1/incidents` أو إنشاء نظامي | المشرفون ← `incident.updated` (ينشره مخطِّط الإشعارات بقراءة طازجة مع `cause`، DEC-272)، و`ticket.updated` للمشرفين وحدهم إن ارتبطت بتذكرة (DEC-266) | — |
 | `incident.updated` | `PATCH /v1/incidents/{incidentId}` | كذلك | — |
 | `incident.resolved` | الحل | كذلك | — |
 
@@ -1178,17 +1178,17 @@ interface IncidentChanged {
 }   // incident.opened و incident.updated و incident.resolved
 ```
 
-توضيح: أحداث الوقائع الثلاثة تصل المشرفين عبر حدث WS `incident.updated` (canon §7.3، الحمولة `Incident` في 07) فتتحدث S-12؛ والمرتبطة بتذكرة تطلق أيضًا `ticket.updated` لتحديث سجلها في S-03.
+توضيح: أحداث الوقائع الثلاثة تصل المشرفين عبر حدث WS `incident.updated` (canon §7.3، الحمولة `Incident` + `cause` في 07) فتتحدث S-12؛ والمرتبطة بتذكرة تطلق أيضًا `ticket.updated` للمشرفين وحدهم لتحديث سجلها في S-03. وحدة الوقائع تصدر الأحداث ولا تنشر شيئًا؛ ينشر الرسالتين مخطِّط الاتصال الفوري للإشعارات (DEC-238، DEC-272).
 
 ### 8.9 الحفل والوردية
 
 | الحدث | المنتج | WS |
 |---|---|---|
-| `event.opened` | فتح أو إعادة فتح | المشرفون + `pool:{poolId}:drivers` ← `sync.required` (`scope = events`) |
+| `event.opened` | فتح أو إعادة فتح | مشرفو الموقع + `pool:{poolId}:drivers` لمجموعة الحفل ← `sync.required` (`reason = event_status_changed`، `scope = events`، `event_id`، `dispatch_pool_id`) |
 | `event.closing_started` | بدء الإغلاق | كذلك |
 | `event.closed` | الإغلاق | كذلك |
-| `shift.opened` | فتح الوردية | `pool:{poolId}:drivers` ← `sync.required` (`scope = home`) |
-| `shift.closed` | إغلاق الوردية | كذلك + `driver.state_changed` للمناوبات المنتهية |
+| `shift.opened` | فتح الوردية | مشرفو الموقع + `pool:{poolId}:drivers` + غرف `user:` للسائقين ذوي التعيين النشط في الموقع (غرفة المجموعة فارغة عند الفتح؛ D-03 ينتظر الوردية) ← `sync.required` (`reason = shift_status_changed`، `scope = home`، `shift_id`، `dispatch_pool_id`) (DEC-267) |
+| `shift.closed` | إغلاق الوردية | مشرفو الموقع + `pool:{poolId}:drivers` + غرف `user:` للمناوبات المنتهية (تغادر مقابسهم غرفة المجموعة فورًا) ← `sync.required` كذلك + `driver.state_changed` للمناوبات المنتهية |
 
 ```ts
 interface VenueEventStatusChanged { event_id: UUID; status: 'open' | 'closing' | 'closed'; by: UUID; reopened?: boolean }
@@ -1202,7 +1202,7 @@ interface ShiftStatusChanged { shift_id: UUID; dispatch_pool_id: UUID; status: '
 | `wa.inbound_received` | `job.wa_process_inbound` لكل رسالة واردة جديدة | تحديث `customers.last_inbound_at` و`wa_id`؛ التحليل |
 | `wa.button_pressed` | نفسه لرسالة زر | تنفيذ TT-06/TT-07 أو رد W-09/W-10 |
 | `wa.message_status_changed` | `job.wa_process_inbound` لتحديث حالة، أو `job.wa_send` | WS `ticket.updated` (سجل الرسائل في S-03)؛ `wa_send_failed` عند الفشل؛ `ticket.wa_link_changed` لـW-01 |
-| `wa.channel_health_changed` | مراقبة القناة في العامل | WS `channel.status` لكل الموظفين؛ رفع/حل `wa_channel_down` |
+| `wa.channel_health_changed` | مراقبة القناة في العامل | WS `channel.status` لكل الموظفين (ينشره مخطِّط الإشعارات وحده، DEC-268)؛ رفع/حل `wa_channel_down` |
 | `wa.customer_opted_out` | رسالة إيقاف من العميل | `ticket.wa_link_changed` لكل تذكرة مفتوحة؛ W-12 |
 
 ```ts
@@ -1250,8 +1250,8 @@ interface WaCustomerOptedOut {
 | `job.transfer_activate` | `scheduled_at`، ثم عند الحجب: لحظة انتهاء مهمة السائق أو تحرير عهدته | `{ transfer_id, aggregate_version }` | النقل `pending` أو `blocked` | §6.7 |
 | `job.wa_send` | يخطّطه `NotificationPlanner` داخل معاملة الأمر من أحداثها (DEC-41)؛ `ordering_key = 'wa:<ticket_id>'` | `{ notification_id }` ومعه حسب الغرض `cycle_id`، `claim_code_id`، `link_version`، `variant` (`status`/`inactive` لـW-09، `received`/`invalid` لـW-11)، `inbound_message_id`، `early` — معرّفات وأعلام فقط (`WaSendJobPayloadSchema`، DEC-133)؛ W-05 يقرأ الرمز من `claim_codes` | الإشعار `pending`؛ قاعدة التجاوز §6.9؛ موافقة سارية والعميل لم يوقف الرسائل؛ `link_version` مطابق؛ القناة غير `down` | إرسال، `whatsapp_messages`، `notification_attempts` |
 | `job.wa_process_inbound` | بعد حفظ الطلب الخام وإرسال 200 | `{ inbound_event_id }` | `whatsapp_inbound_events.status = pending` | تحليل الرسائل والحالات، أحداث §8.10 |
-| `job.push_send` | من حدث يطلق Push؛ بلا `ordering_key` (منع التكرار فقط) | `{ notification_id }` | الإشعار `pending`؛ لعروض المهام: الجولة ما زالت نشطة، وإلا يُرسل البديل الهادئ أو يُتجاوز | Web Push؛ اشتراك منتهٍ (410) يمسح حقول Push من الجهاز |
-| `job.ws_publish` | احتياطي فقط (DEC-48): حين يتعذر النشر داخل المعاملة (حمولة أكبر من حد NOTIFY أو نشر مؤجل)؛ الأصل `pg_notify` داخل المعاملة نفسها | `{ outbox_event_id, rooms }` | — | نشر عبر `pg_notify` لعمليات الـAPI؛ لا إعادة للعميل غير المتصل |
+| `job.push_send` | يخطّطه مخطِّط Push للموظفين داخل معاملة الحدث (14 §3، §6.1)؛ بلا `ordering_key` (منع التكرار فقط)؛ حتى 20 محاولة للصف (يشمل الانتظار) | `{ notification_id }` | الإشعار `pending`؛ الجهاز ما زال قابلًا للدفع بجلسة حية (وإلا `skipped` بـ`no_subscription`، DEC-256)؛ `offer` جولته الفردية نشطة غير منتهية، و`broadcast`/`reminder` جولة نشطة، و`reminder` بلا `seen_at` (وإلا `superseded`)، و`next_due` المهمة ما زالت حالية للسائق، و`escalation` التنبيه ما زال `open`، و`closed` الاستبدالي طلب جولته `sent` ولا جولة أحدث للجهاز (DEC-258)؛ الموعد النهائي لم يفت (DEC-261)؛ وإلا `skipped` بـ`stale` أو `superseded` | معاملة قصيرة تكتب المحاولة، ثم الإرسال خارج أي معاملة، ثم معاملة النتيجة (14 §6.6): 2xx ← `sent` وتصفير `push_failed_count` و`notified_push_at` (L7 قبل L9، DEC-273)؛ 404/410 ← `failed` ومسح حقول Push من الجهاز؛ 429/5xx/فشل نقل ← إعادة عند +2 و+5 و+15 ث بحد 4 محاولات (DEC-261)؛ الإخفاقات المتتالية ← `push_failed_repeatedly` (DEC-260) |
+| `job.ws_publish` | احتياطي فقط (DEC-48): حين يتعذر النشر داخل المعاملة (حمولة أكبر من حد NOTIFY)؛ الأصل `pg_notify` داخل المعاملة نفسها، وكل مخطِّط يقسم غرفه 60 لكل NOTIFY | `{ rooms, event, event_id, aggregate }` (معرّفات فقط) | — | الرسالة لا تُعاد بناؤها: `sync.required` (`reason: publish_overflow`، `cause: job.ws_publish`) للغرف نفسها في دفعات من 60 عبر `pg_notify`، فيعيد العملاء جلب لقطتهم (§9.4، DEC-269)؛ لا إعادة للعميل غير المتصل |
 | `job.heartbeat_sweep` | دوري كل `heartbeat.interval_s`؛ سلسلة عامة واحدة (`dedupe_key = heartbeat_sweep`) يبذرها بدء المناوبة (DEC-232) | `{}` | — | لكل مناوبة مفتوحة في معاملتها (L8 وحده، بلا رفع إصدار): `connection_state` من `last_heartbeat_at` (أو `started_at`) حسب `heartbeat.uncertain_after_s` و`heartbeat.offline_after_s`؛ `driver.connection_changed`؛ رفع/حل `driver_connection_lost_with_custody` (DEC-219) |
 | `job.retention_purge` | يومي عند `RETENTION_PURGE_CRON_UTC`: صف واحد لكل المؤسسات بمفتاح `retention:<date>`، تُعاد جدولته بعد كل تشغيل فعلي ويُنشئه المراقب إن غاب (DEC-161) | `{ scope: 'all' }` (واختياريًا `org_id`، `dry_run`، `reschedule`) | سياسة `retention.*` لكل مؤسسة | حذف/إخفاء وفق 06؛ لا يمس بيانات واقعة مفتوحة |
 | `job.export_generate` | `POST /v1/exports` | `{ export_id }` | التصدير `pending` | ملف مؤقت، `ready` أو `failed` |
@@ -1279,17 +1279,17 @@ interface WaCustomerOptedOut {
 |---|---|---|---|
 | `task.offered` | `user:{recipientId}` | `OfferCard` (mode=single) | تعرض البطاقة، صوت `offer`، عداد من `expires_at` مقابل `server_time` |
 | `task.broadcast` | `user:{recipientId}` لكل مستلم | `OfferCard` (mode=broadcast، `eligible_as` خاص بكل سائق) | تعرض البطاقة إن كانت أقدم طلب قابل للقبول، صوت `broadcast` |
-| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by}` | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
-| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
+| `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by: {id, full_name}}` — `offer_ids` الجولة المقبولة؛ يسبقه `task.updated` للفائز بإصدار المهمة نفسه فيتجاهل جهازه الحجز (DEC-220) | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
+| `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
-| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task`؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
-| `ticket.updated` | المشرفون + السائق المعني (المكلّف/المنشئ أثناء التسجيل) | `TicketSummary` + `cause` (+ `wa_link_pending` للسائق في ربط QR) | تحدّث البطاقات والقوائم |
-| `driver.state_changed` | `user:{driverId}` + المشرفون | `DriverLive` | تحدّث شريط الحالة ولوحة السائقين |
+| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
+| `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265) | تحدّث البطاقات والقوائم |
+| `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |
 | `alert.updated` | نفس الغرف | `Alert` | يوقف صوت التصعيد عند الإقرار أو الحل |
-| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
-| `channel.status` | كل الغرف في المؤسسة | `{whatsapp: WaHealthStatus, changed_at}` | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
-| `sync.required` | `user:{userId}` | `{reason}` | تجلب `GET /v1/me/home` (السائق) أو `GET /v1/events/{eventId}/operations` (المشرف) |
+| `incident.updated` | `venue:{venueId}:supervisors` | `Incident` + `cause` (`incident.opened` أو `incident.updated` أو `incident.resolved`) بقراءة طازجة؛ ينشره مخطِّط الإشعارات لا وحدة الوقائع (DEC-272) | تحدّث S-12 وبطاقة التذكرة المرتبطة إن وجدت |
+| `channel.status` | كل غرف الموظفين في المؤسسة: `org:{orgId}:admins` ومشرفو كل موقع وسائقو كل مجموعة | `{whatsapp: WaHealthStatus, changed_at}` + `cause` (`wa.channel_health_changed`) بـ`aggregate {type: whatsapp_channel, id, version: null}`؛ ناشر واحد هو مخطِّط الإشعارات (DEC-268) | شريط «واتساب متعطل — اطلب السيارة ميدانيًا» |
+| `sync.required` | حسب `reason` (DEC-267): `duty_force_ended` أو `duty_ended` (`scope: home`) لغرفة السائق عند إنهاء مناوبته قسرًا أو ذاتيًا (لأجهزته الأخرى)، أما النقل والتعطيل فيكتفيان بـ`session.revoked` (DEC-221)؛ `shift_status_changed` (`scope: home`، `shift_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة المجموعة، ومعها عند الفتح غرف `user:` للسائقين ذوي التعيين النشط في الموقع وعند الإغلاق غرف المناوبات المنتهية؛ `event_status_changed` (`scope: events`، `event_id`، `dispatch_pool_id`) لمشرفي الموقع وغرفة مجموعة الحفل؛ `settings_changed` (`scope: me`) لكل مستخدم نشط عند تغيير `heartbeat.*`؛ `scope_changed` لغرفة المستخدم عند تغيير نطاقه؛ `publish_overflow` (`cause: job.ws_publish`) لغرف رسالة تعذر نشرها (DEC-269) | `{reason}` (+ `scope` و`cause` والمعرّفات أعلاه حين تنطبق) | تجلب `GET /v1/me/home` (السائق؛ و`scope: events` يحدّث `open_events` فيها، و`scope: me` يجلب `GET /v1/me`) أو `GET /v1/events/{eventId}/operations` (المشرف) |
 | `session.revoked` | `user:{userId}` | `{reason: SessionRevokedReason}` | تمسح البيانات المحلية وتعود لشاشة الدخول |
 
 
@@ -1316,7 +1316,7 @@ interface ClientOfferSeen { offer_id: UUID }   // يضبط offer_recipients.seen
 2. العميل يطلب لقطة كاملة فورًا: السائق `GET /v1/me/home`، والمشرف `GET /v1/events/{eventId}/operations`. اللقطة تتضمن `server_time` و`last_event_id` وكل ما تحتاجه الشاشة (الحالة، المهمة الحالية والتالية، أقدم عرض قابل للقبول، لافتة القناة).
 3. رسائل WS التي تصل أثناء جلب اللقطة تُخزن مؤقتًا وتُطبّق بعدها بقاعدة الإصدار (§9.2).
 4. لا تُنفذ أوامر قبل اكتمال المزامنة (المعمارية §7): أزرار القبول والتسليم معطلة حتى وصول اللقطة.
-5. `sync.required` يعني: أعد جلب اللقطة للنطاق المحدد. يُرسل عند تغيّر حالة الحفل أو الوردية، أو عند استعادة الخادم بعد انقطاع.
+5. `sync.required` يعني: أعد جلب اللقطة للنطاق المحدد (`scope`). يُرسل عند تغيّر حالة الحفل أو الوردية، وعند إنهاء المناوبة، وتغيير إعدادات النبض أو النطاق، وحين تتعذر رسالة أكبر من حد NOTIFY (`publish_overflow`)؛ قيم `reason` وغرفها في 07 §4.3 (DEC-267، DEC-269).
 6. `session.revoked` يعني: امسح البيانات المخزنة محليًا لهذا الحساب، أغلق الاتصال، وارجع إلى D-01 مع رسالة السبب (D-15).
 7. انقطاع نبضات القلب لأكثر من `heartbeat.uncertain_after_s` يظهر على الجهاز كـ«الاتصال غير مؤكد» وعند المشرف كذلك؛ البيانات المعروضة تُعلّم كقديمة ولا يُعرض «تم القبول» دون رد الخادم.
 8. لا إعادة تشغيل لأحداث فائتة: المصدر الوحيد بعد الانقطاع هو اللقطة. `last_event_id` للتشخيص فقط.

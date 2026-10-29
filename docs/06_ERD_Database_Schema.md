@@ -746,7 +746,7 @@ erDiagram
 - **الغرض:** من وصله العرض في كل جولة، ومتى وصله وشاهده وماذا فعل.
 - **أعمدة أساسية:** المفتاح المركب `(offer_id, user_id)`، `duty_session_id`، `eligible_as` لحظة العرض (`accept`، `reserve_next`، `view_only`)، `notified_ws_at`، `notified_push_at`، `seen_at` (من `client.offer_seen`)، `responded_at`، `response` (`accepted` أو `rejected_late`).
 - **القيود:** `offer_recipients_pkey`، `offer_recipients_eligible_as_check`، `ix_offer_recipients_user`.
-- **الكتابة/القراءة:** تمريرة التوزيع (إدراج)، `job.ws_publish`/`job.push_send` (أوقات الإشعار)، القبول. القبول يُسمح فقط لمستلم مسجل (`NOT_OFFER_RECIPIENT`). يُقرأ في استعلام بطاقة السائق (§6.1).
+- **الكتابة/القراءة:** تمريرة التوزيع (إدراج)، `job.push_send` (`notified_push_at` عند أول Push ناجح للمستلم، أولًا في معاملة النتيجة: L7 قبل L9؛ ولا يكتب `job.ws_publish` أوقات الإشعار، DEC-273)، القبول. القبول يُسمح فقط لمستلم مسجل (`NOT_OFFER_RECIPIENT`). يُقرأ في استعلام بطاقة السائق (§6.1).
 
 ### 3.ز واتساب والرموز والإشعارات
 
@@ -796,7 +796,7 @@ erDiagram
 - **الغرض:** كل إشعار مقصود لمستلم على قناة (`whatsapp` للعميل، `push` لجهاز موظف)، مع نتيجته.
 - **أعمدة أساسية:** `channel`، `purpose`، `recipient_customer_id`/`recipient_user_id`/`recipient_device_id`، `venue_id`، `ticket_id`، `task_id`، `source_outbox_id`، `dedupe_key`، `status`، `skipped_reason` (`superseded`، `opted_out`، `no_consent`، `channel_down`، `stale`، `no_subscription`)، `attempts`، `next_attempt_at`، `last_error_*`، `sent_at`، `failed_at`.
 - **القيود:** `notifications_dedupe_key_key`، `ck_notifications_recipient` (المستلم يناسب القناة)، `ix_notifications_failed`.
-- **الكتابة/القراءة:** مستهلكو Outbox (`job.wa_send`، `job.push_send`). يُقرأ في S-02 (الرسائل الفاشلة) والتقارير.
+- **الكتابة/القراءة:** الإدراج داخل معاملة الأمر (`NotificationPlanner` للعميل، DEC-41، ومخطِّط Push للموظفين)، والنتيجة من مستهلكي Outbox (`job.wa_send`، `job.push_send`)؛ و`id` UUIDv7 من الخلفية فتحفظ صفوف اللحظة الواحدة ترتيبها (DEC-273). يُقرأ في S-02 (الرسائل الفاشلة) والتقارير.
 
 #### 38) `notification_attempts`
 - **الغرض:** سجل كل محاولة إرسال ورد المزود.

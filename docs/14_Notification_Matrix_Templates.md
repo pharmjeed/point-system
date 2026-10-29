@@ -39,6 +39,8 @@
 
 عمود «العميل» هو المصفوفة التي يطبقها `NotificationPlanner` **داخل معاملة الأمر نفسها** على أحداث النطاق الصادرة فيها (DEC-41)؛ الشروط ومفاتيح التكرار وفحوص لحظة الإرسال في العامل في `12_WhatsApp_Integration_Spec.md` §5.2–§5.5.
 
+خلايا `ticket.updated` تُدمج: رسالة واحدة لكل تذكرة وجمهور في المعاملة، تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265)؛ وجمهورها المشرفون، والمنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل (الملخص وحده)، وتحديث الواقعة للمشرفين وحدهم (DEC-266). عمود «Push» يخطّطه مخطِّط Push للموظفين في معاملة الأمر نفسها لكل جهاز قابل للدفع (§6.1)، ويقرر Service Worker الهدوء حين تكون الصفحة ظاهرة (DEC-257).
+
 ### 3.1 دورة التذكرة والاسترجاع
 
 | المحفز | العميل | السائق | Push | المشرف | ملاحظات |
@@ -56,7 +58,7 @@
 | `ticket.ready` | W-05 عبر `handover.code_issued` | `task.updated` | — | `ticket.updated`؛ يُجدول `job.ready_uncollected_check` | — |
 | `ticket.delivered` | W-06 | `task.updated` (اكتمال) | — | `ticket.updated` | يُحل `ready_not_collected` آليًا؛ المطابقة اليدوية لا تصدر هذا الحدث |
 | `ticket.retrieval_canceled` | W-07 قبل بدء الحركة وبعده (DEC-30) إن أُبلغ العميل بطلب الدورة (W-02) | `task.updated` للمكلّف إن وجد + لافتة «أُلغي طلب الإحضار — تذكرة 125» بلا صوت | — (`closed` «أُلغي طلب تذكرة 125» لصاحب المهمة يصدر مرة واحدة من `task.canceled` المرافق) | `ticket.updated` | بعد بدء الحركة يرافقه `ticket.reparking` بـ`cause = supervisor_cancel` دون W-08 (DEC-42) |
-| `ticket.reparking` | W-08 فقط إذا `cause = customer_absent` (الدورة أُغلقت `reparked` عبر `POST /v1/tickets/{ticketId}/repark`)؛ لا شيء إذا `cause = supervisor_cancel` | `task.updated` (مهمة `repark` للحائز) + صوت `next_due` | `next_due` للحائز إن كان خارج الصفحة | `ticket.updated` | بقرار المشرف (DEC-42)؛ إتمام إعادة الصف (`reparking` ← `parked`) لا يرسل شيئًا |
+| `ticket.reparking` | W-08 فقط إذا `cause = customer_absent` (الدورة أُغلقت `reparked` عبر `POST /v1/tickets/{ticketId}/repark`)؛ لا شيء إذا `cause = supervisor_cancel` | `task.updated` (مهمة `repark` للحائز) + صوت `next_due` | `next_due` للحائز (هادئ إن كانت صفحته ظاهرة، DEC-257) | `ticket.updated` | بقرار المشرف (DEC-42)؛ إتمام إعادة الصف (`reparking` ← `parked`) لا يرسل شيئًا |
 | `ticket.voided` | — | `ticket.updated` (تختفي من القوائم) | — | `ticket.updated`؛ يُحل `draft_abandoned` | لا رسالة إلغاء للعميل |
 | `ticket.inspection_exception_approved` | — | `ticket.updated` | — | `ticket.updated`؛ يُحل `inspection_incomplete` | — |
 | `ticket.inspection_completed` | — | `ticket.updated` لمنشئ التذكرة | — | `ticket.updated`؛ يُحل `inspection_incomplete` | لا رسالة للعميل |
@@ -68,19 +70,19 @@
 |---|---|---|---|---|---|
 | `task.offered` (فردي) | — | `task.offered` لغرفة `user:{userId}` للمستلم + صوت `offer` + اهتزاز أندرويد | `offer` | `task.updated` | مدة العرض `dispatch.single_offer_ttl_s` = 30 |
 | `offer.reminded` (فردي، `job.offer_remind` عند 15 ث) | — | `offer.reminder` للمستلم + صوت `reminder` | `reminder` فقط إن لم يُرسل `client.offer_seen` | — | تذكير واحد |
-| `offer.expired` | — | `offer.closed` (السبب: انتهى) بلا صوت | `closed` (استبدال هادئ بنفس الوسم) | `task.updated` | ينتقل للتالي أو للبث (الملف 10) |
+| `offer.expired` | — | `offer.closed` (السبب: انتهى) بلا صوت | `closed` (استبدال هادئ بنفس الوسم لما عُرض فقط، DEC-258) | `task.updated` | ينتقل للتالي أو للبث (الملف 10) |
 | `task.broadcast_opened` | — | `task.broadcast` لغرفة `user:{userId}` لكل مستلم (المناوبون غير المستريحين) + صوت `broadcast` | `broadcast` | `task.updated` | المشغول بلا مهمة تالية يرى «حجز كمهمة تالية»؛ صاحب المهمة التالية يرى البطاقة معطلة |
 | `task.broadcast_extended` | — | `task.broadcast` للمستلم المضاف + صوت `broadcast` | `broadcast` | — | سائق بدأ مناوبته أو أنهى استراحته أثناء البث |
 | `offer.reminded` (بث، `job.broadcast_remind` عند 30 ث) | — | `offer.reminder` لكل المستلمين + صوت `reminder` | `reminder` لمن لم يرَ البطاقة | — | تذكير واحد للمهمة المفتوحة فقط |
-| `task.claimed` | — | `task.claimed` لغرفة `pool:{poolId}:drivers`: إزالة البطاقة وإيقاف الصوت **بلا صوت**؛ والقابل يتلقى `task.updated` | `closed`: استبدال هادئ «تم قبول الطلب» بنفس الوسم (§6.4) | `task.updated` | يُحل `request_unaccepted` آليًا |
-| `offer.revoked` | — | `offer.closed` (السبب: سُحب) بلا صوت | `closed` (استبدال هادئ) | — | تحويل بث لعرض فردي، نقل، إلغاء |
+| `task.claimed` | — | `task.claimed` لغرفة `pool:{poolId}:drivers`: إزالة البطاقة وإيقاف الصوت **بلا صوت**؛ والقابل يتلقى `task.updated` | `closed`: استبدال هادئ «تم قبول الطلب» بنفس الوسم (§6.4)، للأجهزة التي دُفع إليها طلب الجولة وحدها (DEC-258) | `task.updated` | يُحل `request_unaccepted` آليًا |
+| `offer.revoked` | — | `offer.closed` (السبب: سُحب) بلا صوت | `closed` (استبدال هادئ لما عُرض فقط، DEC-258) | — | تحويل بث لعرض فردي، نقل، إلغاء |
 | `task.promoted` (التالية تصبح حالية) | — | `task.updated` للسائق + صوت `next_due` + لافتة «ابدأ مهمتك التالية — تذكرة 130» | `next_due` | `task.updated`؛ يُحل `next_task_waiting_long` | المعمارية §4ز |
 | `task.key_picked_up` | — | `task.updated` | — | `ticket.updated` | — |
 | `task.started` | W-04 (عبر `ticket.retrieving` لمهام الإحضار) | `task.updated` | — | `task.updated`؛ يُحل `idle_driver_while_next_waiting` | — |
 | `task.completed` | — | `task.updated` | — | `task.updated` | — |
-| `task.canceled` | — | `task.updated` للمكلّف + لافتة بلا صوت | `closed` للمكلّف خارج الصفحة | `task.updated` | — |
-| `task.withdrawn` (سحب آمن قبل الحركة) | — | `task.updated` للسائق السابق + صوت `reminder` + لافتة «سحب المشرف المهمة — تذكرة 125. لا تُحضر السيارة.» | `closed` (استبدال هادئ «سُحبت مهمة تذكرة 125 — لا تُحضر السيارة») | `task.updated` | يجب أن ينتبه السائق حتى لا يتحرك |
-| `task.reassigned` | — | للمسند إليه مباشرة: `task.updated` + صوت `next_due`؛ وللسابق كما في `task.withdrawn` | `next_due` للجديد و`closed` للسابق | `task.updated` | — |
+| `task.canceled` | — | `task.updated` للمكلّف + لافتة بلا صوت | `closed` «أُلغي طلب تذكرة 125» لمكلّف مهمة `retrieve` ألغيت بـ`customer_field_cancel` أو `supervisor_cancel` وحدها؛ لا Push لإلغاء المهمة بإلغاء التذكرة أو المطابقة اليدوية أو إعادة الصف لغياب العميل (DEC-264) | `task.updated` | — |
+| `task.withdrawn` (سحب آمن قبل الحركة) | — | `task.updated` للسائق السابق + صوت `reminder` + لافتة «سحب المشرف المهمة — تذكرة 125. لا تُحضر السيارة.» | `closed` (استبدال هادئ «سُحبت مهمة تذكرة 125 — لا تُحضر السيارة») يصل أجهزة السائق دائمًا (DEC-258) | `task.updated` | يجب أن ينتبه السائق حتى لا يتحرك |
+| `task.reassigned` | — | للمسند إليه مباشرة: `task.updated` + صوت `next_due`؛ وللسابق كما في `task.withdrawn` | `next_due` للجديد (إن صارت مهمته الحالية) و`closed` للسابق | `task.updated` | — |
 | `task.escalated` (`job.escalate_unaccepted` عند 60 ث) | — | — | — | تنبيه `request_unaccepted` (حرج) + صوت `escalation` | الطلب لا يسقط من القائمة |
 
 ### 3.3 السائق والمناوبة والنقل
@@ -116,9 +118,9 @@
 |---|---|---|---|
 | `alert.raised` | — | `alert.raised` لغرفة المشرفين (+ `org:{orgId}:admins` لأنواع الإدارة) + صوت حسب الشدة (§7) + Push `escalation` للحرج | §8 |
 | `alert.acknowledged` / `alert.resolved` | — | `alert.updated` (إيقاف تكرار صوت التصعيد) | — |
-| `incident.opened` / `incident.updated` / `incident.resolved` | — | `ticket.updated` إن كانت مرتبطة بتذكرة؛ وإلا تُحدَّث S-12 عند الفتح أو التركيز | انظر §14 |
-| `event.opened` / `event.closing_started` / `event.closed` | `sync.required` لغرفة سائقي المجموعة (تحديث قائمة الحفلات في D-05) | `sync.required` | — |
-| `shift.opened` / `shift.closed` | `sync.required`؛ إغلاق الوردية ينهي المناوبات بلا عهدة | `sync.required` | — |
+| `incident.opened` / `incident.updated` / `incident.resolved` | — | `incident.updated` (`Incident` + `cause`) لغرفة المشرفين ينشره مخطِّط الإشعارات (DEC-272، DEC-238) فتتحدث S-12؛ و`ticket.updated` للمشرفين وحدهم إن كانت مرتبطة بتذكرة (DEC-266) | انظر §14 |
+| `event.opened` / `event.closing_started` / `event.closed` | `sync.required` (`reason: event_status_changed`، `scope: events`) لغرفة سائقي مجموعة الحفل (تحديث قائمة الحفلات في D-05) | `sync.required` نفسه لمشرفي الموقع (DEC-267) | — |
+| `shift.opened` / `shift.closed` | `sync.required` (`reason: shift_status_changed`، `scope: home`) لغرفة المجموعة، ومعها عند الفتح غرف `user:` للسائقين ذوي التعيين النشط في الموقع، وعند الإغلاق غرف المناوبات المنتهية (DEC-267)؛ إغلاق الوردية ينهي المناوبات بلا عهدة | `sync.required` نفسه لمشرفي الموقع | — |
 
 ### 3.6 قناة واتساب
 
@@ -127,7 +129,7 @@
 | `wa.button_pressed` | طلب جديد ← W-02؛ طلب قائم أو تذكرة مغلقة ← W-09؛ زر غير نشط (رمز مبطل أو منتهٍ، `link_version` قديم، تذكرة ملغاة) ← W-09 (غير نشطة) بلا طلب؛ رمز غير معروف أو مرسل مختلف ← W-10 | عبر أحداث التذكرة | خنق W-09: مرة كل 20 ثانية لكل تذكرة |
 | `wa.inbound_received` | رمز ربط ← W-11؛ «إيقاف» ← W-12؛ غير ذلك ← W-10 | — | خنق W-10: مرة كل 10 دقائق لكل مرسل |
 | `wa.message_status_changed` | — | `ticket.updated` (أُرسلت/وصلت/قُرئت/فشلت في D-07 وS-03)؛ الفشل الدائم ← تنبيه `wa_send_failed` | — |
-| `wa.channel_health_changed` | — | `channel.status` لكل غرف الموظفين (شريط في D-15 وS-02)؛ `down` ← تنبيه `wa_channel_down` حرج (صف لكل موقع متأثر، DEC-46) | الحل الآلي عند العودة؛ قاعدة الصحة (`degraded`/`down`) في الملف 12 §5.14 وحده |
+| `wa.channel_health_changed` | — | `channel.status` لكل غرف الموظفين (شريط في D-15 وS-02؛ ناشره الوحيد مخطِّط الإشعارات، DEC-268)؛ `down` ← تنبيه `wa_channel_down` حرج (صف لكل موقع متأثر، DEC-46) | الحل الآلي عند العودة؛ قاعدة الصحة (`degraded`/`down`) في الملف 12 §5.14 وحده |
 | `wa.customer_opted_out` | W-12 | `ticket.updated` للمعنيين («العميل أوقف رسائل واتساب») | — |
 
 ### 3.7 المؤقتات (Jobs)
@@ -234,11 +236,15 @@
 ### 6.1 متى يُرسل
 
 يُرسل Push لجهاز مستلم فقط إذا تحققت **كل** الشروط:
-1. `devices.notification_permission = 'granted'` و`push_endpoint` غير فارغ و`revoked_at IS NULL`.
-2. المستخدم لا يملك اتصال WebSocket حيًا، **أو** آخر `client.heartbeat` منه أفاد بأن الصفحة غير مرئية (`visible = false`) — لتجنب ازدواج الصوت داخل الصفحة مع إشعار النظام.
+1. `devices.notification_permission = 'granted'` و`push_endpoint` غير فارغ و`revoked_at IS NULL`، وصاحب الجهاز نشط وله جلسة `auth_sessions` حية (غير مبطلة ولا منتهية) مربوطة بالجهاز (`device_id`)، فلا يصل شيء بعد الخروج؛ يُفحص عند التخطيط وعند الإرسال (`skipped` بـ`no_subscription`، DEC-256).
+2. تجنب ازدواج الصوت داخل الصفحة مع إشعار النظام يقيّمه **Service Worker** لحظة العرض: إن وُجدت نافذة مركّزة ظاهرة للتطبيق يُعرض الإشعار `silent` (الصفحة تشغّل صوتها)؛ فالخادم لا يملك حضورًا محفوظًا (`client.heartbeat.visible` لا يُخزَّن) ويدفع لكل جهاز قابل للدفع، ويبقى تذكير العرض مشروطًا بـ`offer_recipients.seen_at` (§10، DEC-257).
 3. نوع الحدث ضمن القائمة §6.3.
 
-الإرسال عبر `job.push_send` بمفتاح الإشعار `notifications.dedupe_key = 'push:{kind}:{entity_id}:{round_or_n}:{device_id}'` مع `channel = 'push'` و`recipient_device_id`، حيث `{kind}` أحد أنواع §6.3 فقط.
+الإرسال عبر `job.push_send` بمفتاح الإشعار `notifications.dedupe_key = 'push:{kind}:{entity_id}:{round_or_n}:{device_id}'` مع `channel = 'push'` و`recipient_device_id`، حيث `{kind}` أحد أنواع §6.3 فقط، والكيان المهمة (وللتصعيد التنبيه)، و`{round_or_n}` رقم الجولة لـ`offer` و`broadcast` و`reminder` ولـ`closed` الناتج عن العرض، و`v{task version}` لـ`closed` و`next_due` الناتجين عن المهمة، و`1` لمهمة إعادة الصف ولتصعيد موقع واحد؛ وأنواع التنبيه متعددة المواقع مفتاحها `push:escalation:{type}:{epoch}:{device_id}` (`epoch` ثانية الرفع) فيصل كل جهاز Push واحد لكل عطل مهما تعددت صفوف المواقع (DEC-262).
+
+- **آخر طلب يفوز:** إشعار واحد لكل (جهاز، وسم) في المعاملة هو الأخير بترتيب الأحداث، والاستبدال الذي أُسقط طلبه في المعاملة نفسها يسقط معه (DEC-259).
+- **الاستبدال الهادئ لا يستبدل إلا موجودًا:** `closed` بعد `task.claimed` أو `offer.expired` أو `offer.revoked` لأجهزة لها Push طلب من الجولة نفسها معلّق أو مُرسل فقط، ويُرسل بعد أن يصير الطلب `sent` (انتظار 2 ث ما دام قيد الإرسال حتى دقيقتين)، و`superseded` إن دُفعت للجهاز جولة أحدث؛ و`withdrawn` و`canceled` إعلاميان يصلان دائمًا (DEC-258).
+- **التصعيد:** للتنبيهات `critical` وحدها؛ لمشرفي موقع التنبيه النشطين، والإدارة والمالك لأنواع المواقع المتعددة وحدها؛ والتنبيه المُقَر أو المحلول قبل الإرسال ← `skipped` بـ`stale` (DEC-263).
 
 ### 6.2 الحمولة (مشفرة وفق Web Push)
 
@@ -279,11 +285,13 @@
 
 لا أنواع غيرها (القاموس §5.7): الأنواع هي معرّفات الأصوات (§7) عدا `test`، إضافة إلى `closed`.
 
+نص `escalation` هو نص §8 المختصر برقم التذكرة وحده (`escalationBody` في `@point/shared`: بلا اسم موقع أو سائق ولا علامة العميل)؛ و`request_unaccepted` يُقرأ «طلب تذكرة 125 دون قبول» لأن العتبة إعداد (DEC-263).
+
 ### 6.4 سلوك Service Worker
 
 1. الاشتراك يتم من زر صريح في D-03/D-14 فقط (تفاعل مباشر)، بـ`userVisibleOnly: true` (إلزامي في Chrome) ومفتاح VAPID العام.
-2. عند `push`: يُعرض إشعار دائمًا (لا Push صامت) بـ`tag` من الحمولة؛ إشعار جديد بنفس الوسم يستبدل القديم في مركز الإشعارات.
-3. عند الحجز أو الانتهاء أو السحب أو الإلغاء أو إعادة الإسناد يرسل الخادم النوع `closed` بنفس الوسم ونفس `Topic`، فيُستبدل إشعار الطلب بإشعار هادئ؛ ويحاول Service Worker أيضًا إغلاق أي إشعار مطابق عبر `getNotifications({ tag })`. خاصية `silent` غير مدعومة في كل المتصفحات، فالاستبدال الهادئ «أفضل جهد» (DEC-23).
+2. عند `push`: يُعرض إشعار دائمًا (لا Push صامت) بـ`tag` من الحمولة؛ إشعار جديد بنفس الوسم يستبدل القديم في مركز الإشعارات. إن وُجدت نافذة مركّزة ظاهرة للتطبيق يُعرض `silent: true` لأن الصفحة تشغّل صوتها (الشرط 2 في §6.1، DEC-257).
+3. عند الحجز أو الانتهاء أو السحب أو الإلغاء أو إعادة الإسناد يرسل الخادم النوع `closed` بنفس الوسم ونفس `Topic` (بعد الحجز أو الانتهاء أو سحب الجولة: للأجهزة التي دُفع إليها الطلب وحدها، DEC-258)، فيُستبدل إشعار الطلب بإشعار هادئ؛ ويحاول Service Worker أيضًا إغلاق أي إشعار مطابق عبر `getNotifications({ tag })`. خاصية `silent` غير مدعومة في كل المتصفحات، فالاستبدال الهادئ «أفضل جهد» (DEC-23).
 4. إن كانت `expires_at` منقضية عند الوصول يُعرض إشعار `closed` هادئ بدل العرض.
 5. عند `notificationclick`: تركيز نافذة التطبيق إن وُجدت وإرسال `url` إليها، وإلا فتح `url` (`/d` رئيسية السائق D-04 لكل إشعارات السائق؛ وإشعار `escalation` للمشرف يفتح `/ops/alerts` S-04). التطبيق يجري مزامنة كاملة (`GET /v1/me/home`) قبل عرض أي زر، ولا يثق بمحتوى الإشعار.
 6. الإشعار لا يحمل أزرار فعل (`actions`)؛ القبول دائمًا من داخل التطبيق بعد المزامنة.
@@ -298,10 +306,10 @@
 
 | الاستجابة من خدمة Push | الإجراء |
 |---|---|
-| 201/200 | نجاح؛ `devices.push_failed_count = 0` |
-| 404 أو 410 | الاشتراك منتهٍ: تفريغ `push_endpoint` و`push_p256dh` و`push_auth`، وتحديث D-14 بطلب إعادة التفعيل |
-| 429 أو 5xx | إعادة محاولة حتى 3 مرات ضمن `TTL`؛ ثم `failed` |
-| فشل متتالٍ 3 مرات | تنبيه `push_failed_repeatedly` (معلومة) لمشرفي موقع السائق + شريط D-14 |
+| 201/200 | نجاح؛ `devices.push_failed_count = 0`، ويُحل `push_failed_repeatedly` للجهاز آليًا، و`offer_recipients.notified_push_at` عند أول نجاح للمستلم (DEC-273) |
+| 404 أو 410 | الاشتراك منتهٍ: `failed`، وتفريغ `push_endpoint` و`push_p256dh` و`push_auth` (إن لم يتغير العنوان)، وتحديث D-14 بطلب إعادة التفعيل؛ ويُحسب إخفاقًا متتاليًا |
+| 429 أو 5xx أو فشل نقل أو انتهاء المهلة | إعادة محاولة عند +2 ث و+5 ث و+15 ث (مع احترام `Retry-After`)، بحد 4 محاولات لدى المزود، ولا محاولة عند الموعد النهائي أو بعده (`expires_at` للجولة في `offer`، وإلا `created_at + TTL`)؛ ثم `failed` (`ttl_exceeded` حين يفوت الموعد بعد محاولة، و`skipped` بـ`stale` إن فات قبل أولها، DEC-261) |
+| فشل متتالٍ `push.max_consecutive_failures` (3) | كل استجابة غير 2xx أو فشل نقل يضيف 1 إلى `devices.push_failed_count`، و2xx أو اشتراك جديد يصفّره؛ عند الحد تنبيه `push_failed_repeatedly` (معلومة) لموقع مناوبة صاحب الجهاز المفتوحة وإلا موقع تعيينه النشط + شريط D-14؛ وغياب إعداد VAPID (`push_not_configured`) لا يُحسب (DEC-260) |
 
 ---
 
@@ -345,7 +353,7 @@
 | `draft_abandoned` | warning | مسودة `received` تجاوزت `intake.draft_abandoned_alert_min` (10 د من `tickets.created_at`؛ يكشفها `SystemMonitor` كل دورة لكل موقع بلا نوع مهمة، DEC-174، ويرفعه مرة واحدة دون استبدال تنبيه حي، DEC-254)، أو طلب السائق تجاهل مسودة فيها بيانات | `draft_abandoned:{ticket_id}` | إرسال المسودة أو إلغاؤها (DEC-174) | `reminder` | «مسودة استلام تذكرة 125 لدى خالد متوقفة منذ 15 دقيقة — تحقق من العهدة» |
 | `transfer_blocked` | info | `job.transfer_activate` منع النقل بسبب العهدة؛ صف لكل من الموقعين (المصدر والهدف) | `transfer_blocked:{transfer_id}` | إتمام النقل أو إلغاؤه | — | «تعذر نقل خالد إلى قاعة ليلتي: بعهدته مفتاح تذكرة 125» |
 | `outbox_lag` | critical | أقدم حدث مستحق في `outbox_events` أقدم من `ops.outbox_lag_alert_s` (30 ث)، أو صار أي صف `dead`؛ صف لكل موقع متأثر. المستحق: `pending` بلغ `available_at` أو `processing` انتهى تأجيره، و`dead` تأخر حتى يُعاد أو يُغلق (DEC-158)؛ يقيّمه `SystemMonitor` في العامل والـAPI معًا كل `MONITOR_INTERVAL_S`، فحد الكشف العتبة + دورة (DEC-157) | `outbox_lag:{venue_id}` | عودة التأخر تحت العتبة لمدة دقيقتين ولا صف بحالة `dead` (بداية النافذة في `details.below_since`، DEC-158) | `escalation` / Push للمشرفين والإدارة | «تأخر معالجة الأحداث — قد تتأخر التنبيهات والرسائل» |
-| `push_failed_repeatedly` | info | 3 إخفاقات Push متتالية لجهاز سائق | `push_failed_repeatedly:{device_id}` | نجاح Push أو اشتراك جديد | — | «الإشعارات لا تصل لجهاز خالد — اطلب منه إعادة تفعيلها» |
+| `push_failed_repeatedly` | info | `push.max_consecutive_failures` (3) إخفاقات Push متتالية لجهاز سائق؛ صف لموقع مناوبته المفتوحة وإلا موقع تعيينه النشط، `user_id` صاحب الجهاز و`details` (`device_id`، `consecutive_failures`، `last_error`) (DEC-260) | `push_failed_repeatedly:{device_id}` | نجاح Push أو اشتراك جديد | — | «الإشعارات لا تصل لجهاز خالد — اطلب منه إعادة تفعيلها» |
 | `task_stuck` | warning | `StuckDetector`: مهمة تجاوزت حدها دون تقدم — `retrieve` مقبولة دون بدء أكثر من 10 د أو جارية دون جاهزية أكثر من 20 د، و`park`/`repark` جارية أكثر من 20 د (ثوابت في الكود لا إعدادات، تُراجع بعد التجربة؛ الملف 15 §12، DEC-160) | `task_stuck:{task_id}` | تقدم المهمة أو إغلاقها أو تغيّر مكلّفها (بدء، جاهزية، إتمام، إلغاء، سحب، إعادة إسناد) | `reminder` | «مهمة تذكرة 125 لدى خالد دون تقدم منذ 12 دقيقة — تحقق من السائق» |
 | `wa_webhook_silent` | critical | لم يصل أي طلب Webhook منذ 10 د (أو خلال 24 ساعة) وبعد آخر طلب رسالة صادرة قُبلت قبل 10 د فأكثر؛ يفحصه المرسل عند قبول إرسال، مرة في الدقيقة على الأكثر لكل عملية (DEC-146)؛ صف لكل موقع متأثر | `wa_webhook_silent:{venue_id}` | معالجة أي طلب Webhook جديد | `escalation` / Push للمشرفين والإدارة | «توقفت رسائل واتساب الواردة منذ 10 دقائق — قد لا تصلنا طلبات العملاء؛ اطلب منهم مراجعة السائق مباشرة» |
 
@@ -394,7 +402,7 @@ flowchart TD
 | رد W-09 | مرة كل 20 ث لكل تذكرة |
 | رد W-10 | مرة كل 10 د لكل مرسل |
 | Push التذكير | فقط إن لم يُرسل `client.offer_seen` للبطاقة |
-| Push عند وجود صفحة مرئية متصلة | لا يُرسل |
+| Push عند وجود صفحة مرئية متصلة | يُرسل، ويعرضه Service Worker هادئًا (`silent`) حين توجد نافذة مركّزة ظاهرة (DEC-257) |
 | `task.claimed` / `offer.closed` / `offer.expired` | بلا صوت |
 | تنبيهات `info` | بلا صوت ولا Push |
 | محتوى شاشة القفل | العلامة «بوينت» ورقم التذكرة فقط |
