@@ -2,7 +2,7 @@ import { Injectable, type PipeTransform } from '@nestjs/common';
 import { z } from 'zod';
 import { autoResolveAlerts } from '../../core/alerts/alerts.js';
 import type { ActorContext } from '../../core/actor-context/actor-context.js';
-import { lockCycles, lockPools, lockTasks, lockTickets } from '../../core/db/locks.js';
+import { lockCycles, lockEvents, lockPools, lockTasks, lockTickets } from '../../core/db/locks.js';
 import type { Tx } from '../../core/db/tx.js';
 import { AppError } from '../../core/errors/app-error.js';
 import {
@@ -24,6 +24,7 @@ import {
   type CycleRow,
   type TicketRow,
 } from '../../modules/tickets-custody/index.js';
+import { openIncident } from '../../modules/incidents/index.js';
 import { zodToFields } from '../../http/zod-pipe.js';
 import { inlinePaymentHook } from '../hooks.js';
 import { auditCommand, eventActor, openTaskIdOf } from '../shared.js';
@@ -123,13 +124,16 @@ const OPERATION = 'POST /v1/tickets/{ticketId}/handover-exception';
 /**
  * Exceptional handover without the code (PNT-078; 11 TT-19; 13 §8.4): a supervisor of the venue approves the
  * handover after a documented identity verification and a reason — for a lost or locked code, a code that
- * never arrived, or a lost paper stub. Locks L1 pool → L4 task → L5 ticket → L6 cycle like TT-18. Effects
+ * never arrived, or a lost paper stub. Locks L1 pool → (L2 event FOR SHARE when money is due or sent) → L4
+ * task → L5 ticket → L6 cycle like TT-18. Effects
  * as TT-18 with: the cycle's live code (locked too) revoked `exception_handover`; `delivered_by` = the
  * assignee who actually delivered and the supervisor as approver (event + audit, `self_approved` when he is
  * the assignee, 09 §10 rule 2); a documented `manual_verification` incident (`lost_ticket` for a paper
  * ticket) created `resolved`; `handover_code_locked` and `ready_not_collected` resolved; the driver settled
- * and a dispatch pass. The payment gate is TT-18's: a due ticket needs `payment` (with `collected_by`, the
- * PNT-080 InlinePaymentHook) or a waiver.
+ * and a dispatch pass. The payment gate is TT-18's: a due ticket needs `payment` or a waiver (PAYMENT_PENDING);
+ * 13 §8.4: the payment passes the 13 §5.2 checks of the handover before any effect and is recorded with
+ * `source = exception`, collected by its `collected_by` — the assignee or the approving supervisor
+ * (`VALIDATION_FAILED payment.collected_by not_collector` otherwise), who then owes the cash (13 §10).
  */
 @Injectable()
 export class HandoverExceptionUseCase {
@@ -142,7 +146,13 @@ export class HandoverExceptionUseCase {
   ) {
     const pre = await findTicketInScope(tx, actor, ticketId);
     const taskId = await openTaskIdOf(tx, ticketId);
+    const money = await tx.one<{ event_id: string; payment_status: string }>(
+      `SELECT event_id, payment_status FROM tickets WHERE id = $1`,
+      [ticketId],
+    );
     await lockPools(tx, [pre.dispatch_pool_id]); // L1
+    // 13 §5.5 / §8.4: like TT-18, an exception that collects (or must collect) holds the event FOR SHARE (L2)
+    if (money.payment_status === 'due' || body.payment) await lockEvents(tx, [money.event_id], 'FOR SHARE');
     const [task] = taskId ? ((await lockTasks(tx, [taskId])) as TaskRow[]) : [null]; // L4
     const [locked] = (await lockTickets(tx, [ticketId])) as TicketRow[]; // L5
     const t = locked!;
@@ -175,52 +185,59 @@ export class HandoverExceptionUseCase {
     }
     if (t.payment_status !== 'due' && body.payment)
       throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
+    const collection =
+      t.payment_status === 'due' && body.payment && pay
+        ? {
+            method: body.payment.method,
+            amount_halalas: body.payment.amount_halalas,
+            pos_reference: body.payment.pos_reference ?? null,
+          }
+        : null;
+    if (collection && body.payment) {
+      // 13 §8.4: the money was taken by the assignee (default) or by the approving supervisor himself
+      if (body.payment.collected_by !== task.assignee_id && body.payment.collected_by !== actor.userId)
+        throw new AppError('VALIDATION_FAILED', {
+          fields: [{ field: 'payment.collected_by', issue: 'not_collector' }],
+        });
+      // the 13 §5.2 checks of the handover (method, exact fee, POS reference), before any effect
+      await pay!.check?.(tx, { ticket: t, payment: collection, actor });
+    }
 
     const assignee = task.assignee_id;
     const ea = eventActor(actor);
     const revokedCodes = await revokeClaimCodes(tx, cycle.id, 'exception_handover');
     let payment: Record<string, unknown> | null = null;
-    if (t.payment_status === 'due' && body.payment && pay) {
-      const input = body.payment; // `collected_by` rides along for the PNT-080 hook (13 §8.4)
-      payment = await pay.collect(tx, { ticket: t, cycle, payment: input, actor });
-    }
-
-    // the documented incident, resolved at once (TT-19)
-    const reason = body.reason.trim();
-    const incidentType = t.channel === 'paper' ? 'lost_ticket' : 'manual_verification';
-    const incident = await tx.one<{ id: string; severity: string }>(
-      `INSERT INTO incidents (org_id, venue_id, event_id, ticket_id, type, status, severity, description, opened_by,
-              owner_id, resolution, resolved_by, resolved_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'resolved', 'medium', $6, $7, $7, $8, $7, $9, $9, $9) RETURNING id, severity`,
-      [
-        t.org_id,
-        t.venue_id,
-        t.event_id,
-        t.id,
-        incidentType,
-        reason,
-        actor.userId,
-        `handover_exception: ${methods.join(', ')}`,
-        tx.now,
-      ],
-    );
-    for (const [type, status] of [
-      ['incident.opened', 'open'],
-      ['incident.resolved', 'resolved'],
-    ] as const) {
-      await emitForTicket(tx, t, {
-        type,
-        actor: ea,
-        aggregate: { type: 'incident', id: incident.id, version: 1 },
-        payload: {
-          incident_id: incident.id,
-          type: incidentType,
-          status,
-          severity: incident.severity,
-          ticket_id: t.id,
-        },
+    if (collection && body.payment && pay) {
+      payment = await pay.collect(tx, {
+        ticket: t,
+        cycle,
+        payment: collection,
+        actor,
+        requestId,
+        collectedBy: body.payment.collected_by,
+        source: 'exception',
+        operation: OPERATION,
       });
     }
+
+    // the documented incident, resolved at once (TT-19), on the ticket timeline: the incidents module's writer
+    const reason = body.reason.trim();
+    const incident = await openIncident(tx, {
+      orgId: t.org_id,
+      venueId: t.venue_id,
+      eventId: t.event_id,
+      ticketId: t.id,
+      dispatchPoolId: t.dispatch_pool_id,
+      type: t.channel === 'paper' ? 'lost_ticket' : 'manual_verification',
+      severity: 'medium',
+      description: reason,
+      openedBy: actor.userId,
+      ownerId: actor.userId,
+      actor: { type: 'user', id: actor.userId },
+      resolution: `handover_exception: ${methods.join(', ')}`,
+      autoCreated: null,
+      timeline: { ticketVersion: t.version },
+    });
 
     const done = await tx.one<TaskRow>(
       `UPDATE tasks SET status = 'completed', completed_at = $2, version = version + 1 WHERE id = $1 RETURNING *`,

@@ -19,6 +19,7 @@
     "check:brand": "node scripts/check-brand.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "audit:prod": "pnpm audit --prod --audit-level high",
+    "ops:rehearsal": "node apps/api/rehearsal/run.mjs",
     "db:migrate": "pnpm --filter @point/db migrate",
     "db:reset": "pnpm --filter @point/db reset",
     "db:seed": "pnpm --filter @point/db seed",

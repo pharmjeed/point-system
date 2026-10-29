@@ -44,16 +44,16 @@ export const handoverPaymentHook: InlinePaymentHook = {
     throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'payment', issue: 'not_applicable' }] });
   },
 
-  async collect(tx, { ticket, cycle, payment, actor, requestId }) {
+  async collect(tx, { ticket, cycle, payment, actor, requestId, collectedBy, source, operation }) {
     const { payment: row } = await recordCollection(tx, {
       ticket,
       cycleId: cycle.id,
       input: payment,
-      collectedBy: actor.userId,
+      collectedBy: collectedBy ?? actor.userId,
       actor,
       requestId: requestId ?? '',
-      source: 'handover',
-      operation: OPERATION,
+      source: source ?? 'handover',
+      operation: operation ?? OPERATION,
     });
     const [view] = await loadPaymentViews(tx, [row]);
     return view!;

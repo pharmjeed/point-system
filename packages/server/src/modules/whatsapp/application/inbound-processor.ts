@@ -32,6 +32,8 @@ interface InboundEventRow {
   org_id: string | null;
   raw_body: string;
   status: string;
+  /** when the api stored the verified delivery: the start of the request-save latency (05 §12.2) */
+  received_at: Date;
 }
 
 interface OutboundRow {
@@ -97,7 +99,7 @@ export class WhatsappInboundProcessor {
   async run(ctx: Pick<JobContext, 'row'>, inboundEventId: string): Promise<void> {
     const ev = (
       await this.db.query<InboundEventRow>(
-        `SELECT id, org_id, raw_body, status FROM whatsapp_inbound_events WHERE id = $1`,
+        `SELECT id, org_id, raw_body, status, received_at FROM whatsapp_inbound_events WHERE id = $1`,
         [inboundEventId],
       )
     ).rows[0];
@@ -142,7 +144,7 @@ export class WhatsappInboundProcessor {
           continue;
         }
         for (const m of Array.isArray(v.messages) ? v.messages : []) {
-          await this.message(channel, m, v.contacts);
+          await this.message(channel, m, v.contacts, new Date(ev.received_at));
           relevant++;
         }
         for (const s of Array.isArray(v.statuses) ? v.statuses : []) {
@@ -204,14 +206,19 @@ export class WhatsappInboundProcessor {
   // Messages (12 §6.5–§6.7)
   // ---------------------------------------------------------------------------------------------
 
-  private async message(channel: ChannelRow, m: Json, contacts: Json[] | undefined): Promise<void> {
+  private async message(
+    channel: ChannelRow,
+    m: Json,
+    contacts: Json[] | undefined,
+    webhookReceivedAt: Date,
+  ): Promise<void> {
     if (typeof m?.id !== 'string') return;
     const sender = senderOf(m, contacts);
     if (!sender.waId && !sender.userId) {
       this.logger.warn({ message_type: m.type }, 'inbound whatsapp message without a sender identity');
       return;
     }
-    await this.db.transaction(async (tx) => {
+    const outcome = await this.db.transaction(async (tx): Promise<ButtonPressResult['outcome'] | null> => {
       await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
         `wa_sender:${channel.org_id}:${sender.waId ?? sender.userId}`,
       ]);
@@ -245,7 +252,7 @@ export class WhatsappInboundProcessor {
           tx.now,
         ],
       );
-      if (!ins) return; // the same message again (AC-01)
+      if (!ins) return null; // the same message again (AC-01)
       const customer = await upsertInboundCustomer(tx, channel.org_id, sender, at);
       await tx.query(`UPDATE whatsapp_messages SET customer_id = $2 WHERE id = $1`, [ins.id, customer.id]);
       const inbound = {
@@ -253,6 +260,7 @@ export class WhatsappInboundProcessor {
         waMessageId: m.id as string,
         contextWamid: m.context?.id ?? null,
         receivedAt: at,
+        webhookReceivedAt,
       };
 
       let matched: 'action_token' | 'link_code' | 'opt_out' | 'none' = 'none';
@@ -350,7 +358,13 @@ export class WhatsappInboundProcessor {
           },
         });
       }
+      return button?.outcome ?? null;
     });
+    // 05 §12.2 / 15 §10 «حفظ الطلب»: webhook received → retrieval cycle committed (the press that created one)
+    if (outcome === 'request_created')
+      metrics.retrievalIngest.observe(
+        Math.max(0, this.db.clock.now().getTime() - webhookReceivedAt.getTime()) / 1000,
+      );
   }
 
   // ---------------------------------------------------------------------------------------------

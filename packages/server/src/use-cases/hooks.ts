@@ -1,7 +1,7 @@
 import type { ActorContext } from '../core/actor-context/actor-context.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
-import { emitEvent } from '../core/outbox/outbox-writer.js';
+import { openIncident } from '../modules/incidents/index.js';
 import type { CycleRow, TicketRow } from '../modules/tickets-custody/index.js';
 
 /**
@@ -65,6 +65,14 @@ export interface InlinePaymentHook {
       payment: { method: 'cash' | 'pos'; amount_halalas: number; pos_reference?: string | null };
       actor: ActorContext;
       requestId?: string;
+      /**
+       * 13 §8.4: in the supervisor's exceptional handover the money was taken by `collectedBy` (the assignee by
+       * default, or the supervisor himself) and the payment is recorded with `source = exception`; the plain
+       * handover is collected by its actor, the assignee (`source = handover`).
+       */
+      collectedBy?: string;
+      source?: 'handover' | 'exception';
+      operation?: string;
     },
   ): Promise<Record<string, unknown>>;
 }
@@ -105,9 +113,11 @@ export const claimCodeHook = () => claimCodes;
 export const inlinePaymentHook = () => inlinePayment;
 
 /**
- * S4 (PNT-061): TT-20 leaves a documented `customer_absent` incident (11 §2.3). The incidents module (PNT-077)
- * may register its own recorder; the default writes the row already `resolved` (the repark is the resolution)
- * with `incident.opened` + `incident.resolved` (11 §8.8) in the command's transaction.
+ * S4 (PNT-061): TT-20 leaves a documented `customer_absent` incident (11 §2.3). The default recorder is the
+ * incidents module's writer (`openIncident`): the row already `resolved` (the repark is the resolution), severity
+ * `low`, owned by the supervisor, with `incident.opened` + `incident.resolved` (11 §8.8) in the command's
+ * transaction — both payloads report the stored `resolved` status and `auto_created: true` (S4 DEC-PROPOSED-10).
+ * A test may register another recorder.
  */
 export interface IncidentRecorder {
   recordDocumented(
@@ -127,29 +137,21 @@ export interface IncidentRecorder {
 
 const directIncidents: IncidentRecorder = {
   async recordDocumented(tx, i) {
-    const r = await tx.one<{ id: string; version: number }>(
-      `INSERT INTO incidents (org_id, venue_id, event_id, ticket_id, type, status, severity, description, opened_by,
-                              owner_id, resolution, resolved_by, resolved_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'resolved', 'low', $6, $7, $7, $8, $7, $9, $9, $9) RETURNING id, version`,
-      [i.orgId, i.venueId, i.eventId, i.ticketId, i.type, i.description, i.actorId, i.resolution, tx.now],
-    );
-    for (const type of ['incident.opened', 'incident.resolved'])
-      await emitEvent(tx, {
-        type,
-        orgId: i.orgId,
-        venueId: i.venueId,
-        eventId: i.eventId,
-        aggregate: { type: 'incident', id: r.id, version: r.version },
-        actor: { type: 'user', id: i.actorId },
-        payload: {
-          incident_id: r.id,
-          type: i.type,
-          status: 'resolved',
-          severity: 'low',
-          ticket_id: i.ticketId,
-          auto_created: true,
-        },
-      });
+    const r = await openIncident(tx, {
+      orgId: i.orgId,
+      venueId: i.venueId,
+      eventId: i.eventId,
+      ticketId: i.ticketId,
+      type: i.type,
+      severity: 'low',
+      description: i.description,
+      openedBy: i.actorId,
+      ownerId: i.actorId,
+      actor: { type: 'user', id: i.actorId },
+      resolution: i.resolution,
+      autoCreated: true,
+      openedStatus: 'stored',
+    });
     return { incident_id: r.id };
   },
 };

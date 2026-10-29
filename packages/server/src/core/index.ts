@@ -25,6 +25,7 @@ export * from './actor-context/index.js';
 export * from './phone.js';
 export * from './hooks/driver-release.js';
 export * from './hooks/media-objects.js';
+export * from './hooks/incident-writer.js';
 export * from './alerts/alerts.js';
 export * from './rate-limit/token-bucket.js';
 export * from './rate-limit/policy.js';
