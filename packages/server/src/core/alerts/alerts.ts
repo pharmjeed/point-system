@@ -162,6 +162,10 @@ export async function raiseAlert(tx: Tx, a: RaiseAlertInput): Promise<{ alert: A
   return { alert, created: inserted };
 }
 
+/** 14 §8 `wa_channel_down:{channel_id}` (one row per affected venue): raised by the health transition to `down`
+ * (whatsapp) and, for venues whose event opens during the outage, by the SystemMonitor (audit-monitoring). */
+export const channelDownDedupeKey = (channelId: string) => `wa_channel_down:${channelId}`;
+
 /** Venues with an open or closing event: the "affected venues" of the multi-venue alert types (DEC-46). */
 export async function affectedVenueIds(tx: Pick<Tx, 'rows'>, orgId: string): Promise<string[]> {
   const rows = await tx.rows<{ venue_id: string }>(

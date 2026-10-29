@@ -1,6 +1,7 @@
 import {
   affectedVenueIds,
   autoResolveAlerts,
+  channelDownDedupeKey,
   raiseAlert,
   raiseAlertForAffectedVenues,
   type AlertRow,
@@ -96,6 +97,8 @@ export interface MonitorReport {
   stuck: { raised: string[]; resolved: string[] };
   /** `draft_abandoned` raised (ticket ids) and resolved because the draft left `received` (PNT-075) */
   drafts: { raised: string[]; resolved: string[] };
+  /** `wa_channel_down` raised for venues whose event opened while the channel was down (venue ids) */
+  channelDown: string[];
   /**
    * WhatsApp quota alerts (12 §13, raised as `wa_send_failed`, GAP-9) created and resolved by this tick; `evaluated`
    * is false when no decision was due in this process, another process was deciding, or the count failed
@@ -202,12 +205,13 @@ export class SystemMonitor {
         const outbox = await this.evaluateOutboxLag(tx);
         const stuck = await this.evaluateStuckTasks(tx);
         const drafts = await this.evaluateAbandonedDrafts(tx);
+        const channelDown = await this.evaluateChannelDown(tx);
         if (this.opts.retentionCron !== null)
           await ensureRetentionScheduled(
             tx,
             this.opts.retentionCron ?? process.env.RETENTION_PURGE_CRON_UTC ?? '0 2 * * *',
           );
-        return { evaluated: true, outbox, stuck, drafts };
+        return { evaluated: true, outbox, stuck, drafts, channelDown };
       })
       .catch((err: unknown) => {
         failure = err;
@@ -222,6 +226,7 @@ export class SystemMonitor {
         outbox: [],
         stuck: { raised: [], resolved: [] },
         drafts: { raised: [], resolved: [] },
+        channelDown: [],
       }),
       quota,
     };
@@ -488,6 +493,70 @@ export class SystemMonitor {
       if (created) raised.push(d.ticket_id);
     }
     return { raised, resolved };
+  }
+
+  // ------------------------------------------------------------------ wa_channel_down for late venues (14 §8, DEC-46)
+
+  /**
+   * 14 §8 / DEC-46: while a channel is `down`, every venue with an open or closing event has its `wa_channel_down`
+   * row. The transition to `down` raises it for the venues of that instant (whatsapp `setChannelHealth`); a venue
+   * whose event opens or reopens during the outage gets its row here (critical, with its escalation Push) — as
+   * `outbox_lag` reaches newly affected venues. A venue that already has a live row, or whose row a supervisor
+   * resolved during this outage, is left alone; the transition back to `healthy` resolves them all.
+   */
+  private async evaluateChannelDown(tx: Tx): Promise<string[]> {
+    const raised: string[] = [];
+    const down = await tx.rows<{ id: string; org_id: string; since: Date | null }>(
+      `SELECT id, org_id, health_changed_at AS since FROM whatsapp_channel
+        WHERE is_active AND health_status = 'down' ORDER BY org_id`,
+    );
+    for (const c of down) {
+      const venues = await affectedVenueIds(tx, c.org_id);
+      if (!venues.length) continue;
+      const key = channelDownDedupeKey(c.id);
+      const since = c.since ? new Date(c.since) : new Date(0);
+      // uq_alerts_live_dedupe for the live rows, ix_alerts_manual_resolved for the resolutions of this outage
+      const covered = await tx.rows<{ venue_id: string; details: Record<string, unknown> }>(
+        `SELECT venue_id, details FROM alerts
+          WHERE venue_id = ANY($2::uuid[]) AND dedupe_key = $3 AND status <> 'resolved'
+         UNION ALL
+         SELECT venue_id, details FROM alerts
+          WHERE org_id = $1 AND dedupe_key = $3 AND status = 'resolved' AND resolved_by IS NOT NULL
+            AND resolved_at >= $4`,
+        [c.org_id, venues, key, since],
+      );
+      const have = new Set(covered.map((r) => r.venue_id));
+      const missing = venues.filter((v) => !have.has(v));
+      if (!missing.length) continue;
+      // the reason of this outage: from a row already raised, else from the audit row of the transition
+      const reason =
+        covered.map((r) => r.details?.reason).find((x): x is string => typeof x === 'string') ??
+        (
+          await tx.maybeOne<{ reason: string | null }>(
+            `SELECT metadata->>'reason' AS reason FROM audit_log
+              WHERE entity_type = 'whatsapp_channel' AND entity_id = $1 AND after->>'health_status' = 'down'
+              ORDER BY occurred_at DESC LIMIT 1`,
+            [c.id],
+          )
+        )?.reason ??
+        'down';
+      for (const venueId of missing) {
+        const { created } = await raiseAlert(tx, {
+          orgId: c.org_id,
+          venueId,
+          type: 'wa_channel_down',
+          dedupeKey: key,
+          details: { channel_id: c.id, reason },
+        });
+        if (created) raised.push(venueId);
+      }
+      if (raised.length)
+        this.logger.error(
+          { channel_id: c.id, venues: raised.length },
+          'wa_channel_down for venues opened during the outage',
+        );
+    }
+    return raised;
   }
 
   // ------------------------------------------------------------------ WhatsApp quotas (GAP-9: 12 §13, F-03, F-18)
