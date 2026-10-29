@@ -57,13 +57,13 @@ export const CLOSED_EVENT_CHECKS = {
 };
 
 /**
- * Durations of 15 §10 per event, in seconds (KPI-01 claim, KPI-02 start, KPI-03 request → ready, KPI-04 ready →
- * delivered, KPI-05 request → delivered; intake and parking of 15 KPI-16). One row per measure and value.
+ * Durations of 15 §10 per event, in seconds, with the filters of its SQL (KPI-01 queue → claim, KPI-02 accepted →
+ * start, KPI-03 request → ready, KPI-04 ready → delivered, KPI-05 request → delivered; KPI-16 intake and first
+ * parking). One row per measure and value.
  */
 export const DURATION_QUERIES = {
   'request → accepted (KPI-01)': `SELECT extract(epoch FROM k.claimed_at - k.queued_at) AS s
-      FROM tasks k WHERE k.event_id = $1 AND k.type = 'retrieve' AND k.claimed_at IS NOT NULL AND k.queued_at IS NOT NULL
-        AND k.claimed_at >= k.queued_at`,
+      FROM tasks k WHERE k.event_id = $1 AND k.type = 'retrieve' AND k.claimed_at IS NOT NULL AND k.queued_at IS NOT NULL`,
   'accepted → start (KPI-02)': `SELECT extract(epoch FROM k.started_at - k.accepted_at) AS s
       FROM tasks k WHERE k.event_id = $1 AND k.type = 'retrieve' AND k.started_at IS NOT NULL AND k.accepted_at IS NOT NULL`,
   'request → ready (KPI-03)': `SELECT extract(epoch FROM rc.ready_at - rc.requested_at) AS s
@@ -76,9 +76,12 @@ export const DURATION_QUERIES = {
       FROM retrieval_cycles rc JOIN tickets t ON t.id = rc.ticket_id
      WHERE t.event_id = $1 AND rc.outcome = 'delivered'`,
   'intake: created → submitted (KPI-16)': `SELECT extract(epoch FROM submitted_at - created_at) AS s
-      FROM tickets WHERE event_id = $1 AND submitted_at IS NOT NULL`,
-  'parking: submitted → parked (KPI-16)': `SELECT extract(epoch FROM parked_at - submitted_at) AS s
-      FROM tickets WHERE event_id = $1 AND parked_at IS NOT NULL AND submitted_at IS NOT NULL AND parked_at >= submitted_at`,
+      FROM tickets WHERE event_id = $1 AND status <> 'voided' AND submitted_at IS NOT NULL`,
+  'parking: submitted → first parked (KPI-16)': `SELECT extract(epoch FROM f.first_parked_at - f.submitted_at) AS s
+      FROM (SELECT tk.submitted_at, (SELECT min(te.occurred_at) FROM ticket_events te
+                                      WHERE te.ticket_id = tk.id AND te.type = 'ticket.parked') AS first_parked_at
+              FROM tickets tk WHERE tk.event_id = $1 AND tk.status <> 'voided') f
+     WHERE f.submitted_at IS NOT NULL AND f.first_parked_at IS NOT NULL`,
 };
 
 /** Nearest-rank percentile of a list of numbers (null for an empty list). */

@@ -722,10 +722,15 @@ class Driver {
       const r = await this.client.get('/v1/me/home', { allow: ['AUTH_SESSION_REVOKED'] });
       if (r.status === 200) {
         this.home = r.data;
+        // the gate may have handed him a car while the screen was loading: the car first
+        if (this.busy || this.onBreak || this.offline) continue;
+        this.stepping = true;
         try {
           await this.step(r.data);
         } catch (e) {
           fail(`${this.key} step: ${e.message}`);
+        } finally {
+          this.stepping = false;
         }
       }
       await sleep(Math.round(between(500, 900)));
@@ -740,6 +745,7 @@ class Driver {
       // 6 % of the single offers are missed (in the car park, the phone in a pocket): reminder, expiry, rotation
       if (offer.mode === 'single' && chance(0.06)) return;
       await pause(1, 4);
+      if (this.busy || this.onBreak) return; // busy with a car at the gate: the offer runs out and moves on
       const a = await this.client.post(`/v1/task-offers/${offer.offer_id}/accept`, {});
       if (a.status === 200) {
         const car = carByTicket.get(a.data.ticket?.id);
@@ -859,7 +865,13 @@ class Driver {
     this.busy = true;
     try {
       const v = this.venue;
-      const c = await this.client.post('/v1/tickets', { event_id: v.eventId, channel: car.channel });
+      // the gate picked him while an offer was reaching his phone: he took the offer, another driver takes the car
+      const c = await this.client.post(
+        '/v1/tickets',
+        { event_id: v.eventId, channel: car.channel },
+        { allow: ['MOVEMENT_IN_PROGRESS', 'DRIVER_ON_BREAK'] },
+      );
+      if (['MOVEMENT_IN_PROGRESS', 'DRIVER_ON_BREAK'].includes(c.error?.code)) return 'again';
       if (c.status !== 201) return false;
       car.ticketId = c.data.ticket.id;
       car.displayNumber = c.data.ticket.display_number;
@@ -925,13 +937,17 @@ class Driver {
   }
 
   async takeBreak(seconds) {
+    // he asks for his break once his hands are free (S-01 refuses it with a task or a car/key in custody)
+    for (let i = 0; i < 240 && (this.busy || this.home?.current_task || this.home?.next_task); i++)
+      await sleep(500);
     this.onBreak = true;
     while (this.busy) await sleep(200);
     const r = await this.client.post(
       '/v1/me/duty/break',
       { active: true },
-      { allow: ['DRIVER_NOT_AVAILABLE', 'INVALID_STATE_TRANSITION'] },
+      { allow: ['DRIVER_NOT_AVAILABLE', 'CUSTODY_OPEN', 'INVALID_STATE_TRANSITION'] },
     );
+    if (r.status === 200) notes.push(`${this.key} took a ${seconds} s break`);
     if (r.status === 200) {
       await sleep(seconds * 1000);
       await this.client.post('/v1/me/duty/break', { active: false });
@@ -1019,11 +1035,14 @@ function makeCars(venues) {
   tag(wa(L)[14] ?? paper(L)[6], 'basement', 'driver loses the network with this car (connection alert)');
 }
 
+let gateRetries = 0;
+
 /** The gate: cars wait in line until a driver of the venue is free (no task, no live offer, not on break). */
 async function gate(v, t0) {
   const queue = [];
   let next = 0;
-  while (!stopping && (next < v.cars.length || queue.length)) {
+  let inflight = 0;
+  while (!stopping && (next < v.cars.length || queue.length || inflight)) {
     while (next < v.cars.length && Date.now() - t0 >= v.cars[next].arriveAt) {
       v.cars[next].arrivedAt = Date.now();
       queue.push(v.cars[next++]);
@@ -1033,6 +1052,7 @@ async function gate(v, t0) {
         (d) =>
           d.onDuty &&
           !d.busy &&
+          !d.stepping &&
           !d.onBreak &&
           !d.offline &&
           d.home?.driver_state === 'available' &&
@@ -1041,9 +1061,20 @@ async function gate(v, t0) {
       for (const d of free.slice(0, queue.length)) {
         const car = queue.shift();
         car.intakeBy = d;
-        void d.intake(car).then((ok) => {
-          if (!ok) fail(`intake of ${v.key} car ${car.idx} by ${d.key} failed`);
-        });
+        inflight++;
+        void d.intake(car).then(
+          (ok) => {
+            inflight--;
+            if (ok === 'again') {
+              gateRetries++;
+              queue.unshift(car);
+            } else if (!ok) fail(`intake of ${v.key} car ${car.idx} by ${d.key} failed`);
+          },
+          (e) => {
+            inflight--;
+            fail(`intake of ${v.key} car ${car.idx} by ${d.key}: ${e.message}`);
+          },
+        );
       }
     }
     await sleep(400);
@@ -1127,7 +1158,10 @@ async function fieldCancel(car) {
   }
 }
 
-/** The supervisor's screen S-04: acknowledge critical alerts, repark a no-show, approve the exceptional handover. */
+/**
+ * The supervisor's screen S-04: acknowledge critical alerts, repark a no-show, approve the exceptional handover,
+ * move a request waiting as a busy driver's next task to a free driver, correct a POS reference.
+ */
 async function supervise(v) {
   const handled = new Set();
   while (!stopping && !v.closed) {
@@ -1180,6 +1214,43 @@ async function supervise(v) {
           car.deliveredAt = Date.now();
           notes.push(`code locked on ticket ${car.displayNumber}: exceptional handover by the supervisor`);
         } else fail(`exception of ${car.displayNumber}: ${ex.status} ${ex.error?.code}`);
+      }
+      // 10 EC-31: a driver is free while the oldest request waits as another driver's next task — the decision
+      // is the supervisor's (no silent pull); he moves a few of them when the wait drags on (TT-12 reassign)
+      if (
+        a.type === 'idle_driver_while_next_waiting' &&
+        a.status === 'open' &&
+        a.task_id &&
+        (v.reassigned ?? 0) < 3 &&
+        Date.now() - Date.parse(a.raised_at) >= 10_000 &&
+        !handled.has(`idle:${a.id}`)
+      ) {
+        handled.add(`idle:${a.id}`);
+        const target = a.details?.idle_driver_ids?.[0];
+        const k = a.ticket_id ? await v.sup.get(`/v1/tickets/${a.ticket_id}`) : null;
+        if (target && k?.data?.status === 'assigned_waiting') {
+          const re = await v.sup.post(
+            `/v1/tasks/${a.task_id}/reassign`,
+            { reason: 'سائق متاح والطلب محجوز تاليًا لسائق مشغول', target_driver_id: target },
+            {
+              allow: [
+                'INVALID_STATE_TRANSITION',
+                'DRIVER_NOT_AVAILABLE',
+                'NEXT_TASK_ALREADY_RESERVED',
+                'OLDER_REQUEST_PENDING',
+                'DUTY_REQUIRED',
+                'REASSIGN_BLOCKED_MOVEMENT',
+                'CUSTODY_RELEASE_REQUIRED',
+              ],
+            },
+          );
+          if (re.status === 200) {
+            v.reassigned = (v.reassigned ?? 0) + 1;
+            notes.push(
+              `${v.key}: ticket ${k.data.display_number}, waiting as a busy driver's next task, reassigned to a free driver`,
+            );
+          }
+        }
       }
     }
     // a POS reference typed wrong: corrected by a reversal with replacement (13 §7.2)
@@ -1356,10 +1427,13 @@ async function measure({ world, pool, db, playedS, logDir, database }) {
     `SELECT direction, coalesce(purpose, kind) AS purpose, status, count(*)::int AS n FROM whatsapp_messages
       GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
   );
+  // 15 §10 alert table: acknowledged at some point, resolved by the system (resolved_by null) or by staff
   const alerts = await q(
-    `SELECT type, severity, count(*)::int AS raised, count(*) FILTER (WHERE status = 'resolved')::int AS resolved,
-            count(*) FILTER (WHERE status = 'acknowledged')::int AS acknowledged,
-            count(*) FILTER (WHERE status = 'open')::int AS open
+    `SELECT type, severity, count(*)::int AS raised,
+            count(*) FILTER (WHERE acknowledged_at IS NOT NULL)::int AS acknowledged,
+            count(*) FILTER (WHERE status = 'resolved' AND resolved_by IS NULL)::int AS auto_resolved,
+            count(*) FILTER (WHERE status = 'resolved' AND resolved_by IS NOT NULL)::int AS staff_resolved,
+            count(*) FILTER (WHERE status <> 'resolved')::int AS open
        FROM alerts GROUP BY 1, 2 ORDER BY 1`,
   );
   const incidents = await q(
@@ -1618,8 +1692,16 @@ function renderReport(r) {
   L();
   L(
     table(
-      ['Alert', 'Severity', 'Raised', 'Acknowledged', 'Resolved', 'Still open'],
-      r.alerts.map((x) => [x.type, x.severity, x.raised, x.acknowledged, x.resolved, x.open]),
+      ['Alert', 'Severity', 'Raised', 'Acknowledged', 'Resolved (system)', 'Resolved (staff)', 'Still open'],
+      r.alerts.map((x) => [
+        x.type,
+        x.severity,
+        x.raised,
+        x.acknowledged,
+        x.auto_resolved,
+        x.staff_resolved,
+        x.open,
+      ]),
     ),
   );
   L();
@@ -1666,6 +1748,7 @@ function renderReport(r) {
             ? `${http.unexpected.length}: ${http.unexpected.slice(0, 8).join('; ')}`
             : '0',
         ],
+        ['Gate: car handed to the next driver (the one picked had just taken an offer)', String(gateRetries)],
         [
           'WebSocket',
           `${ws.connects} connects, ${ws.disconnects} disconnects; ${[...ws.messages.entries()]
