@@ -8,16 +8,19 @@
 //   kp4_silent       KP-4 without any status webhook: at most one duplicate message, recorded as attempt 2
 //   db_outage        backends terminated, then the database refusing connections for 60 s: SERVICE_UNAVAILABLE,
 //                    no request lost (Meta redelivers), timers run late and once, the processes survive
-//   wa_outage        the simulator's `channel_down` (Graph 190) for 2 min: wa_channel_down, internal operations go
+//   wa_outage        the simulator's `channel_down` (Graph 190) for 10 min: wa_channel_down, internal operations go
 //                    on, after recovery only the current state of each ticket is sent (TC-WA-22)
 //   wa_outage_temporary  the provider failing with 131016 for 180 s while requests keep coming: down after the
 //                    2-minute streak (12 §5.14), then only current states
 //   push_outage      the test Push service stopped: failures counted, push_failed_repeatedly, dispatch unaffected
 //   worker_stop      the worker stopped 2 min: outbox_lag raised, escalations due meanwhile run once afterwards
 //   worker_x3        three workers on one outbox: no row processed twice, every message sent once
+//   db_freeze        (opt-in, --only db_freeze) the database paused 60 s behind a relay: connections and bytes
+//                    accepted, nothing answered — the expectations of db_outage; records DEC-PROPOSED-8
 //
 // Knobs: --only kp1,kp5,… · --out DIR · --port CHAOS_PORT_BASE (4120) · --keep-db · --no-build ·
-// CHAOS_DB_OUTAGE_S (60) · CHAOS_WA_OUTAGE_S (120) · CHAOS_WA_TEMP_OUTAGE_S (180) · CHAOS_WORKER_STOP_S (120).
+// CHAOS_DB_OUTAGE_S (60) · CHAOS_WA_OUTAGE_S (600) · CHAOS_WA_TEMP_OUTAGE_S (180) · CHAOS_WORKER_STOP_S (120) ·
+// CHAOS_DB_FREEZE_S (60) — the defaults are the durations of 17 §12 (the temporary-error run is this harness's own).
 import { spawnSync } from 'node:child_process';
 import { createECDH, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -34,6 +37,7 @@ import { intakeAndPark, must } from '../harness/flows.mjs';
 import { Proc, SCRIPTS, waitHttp } from '../harness/procs.mjs';
 import { runId, seedWorld } from '../harness/seed.mjs';
 import { table } from '../harness/stats.mjs';
+import { freezableProxy } from '../harness/tcp-proxy.mjs';
 import { DriverBot, prng } from '../load/bots.mjs';
 
 const { values: a } = parseArgs({
@@ -50,13 +54,24 @@ const RUN = runId();
 const OUT = a.out ?? env.CHAOS_OUT ?? join(tmpdir(), `point-chaos-${RUN}`);
 mkdirSync(OUT, { recursive: true });
 const BASE_PORT = Number(a.port ?? env.CHAOS_PORT_BASE ?? 4120);
-const P = { api: BASE_PORT, metrics: BASE_PORT + 1, sim: BASE_PORT + 10, push: BASE_PORT + 20 };
+const P = {
+  api: BASE_PORT,
+  metrics: BASE_PORT + 1,
+  sim: BASE_PORT + 10,
+  push: BASE_PORT + 20,
+  dbProxy: BASE_PORT + 30,
+};
 const KEEP = !!a['keep-db'];
 const S = (name, def) => Number(env[name] ?? def) * 1000;
 const DB_OUTAGE_MS = S('CHAOS_DB_OUTAGE_S', 60);
-const WA_OUTAGE_MS = S('CHAOS_WA_OUTAGE_S', 120);
+const WA_OUTAGE_MS = S('CHAOS_WA_OUTAGE_S', 600);
 const WA_TEMP_OUTAGE_MS = S('CHAOS_WA_TEMP_OUTAGE_S', 180);
 const WORKER_STOP_MS = S('CHAOS_WORKER_STOP_S', 120);
+const DB_FREEZE_MS = S('CHAOS_DB_FREEZE_S', 60);
+/** apps/web/src/api/client.ts DEFAULT_TIMEOUT_MS: an answer later than this is an unknown outcome to the PWA */
+const PWA_TIMEOUT_MS = 10_000;
+const WORKER_LEASE_S = 10;
+const dur = (ms) => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
 const t0 = Date.now();
 const log = (m) => console.log(`[chaos ${((Date.now() - t0) / 1000).toFixed(1).padStart(7)} s] ${m}`);
 
@@ -140,11 +155,24 @@ class Stage {
       ports: P,
       overrides: {
         RATE_LIMIT_AUTH_PER_MIN: '600',
-        // test knob: a crashed worker's lease frees its rows after 10 s (production default 30 s)
-        WORKER_LEASE_SECONDS: '10',
+        // test knob: a crashed worker's lease frees its rows sooner (production default 30 s)
+        WORKER_LEASE_SECONDS: String(WORKER_LEASE_S),
         ...(o.server ?? {}),
       },
     });
+    if (o.dbProxy) {
+      // the api and the worker reach the database through a relay the scenario can freeze; the harness does not
+      const u = new URL(this.url);
+      this.dbProxy = freezableProxy({
+        port: P.dbProxy,
+        targetHost: u.hostname,
+        targetPort: Number(u.port || 5432),
+      });
+      await this.dbProxy.start();
+      u.hostname = '127.0.0.1';
+      u.port = String(P.dbProxy);
+      this.srv.DATABASE_URL = u.toString();
+    }
     this.world = await seedWorld(this.url, { venues: 2, driversPerVenue: o.drivers ?? 4, env: this.srv });
     this.venue = this.world.venues[0];
     this.pool = new pg.Pool({ connectionString: this.url, max: 3 });
@@ -307,7 +335,9 @@ class Stage {
   }
 
   async close() {
+    this.dbProxy?.thaw();
     for (const p of [this.worker, this.api, this.sim, ...(this.extra ?? [])]) await p?.stop().catch(() => {});
+    await this.dbProxy?.stop();
     await this.pool?.end().catch(() => {});
     if (!KEEP) await dropDb(this.dbName).catch((e) => log(`drop ${this.dbName}: ${e.message}`));
   }
@@ -667,7 +697,6 @@ async function dbOutage(st) {
   // B — 60 s outage: a request with a live single offer whose timers fall inside the outage
   await st.simc.pressButton({ to: t2.phone, purpose: 'W-01' });
   const offer = await st.waitFor(() => st.liveOffer(t2.ticketId), 30_000, 'a live offer for T2');
-  const task2 = offer.task_id;
   await withAdmin((c) => c.query(`ALTER DATABASE ${st.dbName} ALLOW_CONNECTIONS false`));
   await terminate();
   const cutAt = Date.now();
@@ -718,17 +747,24 @@ async function dbOutage(st) {
     'T3 cycle',
   );
   st.check('T3 request created after the recovery (no request lost)', true);
-  // timers due during the outage ran late, once
+  await timersRanOnce(st, { offer, label: 'T2', backAt, during: 'the outage' });
+  st.alive(st.api, st.worker);
+  await st.consistent();
+}
+
+/** The offer expiry and the escalation of a request whose timers fell inside an outage ran late, once. */
+async function timersRanOnce(st, { offer, label, backAt, during }) {
+  const taskId = offer.task_id;
   await st.waitFor(
     async () =>
       count(
         await st.rows(
           `SELECT count(*)::int AS n FROM outbox_events WHERE type = 'job.escalate_unaccepted' AND payload->>'task_id' = $1 AND status = 'done'`,
-          [task2],
+          [taskId],
         ),
       ) >= 1,
     90_000,
-    'the escalation of T2 after the recovery',
+    `the escalation of ${label} after the recovery`,
   );
   await sleep(5000);
   const expire = await st.rows(
@@ -736,7 +772,7 @@ async function dbOutage(st) {
     [offer.offer_id],
   );
   st.check(
-    'the offer expiry due during the outage ran once, after it',
+    `the offer expiry due during ${during} ran once, after it`,
     expire.length === 1 &&
       expire[0].status === 'done' &&
       new Date(expire[0].processed_at).getTime() >= backAt,
@@ -744,22 +780,22 @@ async function dbOutage(st) {
   );
   const esc = await st.rows(
     `SELECT status, attempts FROM outbox_events WHERE type = 'job.escalate_unaccepted' AND payload->>'task_id' = $1`,
-    [task2],
+    [taskId],
   );
   st.check(
-    'the escalation due during the outage ran once',
+    `the escalation due during ${during} ran once`,
     esc.filter((r) => r.status === 'done').length === 1,
     esc,
   );
   const escalated = await st.rows(
     `SELECT count(*)::int AS n FROM outbox_events WHERE type = 'task.escalated' AND aggregate_id = $1`,
-    [task2],
+    [taskId],
   );
   const alert = await st.rows(`SELECT count(*)::int AS n FROM alerts WHERE dedupe_key = $1`, [
-    `request_unaccepted:${task2}`,
+    `request_unaccepted:${taskId}`,
   ]);
   st.check(
-    'one task.escalated and one request_unaccepted alert for T2',
+    `one task.escalated and one request_unaccepted alert for ${label}`,
     count(escalated) === 1 && count(alert) === 1,
     { escalated: count(escalated), alerts: count(alert) },
   );
@@ -767,6 +803,117 @@ async function dbOutage(st) {
     await st.rows(`SELECT status, close_reason FROM task_offers WHERE id = $1`, [offer.offer_id])
   )[0];
   st.check('the expired offer is closed', offerRow?.status !== 'active', offerRow);
+}
+
+/**
+ * 17 §12 read as `docker pause` (or a stalled network link): the database accepts connections and bytes but answers
+ * nothing for CHAOS_DB_FREEZE_S (60) — the api and the worker reach it through a relay that freezes. The expectations
+ * are those of the 60 s database outage: SERVICE_UNAVAILABLE while it lasts (within the PWA's 10 s request
+ * timeout, apps/web/src/api/client.ts), nothing lost or repeated afterwards, timers late and once. Opt-in
+ * (`--only db_freeze`): it records the gap of DEC-PROPOSED-8 (docs/progress/notes/load-chaos.md).
+ */
+async function dbFreeze(st) {
+  const parker = await st.driver(0);
+  const second = await st.driver(1);
+  const t1 = await st.parked(parker);
+  const t2 = await st.parked(parker);
+  const late = new ApiClient(st.base, { label: 'late-driver' });
+  const lateDriver = st.venue.drivers[3];
+  await late.login(lateDriver.phone, lateDriver.pin);
+  await st.settleWebhooks();
+  // a request with a live single offer whose timers fall inside the freeze
+  await st.simc.pressButton({ to: t1.phone, purpose: 'W-01' });
+  const offer = await st.waitFor(() => st.liveOffer(t1.ticketId), 30_000, 'a live offer for T1');
+  st.dbProxy.freeze();
+  const cutAt = Date.now();
+  log(`db_freeze: database frozen for ${dur(DB_FREEZE_MS)}`);
+  await sleep(2000);
+  const key = `chaos-${randomUUID()}`;
+  const readyProbe = async () => {
+    const s = performance.now();
+    try {
+      const r = await fetch(`${st.base}/health/ready`, { signal: AbortSignal.timeout(15_000) });
+      return { status: r.status, ms: Math.round(performance.now() - s) };
+    } catch (e) {
+      return { status: 0, error: e?.name, ms: Math.round(performance.now() - s) };
+    }
+  };
+  const [home, ready, cmd] = await Promise.all([
+    second.request('GET', '/v1/me/home', { timeoutMs: 15_000 }),
+    readyProbe(),
+    late.request('POST', '/v1/me/duty/start', { body: {}, key, timeoutMs: 15_000 }),
+  ]);
+  const seen = (r) => ({ status: r.status, code: r.error?.code ?? null, ms: Math.round(r.ms) });
+  const answered = (r) => r.status === 503 && r.ms <= PWA_TIMEOUT_MS;
+  st.check(
+    `during the freeze a read answers 503 SERVICE_UNAVAILABLE within the PWA's ${PWA_TIMEOUT_MS / 1000} s`,
+    answered(home) && home.error?.code === 'SERVICE_UNAVAILABLE',
+    seen(home),
+  );
+  st.check(
+    `readiness answers 503 within ${PWA_TIMEOUT_MS / 1000} s during the freeze`,
+    answered(ready),
+    ready,
+  );
+  st.check(
+    `a command answers 503 SERVICE_UNAVAILABLE within ${PWA_TIMEOUT_MS / 1000} s during the freeze`,
+    answered(cmd) && cmd.error?.code === 'SERVICE_UNAVAILABLE',
+    seen(cmd),
+  );
+  const press2 = st.simcLong.pressButton({ to: t2.phone, purpose: 'W-01' }); // Meta keeps redelivering
+  await sleep(Math.max(0, cutAt + DB_FREEZE_MS - Date.now()));
+  st.alive(st.api, st.worker);
+  st.note(
+    `relay during the freeze: ${st.dbProxy.stats.acceptedWhileFrozen} connection(s) opened and ${st.dbProxy.stats.heldBytes} bytes held without an answer`,
+  );
+  st.dbProxy.thaw();
+  const backAt = Date.now();
+  await waitHttp(`${st.base}/health/ready`, { timeoutMs: 30_000 });
+  st.check('readiness back within 30 s of the thaw', true, `${Date.now() - backAt} ms`);
+  // the PWA retries an unanswered command with the same key (08 §8.1): it runs once, whichever attempt lands
+  let retried;
+  for (let i = 0; i < 6; i++) {
+    retried = await late.request('POST', '/v1/me/duty/start', { body: {}, key });
+    if (retried.status !== 503 && retried.error?.code !== 'IDEMPOTENCY_IN_PROGRESS') break;
+    await sleep(1000);
+  }
+  const duties = await st.rows(
+    `SELECT count(*)::int AS n FROM duty_sessions WHERE user_id = $1 AND ended_at IS NULL`,
+    [lateDriver.id],
+  );
+  st.check(
+    'the command retried with the same key answers 201 and the duty exists once',
+    retried.status === 201 && count(duties) === 1,
+    { status: retried.status, replayed: retried.replayed, code: retried.error?.code, duties: count(duties) },
+  );
+  const p2 = await press2;
+  const d2 = p2.deliveries?.[0];
+  st.check('the press sent during the freeze was delivered (not lost)', d2?.ok, {
+    attempts: d2?.attempts,
+    httpStatus: d2?.httpStatus,
+  });
+  await st.waitFor(
+    async () =>
+      count(
+        await st.rows(`SELECT count(*)::int AS n FROM retrieval_cycles WHERE ticket_id = $1`, [t2.ticketId]),
+      ) === 1,
+    60_000,
+    'T2 cycle',
+  );
+  await sleep(3000);
+  const wamid2 = p2.wamids?.[0];
+  const stored = await st.rows(
+    `SELECT (SELECT count(*)::int FROM whatsapp_inbound_events WHERE raw_body LIKE $1) AS events,
+            (SELECT count(*)::int FROM whatsapp_messages WHERE wa_message_id = $2) AS messages,
+            (SELECT count(*)::int FROM retrieval_cycles WHERE ticket_id = $3) AS cycles`,
+    [`%${wamid2}%`, wamid2, t2.ticketId],
+  );
+  st.check(
+    'T2: the press stored once, one inbound message, one retrieval cycle (redeliveries deduplicated)',
+    stored[0]?.events === 1 && stored[0]?.messages === 1 && stored[0]?.cycles === 1,
+    stored[0],
+  );
+  await timersRanOnce(st, { offer, label: 'T1', backAt, during: 'the freeze' });
   st.alive(st.api, st.worker);
   await st.consistent();
 }
@@ -791,7 +938,7 @@ async function receivedSince(st, phone, since) {
   return (await st.messagesTo(phone)).filter((m) => Date.parse(m.acceptedAt) >= since).map((m) => m.purpose);
 }
 
-/** 17 §12 / TC-WA-22: WhatsApp down (Graph 190 for 2 min); internal work continues; only current states after. */
+/** 17 §12 / TC-WA-22: WhatsApp down (Graph 190 for 10 min); internal work continues; only current states after. */
 async function waOutage(st) {
   const parker = await st.driver(0);
   await st.driver(1);
@@ -1331,19 +1478,31 @@ const SCENARIOS = {
     title: 'KP-4 without any status webhook (TC-016, at most one duplicate)',
   },
   kp5: { fn: kp5, title: 'KP-5 accept_after_commit_before_response (TC-017)' },
-  db_outage: { fn: dbOutage, title: 'database: backends terminated, then 60 s refusing connections' },
-  wa_outage: { fn: waOutage, title: 'WhatsApp outage (Graph 190, 12 §11.4 channel_down) — TC-WA-22' },
+  db_outage: {
+    fn: dbOutage,
+    title: `database: backends terminated, then ${dur(DB_OUTAGE_MS)} refusing connections`,
+  },
+  wa_outage: {
+    fn: waOutage,
+    title: `WhatsApp outage ${dur(WA_OUTAGE_MS)} (Graph 190, 12 §11.4 channel_down) — TC-WA-22`,
+  },
   wa_outage_temporary: {
     fn: waOutageTemporary,
-    title: 'WhatsApp temporary errors (131016) — the 2-minute rule of 12 §5.14',
+    title: `WhatsApp temporary errors (131016) for ${dur(WA_TEMP_OUTAGE_MS)} — the 2-minute rule of 12 §5.14`,
   },
   push_outage: {
     fn: pushOutage,
     title: 'Push outage (test Push service stopped)',
     stage: () => ({ server: vapidKeys() }),
   },
-  worker_stop: { fn: workerStop, title: 'worker stopped 2 minutes (outbox_lag)' },
+  worker_stop: { fn: workerStop, title: `worker stopped ${dur(WORKER_STOP_MS)} (outbox_lag)` },
   worker_x3: { fn: workerX3, title: 'three workers on one outbox' },
+  db_freeze: {
+    fn: dbFreeze,
+    title: `database frozen ${dur(DB_FREEZE_MS)} (paused: connections accepted, nothing answered) — opt-in, DEC-PROPOSED-8`,
+    stage: () => ({ dbProxy: true }),
+    optIn: true,
+  },
 };
 
 function build() {
@@ -1368,7 +1527,7 @@ async function main() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const names = only.length ? only : Object.keys(SCENARIOS);
+  const names = only.length ? only : Object.keys(SCENARIOS).filter((n) => !SCENARIOS[n].optIn);
   for (const n of names)
     if (!SCENARIOS[n]) throw new Error(`unknown scenario ${n} (${Object.keys(SCENARIOS).join(', ')})`);
   if (!a['no-build'] && env.CHAOS_BUILD !== '0') build();
@@ -1424,7 +1583,18 @@ async function main() {
       '',
     ]),
   ].join('\n');
-  writeFileSync(join(OUT, 'results.json'), JSON.stringify({ run: RUN, results }, null, 2));
+  const knobs = {
+    dbOutageS: DB_OUTAGE_MS / 1000,
+    waOutageS: WA_OUTAGE_MS / 1000,
+    waTempOutageS: WA_TEMP_OUTAGE_MS / 1000,
+    workerStopS: WORKER_STOP_MS / 1000,
+    workerLeaseS: WORKER_LEASE_S,
+    portBase: BASE_PORT,
+  };
+  writeFileSync(
+    join(OUT, 'results.json'),
+    JSON.stringify({ run: RUN, date: new Date(t0).toISOString(), knobs, results }, null, 2),
+  );
   writeFileSync(join(OUT, 'report.md'), report);
   console.log(`\n${report}`);
   log(`results: ${join(OUT, 'results.json')} · report: ${join(OUT, 'report.md')} · logs: ${OUT}/<scenario>/`);
