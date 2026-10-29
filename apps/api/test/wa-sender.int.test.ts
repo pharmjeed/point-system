@@ -628,4 +628,41 @@ describe('WhatsApp sender (job.wa_send)', () => {
       await w.sim.client.setChannel({ state: 'up' });
     }
   });
+
+  it('the hold is bounded: sends that keep failing while the probe passes end failed after 15 minutes (no endless loop)', async () => {
+    const ok = await retrieving({ customerId: await newCustomer('+966512340110') });
+    await ok.emitW04();
+    await w.flush();
+    expect(await sentFor(ok.t)).toHaveLength(1);
+    w.clock.advance(1_000);
+    const a = await retrieving({ customerId: await newCustomer('+966512340111') });
+    const b = await retrieving({ customerId: await newCustomer('+966512340112') });
+    // every send fails with 131016 while GET /{phone_number_id} still answers: `down` never recovers by itself
+    await w.sim.client.addFault({ code: 131016, count: 'unlimited' });
+    try {
+      await a.emitW04();
+      await b.emitW04();
+      await w.flush(10 * 60_000);
+      expect(await health()).toBe('down');
+      const [held] = await notificationsOf(w, a.t.id);
+      expect(held).toMatchObject({ status: 'pending' });
+      expect((await attempts(held!.id)).rowCount).toBeGreaterThan(5); // real attempts, held, not counted
+
+      await w.flush(10 * 60_000); // past HOLD_WINDOW_MS (15 min) since the first attempt
+      for (const t of [a.t, b.t]) {
+        const [n] = await notificationsOf(w, t.id);
+        expect(n).toMatchObject({ status: 'failed', last_error_code: 'WA_SEND_FAILED' });
+        expect((await alerts(t.id)).rows[0]).toMatchObject({
+          type: 'wa_send_failed',
+          details: expect.objectContaining({ reason: 'attempts_exhausted' }),
+        });
+      }
+    } finally {
+      await w.sim.client.clearFaults();
+      await w.db.query(
+        `UPDATE whatsapp_channel SET health_status = 'healthy' WHERE org_id = $1 AND is_active`,
+        [ORG],
+      );
+    }
+  });
 });
