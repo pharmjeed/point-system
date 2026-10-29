@@ -194,6 +194,11 @@ export function mapPgError(e: PgErrorLike, ctx: PgMapContext = {}): MappedPgErro
       };
     case '57014':
       return { error: new AppError('SERVICE_UNAVAILABLE', {}, { retryAfterS: 1 }), unexpected: false };
+    case '55000':
+      // «database … is not currently accepting connections» (maintenance, a restore switch-over)
+      if (isDbUnavailableError(e))
+        return { error: new AppError('SERVICE_UNAVAILABLE', {}, { retryAfterS: 2 }), unexpected: false };
+      return internal(constraint || e.code);
     default:
       if (e.code?.startsWith('08') || e.code?.startsWith('53') || e.code?.startsWith('57P')) {
         return { error: new AppError('SERVICE_UNAVAILABLE', {}, { retryAfterS: 2 }), unexpected: false };
@@ -204,6 +209,52 @@ export function mapPgError(e: PgErrorLike, ctx: PgMapContext = {}): MappedPgErro
 
 function internal(constraint: string): MappedPgError {
   return { error: new AppError('INTERNAL_ERROR', {}, { cause: constraint }), unexpected: true };
+}
+
+/** Socket errors of a database connection that could not be opened or was cut. */
+const CONNECTION_ERRNO = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+/** node-postgres / pg-pool messages for a connection lost mid-query or never obtained. */
+const CONNECTION_MESSAGES = [
+  /connection terminated/i,
+  /connection ended unexpectedly/i,
+  /is not queryable/i,
+  /timeout exceeded when trying to connect/i,
+  /not currently accepting connections/i,
+];
+
+/**
+ * A database that cannot be reached right now (stopped or restarting server, failover, terminated backends, a
+ * network cut). 08 §5 maps SQLSTATE class 08 (connection) to SERVICE_UNAVAILABLE; when the server is gone the
+ * driver reports the same situation without any SQLSTATE — a socket error, «Connection terminated unexpectedly»,
+ * a pool connect timeout — or as 55000 «not currently accepting connections». All of them answer
+ * SERVICE_UNAVAILABLE (retryable, Retry-After) instead of INTERNAL_ERROR (17 §12: database outage).
+ */
+export function isDbUnavailableError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const err = e as { code?: unknown; message?: unknown; errors?: unknown };
+  if (typeof err.code === 'string' && CONNECTION_ERRNO.has(err.code)) return true;
+  // the server's own words: class 08 connection exception, 53 resources, 57P0x shutdown / terminated backend
+  if (typeof err.code === 'string' && /^(08[0-9A-Z]{3}|53[0-9A-Z]{3}|57P0[0-9])$/.test(err.code)) return true;
+  const message = typeof err.message === 'string' ? err.message : '';
+  if (CONNECTION_MESSAGES.some((r) => r.test(message))) return true;
+  // dual-stack connect attempts fail as one AggregateError (ECONNREFUSED on ::1 and on 127.0.0.1)
+  if (Array.isArray(err.errors) && err.errors.length > 0) return err.errors.every(isDbUnavailableError);
+  return false;
+}
+
+/** The SERVICE_UNAVAILABLE answer for isDbUnavailableError (null otherwise). */
+export function dbUnavailableError(e: unknown): AppError | null {
+  return isDbUnavailableError(e) ? new AppError('SERVICE_UNAVAILABLE', {}, { retryAfterS: 2 }) : null;
 }
 
 export const PG_CONSTRAINT_RULES = { unique: Object.keys(UNIQUE_RULES), check: Object.keys(CHECK_RULES) };

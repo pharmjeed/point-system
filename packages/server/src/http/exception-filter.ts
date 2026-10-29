@@ -4,7 +4,7 @@ import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { AppError, asAppError } from '../core/errors/app-error.js';
 import { errorEnvelope } from '../core/errors/envelope.js';
-import { isPgError, mapPgError } from '../core/errors/pg-constraint-map.js';
+import { dbUnavailableError, isPgError, mapPgError } from '../core/errors/pg-constraint-map.js';
 import type { Logger } from '../core/logging/logger.js';
 import { LOGGER } from './tokens.js';
 import { resolveRequestId } from './request-id.js';
@@ -54,6 +54,9 @@ export function toHttpAppError(err: unknown): { error: AppError; unexpected: boo
   if (app) return { error: app, unexpected: false };
   if (err instanceof ZodError)
     return { error: new AppError('VALIDATION_FAILED', { fields: zodToFields(err) }), unexpected: false };
+  // the database cannot be reached (08 §5 class 08 without a SQLSTATE): SERVICE_UNAVAILABLE, before isPgError
+  const unavailable = dbUnavailableError(err);
+  if (unavailable) return { error: unavailable, unexpected: false };
   if (isPgError(err)) {
     const m = mapPgError(err);
     return { error: m.error, unexpected: m.unexpected };
