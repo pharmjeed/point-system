@@ -228,8 +228,11 @@ preview strings). `components/bundle.js` is never imported.
   `test/intakePersistence.test.ts`.
 - WhatsApp and the field help (driver-gaps): `e2e/driver-whatsapp.spec.ts` (D-05 by number and by QR, D-06 code before
   the submit, D-07 modes أ / ب with the confirmation, fallbacks and refusals, D-13 relink, the notices after D-07),
-  `e2e/driver-help.spec.ts` (D-10 report and the W-05 banner, D-11 resend, manual verification and the 14 §5.1 banners);
-  unit tests `test/linkModel.test.ts` and the WhatsApp events in `test/realtime/driverRuntime.test.ts`.
+  `e2e/driver-help.spec.ts` (D-10 report and the W-05 banner, D-11 resend, manual verification, the no-code state,
+  the supervisor's reissue and the 14 §5.1 banners); unit tests `test/linkModel.test.ts`, `test/intakeErrors.test.ts`
+  and the WhatsApp events in `test/realtime/driverRuntime.test.ts`. The fake's WhatsApp side follows the API: a
+  matching confirmation links, a code at `ready` for a linked ticket only, `ticket.updated` to the privileged drivers
+  with `wa_link_pending`, `fake.whatsapp.expireCode` for `job.link_code_expire`.
 - Gate G1 (PNT-036): `e2e/live/g1.live.spec.ts` (project `g1-live`, only with `E2E_BACKEND=live`) runs the same path
   against the real API: `/v1` through the `vite preview` proxy to `localhost:API_PORT`, drivers signed in through D-01,
   photos into the API's in-memory private bucket, then the actors, the custody chain and one audit row per command
