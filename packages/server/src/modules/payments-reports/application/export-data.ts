@@ -3,7 +3,13 @@ import { maskPhone, redact } from '../../../core/logging/redact.js';
 import { plateView, type TicketQueryable } from '../../tickets-custody/index.js';
 import { formatRiyadh, formatSar } from '../domain/payment-rules.js';
 import { toCsv, type CsvColumn } from '../infra/csv.js';
-import { driverReportRow, driverReportRows, eventSummaryReport } from './reports.js';
+import {
+  driverReportRow,
+  driverReportRows,
+  EVENT_DAY_ENDS_AFTER,
+  EVENT_DAY_STARTS_BEFORE,
+  eventSummaryReport,
+} from './reports.js';
 import { maskPhonesInText } from './views.js';
 
 /**
@@ -203,8 +209,8 @@ async function eventSummaryCsv(q: TicketQueryable, s: ExportScope, f: ExportFilt
     q,
     `SELECT e.id, v.code AS venue_code FROM events e JOIN venues v ON v.id = e.venue_id
       WHERE e.org_id = $1 AND e.venue_id = ANY($2::uuid[]) AND ($3::uuid IS NULL OR e.id = $3::uuid)
-        AND ($4::timestamptz IS NULL OR e.event_date >= ($4::timestamptz AT TIME ZONE 'Asia/Riyadh')::date)
-        AND ($5::timestamptz IS NULL OR e.event_date <= ($5::timestamptz AT TIME ZONE 'Asia/Riyadh')::date)
+        AND ($4::timestamptz IS NULL OR ${EVENT_DAY_ENDS_AFTER('$4')})
+        AND ($5::timestamptz IS NULL OR ${EVENT_DAY_STARTS_BEFORE('$5')})
       ORDER BY e.event_date, e.id`,
     [s.orgId, venueSet(s, f), f.event_id ?? null, f.from ?? null, f.to ?? null],
   );

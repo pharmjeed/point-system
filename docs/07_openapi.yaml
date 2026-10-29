@@ -7605,7 +7605,7 @@ paths:
       summary: تقرير التحصيل
       tags: [Reports & Exports]
       description: |-
-        تقرير التحصيل (DEC-288؛ 07 يغلب 13 §13 على السلك): صف لكل حفل أُقيم في الفترة (event_date بتوقيت الرياض بين تاريخي from وto بتوقيت الرياض) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ قائمة التحصيلات المفصلة هي تصدير payments. from بعد to ← VALIDATION_FAILED (from، after_to)؛ venue_id خارج النطاق ← SCOPE_VENUE_DENIED.
+        تقرير التحصيل (DEC-288؛ 07 يغلب 13 §13 على السلك): صف لكل حفل أُقيم في الفترة (يوم event_date بتوقيت الرياض [00:00، 00:00 التالي) يتقاطع مع [from, to) نصف المفتوحة كبقية التقارير، فيوم الرياض المرسل [from, to+1) لا يجلب حفلات اليوم التالي) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ قائمة التحصيلات المفصلة هي تصدير payments. from بعد to ← VALIDATION_FAILED (from، after_to)؛ venue_id خارج النطاق ← SCOPE_VENUE_DENIED.
       parameters:
       - name: venue_id
         in: query

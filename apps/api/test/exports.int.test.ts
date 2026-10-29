@@ -7,6 +7,7 @@ import {
   createS2App,
   err,
   EVT_L1,
+  EVT_R1,
   EVT_R2,
   LYL,
   ok,
@@ -307,6 +308,17 @@ describe('PNT-089 — POST /v1/exports and GET /v1/exports/{exportId}', () => {
     const summary = parseCsv(files.event_summary!);
     expect(summary[1]![summary[0]!.indexOf('event_id')]).toBe(EVT_R2);
     expect(summary[1]![summary[0]!.indexOf('cash_sar')]).toBe('20.00');
+    // event_summary by period: Riyadh days half-open like the payments report — the 26th alone is empty, the
+    // 27th holds the seeded events (DEC-288, DEC-331)
+    const byPeriod = async (from: string, to: string) => {
+      const x = ok(await createExport(t, 'SUP-R', { kind: 'event_summary', filters: { from, to } }), 202);
+      await generate();
+      return parseCsv((await download('SUP-R', x.id)).text).slice(1);
+    };
+    expect(await byPeriod('2026-10-26T00:00:00+03:00', '2026-10-27T00:00:00+03:00')).toEqual([]);
+    expect(
+      (await byPeriod('2026-10-27T00:00:00+03:00', '2026-10-28T00:00:00+03:00')).map((r) => r[0]).sort(),
+    ).toEqual([EVT_R1, EVT_R2].sort());
     const drivers = parseCsv(files.drivers!);
     expect(drivers.slice(1).map((r) => r[drivers[0]!.indexOf('employee_code')])).toEqual(['D-0001']);
     const messages = parseCsv(files.messages!);

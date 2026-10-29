@@ -405,6 +405,25 @@ describe('PNT-088 — reports', () => {
         ),
       ).rows,
     ).toEqual([]);
+    // S-11 sends a Riyadh day as [00:00, next day 00:00): the period is half-open like the other reports, so the
+    // 26th alone never pulls in the events of the 27th (DEC-288, DEC-331)
+    expect(
+      ok(
+        await t.get(
+          `/v1/reports/payments?${qs({ from: '2026-10-26T00:00:00+03:00', to: '2026-10-27T00:00:00+03:00' })}`,
+          'SUP-R',
+        ),
+      ).rows,
+    ).toEqual([]);
+    // a period ending inside the 27th still holds them (the event day overlaps it)
+    expect(
+      ok(
+        await t.get(
+          `/v1/reports/payments?${qs({ from: '2026-10-26T00:00:00+03:00', to: '2026-10-27T00:00:01+03:00' })}`,
+          'SUP-R',
+        ),
+      ).rows.map((x: { event_id: string }) => x.event_id),
+    ).toEqual([EVT_R1, EVT_R2]);
     expect(
       ok(await t.get(`/v1/reports/payments?${qs(DAY)}`, 'OWN1')).rows.map(
         (x: { event_id: string }) => x.event_id,

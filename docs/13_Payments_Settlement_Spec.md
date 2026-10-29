@@ -548,7 +548,7 @@ SELECT p.collected_by AS driver_id,
 |---|---|---|
 | `GET /v1/events/{eventId}/settlement` | `report.read` | تقرير التسوية الكامل (§11) |
 | `GET /v1/reports/events/{eventId}/summary` | `report.read` | قسم مالي مختصر: المحصّل حسب الوسيلة، المُعفى، المستحق، الفروقات |
-| `GET /v1/reports/payments` | `report.read` | صف لكل حفل أُقيم في الفترة (`event_date` بتوقيت الرياض بين تاريخي `from` و`to`) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ المرشحات `from`، `to`، `venue_id`، `event_id` (07 يغلب على السلك؛ لا قائمة تحصيلات بمؤشر، DEC-288). قائمة التحصيلات المفصلة هي تصدير `payments` |
+| `GET /v1/reports/payments` | `report.read` | صف لكل حفل أُقيم في الفترة (يوم `event_date` بتوقيت الرياض يتقاطع مع `[from, to)` نصف المفتوحة كبقية التقارير، DEC-288) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ المرشحات `from`، `to`، `venue_id`، `event_id` (07 يغلب على السلك؛ لا قائمة تحصيلات بمؤشر، DEC-288). قائمة التحصيلات المفصلة هي تصدير `payments` |
 | `POST /v1/exports` بالنوع `payments` أو `event_summary` | `export.create` | ملف CSV مؤقت خاص؛ قواعد التوليد والنطاق والسقف (50 000 صف) في DEC-289 |
 | `GET /v1/exports/{exportId}` | `export.create` | الحالة ورابط تنزيل مؤقت عند `ready` لطالبه وحده |
 
