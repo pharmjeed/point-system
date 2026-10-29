@@ -211,6 +211,41 @@ const PAGES: Array<{
     shows: 'بانتظار رسالتك…',
   },
   {
+    // the customer panel alone over the driver area, its «إغلاق» on the white surface in both themes
+    name: 'D-07 QR full screen',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: '+966501234567', linked: false });
+      fake.whatsapp.w01(ticketId, 'failed');
+      return `/d/intake/${ticketId}/link`;
+    },
+    act: async (page) => {
+      await page.getByRole('button', { name: 'الربط عبر QR' }).click();
+      await expect(page.locator('.pt-qr__code svg')).toBeVisible();
+      await page.getByRole('button', { name: 'ملء الشاشة' }).click();
+      await expect(page.locator('[data-qr-fullscreen] .pt-qr-full__close')).toBeVisible();
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /ربط واتساب/,
+    shows: 'اربط تذكرة سيارتك على واتساب',
+  },
+  {
+    name: 'D-07 channel down',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: '+966501234567', linked: false });
+      fake.whatsapp.health = 'down';
+      return `/d/intake/${ticketId}/link`;
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /ربط واتساب/,
+    shows: 'واتساب متوقف مؤقتًا. سلّم العميل تذكرة ورقية.',
+  },
+  {
     name: 'D-08',
     prepare: (fake) => {
       startDuty(fake, 'DRV1');
@@ -246,6 +281,22 @@ const PAGES: Array<{
     area: 'driver',
     heading: /التسليم/,
     shows: 'العميل لم يصله الرمز؟',
+  },
+  {
+    name: 'D-11 WhatsApp without a code',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      const { ticketId } = arrangeRetrieval(fake, 'DRV1', 'ready', {
+        whatsapp: '+966501234567',
+        linked: false,
+      });
+      return `/d/tickets/${ticketId}/handover`;
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /التسليم/,
+    shows: 'طلب المشرف (تحقق يدوي)',
   },
   {
     name: 'D-11 with collection',

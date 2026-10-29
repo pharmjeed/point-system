@@ -6,9 +6,11 @@ import {
   arrangeParked,
   arrangeSubmitted,
   EVENT_R1,
+  parkTask,
   PHOTO,
   pressCommand,
   REQUIRED_ANGLES,
+  requestRetrieval,
   startDuty,
   uploadPhoto,
 } from './support/driver';
@@ -236,9 +238,12 @@ test('GAP-1 D-05 → D-06 → D-07 ب: the QR mode — no number, the code issue
   expect(confirm.body).toEqual({ link_code_id: expect.any(String), matches: true });
   await expect(page.getByText('تم الربط — وصلت التذكرة للعميل.')).toBeVisible();
   await expect(page.locator('[data-qr-panel]')).toHaveCount(0);
+  // the API links at the confirmation and plans W-01 (12 §7.2 step 6): mode أ with «أُرسلت»
+  await expect(page.locator('[data-link-view="status"]')).toBeVisible();
+  await expect(page.getByText('أُرسلت', { exact: true })).toBeVisible();
   expect(fake.world.tickets.find((t) => t.id === ticketId)).toMatchObject({
     customer_phone: SENDER,
-    wa_link_status: 'pending_send',
+    wa_link_status: 'linked',
   });
   expectCommandContract(fake, ['POST /v1/tickets/:ticketId/whatsapp-link/confirm']);
 });
@@ -480,4 +485,333 @@ test('GAP-1 02 D-07 «بعد المغادرة»: W-01 refused after the driver l
   await expect(page.locator('[data-notice="optedOut"]')).toContainText(
     'العميل أوقف رسائل واتساب — سلّمه شفهيًا أو بالتذكرة الورقية',
   );
+});
+
+// ---------------------------------------------------------------- review findings (wave 5)
+
+test('review D-07: a QR issued while W-01 is pending expires — «انتهت صلاحية الرمز.» + «رمز جديد», never «تم الربط»; one primary action', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: PHONE, linked: false });
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/link`);
+  await expect(page.getByText('جارٍ الإرسال…')).toBeVisible();
+  fake.whatsapp.qrTtlMs = 4000;
+  await page.getByRole('button', { name: 'العميل لم تصله الرسالة؟' }).click();
+  await page
+    .getByRole('dialog', { name: 'العميل لم تصله الرسالة؟' })
+    .getByRole('button', { name: 'الربط عبر QR' })
+    .click();
+  await expect(page.locator('[data-qr-panel] .pt-qr__code svg')).toBeVisible();
+  // 02 D-07 «عند انتهاء المدة»: the expired panel with «رمز جديد» while W-01 still waits
+  await expect(page.getByText('انتهت صلاحية الرمز.')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole('button', { name: 'رمز جديد' })).toBeVisible();
+  await expect(page.getByText('تم الربط — وصلت التذكرة للعميل.')).toHaveCount(0);
+  await expect(page.locator('[data-link-view="panel"]')).toBeVisible();
+  expect(fake.world.tickets.find((t) => t.id === ticketId)?.wa_link_status).toBe('pending_send');
+  // 03 §1 rule 2: one primary action on the screen
+  await expect(page.locator('main .pt-btn--primary')).toHaveCount(1);
+  await expect(page.locator('main .pt-btn--primary')).toHaveText('متابعة إلى الصف');
+  // W-01 accepted meanwhile (the screen keeps reading the ticket while W-01 waits): mode أ, «تم الربط»
+  fake.whatsapp.w01(ticketId, 'linked');
+  await expect(page.getByText('تم الربط — وصلت التذكرة للعميل.')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-qr-panel]')).toHaveCount(0);
+});
+
+test('review D-07: «لا، ليس هو» leaves one primary action; the full screen «إغلاق» keeps its contrast in the dark theme', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  const { ticketId } = submittedByQr(fake);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto(`/d/intake/${ticketId}/link`);
+  await page.getByRole('button', { name: 'رمز جديد' }).click();
+  await expect(page.locator('[data-qr-panel] .pt-qr__code svg')).toBeVisible();
+  await page.getByRole('button', { name: 'ملء الشاشة' }).click();
+  const close = page.locator('[data-qr-fullscreen] .pt-qr-full__close');
+  await expect(close).toBeVisible();
+  // WCAG 1.4.11 (03 §1.1): the close glyph against the white panel ≥ 3:1
+  const ratio = await close.evaluate((el) => {
+    const rgb = (c: string) => (c.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number);
+    const lum = ([r = 0, g = 0, b = 0]: number[]) => {
+      const f = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const fg = lum(rgb(getComputedStyle(el).color));
+    const bg = lum(rgb(getComputedStyle(el.closest('.pt-qr-full') as Element).backgroundColor));
+    return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+  });
+  expect(ratio).toBeGreaterThanOrEqual(3);
+  await close.click();
+  fake.whatsapp.customerSends(ticketId, SENDER);
+  const dialog = page.getByRole('alertdialog', { name: 'وصلت رسالة الربط من رقم ينتهي بـ 887.' });
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  await dialog.getByRole('button', { name: 'لا، ليس هو' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('اضغط «رمز جديد» ليظهر رمز QR للعميل.')).toBeVisible();
+  await expect(page.locator('main .pt-btn--primary')).toHaveCount(1);
+  // the code issued at the submit gave way to «رمز جديد» (`regenerated`), the sender was rejected
+  expect(fake.whatsapp.linkCodes.filter((l) => l.ticket_id === ticketId).map((l) => l.revoke_reason)).toEqual(
+    ['regenerated', 'driver_rejected_match'],
+  );
+});
+
+test('review D-05/D-06: QR → paper → QR after a refused submit issues a fresh code (the paper save revoked the one kept)', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const fake = createFake();
+  const { ticketId, n } = newIntake(fake);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await fillVehicle(page);
+  await page.getByRole('radio', { name: 'رمز QR يمسحه العميل' }).check();
+  await page.locator('#intake-next').click();
+  await keyAndPhotos(page);
+  // the submit is refused after the code was issued (C1 stays in memory)
+  fake.failNext('POST /v1/tickets/:ticketId/submit-intake', errorReply('EVENT_NOT_OPEN'));
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/submit-intake', page.locator('#intake-submit'), {
+    expectStatus: 409,
+  });
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/whatsapp-link')).toHaveLength(1);
+  // back to D-05 in the app: paper (C1 revoked, `channel_paper`), then back to WhatsApp + QR
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page).toHaveURL(/\/vehicle$/);
+  await page.getByRole('radio', { name: 'تذكرة ورقية' }).click();
+  await page.getByLabel('رقم التذكرة الورقية').fill('004800');
+  await pressCommand(fake, 'PATCH /v1/tickets/:ticketId/intake', page.locator('#intake-next'));
+  expect(fake.whatsapp.linkCodes.filter((l) => l.ticket_id === ticketId).map((l) => l.revoke_reason)).toEqual(
+    ['channel_paper'],
+  );
+  await expect(page).toHaveURL(/\/key-photos$/);
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await page.getByRole('radio', { name: 'واتساب' }).click();
+  await page.getByRole('radio', { name: 'رمز QR يمسحه العميل' }).check();
+  await pressCommand(fake, 'PATCH /v1/tickets/:ticketId/intake', page.locator('#intake-next'));
+  await expect(page).toHaveURL(/\/key-photos$/);
+  // «إتمام التسجيل» issues a new code, and the submit goes through on the first press (no refused retry)
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/submit-intake', page.locator('#intake-submit'));
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/whatsapp-link')).toHaveLength(2);
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/submit-intake').map((c) => c.status)).toEqual([409, 200]);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(`ربط واتساب · #${n}`);
+  await expect(page.locator('[data-qr-panel] .pt-qr__code svg')).toBeVisible();
+  const live = fake.whatsapp.linkCodes.filter((l) => l.ticket_id === ticketId && l.status === 'active');
+  expect(live).toHaveLength(1);
+});
+
+test('review D-06: a code kept in memory but no longer live on the server — one more submit with a fresh code', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  const { ticketId, n } = newIntake(fake);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await fillVehicle(page);
+  await page.getByRole('radio', { name: 'رمز QR يمسحه العميل' }).check();
+  await page.locator('#intake-next').click();
+  await keyAndPhotos(page);
+  fake.failNext('POST /v1/tickets/:ticketId/submit-intake', errorReply('EVENT_NOT_OPEN'));
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/submit-intake', page.locator('#intake-submit'), {
+    expectStatus: 409,
+  });
+  // the code went on the server meanwhile (another device issued a code, a supervisor action…)
+  const kept = fake.whatsapp.linkCodes.find((l) => l.ticket_id === ticketId && l.status === 'active');
+  if (!kept) throw new Error('no code');
+  kept.status = 'revoked';
+  kept.revoke_reason = 'regenerated';
+  await page.locator('#intake-submit').click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(`ربط واتساب · #${n}`);
+  // the refused submit (INTAKE_INCOMPLETE customer_phone) and the retry with the second code
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/submit-intake').map((c) => c.status)).toEqual([
+    409, 422, 200,
+  ]);
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/whatsapp-link')).toHaveLength(2);
+  await expect(page.locator('[data-qr-panel] .pt-qr__code svg')).toBeVisible();
+});
+
+test('review D-05: INTAKE_INCOMPLETE about the number in the QR mode shows the server text on the form', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  const { ticketId } = newIntake(fake);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await fillVehicle(page);
+  await page.getByRole('radio', { name: 'رمز QR يمسحه العميل' }).check();
+  await page.locator('#intake-next').click();
+  await keyAndPhotos(page);
+  fake.failNext(
+    'POST /v1/tickets/:ticketId/submit-intake',
+    errorReply('INTAKE_INCOMPLETE', { missing: ['customer_phone'] }),
+  );
+  await page.locator('#intake-submit').click();
+  await expect(page).toHaveURL(/\/vehicle$/);
+  // the number is not on the QR form: the 08 text as the form message, not lost under a hidden field
+  await expect(page.getByRole('alert').getByText('أكمل بيانات الاستلام الناقصة.')).toBeVisible();
+  // the next «إتمام التسجيل» issues a fresh code
+  await page.locator('#intake-next').click();
+  await expect(page).toHaveURL(/\/key-photos$/);
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/submit-intake', page.locator('#intake-submit'));
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/whatsapp-link')).toHaveLength(2);
+});
+
+test("review D-05: a direct draft resumed without this device's copy keeps the number on record (no retyping)", async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  const { ticketId } = newIntake(fake);
+  const version = fake.world.tickets.find((t) => t.id === ticketId)?.version;
+  // the first step saved from another device with the number and the consent
+  fake.exec(
+    'DRV1',
+    'PATCH /v1/tickets/:ticketId/intake',
+    { ticketId },
+    {
+      expected_version: version,
+      channel: 'whatsapp',
+      customer_phone: PHONE,
+      consent: { method: 'verbal_staff_confirmed', confirmed: true },
+      plate: { country: 'SA', digits: '5678', letters_ar: 'ر س ص', letters_en: 'R S X' },
+      vehicle: { make: 'kia', model: null, color: 'red' },
+    },
+  );
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/vehicle`);
+  await expect(page.getByRole('radio', { name: 'رقم جوال العميل' })).toBeChecked();
+  const recorded = page.locator('[data-phone-recorded]');
+  await expect(recorded).toContainText('الجوال:');
+  await expect(recorded).toContainText('567');
+  await expect(page.getByLabel('جوال العميل', { exact: true })).toHaveCount(0);
+  const step1 = await pressCommand(fake, 'PATCH /v1/tickets/:ticketId/intake', page.locator('#intake-next'));
+  // neither the number nor the consent is sent: the server keeps both
+  expect(step1.body).not.toHaveProperty('customer_phone');
+  expect(step1.body).not.toHaveProperty('consent');
+  expect(step1.body).toMatchObject({ channel: 'whatsapp', paper_serial: null });
+  expect(fake.world.tickets.find((t) => t.id === ticketId)).toMatchObject({
+    customer_phone: PHONE,
+    consent: true,
+  });
+  // «تغيير رقم الجوال» opens the number again; another number needs the consent again
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await page.getByRole('button', { name: 'تغيير رقم الجوال' }).click();
+  const input = page.getByLabel('جوال العميل', { exact: true });
+  await expect(input).toHaveAttribute('autocomplete', 'off');
+  await input.fill('0507776666');
+  await page.locator('#intake-next').click();
+  await expect(page.getByText('لا نرسل واتساب دون موافقة العميل.')).toBeVisible();
+});
+
+test('review D-13 → D-07 on a parked ticket: a stale message never answers for the newer code (C1 expired, C2 confirmed)', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  fake.realtime.enable();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeParked(fake, 'DRV1', { whatsapp: PHONE, linked: false });
+  fake.whatsapp.w01(ticketId, 'failed');
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/vehicles/${ticketId}`);
+  await expect.poll(() => fake.realtime.connectedUsers().length).toBe(1);
+  await page.getByRole('button', { name: 'إعادة الربط بواتساب' }).click();
+  await page.getByRole('button', { name: 'الربط عبر QR' }).click();
+  await expect(page.locator('[data-qr-panel] .pt-qr__code svg')).toBeVisible();
+  // C1 from …887: the parked ticket's creator hears it (a creator event, 07 §4.3) with the sender's digits
+  fake.whatsapp.customerSends(ticketId, SENDER);
+  await expect(page.getByRole('alertdialog', { name: 'وصلت رسالة الربط من رقم ينتهي بـ 887.' })).toBeVisible({
+    timeout: 10_000,
+  });
+  // nobody answers: the code expires, the link is back to none
+  fake.whatsapp.expireCode(ticketId);
+  await expect(page.getByRole('alertdialog')).toBeHidden({ timeout: 10_000 });
+  await pressCommand(
+    fake,
+    'POST /v1/tickets/:ticketId/whatsapp-link',
+    page.getByRole('button', { name: 'رمز جديد' }),
+  );
+  const c2 = fake.whatsapp.linkCodes.find((l) => l.ticket_id === ticketId && l.status === 'active');
+  fake.whatsapp.customerSends(ticketId, '+966501112223');
+  const dialog = page.getByRole('alertdialog', { name: 'وصلت رسالة الربط من رقم ينتهي بـ 223.' });
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  const yes = await pressCommand(
+    fake,
+    'POST /v1/tickets/:ticketId/whatsapp-link/confirm',
+    dialog.getByRole('button', { name: 'نعم، اربط التذكرة' }),
+  );
+  expect(yes.body).toEqual({ link_code_id: c2?.id, matches: true });
+  expect(fake.world.tickets.find((t) => t.id === ticketId)?.wa_link_status).toBe('linked');
+  // parked, not in this driver's hands: «العودة» to D-13, never «متابعة إلى الصف»
+  await expect(page.getByRole('button', { name: 'متابعة إلى الصف' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'العودة' })).toBeVisible();
+});
+
+test("review D-13 → D-07 on another driver's parking ticket: no «تذكرة ورقية», «العودة» instead of «متابعة إلى الصف»", async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  startDuty(fake, 'DRV2');
+  const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: PHONE, linked: false });
+  fake.whatsapp.w01(ticketId, 'failed');
+  const { page } = await actorPage(browser, fake, 'DRV2');
+  await page.goto(`/d/vehicles/${ticketId}`);
+  await page.getByRole('button', { name: 'إعادة الربط بواتساب' }).click();
+  await expect(page).toHaveURL(new RegExp(`/d/intake/${ticketId}/link$`));
+  await expect(page.getByRole('button', { name: 'الربط عبر QR' })).toBeVisible();
+  // DEC-40's conversion is the parking driver's (PATCH …/intake answers not_ticket_creator otherwise)
+  await expect(page.getByRole('button', { name: 'تذكرة ورقية' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'متابعة إلى الصف' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'العودة' }).click();
+  await expect(page).toHaveURL(new RegExp(`/d/vehicles/${ticketId}$`));
+});
+
+test('review D-13: no «إعادة الربط بواتساب» when D-07 could do nothing (requested, no number on record)', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  const { ticketId } = submittedByQr(fake);
+  const ticket = fake.world.tickets.find((t) => t.id === ticketId);
+  const park = fake.world.tasks.find((k) => k.ticket_id === ticketId && k.type === 'park');
+  if (!park) throw new Error('no park task');
+  // the QR code expired unused, the car parked, then requested
+  const code = fake.whatsapp.linkCodes.find((l) => l.ticket_id === ticketId && l.status === 'active');
+  if (code) code.status = 'expired';
+  parkTask(fake, 'DRV1', park.id, 'A-10', '20');
+  requestRetrieval(fake, ticketId);
+  expect(ticket?.status).toBe('requested');
+  const { page } = await actorPage(browser, fake, 'DRV2');
+  startDuty(fake, 'DRV2');
+  await page.goto(`/d/vehicles/${ticketId}`);
+  await expect(page.locator('[data-row="channel"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'إعادة الربط بواتساب' })).toHaveCount(0);
+});
+
+test('review D-07: the channel down while W-01 waits — «واتساب متوقف مؤقتًا. سلّم العميل تذكرة ورقية.» with the paper stub', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: PHONE, linked: false });
+  fake.whatsapp.health = 'down';
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${ticketId}/link`);
+  await expect(page.getByText('جارٍ الإرسال…')).toBeVisible();
+  await expect(page.getByText('واتساب متوقف مؤقتًا. سلّم العميل تذكرة ورقية.')).toBeVisible();
+  // the D-15 ز banner of the frame from the snapshot's channel_health
+  await expect(
+    page.getByText(
+      'رسائل واتساب للعملاء متوقفة مؤقتًا. استقبل الطلبات من العملاء مباشرة واستخدم التذكرة الورقية.',
+    ),
+  ).toBeVisible();
+  await page.locator('[data-link-options]').getByRole('button', { name: 'تذكرة ورقية' }).click();
+  await expect(page.getByRole('dialog', { name: 'تذكرة ورقية' })).toBeVisible();
 });

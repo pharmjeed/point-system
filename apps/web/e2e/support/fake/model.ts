@@ -254,6 +254,11 @@ export interface FakeWhatsApp {
   readonly codeStatus: Map<string, 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'skipped'>;
   /** The customer scans the QR and sends its code (12 §7.2 step 3): the ticket waits for the driver. */
   customerSends(ticketId: string, phoneE164: string): void;
+  /**
+   * `job.link_code_expire` (11 §8.11) for the ticket's live code: `expired`; a message nobody answered sends
+   * the link back to `none` (ticket.wa_link_changed).
+   */
+  expireCode(ticketId: string): void;
   /** The provider's answer to the ticket's W-01 (direct link, or after a confirmed QR). */
   w01(ticketId: string, result: 'linked' | 'failed'): void;
   /** The provider's answer to W-05 (the handover code): a `message` status on `ticket.updated`. */

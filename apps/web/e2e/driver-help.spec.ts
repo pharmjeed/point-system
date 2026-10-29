@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { actorPage, expectCommandContract } from './support/actors';
 import { fakeOnly } from './support/backend';
 import { runOnlyAt390 } from './support/checks';
@@ -179,4 +179,113 @@ test('GAP-8 D-11: the customer stopped the messages — the 14 §5.1 banner; a r
   await expect(
     page.getByText('أوقف العميل رسائل واتساب. استخدم QR من جوال العميل أو التذكرة الورقية.'),
   ).toBeVisible();
+});
+
+// ---------------------------------------------------------------- review findings (wave 5)
+
+/** «طلب المشرف (تحقق يدوي)» in an open Sheet: the mandatory description, then the incident (DEC-210). */
+async function askSupervisor(fake: FakeServer, sheet: Locator, ticketId: string): Promise<void> {
+  const confirm = sheet.getByRole('button', { name: 'تأكيد' });
+  await expect(confirm).toBeDisabled();
+  await sheet.getByLabel('الوصف').fill('العميل أمامي ولا رمز معه');
+  const call = await pressCommand(fake, 'POST /v1/incidents', confirm);
+  expect(call.body).toMatchObject({ ticket_id: ticketId, type: 'manual_verification' });
+}
+
+test('review D-11: the code expired and no resend is left — the supervisor request stays open', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeRetrieval(fake, 'DRV1', 'ready', { whatsapp: PHONE });
+  const claim = claimOf(fake, ticketId);
+  if (!claim) throw new Error('no claim');
+  claim.expires_at = new Date(Date.now() - 1000).toISOString();
+  claim.resend_no = claim.max_resends;
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/tickets/${ticketId}/handover`);
+  await expect(page.getByText('انتهت صلاحية رمز التسليم — أعد الإرسال للعميل')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'إرسال رمز جديد' })).toBeDisabled();
+  // 08 RESEND_LIMIT_REACHED: why the resend is off, and the way to the supervisor
+  await expect(page.getByText('وصلت للحد الأقصى لإعادة إرسال الرمز. اتصل بالمشرف.')).toBeVisible();
+  await page.getByRole('button', { name: 'العميل لم يصله الرمز؟' }).click();
+  const sheet = page.getByRole('dialog', { name: 'العميل لم يصله الرمز؟' });
+  await expect(sheet.getByRole('button', { name: 'إعادة إرسال الرمز' })).toBeDisabled();
+  await sheet.getByRole('button', { name: 'طلب المشرف (تحقق يدوي)' }).click();
+  await askSupervisor(fake, sheet, ticketId);
+  await expect(page.getByText('أُبلغ المشرف.')).toBeVisible();
+  expect(fake.callsTo('POST /v1/tickets/:ticketId/handover-code/resend')).toHaveLength(0);
+});
+
+test('review D-11: a WhatsApp ticket not linked at `ready` has no code — no code input, «طلب المشرف (تحقق يدوي)»', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeRetrieval(fake, 'DRV1', 'ready', { whatsapp: PHONE, linked: false });
+  expect(claimOf(fake, ticketId)).toBeNull(); // the API issues a code for a linked ticket only
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/tickets/${ticketId}/handover`);
+  await expect(page.getByText('التذكرة غير مربوطة بواتساب.')).toBeVisible();
+  await expect(page.locator('#handover-code-0')).toHaveCount(0);
+  await expect(page.getByText('الرمز من 6 أرقام ووصل العميل في رسالة واتساب.')).toHaveCount(0);
+  await expect(page.locator('#code-resend')).toHaveCount(0);
+  await expect(page.locator('#handover-submit')).toBeDisabled();
+  await page.getByRole('button', { name: 'طلب المشرف (تحقق يدوي)' }).click();
+  const sheet = page.getByRole('dialog', { name: 'طلب المشرف (تحقق يدوي)' });
+  await expect(sheet.getByRole('button', { name: 'إعادة إرسال الرمز' })).toHaveCount(0);
+  await askSupervisor(fake, sheet, ticketId);
+  await expect(page.getByText('أُبلغ المشرف.')).toBeVisible();
+});
+
+test('review D-11: a ticket linked after `ready` gets its first code from «إرسال رمز جديد»', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const { ticketId } = arrangeRetrieval(fake, 'DRV1', 'ready', { whatsapp: PHONE, linked: false });
+  fake.whatsapp.w01(ticketId, 'linked');
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/tickets/${ticketId}/handover`);
+  await expect(page.locator('[data-code-none]')).toBeVisible();
+  await expect(page.locator('#handover-code-0')).toHaveCount(0);
+  await pressCommand(
+    fake,
+    'POST /v1/tickets/:ticketId/handover-code/resend',
+    page.getByRole('button', { name: 'إرسال رمز جديد' }),
+  );
+  await expect(page.locator('#handover-code-0')).toBeVisible();
+  await expect(page.locator('#code-resend')).toHaveText('إعادة الإرسال (متبقٍ 3)');
+  const code = claimOf(fake, ticketId)?.code ?? '';
+  expect(await page.content()).not.toContain(code); // DEC-38
+});
+
+test('audit A-driver-1 D-11: a code the supervisor reissued after the lock opens the input again («أُرسل الرمز للعميل»)', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  fake.realtime.enable();
+  startDuty(fake, 'DRV1');
+  const { ticketId, taskId } = arrangeRetrieval(fake, 'DRV1', 'ready', { whatsapp: PHONE });
+  const locked = claimOf(fake, ticketId);
+  if (!locked) throw new Error('no claim');
+  locked.locked_at = new Date().toISOString();
+  locked.attempts = locked.max_attempts;
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/tickets/${ticketId}/handover`);
+  await expect.poll(() => fake.realtime.connectedUsers().length).toBe(1);
+  await expect(page.getByText('تجاوز العميل عدد المحاولات — تواصل مع المشرف')).toBeVisible();
+  await expect(page.locator('#handover-submit')).toBeDisabled();
+  // DEC-207: the supervisor reissues the locked code (S-03); the assignee gets ticket.updated (14 §3.4)
+  fake.exec('SUP-R', 'POST /v1/tickets/:ticketId/handover-code/resend', { ticketId }, {});
+  await expect(page.getByText('أُرسل الرمز للعميل')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('تجاوز العميل عدد المحاولات — تواصل مع المشرف')).toHaveCount(0);
+  await expect(page.getByText(/^المحاولات المتبقية: 5 · صالح حتى/)).toBeVisible();
+  const fresh = claimOf(fake, ticketId)?.code ?? '';
+  await expect(page.locator('#handover-code-0')).toBeEnabled();
+  await page.locator('#handover-code-0').fill(fresh);
+  await pressCommand(fake, 'POST /v1/tickets/:ticketId/handover', page.locator('#handover-submit'));
+  await expect(page.locator('#handover-done')).toBeVisible();
+  expect(fake.world.tasks.find((k) => k.id === taskId)?.status).toBe('completed');
 });
