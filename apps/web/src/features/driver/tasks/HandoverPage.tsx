@@ -3,9 +3,9 @@ import { CircleCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { ApiError, displayMessage, fallbackMessageAr } from '@/api/errors';
-import { handover, resendHandoverCode, type HandoverInput } from '@/api/field';
+import { handover, reportIncident, resendHandoverCode, type HandoverInput } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
-import type { PaymentMethod, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
+import type { ClaimCodeState, PaymentMethod, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
 import { paths } from '@/app/paths';
 import {
   Banner,
@@ -15,12 +15,16 @@ import {
   Icon,
   PlateBadge,
   SegmentedControl,
+  Sheet,
+  TextArea,
   TextField,
 } from '@/components';
+import { FieldError } from '@/components/Field';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
+import { useServerNow } from '@/hooks/useNow';
 import { useCommandGate } from '@/realtime/hooks';
-import { d11, paymentMethod, ui } from '@/i18n/ar';
+import { buttons, d11, d13, live, paymentMethod, ui } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
 import { formatHalalas, formatTime } from '@/lib/format';
@@ -34,12 +38,18 @@ import { TaskGone, TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from '.
 
 /** Shown 2 s before moving on (02 D-11 «بعد ثانيتين»). */
 const SUCCESS_MS = 2000;
+/** 02 D-11 «مع تعطيل الرابط 30 ث بعد كل إرسال». */
+export const RESEND_COOLDOWN_MS = 30_000;
+const DESCRIPTION_MIN = 3; // 07 `createIncident.description` minLength
 
 /**
  * D-11 — التسليم والتحصيل: the paper stub number (paper channel) or the six-digit code (WhatsApp, PNT-047),
  * the collection section when the ticket is `due`, then `POST /v1/tickets/{ticketId}/handover` — verification,
  * payment and closing are one server transaction (13). The code is never pre-filled or shown and the cells are
- * cleared after a wrong attempt (DEC-38).
+ * cleared after a wrong attempt (DEC-38). «العميل لم يصله الرمز؟ │ إعادة الإرسال (متبقٍ n)» before the expiry:
+ * the resend (30 s apart) and a Sheet with «إعادة إرسال الرمز» / «طلب المشرف (تحقق يدوي)» — a
+ * `manual_verification` incident the supervisor settles in S-03 (DEC-210); the 14 §5.1 banners: W-05 not
+ * sent, the code expired (by server time), locked, the customer who stopped the messages.
  */
 export function HandoverPage() {
   const { ticketId = '' } = useParams();
@@ -115,7 +125,12 @@ function HandoverForm({
   const methods: PaymentMethod[] = card.payment_due?.allowed_methods?.length
     ? card.payment_due.allowed_methods
     : ['cash', 'pos'];
-  const claim = card.claim_code ?? ticket.claim_code ?? null;
+  // a resend's reply is the newest state; the detail follows `ticket.updated` (W-05 `sent_status`)
+  const [codeState, setCodeState] = useState<ClaimCodeState | null>(null);
+  const claim = codeState ?? ticket.claim_code ?? card.claim_code ?? null;
+  const now = useServerNow(1000);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [sheet, setSheet] = useState(false);
 
   const [stub, setStub] = useState('');
   const [code, setCode] = useState('');
@@ -131,6 +146,18 @@ function HandoverForm({
 
   const submit = useCommand((body: HandoverInput, key: string) => handover(ticket.id, body, key));
   const resend = useCommand((_: { ticket: string }, key: string) => resendHandoverCode(ticket.id, key));
+  const askSupervisor = useCommand((body: { description: string }, key: string) =>
+    reportIncident(
+      {
+        venue_id: ticket.venue_id,
+        event_id: ticket.event_id,
+        ticket_id: ticket.id,
+        type: 'manual_verification',
+        description: body.description,
+      },
+      key,
+    ),
+  );
 
   const send = async (withPayment: boolean) => {
     const body: HandoverInput = {
@@ -216,12 +243,23 @@ function HandoverForm({
   const onResend = async () => {
     try {
       const state = await resend.run({ ticket: ticket.id });
+      setCodeState(state);
       setAttemptsLeft(state.attempts_left);
-      setLocked(false);
+      setLocked(!!state.locked_at);
+      setCode('');
+      setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
+      setSheet(false);
       submit.reset();
       pushToast({ message: d11.resent, tone: 'success' });
-    } catch {
-      // shown under the button
+      void qc.invalidateQueries({ queryKey: queryKeys.ticket(ticket.id) });
+    } catch (error) {
+      // shown under the link; a code locked meanwhile disables the input
+      if (error instanceof ApiError && error.is('HANDOVER_CODE_LOCKED')) setLocked(true);
+      if (error instanceof ApiError && error.is('NOT_TASK_ASSIGNEE')) {
+        pushToast({ message: error.message_ar, tone: 'error' });
+        void refresh();
+        navigate(paths.driverHome, { replace: true });
+      }
     }
   };
 
@@ -251,6 +289,14 @@ function HandoverForm({
       ? errorText
       : null;
   const plate = plateValue(card.ticket.plate);
+  // 14 §5.1 / 02 D-11 (WhatsApp only): expired by server time, W-05 not sent, the customer stopped the messages
+  const expired = !!claim && !locked && Date.parse(claim.expires_at) <= now;
+  const sendFailed = claim?.sent_status === 'failed' || claim?.sent_status === 'skipped';
+  const optedOut = ticket.wa_link_status === 'opted_out' || !!ticket.customer?.opted_out;
+  const resendsLeft = claim?.resends_left;
+  const coolingDown = cooldownUntil > Date.now(); // the device clock: 30 s from this press (re-rendered each second)
+  const canResend = gate.ready && !locked && !coolingDown && resendsLeft !== 0 && !resend.pending;
+  const resendError = resend.error ? displayMessage(resend.error) : undefined;
 
   return (
     <TaskScreen title={withTicket(d11.title, ticket.display_number)} backTo={driverPaths.task(card.task.id)}>
@@ -305,16 +351,48 @@ function HandoverForm({
               })}
             </p>
           ) : null}
-          {error?.is('HANDOVER_CODE_EXPIRED') ? (
-            <Button
-              variant="secondary"
-              loading={resend.pending}
-              disabled={!gate.ready}
-              error={resend.error ? displayMessage(resend.error) : undefined}
-              onClick={onResend}
-            >
-              {d11.newCode}
-            </Button>
+          {locked ? <Banner kind="error" rounded message={live.codeLocked} /> : null}
+          {optedOut ? <Banner kind="warning" rounded message={live.optedOut} /> : null}
+          {!locked && (expired || error?.is('HANDOVER_CODE_EXPIRED')) ? (
+            <>
+              <Banner kind="warning" rounded message={live.codeExpired} />
+              <Button
+                variant="secondary"
+                loading={resend.pending}
+                disabled={!canResend && !resend.pending}
+                error={resendError}
+                onClick={onResend}
+              >
+                {d11.newCode}
+              </Button>
+            </>
+          ) : null}
+          {!locked && !expired && sendFailed ? (
+            <Banner kind="error" rounded message={live.codeSendFailed} />
+          ) : null}
+          {claim && !locked && !expired ? (
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1" data-code-help>
+              <button type="button" className="pt-link" onClick={() => setSheet(true)}>
+                {d11.notReceived}
+              </button>
+              <span aria-hidden="true" className="text-text-muted">
+                │
+              </span>
+              <button
+                type="button"
+                className="pt-link"
+                id="code-resend"
+                disabled={!canResend}
+                onClick={onResend}
+              >
+                {fmt(d11.resendLeft, { n: resendsLeft ?? 0 })}
+              </button>
+            </div>
+          ) : null}
+          {resendError && !expired && !error?.is('HANDOVER_CODE_EXPIRED') ? (
+            <FieldError id="resend-error" role="alert">
+              {resendError}
+            </FieldError>
           ) : null}
         </section>
       )}
@@ -371,6 +449,101 @@ function HandoverForm({
       >
         {d11.submit}
       </Button>
+      {paper ? null : (
+        <CodeHelpSheet
+          open={sheet}
+          onOpenChange={setSheet}
+          canResend={canResend}
+          resendLoading={resend.pending}
+          onResend={onResend}
+          ready={gate.ready}
+          request={askSupervisor}
+          onReported={() => {
+            setSheet(false);
+            pushToast({ message: d13.reported, tone: 'success' });
+          }}
+        />
+      )}
     </TaskScreen>
+  );
+}
+
+/**
+ * «العميل لم يصله الرمز؟» (02 D-11): «إعادة إرسال الرمز», or «طلب المشرف (تحقق يدوي)» with a mandatory
+ * description → a `manual_verification` incident; the supervisor completes the exceptional handover in S-03.
+ */
+function CodeHelpSheet({
+  open,
+  onOpenChange,
+  canResend,
+  resendLoading,
+  onResend,
+  ready,
+  request,
+  onReported,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  canResend: boolean;
+  resendLoading: boolean;
+  onResend: () => Promise<void>;
+  ready: boolean;
+  request: ReturnType<typeof useCommand<{ description: string }, unknown>>;
+  onReported: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [description, setDescription] = useState('');
+  const send = async () => {
+    try {
+      await request.run({ description: description.trim() });
+      setAsking(false);
+      setDescription('');
+      onReported();
+    } catch {
+      // shown under the button
+    }
+  };
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={d11.notReceived}>
+      <div className="flex flex-col gap-3">
+        <Button
+          variant="secondary"
+          fullWidth
+          loading={resendLoading}
+          disabled={!canResend && !resendLoading}
+          onClick={onResend}
+        >
+          {d11.resendCode}
+        </Button>
+        <Button variant="secondary" fullWidth onClick={() => setAsking(true)} disabled={asking}>
+          {d11.askSupervisor}
+        </Button>
+        {asking ? (
+          <>
+            <TextArea
+              id="manual-verification-description"
+              label={d13.reportDescription}
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            {request.error ? (
+              <FieldError id="manual-verification-error" role="alert">
+                {displayMessage(request.error)}
+              </FieldError>
+            ) : null}
+            <Button
+              fullWidth
+              size="lg"
+              loading={request.pending}
+              disabled={description.trim().length < DESCRIPTION_MIN || !ready}
+              onClick={send}
+            >
+              {buttons.confirm}
+            </Button>
+          </>
+        ) : null}
+      </div>
+    </Sheet>
   );
 }
