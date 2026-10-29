@@ -20,6 +20,10 @@ vi.mock('@/lib/localDb', () => ({
     delete: async (store: 'drafts' | 'photos', id: string) => {
       rows[store].delete(id);
     },
+    patch: async (store: 'drafts' | 'photos', id: string, patch: Record<string, unknown>) => {
+      const row = rows[store].get(id);
+      if (row) rows[store].set(id, { ...row, ...structuredClone(patch), id });
+    },
     photosOf: async (draftId: string) =>
       [...rows.photos.values()].filter((p) => p.draftId === draftId).map((p) => structuredClone(p)),
     all: async (store: 'drafts' | 'photos') => [...rows[store].values()],
@@ -29,7 +33,7 @@ vi.mock('@/lib/localDb', () => ({
   },
 }));
 
-const { detachDrafts, forgetIntake, forgetUserDrafts, hydrateIntake, savePhoto, SAVE_DELAY_MS } =
+const { detachDrafts, forgetIntake, forgetUserDrafts, hydrateIntake, savePhoto, updatePhoto, SAVE_DELAY_MS } =
   await import('@/features/driver/intakePersistence');
 const { clearFieldData, step1Session, useIntakeStore } = await import('@/features/driver/intakeStore');
 
@@ -124,15 +128,25 @@ describe('intake drafts in IndexedDB (PNT-071)', () => {
       capturedAt: '2026-10-29T18:00:00.000Z',
       state: 'uploading',
       retriable: true,
-      intent: { key: 'k-1', print: 'p' },
+      intent: null,
     });
+    // the media request's key and the failure land from two places: neither overwrites the other
+    await Promise.all([
+      updatePhoto(T1, 'photo_front', { intent: { key: 'k-1', print: 'p' } }),
+      updatePhoto(T1, 'photo_front', { state: 'failed', retriable: true }),
+    ]);
     detachDrafts();
     clearFieldData();
     const photos = await hydrateIntake(DRV1, T1);
     expect(photos).toHaveLength(1);
-    expect(photos[0]).toMatchObject({ slot: 'photo_front', intent: { key: 'k-1', print: 'p' } });
+    expect(photos[0]).toMatchObject({
+      slot: 'photo_front',
+      state: 'failed',
+      retriable: true,
+      intent: { key: 'k-1', print: 'p' },
+    });
     expect(useIntakeStore.getState().drafts[T1]?.photos.photo_front).toMatchObject({
-      state: 'uploading',
+      state: 'failed',
       kind: 'photo_front',
     });
   });

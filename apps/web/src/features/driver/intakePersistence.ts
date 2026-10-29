@@ -173,9 +173,8 @@ export async function savePhoto(
 export async function updatePhoto(ticketId: string, slot: string, patch: Partial<PhotoRow>): Promise<void> {
   const userId = owner;
   if (!userId) return;
-  const id = photoId(userId, ticketId, slot);
-  const row = await localDb.get<PhotoRow>('photos', id);
-  if (row) await localDb.put('photos', { ...row, ...patch, id, savedAt: Date.now() });
+  // one read-modify-write transaction: the intent and the state of a photo are written by two callers
+  await localDb.patch('photos', photoId(userId, ticketId, slot), { ...patch, savedAt: Date.now() });
 }
 
 /** The server holds the photo now: its local copy goes. */

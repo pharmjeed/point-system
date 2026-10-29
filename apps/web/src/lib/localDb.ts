@@ -76,6 +76,14 @@ export const localDb = {
   put: <T extends { id: string }>(store: LocalStore, value: T) =>
     run(store, 'readwrite', (s) => s.put(value)).then(() => {}),
   delete: (store: LocalStore, id: string) => run(store, 'readwrite', (s) => s.delete(id)).then(() => {}),
+  /** Merges `patch` into an existing row in one transaction (no lost update between two writers). */
+  patch: (store: LocalStore, id: string, patch: Record<string, unknown>) =>
+    run(store, 'readwrite', (s) => {
+      const request = s.get(id);
+      request.onsuccess = () => {
+        if (request.result) s.put({ ...(request.result as Record<string, unknown>), ...patch, id });
+      };
+    }).then(() => {}),
   /** The photo rows of one draft. */
   photosOf: async <T>(draftId: string): Promise<T[]> =>
     (await run<T[]>('photos', 'readonly', (s) => s.index('draft').getAll(draftId) as IDBRequest<T[]>)) ?? [],
@@ -85,6 +93,6 @@ export const localDb = {
   /** Deletes the rows whose id starts with `prefix` (`${userId}:` or `${userId}:${ticketId}`). */
   deletePrefix: (store: LocalStore, prefix: string) =>
     run(store, 'readwrite', (s) => {
-      s.delete(IDBKeyRange.bound(prefix, `${prefix}￿`));
+      s.delete(IDBKeyRange.bound(prefix, prefix + String.fromCharCode(0xffff)));
     }).then(() => {}),
 };
