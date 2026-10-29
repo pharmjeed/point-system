@@ -120,7 +120,11 @@ export async function handleButtonPress(tx: Tx, ctx: ButtonPressContext): Promis
   // the press time orders the queue (oldest requested_at first); never a future time (clock skew)
   const pressedAt = new Date(Math.min(ctx.inbound.receivedAt.getTime(), tx.now.getTime()));
   // one request path for the customer (S4 requestRetrievalForCustomer); L1 and L5 are already held here
-  const r = await applyCustomerRequest(tx, t, { customerId: owner.id, requestedAt: pressedAt });
+  const r = await applyCustomerRequest(tx, t, {
+    customerId: owner.id,
+    requestedAt: pressedAt,
+    ingestFrom: ctx.inbound.webhookReceivedAt ?? null,
+  });
   if (r.kind === 'created') return { outcome: 'request_created', ticket_id: t.id, customer_id: owner.id };
   if (r.kind === 'pending_early') return { outcome: 'early_request', ticket_id: t.id, customer_id: owner.id };
   return statusReply;
