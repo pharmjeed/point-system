@@ -904,10 +904,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "one Socket.IO client, envelopes checked by the shared zod schemas, merge by version, full resync on connect/foreground/sync.required, «قديم» with the last sync time, commands gated while stale (e2e driver-live)"
  },
  {
   "ticket": "PNT-066",
@@ -918,10 +918,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "sound unlocked only from a tap, preloaded brand sounds, 14 §7 priority, stops on task.claimed/offer.closed, blocked state shown and saved (POST /v1/me/audio-test)"
  },
  {
   "ticket": "PNT-067",
@@ -932,10 +932,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "live D-09: server-clock countdown, reminder, accept / reserve-next, 08 texts; only the oldest actionable card; stale press in two contexts handled"
  },
  {
   "ticket": "PNT-068",
@@ -946,10 +946,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "full D-04 and the D-15 banners (offline, uncertain, sound, WhatsApp down, session end, update, service unavailable), best-effort Wake Lock"
  },
  {
   "ticket": "PNT-069",
@@ -960,10 +960,10 @@
   "epic": "EP-06",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "D-12 search by digits with cursor pages, D-13 by projection: minimal fields for others, masked phone and slot for the assignee; request on behalf"
  },
  {
   "ticket": "PNT-070",
@@ -974,10 +974,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "D-14 in full; brand manifest, hand-built service worker (never caches /v1), offline shell, installability verified in Chromium; permission only from a tap"
  },
  {
   "ticket": "PNT-071",
@@ -988,10 +988,10 @@
   "epic": "EP-06",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "intake drafts and pending photos in IndexedDB, the same Idempotency-Key after a reload, AC-21: one effect after a cut at submit"
  },
  {
   "ticket": "PNT-072",
@@ -1004,8 +1004,8 @@
   "weight": 3,
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
-  "date": "2026-10-28",
-  "note": "backend done; SW/web pending"
+  "date": "2026-10-29",
+  "note": "web part done: SW push handler (payload v1, tags, quiet replacement), subscription via PUT /v1/me/devices, in-page alert mode when refused (AC-22); real-device checks remain (PNT-099)"
  },
  {
   "ticket": "PNT-073",
@@ -1016,10 +1016,10 @@
   "epic": "EP-13",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-29",
+  "note": "G3: race suite and AC-04/14/15/17/21/22 automated; the first AC-08 recordings on real iOS/Android devices are the owner's (PNT-099)"
  },
  {
   "ticket": "PNT-074",
@@ -1254,10 +1254,10 @@
   "epic": "EP-10",
   "size": "M",
   "weight": 2,
-  "status": "in_progress",
-  "status_ar": "قيد التنفيذ",
-  "date": "2026-10-28",
-  "note": "analytics projector (71 events) + /v1/telemetry allow-list done; AC2 needs the end-to-end run"
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "AC2 on the G4 run: all 71 domain event types projected once each, allow-list respected, ingest_latency_ms filled"
  },
  {
   "ticket": "PNT-091",
@@ -1296,10 +1296,10 @@
   "epic": "EP-13",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "G4: a full event through the real routes (paper + WhatsApp, transfer, repark, cancel, cash/POS, reversal, waiver, cash handovers ± difference, close); custody, amounts and invariants all hold"
  },
  {
   "ticket": "PNT-094",
@@ -1352,10 +1352,10 @@
   "epic": "EP-12",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "AC-13: 5 venues, 50 drivers, 100 requests/min — request save p95 189 ms, assignment publish p95 91 ms, 0 errors, nothing stuck (docs/test-evidence/load)"
  },
  {
   "ticket": "PNT-098",
@@ -1366,10 +1366,10 @@
   "epic": "EP-12",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "done",
+  "status_ar": "منجز",
+  "date": "2026-10-29",
+  "note": "13 chaos scenarios, 115/115 checks: AC-06 at every kill point, outages raise alerts, only current states sent after recovery (docs/test-evidence/chaos)"
  },
  {
   "ticket": "PNT-099",
@@ -1380,10 +1380,10 @@
   "epic": "EP-11",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-29",
+  "note": "device protocol and recording template ready (docs/test-evidence/devices); real phones needed (owner/QA)"
  },
  {
   "ticket": "PNT-100",
@@ -1394,10 +1394,10 @@
   "epic": "EP-13",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-29",
+  "note": "WhatsApp production runbook with the template table and the G2 manual-run sheet ready; owner submission to Meta pending (Q-03)"
  },
  {
   "ticket": "PNT-101",
@@ -1408,10 +1408,10 @@
   "epic": "EP-13",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-29",
+  "note": "paper outage procedure, printable forms (PDF), driver and supervisor guides ready; the drill runs in the human rehearsal"
  },
  {
   "ticket": "PNT-102",
@@ -1422,10 +1422,10 @@
   "epic": "EP-13",
   "size": "M",
   "weight": 2,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-29",
+  "note": "automated rehearsal passed (150 cars, two venues, pnpm ops:rehearsal); human rehearsal with staff pending (owner)"
  },
  {
   "ticket": "PNT-103",
@@ -1436,9 +1436,9 @@
   "epic": "EP-13",
   "size": "S",
   "weight": 1,
-  "status": "todo",
-  "status_ar": "لم يبدأ",
-  "date": "",
-  "note": ""
+  "status": "in_progress",
+  "status_ar": "قيد التنفيذ",
+  "date": "2026-10-29",
+  "note": "G5 go-live checklist ready (AC evidence, owner actions); readiness gaps GAP-1…GAP-9 being closed; sign-off pending"
  }
 ]
