@@ -71,6 +71,14 @@ export function StaffSection({ me }: { me: Me }) {
   const rows = filterMembers(list.data ?? [], filters);
   const scopeLabels = { all: s13.staff.allVenues, none: s13.staff.noScope };
   const closeAction = () => setAction(null);
+  /**
+   * An open sheet or dialog follows the row as the list reads it now, not the row it was opened from: after
+   * VERSION_CONFLICT the list is re-read and the next «حفظ» carries the new `expected_version` over the user's
+   * inputs (02 §1.9, 08 VERSION_CONFLICT). The snapshot stays as the fallback while the list is reloading.
+   */
+  const current = (m: StaffMember) => list.data?.find((x) => x.user.id === m.user.id) ?? m;
+  const shown = selected ? current(selected) : null;
+  const target = action ? current(action.member) : null;
 
   return (
     <div className="st-section" data-testid="staff-section">
@@ -181,26 +189,28 @@ export function StaffSection({ me }: { me: Me }) {
         />
       )}
 
-      {selected ? (
+      {shown ? (
         <MemberSheet
           me={me}
-          member={selected}
-          scopeLine={scopeText(selected.scopes, venueList, scopeLabels)}
+          member={shown}
+          scopeLine={scopeText(shown.scopes, venueList, scopeLabels)}
           onClose={() => setSelected(null)}
           onAction={(a) => {
-            setAction({ action: a, member: selected });
+            setAction({ action: a, member: shown });
             setSelected(null);
           }}
         />
       ) : null}
-      {action?.action === 'edit' ? <EditStaffSheet member={action.member} onClose={closeAction} /> : null}
-      {action?.action === 'scopes' ? (
-        <ScopesSheet member={action.member} venues={venueList} onClose={closeAction} />
+      {action?.action === 'edit' && target ? <EditStaffSheet member={target} onClose={closeAction} /> : null}
+      {action?.action === 'scopes' && target ? (
+        <ScopesSheet member={target} venues={venueList} onClose={closeAction} />
       ) : null}
-      {action?.action === 'disable' || action?.action === 'enable' ? (
-        <StatusDialog member={action.member} disable={action.action === 'disable'} onClose={closeAction} />
+      {(action?.action === 'disable' || action?.action === 'enable') && target ? (
+        <StatusDialog member={target} disable={action.action === 'disable'} onClose={closeAction} />
       ) : null}
-      {action?.action === 'resetMfa' ? <ResetMfaDialog member={action.member} onClose={closeAction} /> : null}
+      {action?.action === 'resetMfa' && target ? (
+        <ResetMfaDialog member={target} onClose={closeAction} />
+      ) : null}
       {roles.length ? (
         <CreateStaffSheet
           open={adding}
@@ -454,7 +464,10 @@ function VenueChecklist({
   );
 }
 
-/** «تعديل البيانات»: name, phone, «يسمح بالقيادة» (supervisors) — `PATCH /v1/staff/{userId}` with `expected_version`. */
+/**
+ * «تعديل البيانات»: name, phone, «يسمح بالقيادة» (supervisors) — `PATCH /v1/staff/{userId}` with `expected_version`
+ * of the row as read now (the form keeps what the user typed; only the version and the comparison follow a re-read).
+ */
 function EditStaffSheet({ member, onClose }: { member: StaffMember; onClose: () => void }) {
   const u = member.user;
   const [form, setForm] = useState({

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { errorMessagesAr } from '../src/i18n/errors';
 import {
   apiError,
   MockApi,
@@ -288,4 +289,117 @@ test('a refused command shows the server text; a supervisor has no «الموظ�
   await page.goto('/admin');
   await expect(page.getByText('لا تملك صلاحية عرض هذه الصفحة.')).toBeVisible();
   expect(api.callsTo('GET', '/v1/staff')).toHaveLength(before); // the list is never read for a supervisor
+});
+
+test('VERSION_CONFLICT re-reads the list: the next «حفظ» keeps the inputs and sends the new version', async ({
+  page,
+}) => {
+  // users.version moves on outside this screen (the first sign-in, another admin): the list has no realtime
+  let version = 2;
+  const api = staffApi(new MockApi(page, roleMe('admin')), []);
+  api.on('GET', '/v1/staff', () => ok([{ ...SUP, user: { ...SUP.user, version } }]));
+  api.on('PATCH', `/v1/staff/${SUP.user.id}`, (req) => {
+    const body = req.postDataJSON() as { expected_version: number; status?: string };
+    if (body.expected_version !== version)
+      return apiError('VERSION_CONFLICT', 409, { details: { current_version: version } });
+    version += 1;
+    return ok({ ...SUP.user, ...(body.status ? { status: body.status } : {}), version });
+  });
+  await api.install();
+  await page.goto('/admin/staff');
+  await expect(row(page, 'ريم الشهري')).toBeVisible();
+  version = 3;
+  await row(page, 'ريم الشهري').getByRole('button', { name: 'الإجراءات' }).click();
+  await page
+    .getByRole('dialog', { name: 'ريم الشهري' })
+    .getByRole('button', { name: 'تعديل البيانات' })
+    .click();
+  const edit = page.getByRole('dialog', { name: 'تعديل البيانات' });
+  await edit.getByLabel('الاسم الكامل').fill('ريم سعد الشهري');
+  const reads = api.callsTo('GET', '/v1/staff').length;
+  await edit.getByRole('button', { name: 'حفظ' }).click();
+  await expect(edit.getByText(errorMessagesAr.VERSION_CONFLICT)).toBeVisible();
+  await expect.poll(() => api.callsTo('GET', '/v1/staff').length).toBeGreaterThan(reads);
+  await expect(edit.getByLabel('الاسم الكامل')).toHaveValue('ريم سعد الشهري');
+  await edit.getByRole('button', { name: 'حفظ' }).click();
+  await expect(edit).toBeHidden();
+  const edits = api.callsTo('PATCH', `/v1/staff/${SUP.user.id}`);
+  expect(edits.map((c) => c.body)).toEqual([
+    { expected_version: 2, full_name: 'ريم سعد الشهري' },
+    { expected_version: 3, full_name: 'ريم سعد الشهري' },
+  ]);
+  expect(edits[1]?.headers['idempotency-key']).not.toBe(edits[0]?.headers['idempotency-key']);
+
+  // the same for «تعطيل الحساب»: the reason stays, the retry carries the re-read version
+  await expect.poll(() => api.callsTo('GET', '/v1/staff').length).toBeGreaterThan(reads + 1);
+  version = 5;
+  await row(page, 'ريم الشهري').getByRole('button', { name: 'الإجراءات' }).click();
+  await page
+    .getByRole('dialog', { name: 'ريم الشهري' })
+    .getByRole('button', { name: 'تعطيل الحساب' })
+    .click();
+  const disable = page.getByRole('alertdialog', { name: 'تعطيل الحساب' });
+  await disable.getByLabel('السبب (إلزامي)').fill('انتهى عقده مع الموقع');
+  const before = api.callsTo('GET', '/v1/staff').length;
+  await disable.getByRole('button', { name: 'تعطيل الحساب' }).click();
+  await expect(disable.getByText(errorMessagesAr.VERSION_CONFLICT)).toBeVisible();
+  await expect.poll(() => api.callsTo('GET', '/v1/staff').length).toBeGreaterThan(before);
+  await expect(disable.getByLabel('السبب (إلزامي)')).toHaveValue('انتهى عقده مع الموقع');
+  await disable.getByRole('button', { name: 'تعطيل الحساب' }).click();
+  await expect(disable).toBeHidden();
+  expect(
+    api
+      .callsTo('PATCH', `/v1/staff/${SUP.user.id}`)
+      .map((c) => c.body)
+      .slice(2),
+  ).toEqual([
+    { expected_version: 4, status: 'disabled', reason: 'انتهى عقده مع الموقع' },
+    { expected_version: 5, status: 'disabled', reason: 'انتهى عقده مع الموقع' },
+  ]);
+});
+
+test('the owner withdraws and restores the org scope of an administration account («النطاقات»)', async ({
+  page,
+}) => {
+  let scopes: unknown[] = ADM.scopes;
+  const api = staffApi(new MockApi(page, roleMe('owner')), []);
+  api.on('GET', '/v1/staff', () => ok([{ ...ADM, scopes }]));
+  api.on('POST', `/v1/staff/${ADM.user.id}/scopes`, (req) => {
+    const body = req.postDataJSON() as { org_scope?: boolean };
+    scopes = body.org_scope ? ADM.scopes : [];
+    return ok(scopes);
+  });
+  await api.install();
+  await page.goto('/admin/staff');
+  await expect(row(page, 'سارة العنزي')).toContainText('كل المواقع');
+  const openScopes = async () => {
+    await row(page, 'سارة العنزي').getByRole('button', { name: 'الإجراءات' }).click();
+    await page.getByRole('dialog', { name: 'سارة العنزي' }).getByRole('button', { name: 'النطاقات' }).click();
+    return page.getByRole('dialog', { name: 'النطاقات · سارة العنزي' });
+  };
+  let sheet = await openScopes();
+  const save = sheet.getByRole('button', { name: 'حفظ' });
+  // nothing changed yet: «حفظ» stays disabled; an administration account has no venue list
+  await expect(sheet.getByLabel('كل المواقع')).toBeChecked();
+  await expect(sheet.getByLabel('قاعة ريماس')).toHaveCount(0);
+  await expect(save).toBeDisabled();
+  await sheet.getByLabel('كل المواقع').uncheck();
+  await expect(save).toBeEnabled();
+  await sheet.getByLabel('كل المواقع').check();
+  await expect(save).toBeDisabled();
+  await sheet.getByLabel('كل المواقع').uncheck();
+  await save.click();
+  await expect(sheet).toBeHidden();
+  await expect(row(page, 'سارة العنزي')).toContainText('بلا نطاق');
+
+  sheet = await openScopes();
+  await expect(sheet.getByLabel('كل المواقع')).not.toBeChecked();
+  await sheet.getByLabel('كل المواقع').check();
+  await sheet.getByRole('button', { name: 'حفظ' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(row(page, 'سارة العنزي')).toContainText('كل المواقع');
+  const calls = api.callsTo('POST', `/v1/staff/${ADM.user.id}/scopes`);
+  expect(calls.map((c) => c.body)).toEqual([{ org_scope: false }, { org_scope: true }]);
+  for (const c of calls) expect(c.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/);
+  expect(calls[0]?.headers['idempotency-key']).not.toBe(calls[1]?.headers['idempotency-key']);
 });
