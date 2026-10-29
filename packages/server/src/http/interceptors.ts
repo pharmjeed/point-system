@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import { from, lastValueFrom, map, type Observable } from 'rxjs';
+import { killPoint } from '../core/chaos/kill-points.js';
 import type { Clock } from '../core/clock/clock.js';
 import type { Database } from '../core/db/database.js';
 import { AppError } from '../core/errors/app-error.js';
@@ -22,6 +23,8 @@ import { requestHash } from '../core/idempotency/request-hash.js';
 import type { Logger } from '../core/logging/logger.js';
 import { COMMAND_KEY, RawBody, WithStatus, type CommandMeta } from './decorators.js';
 import { CLOCK, DATABASE, LOGGER } from './tokens.js';
+
+const ACCEPT_OPERATION = 'POST /v1/task-offers/{offerId}/accept';
 
 type Req = Request & {
   requestId: string;
@@ -72,7 +75,8 @@ export class CommandInterceptor implements NestInterceptor {
     if (!meta) return next.handle();
     const req = ctx.switchToHttp().getRequest<Req>();
     const res = ctx.switchToHttp().getResponse<Response>();
-    const header = req.header('Idempotency-Key') ?? undefined;
+    // a route that ignores the key runs keyless whatever the client sends (CommandMeta.ignoreKey)
+    const header = meta.ignoreKey ? undefined : (req.header('Idempotency-Key') ?? undefined);
     const handlerFn = async (tx: unknown) => {
       req.tx = tx;
       try {
@@ -106,6 +110,9 @@ export class CommandInterceptor implements NestInterceptor {
     }
     return from(run).pipe(
       map((r) => {
+        // 17 H-03 KP-5: the accept committed, its answer not written — a retry with the key replays it (TC-017)
+        if (meta.operation === ACCEPT_OPERATION && r.status === 200 && !r.replayed)
+          killPoint('accept_after_commit_before_response');
         res.status(r.status);
         res.setHeader('X-Request-Id', req.requestId);
         if (r.replayed) res.setHeader('Idempotent-Replayed', 'true');

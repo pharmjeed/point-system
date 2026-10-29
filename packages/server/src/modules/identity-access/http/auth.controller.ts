@@ -163,7 +163,8 @@ export class AuthController {
 
   @Post('me/heartbeat')
   @RequirePermission('auth.self')
-  @Command('POST /v1/me/heartbeat', { idempotent: false })
+  // canon §9 «—»: an Idempotency-Key is accepted and ignored (descriptive refresh, no audit row, fresh server_time)
+  @Command('POST /v1/me/heartbeat', { idempotent: false, ignoreKey: true })
   heartbeat(
     @CurrentTx() tx: Tx,
     @CurrentActor() actor: ActorContext,

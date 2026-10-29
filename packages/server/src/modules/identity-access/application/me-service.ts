@@ -183,6 +183,8 @@ export class MeService {
   /**
    * HTTP fallback for client.heartbeat (canon §7.3): refreshes duty_sessions.last_heartbeat_at; a driver whose
    * connection was uncertain/offline becomes online (driver.connection_changed). Never changes availability.
+   * The connection state is descriptive (10 §2.7): «النبضة لا تزيد version» (06 ERD duty_sessions), so coming
+   * back online leaves the aggregate version as it is, like job.heartbeat_sweep going the other way.
    */
   async heartbeat(tx: Tx, actor: ActorContext, body: HeartbeatBody) {
     void body;
@@ -198,8 +200,7 @@ export class MeService {
     if (duty) {
       const before = duty.connection_state;
       const r = await tx.one<{ connection_state: string; version: number }>(
-        `UPDATE duty_sessions SET last_heartbeat_at = $2, connection_state = 'online',
-                version = CASE WHEN connection_state <> 'online' THEN version + 1 ELSE version END
+        `UPDATE duty_sessions SET last_heartbeat_at = $2, connection_state = 'online'
           WHERE id = $1 RETURNING connection_state, version`,
         [duty.id, tx.now],
       );

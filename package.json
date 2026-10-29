@@ -26,7 +26,9 @@
     "db:invariants": "pnpm --filter @point/db invariants",
     "db:drift": "pnpm --filter @point/db drift",
     "progress": "node tools/progress/build.mjs",
-    "ops:restore-drill": "bash infra/backup/restore-drill.sh"
+    "ops:restore-drill": "bash infra/backup/restore-drill.sh",
+    "ops:load": "node infra/load/run.mjs",
+    "ops:chaos": "node infra/chaos/run.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

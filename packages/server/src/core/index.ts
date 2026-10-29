@@ -18,6 +18,7 @@ export * from './outbox/dispatcher.js';
 export * from './realtime/realtime-publisher.js';
 export * from './audit/audit-writer.js';
 export * from './config/env.js';
+export * from './chaos/kill-points.js';
 export * from './secrets/secret-resolver.js';
 export * from './settings/settings-service.js';
 export * from './metrics/metrics.js';
