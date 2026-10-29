@@ -8,6 +8,11 @@
   نموذج داخلي للطباعة (PNT-101، 13، docs/runbooks/paper-fallback.md، docs/training/supervisor-guide.md). يوثق عدّ النقد
   أمام كل سائق قبل إدخاله في النظام عبر «استلام نقد» في S-10 (POST /v1/cash-handovers). هوية «بوينت» من brand/tokens
   وbrand/fonts والشعار الأصلي دون إعادة رسم. الطباعة: A4 عمودي.
+
+  للطباعة استخدم الملف الجاهز brand/print/point-cash-handover.pdf. هذا الملف هو المصدر، ولا يخرج صحيحًا إلا مفتوحًا من مجلد
+  brand/print/ داخل نسخة كاملة من المستودع (يقرأ ../fonts و../tokens و../logo بمسارات نسبية). إعادة توليد ملف PDF من جذر المستودع:
+    chromium --headless --no-pdf-header-footer --disable-pdf-tagging --virtual-time-budget=15000 --allow-file-access-from-files \
+      --print-to-pdf=brand/print/point-cash-handover.pdf "file://$PWD/brand/print/point-cash-handover.html"
 -->
 <link rel="stylesheet" href="../fonts/fonts.css">
 <link rel="stylesheet" href="../tokens/tokens.css">
@@ -45,7 +50,7 @@
   .notes ol { margin: 0; padding-inline-start: 4.5mm; font-size: 7.4pt; line-height: 1.35; }
   .notes li { margin: 0 0 0.4mm; }
   .sign { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-xs); padding: 1.4mm 2mm; font-size: 7.6pt; display: grid; gap: 2.4mm; align-content: start; }
-  .sign div { border-bottom: 0.2mm dotted var(--pt-ink-400); padding-bottom: 3mm; }
+  .sign div { border-bottom: 0.2mm solid var(--pt-ink-400); padding-bottom: 3mm; }
 </style>
 </head>
 <body>
