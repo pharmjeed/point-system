@@ -7,6 +7,7 @@ import {
   acceptOfferOf,
   arrangeRetrieval,
   arrangeSubmitted,
+  EVENT_R1,
   requestRetrieval,
   startDuty,
 } from './support/driver';
@@ -321,6 +322,29 @@ test('PNT-065 / 03 §4.4: «الاتصال غير مؤكد» closes D-09 reserve
     timeout: 15_000,
   });
   await expect(page.locator('.pt-live')).toHaveAttribute('data-stale', 'false');
+});
+
+test('PNT-065 (DEC-PROPOSED-5): on D-05 «التالي» and «إلغاء الاستلام» wait while a resync is pending', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const draft = fake.exec('DRV1', 'POST /v1/tickets', {}, { event_id: EVENT_R1 });
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto(`/d/intake/${draft.ticket.id}/vehicle`);
+  const next = page.locator('#intake-next');
+  const discard = page.locator('#intake-cancel');
+  await expect(next).toBeEnabled();
+  await expect(discard).toBeEnabled();
+
+  // back online: a full resync before any command (the snapshot is slow on purpose)
+  fake.delayNext('GET /v1/me/home', 2500);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(next).toBeDisabled();
+  await expect(discard).toBeDisabled();
+  await expect(next).toBeEnabled({ timeout: 10_000 });
+  await expect(discard).toBeEnabled();
+  expect(fake.callsTo('PATCH /v1/tickets/:ticketId/intake')).toHaveLength(0);
 });
 
 test('PNT-065: a socket the server closed (`io server disconnect`) is checked and connected again; live events flow again', async ({

@@ -230,6 +230,68 @@ test('PNT-067: task.claimed removes a visible card with «قبل الطلب سا
   expect(claimed?.frame.payload).toMatchObject({ task_id: offer.task_id, offer_ids: [offer.id] });
 });
 
+test('PNT-067 (02 §7 item 9): one assertive announcement per transition — arrival, reminder — never the ticking clock', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  fake.realtime.enable();
+  const [car] = parkedCars(fake, 1);
+  busyDriver(fake, 'DRV1');
+  requestRetrieval(fake, car!.ticketId);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto('/d');
+  await expectOneOffer(page, car!.displayNumber);
+  await expect.poll(() => fake.realtime.connectedUsers().length).toBe(1);
+  const card = offerCardOf(page);
+  const live = card.locator('[aria-live]');
+  await expect(live).toHaveCount(1); // the card itself is not a live region
+  await expect(live).toHaveAttribute('aria-live', 'assertive');
+  await expect(live).toHaveText(`طلب إحضار جديد، تذكرة ${car!.displayNumber}`);
+  await expect(card).toContainText(/ينتظر منذ/);
+  const said = await live.textContent();
+  await page.waitForTimeout(2200); // the waiting clock ticks meanwhile
+  expect(await live.textContent()).toBe(said);
+
+  const offer = offerOf(fake, car!.ticketId)!;
+  fake.realtime.emit('DRV1', 'offer.reminder', {
+    cause: 'offer.reminded',
+    offer_id: offer.id,
+    task_id: offer.task_id,
+  });
+  await expect(live).toHaveText('تذكير: الطلب ما زال بانتظار قبولك');
+});
+
+test('PNT-067 (02 D-09): OLDER_REQUEST_PENDING — the resync shows the older request with «يوجد طلب أقدم يجب قبوله أولًا.»', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  fake.realtime.enable();
+  const [newer, older] = parkedCars(fake, 2);
+  busyDriver(fake, 'DRV1');
+  requestRetrieval(fake, newer!.ticketId);
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto('/d');
+  await expectOneOffer(page, newer!.displayNumber);
+  await expect.poll(() => fake.realtime.connectedUsers().length).toBe(1);
+
+  // the server queues a request older than the one on screen; DRV1 has not heard of it yet
+  fake.realtime.muted.add(fake.userByKey('DRV1').id);
+  requestRetrieval(fake, older!.ticketId);
+  const taskOf = (ticketId: string) =>
+    fake.world.tasks.find((k) => k.ticket_id === ticketId && k.type === 'retrieve')!;
+  const earlier = new Date(Date.parse(taskOf(newer!.ticketId).priority_at) - 60_000).toISOString();
+  taskOf(older!.ticketId).priority_at = earlier;
+  fake.world.cycles.find((c) => c.ticket_id === older!.ticketId && !c.closed_at)!.requested_at = earlier;
+
+  fake.failNext('POST /v1/task-offers/:offerId/accept', errorReply('OLDER_REQUEST_PENDING'));
+  await reserveButton(page).click();
+  // the text goes with the head card the resync shows (it is not lost with the old card)
+  await expectOneOffer(page, older!.displayNumber);
+  await expect(offerCardOf(page).getByText(TEXT.OLDER_REQUEST_PENDING)).toBeVisible();
+  await expect(reserveButton(page)).toBeEnabled({ timeout: 10_000 });
+  fake.realtime.muted.clear();
+});
+
 test('PNT-067: the D-09 refusals show the 08 texts (OFFER_EXPIRED, OLDER_REQUEST_PENDING, NEXT_TASK_ALREADY_RESERVED)', async ({
   browser,
 }) => {
