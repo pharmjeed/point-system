@@ -384,7 +384,7 @@ VITE_APP_VERSION=dev
 1. كل بيئة لها قاعدة بيانات ودلاء تخزين ومفاتيح VAPID وأسرار مستقلة.
 2. بيئة `staging` ترفض الإرسال لأي رقم خارج القائمة المسموحة حتى لو وُجد خطأ في البيانات.
 3. رقم الإنتاج لا يُستخدم في أي بيئة أخرى، ولا يوجد إلا صف `whatsapp_channel` فعال واحد في كل بيئة (`uq_whatsapp_channel_active`).
-4. دلو الوسائط في كل بيئة له قاعدة دورة حياة تحذف البادئة `incoming/` بعد يوم واحد (القرار DEC-97): رابط PUT الموقّع يكتب في `incoming/{org}/{ticket}/{media}-{nonce}`، والنسخة المنقّاة تُحفظ بمفتاح 09 §6.1 ويُحذف الأصل قبل `uploaded`، فتكنس القاعدة الأيتام (رفع لم يكتمل، إعادة PUT برابط ما زال صالحًا بعد الإتمام، توقف بين الكتابة والحذف). محليًا تضيفها خدمة `minio-init` (§9.1)، وهي تنشئ أيضًا مستخدم تطبيق مقصورًا على Get وPut وDelete في الدلوين وترفض دلوًا بإصدارات (DEC-128، DEC-300).
+4. دلو الوسائط في كل بيئة له قاعدة دورة حياة تحذف البادئة `incoming/` بعد يوم واحد (القرار DEC-97): رابط PUT الموقّع يكتب في `incoming/{org}/{ticket}/{media}-{nonce}`، والنسخة المنقّاة تُحفظ بمفتاح 09 §6.1 ويُحذف الأصل قبل `uploaded`، فتكنس القاعدة الأيتام (رفع لم يكتمل، إعادة PUT برابط ما زال صالحًا بعد الإتمام، توقف بين الكتابة والحذف). محليًا تضيفها خدمة `minio-init` (§9.1)، وهي تنشئ أيضًا مستخدم تطبيق مقصورًا على Get وPut وDelete في الدلوين وترفض دلوًا بإصدارات (DEC-128، DEC-300). ودلو الوسائط على أصل غير أصل التطبيق (S3 مُدار) يحتاج قاعدة CORS تسمح بـ`PUT` و`GET` من أصل الواجهة مع ترويسة `Content-Type`، وغيابها يظهر `MEDIA_UPLOAD_INCOMPLETE` على بلاطة الصورة (DEC-360).
 5. دور الاحتفاظ `point_retention` (الترحيل `0004_retention_role.sql`) يأخذه `job.retention_purge` بـ`SET LOCAL ROLE`؛ في `staging` و`production` يُمنح دور دخول العامل عضويته بلا وراثة (`GRANT point_retention TO point_worker WITH INHERIT FALSE, SET TRUE`؛ المنح العادي يورّثه `DELETE` على الجداول الإلحاقية دائمًا)، ودونها تفشل كل دفعة حذف (مهمة فاشلة وتنبيه `outbox_lag`) (القراران DEC-153 وDEC-301). الأدوار في `infra/db/bootstrap-roles.sql`: `point_owner` يملك الكائنات ويشغّل الترحيلات، و`point_api` و`point_worker` عضوان في `point_app`.
 6. الإقلاع في `staging` و`production` يرفض الإعدادات الخطرة (القرار DEC-298، §8).
 
@@ -701,6 +701,7 @@ pnpm dev                            # api + worker + web + wa-simulator
 pnpm test                           # وحدة
 pnpm test:int                       # تكامل (Testcontainers)
 pnpm test:e2e                       # Playwright
+pnpm --filter @point/web test:e2e:live   # G1 في المتصفح مقابل الـAPI الحقيقي وقاعدة مبذورة (TEST_DATABASE_URL)، DEC-359
 pnpm lint && pnpm typecheck
 pnpm db:drift                       # مقارنة الترحيلات مع docs/06_schema.sql
 pnpm load:k6                        # حمل محلي مصغر

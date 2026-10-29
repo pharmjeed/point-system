@@ -1139,9 +1139,9 @@ paths:
                     digits: '1234'
                     letters_ar: ب ح د
                   vehicle:
-                    make: تويوتا
+                    make: toyota
                     model: كامري
-                    color: أبيض
+                    color: white
                     type: sedan
                   customer_phone: '0551234567'
                   consent:
@@ -9354,20 +9354,22 @@ components:
         raw:
           type: string
           description: إلزامي عندما country != SA
-      description: 'SA: digits + letters_ar إلزاميان؛ غير ذلك raw. الخطأ PLATE_INVALID'
+      description: 'SA: digits + letters_ar إلزاميان؛ غير ذلك raw. اللوحة غير السعودية مجهولة الدولة: country = XX (رمز ISO المخصص للمستخدم) مع raw (DEC-349). الخطأ PLATE_INVALID'
       additionalProperties: false
     VehicleInfo:
       type: object
       properties:
         make:
           type: [string, 'null']
-          examples: [تويوتا]
+          examples: [toyota]
+          description: مفتاح 02 §8.4 (مثل toyota)، أو النص المكتوب لـ«أخرى» (DEC-350)
         model:
           type: [string, 'null']
           examples: [كامري]
         color:
           type: [string, 'null']
-          examples: [أبيض]
+          examples: [white]
+          description: مفتاح 02 §8.4 (مثل white)، أو النص المكتوب لـ«أخرى» (DEC-350)
         type:
           anyOf:
           - $ref: '#/components/schemas/VehicleType'
@@ -10718,7 +10720,8 @@ components:
           description: eligible_as = reserve_next
         safety_note_ar:
           type: [string, 'null']
-          examples: [احجز فقط وأنت متوقف؛ لا تستخدم الجوال أثناء القيادة]
+          examples: [احجزه فقط وأنت متوقف. لا تستخدم الجوال أثناء القيادة.]
+          description: النص الثابت من 02 D-09 و03 لبطاقة الحجز كمهمة تالية (DEC-361)
       required: [offer_id, task_id, mode, eligible_as, server_time, ticket, requested_at, waiting_seconds, can_accept, can_reserve_next]
       description: 'بطاقة العرض الوحيدة الظاهرة للسائق: أقدم طلب قابل للقبول (D-09)'
     ClaimCodeState:
