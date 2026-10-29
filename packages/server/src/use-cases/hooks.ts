@@ -65,6 +65,14 @@ export interface InlinePaymentHook {
       payment: { method: 'cash' | 'pos'; amount_halalas: number; pos_reference?: string | null };
       actor: ActorContext;
       requestId?: string;
+      /**
+       * 13 §8.4: in the supervisor's exceptional handover the money was taken by `collectedBy` (the assignee by
+       * default, or the supervisor himself) and the payment is recorded with `source = exception`; the plain
+       * handover is collected by its actor, the assignee (`source = handover`).
+       */
+      collectedBy?: string;
+      source?: 'handover' | 'exception';
+      operation?: string;
     },
   ): Promise<Record<string, unknown>>;
 }
