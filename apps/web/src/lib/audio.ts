@@ -34,15 +34,25 @@ export const SOUND_FILES: Record<SoundName, string> = {
   test: '/sounds/point-test.mp3',
 };
 
-/** 14 §7 rule 4: escalation > broadcast > offer > next_due > reminder (the test tone only from a tap). */
+/** 14 §7 rule 4: escalation > broadcast > offer > next_due > reminder (the test tone: see `waitsFor`). */
 export const SOUND_PRIORITY: Record<SoundName, number> = {
   escalation: 5,
   broadcast: 4,
   offer: 3,
   next_due: 2,
   reminder: 1,
-  test: 6,
+  test: 0,
 };
+
+/**
+ * Whether `next` must give way to the sound playing now (14 §7 rule 4: one sound at a time). The test tone is
+ * outside the ranking: it comes from the driver's own tap, so it always plays, and any alert replaces it — a
+ * request is never lost behind the test.
+ */
+export function waitsFor(next: SoundName, current: SoundName): boolean {
+  if (next === 'test' || current === 'test') return false;
+  return SOUND_PRIORITY[current] > SOUND_PRIORITY[next];
+}
 
 /** 02 §1.10 vibration patterns; none for reminder, escalation and the test. */
 export const VIBRATION: Partial<Record<SoundName, number[]>> = {
@@ -227,7 +237,7 @@ export async function playSound(name: SoundName, options: PlayOptions = {}): Pro
     setStatus('blocked');
     return false;
   }
-  if (playing && SOUND_PRIORITY[playing.name] > SOUND_PRIORITY[name]) return false;
+  if (playing && waitsFor(name, playing.name)) return false;
   ticket += 1;
   const mine = ticket;
   const key = options.key ?? null;
@@ -239,7 +249,7 @@ export async function playSound(name: SoundName, options: PlayOptions = {}): Pro
     setStatus('blocked');
     return false;
   }
-  if (playing && SOUND_PRIORITY[playing.name] > SOUND_PRIORITY[name]) return false;
+  if (playing && waitsFor(name, playing.name)) return false;
   halt(playing);
   playing = null;
   let source: AudioBufferSourceNode | OscillatorNode;

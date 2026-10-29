@@ -148,6 +148,20 @@ describe('in-page sound', () => {
     expect(playingSound()).toEqual({ name: 'broadcast', key: 'offer:b' });
   });
 
+  it('the test tone never holds back an alert: any alert replaces it; the tap plays it over a reminder', async () => {
+    const { ctx, started, stopped } = fakeContext();
+    setAudioContextFactory(() => ctx);
+    okFetch();
+    await expect(runAudioTest()).resolves.toBe('played'); // buffer1 = test
+    expect(await playSound('reminder', { key: 'offer:a' })).toBe(true); // buffer2 replaces the test
+    expect(stopped).toEqual(['buffer1']);
+    await expect(runAudioTest()).resolves.toBe('played'); // the tap: buffer3 over the reminder
+    expect(stopped).toEqual(['buffer1', 'buffer2']);
+    expect(await playSound('broadcast', { key: 'offer:b' })).toBe(true);
+    expect(started).toEqual(['buffer1', 'buffer2', 'buffer3', 'buffer4']);
+    expect(playingSound()).toEqual({ name: 'broadcast', key: 'offer:b' });
+  });
+
   it('vibrates with offer, broadcast and next_due only (02 §1.10)', async () => {
     const { ctx } = fakeContext();
     setAudioContextFactory(() => ctx);
