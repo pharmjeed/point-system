@@ -42,6 +42,31 @@ the QR W-01 does not, W-11 and W-10 are service messages, the gauges match), `ap
 (+1: the sync stores GREEN / `TIER_2K` and keeps them when the number read fails), `apps/api/test/wa-sender.int.test.ts`
 (the probe that brings the channel back stores them).
 
+## Sweep 1 — every metric of 05 §12.2 registered and populated
+
+`packages/server/test/metrics-catalog.test.ts` (unit) parses the 05 §12.2 table and fails when a catalog metric is not
+registered with its labels, when something outside the catalog is registered, or when a registered metric is never
+set/observed/incremented in the api, worker or server code. Before this stream seven were never populated and one
+was wrong in the processes that had not made its transition:
+
+| Metric | Before | Now |
+|---|---|---|
+| `point_http_request_duration_seconds{route,status}` | never observed (the 2 s request-save target of 15 §10 had no system source for the API path) | `requestContextMiddleware` times every finished response; `route` = method + canon path template of the matched route (`GET /v1/tickets/{ticketId}`), `unmatched` otherwise — never an id |
+| `point_dispatch_publish_seconds` | never observed (the rehearsal recorded it, 15 §10's second target) | the realtime relay observes `task.offered`, `task.broadcast`, `task.claimed` and `task.updated` caused by a claim or a reassignment, from the producing transaction's clock instant (`occurred_at`) to the emit — an upper bound of «commit → publish» |
+| `point_dispatch_pool_lock_wait_seconds`, `point_db_lock_wait_seconds` | never observed | `lockRows` / `lockOpenDutyByUsers` time every canonical L1–L8 lock; the L1 pool lock goes to both |
+| `point_ws_reconnects_total` | never incremented | a session's new socket within 10 minutes of losing its previous one on the same process |
+| `point_wa_service_messages_month`, `point_wa_unique_users_24h_outside_window` | never set | GAP-9 above |
+| `point_backup_last_success_timestamp_seconds` | registered in the api and the worker, so both exported `0` and a 26 h backup rule (15 §12) would fire on them for good | removed from the process registry: it is the node_exporter textfile of `backup.sh` (DEC-303); the test keeps it out |
+| `point_wa_channel_health` | set only by the process that made a transition: the api (and a restarted worker) said `0` = healthy while the channel was down | the SystemMonitor sets it from `whatsapp_channel` in every process |
+| `point_wa_webhook_last_received_timestamp_seconds` | set only by the api that received the webhook: `0` in the worker and after every api restart | the SystemMonitor sets it from `whatsapp_inbound_events` in every process (migration `0006`: `ix_whatsapp_inbound_org_received (org_id, received_at)`, which also serves the sender's `wa_webhook_silent` check that scanned the table once a minute) |
+| `point_dispatch_offers_total{mode,outcome}` | `created`, `accepted`, `expired` only | `revoked` too (`revokeRound`), as 05 §12.2 lists |
+
+Tests: `apps/api/test/metrics-sweep.int.test.ts` (4: route/status labels with no id, `unmatched`, a refused command;
+the locks of a duty start; the publish histogram for the four dispatch messages and none for the others, with the
+1.2 s measured; reconnects within and beyond the window, another session not counted),
+`packages/server/test/system-monitor.int.test.ts` (+1: channel health 2/1/0 and the last webhook read from the
+database), `apps/api/test/dispatch-offers.int.test.ts` (+1 assertion: a break revokes the round → `revoked` + 1).
+
 ## Proposed decisions
 
 - DEC-PROPOSED-1: WhatsApp quota alerts without a canon type — context: 12 §13 gives alert thresholds for
@@ -79,6 +104,29 @@ the QR W-01 does not, W-11 and W-10 are service messages, the gauges match), `ap
   `ix_whatsapp_messages_accepted (org_id, queued_at) WHERE direction = 'outbound' AND wa_message_id IS NOT NULL`, an
   extra object allowed by the catalog check (as `ix_outbox_failed_dead`, DEC-153) — affected files: 06 ERD
   (done), `06_schema.sql` (if the lead wants it there too).
+
+- DEC-PROPOSED-5: what the four «never populated» process metrics measure — context: 05 §12.2 names them with a
+  one-line description — decision: `point_http_request_duration_seconds{route,status}`: every finished HTTP response,
+  `route` = `METHOD /canon/{template}` of the matched route or `unmatched` (no raw paths: no ids, bounded
+  cardinality), `status` = the HTTP status; `point_dispatch_publish_seconds`: from the producing transaction's instant
+  (`occurred_at`, the transaction start) to the emit of `task.offered`, `task.broadcast`, `task.claimed` and of
+  `task.updated` caused by `task.claimed`/`task.reassigned` — an upper bound of «commit → publish», measured per api
+  instance; `point_db_lock_wait_seconds` / `point_dispatch_pool_lock_wait_seconds`: the duration of each canonical
+  lock statement of `lockRows`/`lockOpenDutyByUsers` (L1–L8; the L1 pool lock in both); `point_ws_reconnects_total`: a
+  session whose new socket opens within 10 minutes (`RECONNECT_WINDOW_MS`) of losing its previous one on the same
+  process — affected files: 05 §12.2, 15 §10.
+- DEC-PROPOSED-6: process gauges that describe shared state come from the database — context: `point_wa_channel_health`
+  and `point_wa_webhook_last_received_timestamp_seconds` were set only by the process that changed them, and an unlabeled
+  prom-client gauge reads `0` until set («healthy», «1970») in every other process and after a restart — decision: the
+  SystemMonitor sets both from the database on each tick in the api and the worker (the worst health of the active
+  channels; the latest `whatsapp_inbound_events.received_at`), the event-time updates stay; migration
+  `0006_wa_inbound_received_index.sql` adds `ix_whatsapp_inbound_org_received (org_id, received_at)` for that read and
+  the sender's `wa_webhook_silent` check — affected files: 05 §12.2, 06 ERD (done).
+- DEC-PROPOSED-7: the backup gauge is not a process metric — context: DEC-303 has `backup.sh` write
+  `point_backup_last_success_timestamp_seconds` to a node_exporter textfile; the same name was also registered in the
+  api and the worker, which exported `0` on every scrape — decision: the processes do not register it (the catalog test
+  enforces it); the backup rule reads the textfile series only — affected files: 05 §12.2 (already says so), DEPLOYMENT
+  §12.
 
 ## Observations for other owners
 

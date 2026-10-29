@@ -1,5 +1,5 @@
 import { SEED_IDS } from '@point/db/seed';
-import { createLogger, dispatchJobs, OutboxDispatcher, requestDispatchPass } from '@point/server';
+import { createLogger, dispatchJobs, metrics, OutboxDispatcher, requestDispatchPass } from '@point/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from './harness.js';
 import {
@@ -228,9 +228,15 @@ describe('PNT-032 — POST /v1/task-offers/{offerId}/accept', () => {
   });
 
   it('OFFER_REVOKED for a round closed by a break; OFFER_EXPIRED after expires_at + grace (EC-05/EC-06)', async () => {
+    const revoked = async () =>
+      (await metrics.dispatchOffers.get()).values.find(
+        (v) => v.labels.mode === 'single' && v.labels.outcome === 'revoked',
+      )?.value ?? 0;
     const r = await requested(t);
     const first = (await liveOffer(t.db, U.DRV3))!;
+    const before = await revoked();
     ok(await brk(t, 'DRV3', true));
+    expect(await revoked()).toBe(before + 1); // point_dispatch_offers_total{mode,outcome} (05 §12.2)
     ok(await brk(t, 'DRV3', false));
     expect(err(await accept(t, 'DRV3', first.id), 'OFFER_REVOKED', 410)).toEqual({
       offer_id: first.id,

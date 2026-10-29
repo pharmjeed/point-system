@@ -99,7 +99,9 @@ export const metrics = {
   driversConnectionUncertain: g('point_drivers_connection_uncertain', 'Drivers with uncertain connection', [
     'venue',
   ]),
-  backupLastSuccess: g('point_backup_last_success_timestamp_seconds', 'Last successful backup'),
+  // point_backup_last_success_timestamp_seconds is not a process metric: infra/backup/backup.sh writes it to a
+  // node_exporter textfile (05 §12.2, DEC-303). Registered here it would read 0 on every api and worker scrape and
+  // trip the 26 h backup rule (15 §12) for good.
   // PNT-090/091/094 additions (proposed for 05 §12.2, docs/progress/notes/audit-monitoring.md)
   outboxDead: g('point_outbox_dead', 'Outbox rows in status dead', ['type']),
   dispatchEligibleDrivers: g('point_dispatch_eligible_drivers', 'Drivers on duty and not on break per pool', [

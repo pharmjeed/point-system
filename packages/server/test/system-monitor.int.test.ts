@@ -229,6 +229,40 @@ describe('SystemMonitor', () => {
     }
   });
 
+  it('gauges read from the database in every process: WhatsApp channel health and the last webhook (05 §12.2)', async () => {
+    const value = async (g: typeof metrics.waChannelHealth) => (await g.get()).values[0]?.value;
+    const health = (h: string) =>
+      t.db.query(`UPDATE whatsapp_channel SET health_status = $2 WHERE id = $1`, [
+        SEED_IDS.whatsappChannel,
+        h,
+      ]);
+    try {
+      // a process that never saw the transition (the api, a restarted worker) still reports it
+      await health('down');
+      await monitor.refreshGauges();
+      expect(await value(metrics.waChannelHealth)).toBe(2);
+      await health('degraded');
+      await monitor.refreshGauges();
+      expect(await value(metrics.waChannelHealth)).toBe(1);
+      await health('healthy');
+      await monitor.refreshGauges();
+      expect(await value(metrics.waChannelHealth)).toBe(0);
+
+      // the worker never receives a webhook: it reports the last one the api stored
+      const at = new Date('2026-10-27T15:58:20.000Z');
+      await t.db.query(
+        `INSERT INTO whatsapp_inbound_events (org_id, received_at, signature_verified_at, body_sha256, raw_body, status)
+         VALUES ($1, $2, $2, $3, '{}', 'processed')`,
+        [ORG, at, `sha-${at.getTime()}`],
+      );
+      await monitor.refreshGauges();
+      expect(await value(metrics.waWebhookLastReceived)).toBe(at.getTime() / 1000);
+    } finally {
+      await health('healthy');
+      await t.db.query(`DELETE FROM whatsapp_inbound_events`);
+    }
+  });
+
   it('task_stuck (StuckDetector, 14 §8): raised past the threshold, resolved on progress, raised again per phase', async () => {
     const event = SEED_IDS.events['EVT-R1'];
     const ticket = await insertTicket(t.db, { eventId: event, status: 'assigned', submittedAt: T0 });

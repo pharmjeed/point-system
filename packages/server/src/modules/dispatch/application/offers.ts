@@ -3,6 +3,7 @@ import { newId } from '../../../core/crypto/ids.js';
 import { lockOffers, lockOpenDutyByUsers, lockTasks } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { InvariantViolation } from '../../../core/errors/app-error.js';
+import { metrics } from '../../../core/metrics/metrics.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import type { EventActor } from '../../tickets-custody/index.js';
 import type { OfferRow, PoolDriverRow, PoolRow, QueueTask } from '../infra/rows.js';
@@ -246,6 +247,7 @@ export async function revokeRound(
     [offerId, tx.now, reason],
   );
   if (!offer) return null;
+  metrics.dispatchOffers.inc({ mode: offer.mode, outcome: 'revoked' }); // 05 §12.2 (`accepted`, `expired`, `revoked`…)
   const recipients = await tx.rows<{ user_id: string }>(
     `SELECT user_id FROM offer_recipients WHERE offer_id = $1 ORDER BY user_id`,
     [offerId],

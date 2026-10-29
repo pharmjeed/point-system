@@ -685,6 +685,16 @@ export class SystemMonitor {
     const oldest = inbound[0]?.oldest;
     metrics.waInboundLag.set(oldest ? Math.max(0, (now.getTime() - new Date(oldest).getTime()) / 1000) : 0);
 
+    // read from the database in every process: the health transition and the last webhook may have happened in
+    // another process (the worker never receives a webhook), and a gauge never set reads 0 («healthy», 1970)
+    const wa = await this.db.rows<{ health: number | null; last: Date | null }>(
+      `SELECT max(CASE c.health_status WHEN 'down' THEN 2 WHEN 'degraded' THEN 1 ELSE 0 END)::int AS health,
+              max((SELECT max(e.received_at) FROM whatsapp_inbound_events e WHERE e.org_id = c.org_id)) AS last
+         FROM whatsapp_channel c WHERE c.is_active`,
+    );
+    if (typeof wa[0]?.health === 'number') metrics.waChannelHealth.set(wa[0].health);
+    if (wa[0]?.last) metrics.waWebhookLastReceived.set(new Date(wa[0].last).getTime() / 1000);
+
     metrics.dbPoolInUse.set(Math.max(0, this.db.pool.totalCount - this.db.pool.idleCount));
 
     await this.waQuotaSnapshot();

@@ -1,7 +1,20 @@
+import { performance } from 'node:perf_hooks';
+import { metrics } from '../metrics/metrics.js';
 import { LOCK_LEVELS, type LockTable } from './lock-tracker.js';
 import type { Tx } from './tx.js';
 
 export type LockMode = 'FOR NO KEY UPDATE' | 'FOR SHARE';
+
+/**
+ * 05 §12.2: every canonical row lock (L1–L8 here) is timed into `point_db_lock_wait_seconds`, and the L1 pool lock
+ * also into `point_dispatch_pool_lock_wait_seconds`. A primary-key `SELECT … FOR NO KEY UPDATE` costs microseconds
+ * when nobody holds the rows, so the time is the wait.
+ */
+function observeLockWait(table: LockTable | 'duty_sessions_by_user', startedMs: number): void {
+  const s = (performance.now() - startedMs) / 1000;
+  metrics.dbLockWait.observe(s);
+  if (table === 'dispatch_pools') metrics.dispatchPoolLockWait.observe(s);
+}
 
 /**
  * Locks rows of one level in ascending id order (canon §14ب, `FOR NO KEY UPDATE` by default). Returns the
@@ -18,9 +31,11 @@ export async function lockRows<R = any>(
   const unique = [...new Set(ids.filter(Boolean))].sort();
   tx.locks.check(table);
   if (unique.length === 0) return [];
+  const started = performance.now();
   const rows = await tx.rows(`SELECT * FROM ${table} WHERE id = ANY($1::uuid[]) ORDER BY id ${mode}`, [
     unique,
   ]);
+  observeLockWait(table, started);
   tx.locks.record(table, unique);
   return rows as R[];
 }
@@ -52,10 +67,12 @@ export async function lockOpenDutyByUsers<R = any>(tx: Tx, userIds: readonly str
   tx.locks.check('duty_sessions');
   const unique = [...new Set(userIds.filter(Boolean))];
   if (unique.length === 0) return [];
+  const started = performance.now();
   const rows = await tx.rows(
     `SELECT * FROM duty_sessions WHERE user_id = ANY($1::uuid[]) AND status <> 'ended' ORDER BY id FOR NO KEY UPDATE`,
     [unique],
   );
+  observeLockWait('duty_sessions_by_user', started);
   tx.locks.record(
     'duty_sessions',
     rows.map((r: { id: string }) => r.id),

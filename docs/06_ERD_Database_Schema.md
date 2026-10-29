@@ -789,7 +789,7 @@ erDiagram
 #### 36) `whatsapp_inbound_events`
 - **الغرض:** الطلبات الخام الواردة للـWebhook بعد التحقق من التوقيع، تُحفظ **قبل** رد 200 (المعمارية §10).
 - **أعمدة أساسية:** `received_at`، `signature_verified_at`، `body_sha256`، `raw_body`، `status`، `attempts`، `processed_at`، `last_error`.
-- **القيود:** `whatsapp_inbound_events_body_sha256_key` (تجاهل التسليم المكرر حرفيًا)، `ix_whatsapp_inbound_pending`. الطلب الذي يفشل توقيعه يُرفض ولا يُخزن.
+- **القيود:** `whatsapp_inbound_events_body_sha256_key` (تجاهل التسليم المكرر حرفيًا)، `ix_whatsapp_inbound_pending`؛ و`ix_whatsapp_inbound_org_received` `(org_id, received_at)` لآخر Webhook للمؤسسة (فحص `wa_webhook_silent` ومقياس `point_wa_webhook_last_received_timestamp_seconds`؛ الترحيل `0006`، مقترح في `docs/progress/notes/server-gaps.md`). الطلب الذي يفشل توقيعه يُرفض ولا يُخزن.
 - **الكتابة/القراءة:** `POST /webhooks/whatsapp` ثم `job.wa_process_inbound`. لا يُعرض في أي واجهة؛ للمعالجة وإعادة المعالجة والتشخيص فقط.
 
 #### 37) `notifications`
