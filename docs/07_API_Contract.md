@@ -515,7 +515,8 @@ projection=full لمن يملك ticket.read_full على هذه التذكرة، 
 - ترتيب الفحص (DEC-177): مغلقة (TICKET_CLOSED) ← غير جاهزة (HANDOVER_NOT_READY) ← المكلّف (NOT_TASK_ASSIGNEE) ← الإصدار (VERSION_CONFLICT) ← العهدة (CUSTODY_HOLDER_MISMATCH) ← بوابة الدفع (PAYMENT_PENDING وأخطاء التحصيل المضمّن) ← التحقق بالرمز أو الكعب؛ فالبوابة ترفض قبل احتساب أي محاولة خاطئة
 - الأثر: delivered + الدورة outcome=delivered + عهدة → customer + الرمز consumed + W-06 + ترقية التالية أو available
 - أحداث: `handover.completed`, `ticket.delivered`, `task.completed`, `custody.changed`, `payment.recorded`, `handover.code_attempt_failed`, `handover.code_locked`, `task.promoted`, `driver.availability_changed` · WS: `task.updated`, `ticket.updated`, `driver.state_changed`, `alert.raised` · واتساب: W-06
-- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `HANDOVER_CODE_CONSUMED`, `HANDOVER_CODE_EXPIRED`, `HANDOVER_CODE_INVALID`, `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `PAPER_STUB_MISMATCH`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
+- بوابة الدفع (DEC-277، DEC-278): خطاف التحصيل المضمّن يفحص بلا أثر قبل الرمز أو الكعب: due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable)؛ ويُقفل الحفل FOR SHARE بعد المجموعة فقط حين تكون التذكرة due أو يُرسل payment
+- أخطاء خاصة: `CUSTODY_HOLDER_MISMATCH`, `HANDOVER_CODE_CONSUMED`, `HANDOVER_CODE_EXPIRED`, `HANDOVER_CODE_INVALID`, `HANDOVER_CODE_LOCKED`, `HANDOVER_NOT_READY`, `NOT_TASK_ASSIGNEE`, `PAPER_STUB_MISMATCH`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `PAYMENT_PENDING`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`, `VERSION_CONFLICT`
 
 #### `POST /v1/tickets/{ticketId}/handover-code/resend` — إعادة إرسال رمز التسليم
 
@@ -590,38 +591,42 @@ target_driver_id=null يعيد المهمة للطابور بأولويتها ا
 عادةً يُرسل ضمن /handover؛ هذا المسار للتحصيل قبل التسليم مباشرة. لا بيانات بطاقات.
 
 - الصلاحية: `payment.record` · مفتاح التكرار: إلزامي · نجاح: `201`
-- الشروط: payment_status=due · ticket.status=ready · المكلّف بمهمة الإحضار
+- الشروط: payment_status=due (not_required أو waived ← INVALID_STATE_TRANSITION بـcurrent_status = payment_status وallowed_from [due] وreason payment_not_required أو payment_waived، DEC-282) · ticket.status=ready · المكلّف بمهمة الإحضار · pos_reference يُطبّع ويُفحص في الجسم (13 §5.6، DEC-280) · الحفل المغلق ← EVENT_ALREADY_CLOSED (دفاعي)
 - الأثر: payments(recorded) + payment_status=collected
 - أحداث: `payment.recorded` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `NOT_TASK_ASSIGNEE`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `TICKET_NOT_FOUND`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `NOT_TASK_ASSIGNEE`, `PAYMENT_ALREADY_RECORDED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `TICKET_NOT_FOUND`
 
 #### `POST /v1/payments/{paymentId}/reverse` — عكس تحصيل
 
 replacement اختياري لتصحيح الوسيلة أو المرجع: يُعكس الأصل ويُدرج تحصيل جديد recorded بقيم البديل مع نسخ collected_by وcollected_at من الأصل، فتبقى payment_status=collected (الملف 13).
 
 - الصلاحية: `payment.reverse` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الأثر: دون بديل: payments.status=reversed + payment_status=due؛ إذا التذكرة مسلّمة تُفتح واقعة payment_discrepancy. مع بديل: عكس + تحصيل جديد وتبقى collected
+- الشروط (DEC-276، DEC-281، DEC-282): التحصيل خارج النطاق ← RESOURCE_NOT_FOUND (payment) · الحفل المغلق ← EVENT_ALREADY_CLOSED · تذكرة ليست collected ← INVALID_STATE_TRANSITION (reason=payment_integrity) · بديل بالوسيلة والمرجع المطبّع نفسيهما ← VALIDATION_FAILED (replacement، no_change)، وحقوله بالبادئة replacement.
+- الأثر: دون بديل: payments.status=reversed + payment_status=due؛ إذا التذكرة مسلّمة تُفتح واقعة payment_discrepancy (incident.opened بـauto_created: true، DEC-284). مع بديل: عكس + تحصيل جديد يُدرج بعد العكس وتبقى collected
 - أحداث: `payment.reversed`, `payment.recorded`, `incident.opened` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_REVERSED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `REASON_REQUIRED`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_REVERSED`, `PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_ALLOWED`, `REASON_REQUIRED`, `RESOURCE_NOT_FOUND`
 
 #### `POST /v1/tickets/{ticketId}/payment-waiver` — إعفاء من الرسوم
 
 - الصلاحية: `payment.waive` · مفتاح التكرار: إلزامي · نجاح: `200`
-- الشروط: payment_status=due
-- الأثر: payment_status=waived + payment_waived_* 
+- الشروط: payment_status=due (collected ← PAYMENT_ALREADY_RECORDED، وnot_required أو waived ← INVALID_STATE_TRANSITION بـallowed_from [due]، DEC-282) · التذكرة ليست voided (TICKET_CLOSED) · الحفل ليس مغلقًا (EVENT_ALREADY_CLOSED) (13 §6، DEC-276)
+- الأثر: payment_status=waived + payment_waived_*
 - أحداث: `payment.waived` · WS: `ticket.updated`
-- أخطاء خاصة: `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_RECORDED`, `REASON_REQUIRED`, `TICKET_NOT_FOUND`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `PAYMENT_ALREADY_RECORDED`, `REASON_REQUIRED`, `TICKET_CLOSED`, `TICKET_NOT_FOUND`
 
 #### `POST /v1/cash-handovers` — استلام نقد السائق
 
 المشرف المستلم يسجل المبلغ؛ يحسب الخادم المتوقع من تحصيلات السائق النقدية غير المعكوسة وغير المسلّمة في الحفل ويربطها.
 
 - الصلاحية: `cash.handover_confirm` · مفتاح التكرار: إلزامي · نجاح: `201`
-- الأثر: cash_handovers + payments.cash_handover_id؛ فرق ≠ 0 يفتح واقعة payment_discrepancy
+- الشروط (DEC-275، DEC-276، DEC-283): السائق هو المستلم ← PERMISSION_DENIED (reason=self_handover) قبل أي قفل · حفل خارج النطاق ← RESOURCE_NOT_FOUND (event)، وسائق من مؤسسة أخرى ← (driver) · حفل draft ← INVALID_STATE_TRANSITION (allowed_from [open, closing])، وclosed أو canceled ← EVENT_ALREADY_CLOSED · المتوقع 0 والمبلغ 0 ← VALIDATION_FAILED (amount_halalas، nothing_to_hand_over) · أي سائق في المؤسسة يسلّم نقدًا حصّله في هذا الحفل
+- الأثر: cash_handovers + payments.cash_handover_id؛ فرق ≠ 0 يفتح واقعة payment_discrepancy تعود incident_id ويُعثر عليها من صف التدقيق (metadata.incident_id، DEC-284)
 - أحداث: `cash.handover_recorded`, `incident.opened`
-- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `RESOURCE_NOT_FOUND`
+- أخطاء خاصة: `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`
 
 #### `GET /v1/events/{eventId}/settlement` — تسوية الحفل
+
+تسوية الحفل (الملف 13 §11) في لقطة REPEATABLE READ واحدة للقراءة فقط؛ `discrepancies[].type`: `cash_difference` و`delivered_due` و`reversed_without_replacement` (DEC-291).
 
 - الصلاحية: `report.read` · مفتاح التكرار: — · نجاح: `200`
 - أخطاء خاصة: `RESOURCE_NOT_FOUND`
@@ -655,8 +660,8 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `PATCH /v1/events/{eventId}` | تعديل حفل — الشروط: status ∈ {draft, open}؛ التسعير يُعدَّل ولو بعد أول تذكرة ويسري على التذاكر الجديدة فقط (DEC-109)؛ dispatch_pool_id في draft فقط (DEC-118) | `event.manage` | إلزامي | — | `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
 | `POST /v1/events/{eventId}/open` | فتح الحفل أو إعادة فتحه — الشروط: status ∈ {draft, closing}؛ مجموعة التوزيع نشطة (DEC-117) | `event.manage` | إلزامي | status=open؛ يسمح بالاستلام · `event.opened` (`reopened: true` عند إعادة الفتح) | `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
 | `POST /v1/events/{eventId}/start-closing` | بدء إقفال الحفل — الشروط: status=open | `event.manage` | إلزامي | status=closing؛ يمنع استلامات جديدة ويستمر الإحضار والتسليم · `event.closing_started` | `EVENT_ALREADY_CLOSED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
-| `GET /v1/events/{eventId}/reconciliation` | موانع إغلاق الحفل (S-10) | `event.manage` | — | — | `RESOURCE_NOT_FOUND` |
-| `POST /v1/events/{eventId}/close` | إغلاق الحفل كمكتمل — يرفض الإغلاق ما دامت أي قائمة في Reconciliation.blockers غير فارغة (عهدة، طلب، مهمة، تحصيل مستحق، نقد غير مسلّم، خلل سلامة مالية)؛ details.blockers بالبنية نفسها. الوقائع المفتوحة والرسائل الفاشلة تحذيرات لا تمنع. الشروط: status=closing | `event.manage` | إلزامي | status=closed + close_summary · `event.closed` | `EVENT_ALREADY_CLOSED`, `EVENT_CLOSE_BLOCKED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
+| `GET /v1/events/{eventId}/reconciliation` | موانع إغلاق الحفل (S-10) وتحذيراته في لقطة REPEATABLE READ واحدة: open_tickets غير delivered ولا voided؛ keys_not_in_slots حائز مفتاحها ليس خانة (أو مفتاح مسودة مع العميل)؛ open_requests مهام إحضار queued/offered/broadcast بجولتها الحية؛ open_tasks كل مهمة مفتوحة أخرى؛ warnings.failed_messages أحدث 200 مقنّعة (DEC-286) | `event.manage` | — | — | `RESOURCE_NOT_FOUND` |
+| `POST /v1/events/{eventId}/close` | إغلاق الحفل كمكتمل — يرفض الإغلاق ما دامت أي قائمة في Reconciliation.blockers غير فارغة (عهدة، طلب، مهمة، تحصيل مستحق، نقد غير مسلّم، خلل سلامة مالية)؛ details.blockers بالبنية نفسها. الوقائع المفتوحة والرسائل الفاشلة تحذيرات لا تمنع. الشروط: status=closing (open ← INVALID_STATE_TRANSITION بـallowed_from [closing])؛ يقفل الحفل FOR NO KEY UPDATE ويعيد قراءة الموانع داخل المعاملة؛ حالة استخدام تجمع الوحدات (DEC-290) | `event.manage` | إلزامي | status=closed + close_summary = {closed_at, closed_by, note, tickets, finance, warnings}، والملاحظة (حتى 500 محرف) سبب التدقيق (DEC-287) · `event.closed` | `EVENT_ALREADY_CLOSED`, `EVENT_CLOSE_BLOCKED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT` |
 | `POST /v1/events/{eventId}/cancel` | إلغاء حفل — الشروط: status ∈ {draft, open} ولا تذاكر غير ملغاة (وإلا EVENT_CLOSE_BLOCKED بـreason=non_voided_tickets، DEC-120) | `event.manage` | إلزامي | status=canceled؛ تدقيق فقط بلا حدث نطاقي (DEC-120) | `EVENT_ALREADY_CLOSED`, `EVENT_CLOSE_BLOCKED`, `INVALID_STATE_TRANSITION`, `REASON_REQUIRED`, `VERSION_CONFLICT` |
 | `GET /v1/events/{eventId}/operations` | لوحة التشغيل الحية (S-02) — لقطة كاملة لمزامنة لوحة المشرف (REPEATABLE READ ولحظة واحدة)؛ التحديثات بعدها عبر غرفة venue:{venueId}:supervisors. الطابور ما لا يحركه أحد بعد مع الشارات ومستلم الجولة الفردية، ومؤشرات KPI-01 والسائقين، والتنبيهات والرسائل الفاشلة والعهدة كما في `OperationsBoard` (DEC-241…DEC-244). | `alert.read` | — | — | `RESOURCE_NOT_FOUND` |
 | `GET /v1/venues/{venueId}/shifts` | ورديات الموقع | `shift.manage` | — | — | `SCOPE_VENUE_DENIED` |
@@ -707,12 +712,12 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `POST /v1/incidents` | فتح واقعة — الشروط: السائق: لتذاكر موقعه فقط وبـ`ticket_id` إلزامي لتذكرة مفتوحة؛ تذكرة أو حفل من موقع آخر ← `VALIDATION_FAILED` (`venue_mismatch`، `ticket_event_mismatch`)؛ حفل خارج النطاق ← `RESOURCE_NOT_FOUND`؛ `event_id` افتراضيًا حفل التذكرة (DEC-237) | `incident.create` | إلزامي | `incident.opened` · WS `incident.updated` (و`ticket.updated` للمرتبطة) من مخطِّط الاتصال الفوري (DEC-238) | `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED`, `TICKET_NOT_FOUND` |
 | `GET /v1/incidents/{incidentId}` | تفاصيل واقعة | `incident.read` | — | — | — |
 | `PATCH /v1/incidents/{incidentId}` | تحديث/حل واقعة — الشروط: resolved/closed يتطلب resolution؛ `closed` نهائية (`incident_closed`)؛ إعادة الفتح تمسح الحل؛ `owner_id` موظف نشط بنطاق الموقع؛ بلا تغيير ← `noop` دون حدث (DEC-239) | `incident.manage` | إلزامي | حدث واحد لكل تغيير: `incident.updated` أو `incident.resolved` · WS `incident.updated` | `INVALID_STATE_TRANSITION`, `RESOURCE_NOT_FOUND`, `VERSION_CONFLICT` |
-| `GET /v1/reports/events/{eventId}/summary` | تقرير الحفل | `report.read` | — | — | `RESOURCE_NOT_FOUND` |
-| `GET /v1/reports/drivers` | أداء السائقين | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `GET /v1/reports/payments` | تقرير التحصيل | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `GET /v1/reports/messages` | صحة رسائل واتساب | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
-| `POST /v1/exports` | طلب ملف تصدير CSV | `export.create` | إلزامي | exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read | `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED` (لـ`filters.venue_id` خارج النطاق، DEC-191) |
-| `GET /v1/exports/{exportId}` | حالة التصدير ورابط التنزيل — الشروط: طالب التصدير فقط | `export.create` | — | — | — |
+| `GET /v1/reports/events/{eventId}/summary` | تقرير الحفل — `tickets_total` يشمل الملغاة (وتُعد في `voided`)؛ الأزمنة KPI-01 وKPI-02 وKPI-03 (المسلّمة والمعاد صفها) وKPI-04؛ الدورات الملغاة في `canceled_requests` وحدها؛ حفل خارج النطاق ← 404 (DEC-276، DEC-288) | `report.read` | — | — | `RESOURCE_NOT_FOUND` |
+| `GET /v1/reports/drivers` | أداء السائقين — صف لكل (سائق، موقع) (FR-RPT-06)؛ الأعداد بزمن الإتمام في `[from, to)` وساعات المناوبة مقصوصة على الفترة؛ مؤشر keyset `(employee_code, user_id, venue_id)` موقّع مع المرشحات؛ `from` بعد `to` ← `VALIDATION_FAILED` (`after_to`) (DEC-288) | `report.read` | — | — | `PAGINATION_CURSOR_INVALID`, `SCOPE_VENUE_DENIED` |
+| `GET /v1/reports/payments` | تقرير التحصيل — صف لكل حفل أُقيم في الفترة (`event_date` بتوقيت الرياض بين تاريخي `from` و`to`) بإجمالياته، والعكس والإعفاء منفصلان؛ لا قائمة تحصيلات (هي تصدير `payments`) (DEC-288) | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
+| `GET /v1/reports/messages` | صحة رسائل واتساب — إجماليات بالحالة الحالية لرسائل أُنشئت في `[from, to)`، و`status` يضيّق الإجماليات والقائمة (افتراضيًا الفاشلة)؛ الرسائل بلا موقع لنطاق المؤسسة دون `venue_id` فقط؛ بلا معرّف مستلم أو مرسل ولا جوال كامل (DEC-288) | `report.read` | — | — | `SCOPE_VENUE_DENIED` |
+| `POST /v1/exports` | طلب ملف تصدير CSV — يرد 202 بالتصدير `pending`؛ المرشحات تُجمع بـAND (`drivers` مع `event_id` = موقع الحفل في الفترة؛ بلا `to` = حتى وقت التوليد)؛ المهمة تعيد حساب نطاق الطالب (`requester_inactive`، `scope_revoked`)، وتقرأ في لقطة واحدة، وترفع خارج أي معاملة، وتفشل `too_many_rows` فوق 50 000 صف، والملف 24 ساعة؛ حد المعدل فئة `export` (DEC-289، DEC-292) | `export.create` | إلزامي | exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read (`PERMISSION_DENIED` بـ`audit_read_required`) | `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `SCOPE_VENUE_DENIED` (لـ`filters.venue_id` خارج النطاق، DEC-191) |
+| `GET /v1/exports/{exportId}` | حالة التصدير ورابط التنزيل — الشروط: طالب التصدير فقط (غيره ← 404)؛ الرابط موقّع لمدة `min(EXPORT_URL_TTL_S, المتبقي)` مع `private, no-store`، وكل رابط يُدقَّق (`metadata.download_link_issued`) (DEC-289) | `export.create` | — | — | `RESOURCE_NOT_FOUND` |
 | `GET /v1/admin/whatsapp/channel` | قناة واتساب (مصاف) — بلا قناة بعد: RESOURCE_NOT_FOUND (DEC-142) | `wa.channel_read` | — | — | `RESOURCE_NOT_FOUND` |
 | `PUT /v1/admin/whatsapp/channel` | ضبط القناة الوحيدة — قناة فعالة واحدة فقط لكل بيئة (phone_number_id واحد). المراجع تشير لمدير الأسرار ولا تحمل الأسرار نفسها. | `wa.channel_manage` | إلزامي | استبدال كامل للصف الفعال الوحيد (أو إنشاؤه أول مرة)؛ audit_log؛ لا يُنشئ قناة ثانية فعالة | `INVALID_STATE_TRANSITION` |
 | `GET /v1/admin/whatsapp/templates` | القوالب وحالة اعتمادها | `wa.channel_read` | — | — | — |

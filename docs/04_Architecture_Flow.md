@@ -246,12 +246,12 @@ flowchart BT
 | `RequestRetrieval` | ضغطة الزر عبر `job.wa_process_inbound` أو `POST /v1/tickets/{ticketId}/retrievals` | tickets-custody + dispatch + notifications (W-02) | نعم |
 | `AcceptOffer` | `POST /v1/task-offers/{offerId}/accept` | dispatch + tickets-custody + notifications (W-03 عند الحجز التالي) | نعم |
 | `KeyPickup` / `StartRetrieval` / `MarkReady` | `/v1/tasks/{taskId}/...` | dispatch + tickets-custody + notifications (W-04، W-05) | لا |
-| `Handover` | `POST /v1/tickets/{ticketId}/handover` | tickets-custody + payments-reports + dispatch (تحرير أو ترقية) + notifications (W-06) | نعم |
+| `Handover` | `POST /v1/tickets/{ticketId}/handover` | tickets-custody + payments-reports (خطاف التحصيل المضمّن: `check` بلا أثر قبل الرمز، ثم `collect` بعد التحقق، DEC-277) + dispatch (تحرير أو ترقية) + notifications (W-06) | نعم (ثم الحفل `FOR SHARE` L2 حين تكون التذكرة `due` أو يُرسل `payment`) |
 | `CancelRetrieval` | `POST /v1/retrieval-cycles/{cycleId}/cancel` | tickets-custody + dispatch + notifications (W-07) | نعم |
 | `ReassignTask` | `POST /v1/tasks/{taskId}/reassign` | dispatch + tickets-custody + incidents | نعم |
 | `Repark` | `POST /v1/tickets/{ticketId}/repark` | tickets-custody + dispatch + notifications (W-08) | نعم |
 | `ActivateTransfer` | `POST /v1/drivers/{driverId}/transfers` (فوري) و`job.transfer_activate`؛ ويعيد تقييم المحجوب مخطِّط معاملة يجدول التفعيل حين تنهي معاملة مهمة السائق أو تنقل العهدة منه (DEC-223) | identity-access + dispatch + venues-events + incidents | نعم (كل مجموعات الموقعين تصاعديًا، DEC-225) |
-| `CloseEvent` | `POST /v1/events/{eventId}/close` | venues-events + tickets-custody + payments-reports + incidents | لا (L2) |
+| `CloseEvent` | `POST /v1/events/{eventId}/close` و`GET /v1/events/{eventId}/reconciliation` (`use-cases/close-event.ts`؛ أما `start-closing` فانتقال وحدة واحدة في venues-events، DEC-290) | venues-events + tickets-custody + payments-reports + incidents | لا (L2 `FOR NO KEY UPDATE`) |
 | `ProcessInbound` | `job.wa_process_inbound` | whatsapp + (`RequestRetrieval` أو `LinkConfirm` أو الردود) | حسب الفرع |
 | `ManualReconcile` | `POST /v1/tickets/{ticketId}/manual-reconcile` | tickets-custody + dispatch + incidents | نعم |
 

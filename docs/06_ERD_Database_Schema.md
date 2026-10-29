@@ -622,7 +622,7 @@ erDiagram
 
 #### 10) `events`
 - **الغرض:** الحفل. أرقام التذاكر فريدة داخله، والتسعير يُحدد على مستواه.
-- **أعمدة أساسية:** `dispatch_pool_id` (ثابت بعد الفتح)، `name_ar`، `host_name`، `event_date`، `starts_at/ends_at`، `status`، `pricing_mode` و`fee_halalas` و`allowed_payment_methods`، `next_display_number` (عداد التذاكر)، `opened_*`، `closing_started_at`، `closed_*`، `close_summary`، `canceled_at` و`cancel_reason`، `version`.
+- **أعمدة أساسية:** `dispatch_pool_id` (ثابت بعد الفتح)، `name_ar`، `host_name`، `event_date`، `starts_at/ends_at`، `status`، `pricing_mode` و`fee_halalas` و`allowed_payment_methods`، `next_display_number` (عداد التذاكر)، `opened_*`، `closing_started_at`، `closed_*`، `close_summary` (يُكتب عند الإغلاق ولا يتغير: `{closed_at, closed_by, note, tickets, finance, warnings}`، و`finance` = `{currency, amounts, drivers, discrepancies}`، DEC-287)، `canceled_at` و`cancel_reason`، `version`.
 - **القيود:** `ck_events_fee_zero_unless_per_vehicle` (الرسوم صفر إلا لـ`per_vehicle`)، `ck_events_per_vehicle_fee_positive` (`per_vehicle` برسوم موجبة)، `ck_events_closed_at` (المغلق له `closed_at`)، `ck_events_payment_methods`، `events_fee_halalas_check`، `events_next_display_number_check`، `ix_events_venue_status`.
 - **الكتابة/القراءة:** `POST /v1/venues/{venueId}/events`، `PATCH /v1/events/{eventId}`، `.../open`، `.../start-closing`، `.../close`، `.../cancel`؛ بدء الاستلام يزيد العداد (§5.3) **دون** زيادة `version` حتى لا يتعارض مع تعديل المشرف. يُقرأ في الاستلام (الحفلات المفتوحة) وS-08 وS-10 والتقارير.
 
@@ -859,7 +859,7 @@ erDiagram
 - **الغرض:** ملفات تصدير مؤقتة (CSV) تُنشأ بمهمة وتُحذف بعد انتهائها.
 - **أعمدة أساسية:** `requested_by`، `kind`، `filters`، `status`، `storage_key`، `row_count`، `error`، `completed_at`، `expires_at`.
 - **القيود:** `exports_kind_check`، `exports_status_check`.
-- **الكتابة/القراءة:** `POST /v1/exports` ثم `job.export_generate`؛ `GET /v1/exports/{exportId}`. كل تصدير يُسجل في `audit_log`.
+- **الكتابة/القراءة:** `POST /v1/exports` ثم `job.export_generate` (يرفع الملف خارج أي معاملة إلى `exports/{org_id}/{export_id}.csv` ويبقيه 24 ساعة؛ `error` عند `failed`: `requester_inactive`، `scope_revoked`، `too_many_rows` فوق 50 000 صف، `storage_unavailable`، `storage_error`؛ DEC-289)؛ `GET /v1/exports/{exportId}` لطالبه وحده. كل تصدير وكل رابط تنزيل يُسجل في `audit_log`.
 
 ### 3.ط العروض المشتقة والمشغّلات
 

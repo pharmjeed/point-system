@@ -2660,6 +2660,8 @@ paths:
         الشروط: ticket.status=ready · المكلّف بمهمة الإحضار
 
         الأثر: delivered + الدورة outcome=delivered + عهدة → customer + الرمز consumed + W-06 + ترقية التالية أو available
+
+        بوابة الدفع (DEC-277، DEC-278): خطاف التحصيل المضمّن يفحص بلا أثر قبل الرمز أو الكعب، فلا يستهلك خطأ مالي محاولة: due بلا payment ← PAYMENT_PENDING؛ due مع payment ← قواعد 13 §5.2 (حقول payment.*)؛ collected مع payment ← PAYMENT_ALREADY_RECORDED {payment_id, method, collected_by}؛ not_required أو waived مع payment ← VALIDATION_FAILED (payment، not_applicable). يُقفل الحفل FOR SHARE بعد المجموعة فقط حين تكون التذكرة due أو يُرسل payment، ويُسجَّل التحصيل بعد نجاح التحقق في معاملة التسليم.
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2760,7 +2762,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: CUSTODY_HOLDER_MISMATCH | HANDOVER_CODE_CONSUMED | HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
+          description: CUSTODY_HOLDER_MISMATCH | HANDOVER_CODE_CONSUMED | HANDOVER_NOT_READY | IDEMPOTENCY_IN_PROGRESS | PAYMENT_ALREADY_RECORDED | PAYMENT_PENDING | TICKET_CLOSED | VERSION_CONFLICT
         '410':
           $ref: '#/components/responses/Error'
           description: HANDOVER_CODE_EXPIRED
@@ -2788,8 +2790,7 @@ paths:
       x-permission: handover.verify
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [CUSTODY_HOLDER_MISMATCH, HANDOVER_CODE_CONSUMED, HANDOVER_CODE_EXPIRED, HANDOVER_CODE_INVALID, HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, NOT_TASK_ASSIGNEE,
-        PAPER_STUB_MISMATCH, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-error-codes: [CUSTODY_HOLDER_MISMATCH, HANDOVER_CODE_CONSUMED, HANDOVER_CODE_EXPIRED, HANDOVER_CODE_INVALID, HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, NOT_TASK_ASSIGNEE, PAPER_STUB_MISMATCH, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, TICKET_CLOSED, TICKET_NOT_FOUND, VERSION_CONFLICT]
       x-domain-events: [handover.completed, ticket.delivered, task.completed, custody.changed, payment.recorded, handover.code_attempt_failed, handover.code_locked,
         task.promoted, driver.availability_changed]
       x-ws-events: [task.updated, ticket.updated, driver.state_changed, alert.raised]
@@ -3413,6 +3414,8 @@ paths:
         الشروط: payment_status=due · ticket.status=ready · المكلّف بمهمة الإحضار
 
         الأثر: payments(recorded) + payment_status=collected
+
+        الحالة المالية (DEC-282): not_required أو waived ← INVALID_STATE_TRANSITION (current_status = payment_status، allowed_from [due]، reason payment_not_required أو payment_waived)؛ collected ← PAYMENT_ALREADY_RECORDED. pos_reference يُطبّع ويُفحص في الجسم (13 §5.6، DEC-280). الحفل المغلق ← EVENT_ALREADY_CLOSED (دفاعي: لا تذكرة ready في حفل مغلق).
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3452,7 +3455,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | VALIDATION_FAILED
@@ -3474,7 +3477,7 @@ paths:
       x-permission: payment.record
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, NOT_TASK_ASSIGNEE, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, TICKET_NOT_FOUND]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, NOT_TASK_ASSIGNEE, PAYMENT_ALREADY_RECORDED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, TICKET_NOT_FOUND]
       x-domain-events: [payment.recorded]
       x-ws-events: [ticket.updated]
   /v1/payments/{paymentId}/reverse:
@@ -3486,6 +3489,8 @@ paths:
         replacement اختياري لتصحيح الوسيلة أو المرجع: يُعكس الأصل ويُدرج تحصيل جديد recorded بقيم البديل مع نسخ collected_by وcollected_at من الأصل، فتبقى payment_status=collected (الملف 13).
 
         الأثر: دون بديل: payments.status=reversed + payment_status=due؛ إذا التذكرة مسلّمة تُفتح واقعة payment_discrepancy. مع بديل: عكس + تحصيل جديد وتبقى collected
+
+        الشروط (DEC-276، DEC-281، DEC-282): التحصيل خارج النطاق ← RESOURCE_NOT_FOUND (payment)؛ الحفل المغلق ← EVENT_ALREADY_CLOSED؛ المعكوس ← PAYMENT_ALREADY_REVERSED؛ تذكرة ليست collected ← INVALID_STATE_TRANSITION (reason payment_integrity)؛ بديل بالوسيلة والمرجع المطبّع نفسيهما ← VALIDATION_FAILED (replacement، no_change)، وحقوله بالبادئة replacement.، ويُدرج بعد عكس الأصل وينسخ collected_by وcycle_id وcollected_at. العكس بلا بديل على تذكرة مسلّمة يفتح واقعة payment_discrepancy مرتبطة بها (incident.opened بـauto_created: true، DEC-284).
       parameters:
       - $ref: '#/components/parameters/paymentId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3539,7 +3544,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_REVERSED
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_REVERSED
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | PAYMENT_AMOUNT_MISMATCH | PAYMENT_METHOD_NOT_ALLOWED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3561,7 +3566,7 @@ paths:
       x-permission: payment.reverse
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, PAYMENT_ALREADY_REVERSED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, REASON_REQUIRED]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, PAYMENT_ALREADY_REVERSED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
       x-domain-events: [payment.reversed, payment.recorded, incident.opened]
       x-ws-events: [ticket.updated]
   /v1/tickets/{ticketId}/payment-waiver:
@@ -3569,7 +3574,12 @@ paths:
       operationId: waivePayment
       summary: إعفاء من الرسوم
       tags: [Payments]
-      description: "الشروط: payment_status=due\n\nالأثر: payment_status=waived + payment_waived_* "
+      description: |-
+        الشروط: payment_status=due
+
+        الأثر: payment_status=waived + payment_waived_*
+
+        الشروط (DEC-276، DEC-282): الحفل المغلق ← EVENT_ALREADY_CLOSED؛ التذكرة voided ← TICKET_CLOSED؛ collected ← PAYMENT_ALREADY_RECORDED؛ not_required أو waived ← INVALID_STATE_TRANSITION (allowed_from [due]).
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3605,7 +3615,7 @@ paths:
           description: TICKET_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | PAYMENT_ALREADY_RECORDED | TICKET_CLOSED
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
@@ -3627,7 +3637,7 @@ paths:
       x-permission: payment.waive
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, PAYMENT_ALREADY_RECORDED, REASON_REQUIRED, TICKET_NOT_FOUND]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, PAYMENT_ALREADY_RECORDED, REASON_REQUIRED, TICKET_CLOSED, TICKET_NOT_FOUND]
       x-domain-events: [payment.waived]
       x-ws-events: [ticket.updated]
   /v1/cash-handovers:
@@ -3639,6 +3649,8 @@ paths:
         المشرف المستلم يسجل المبلغ؛ يحسب الخادم المتوقع من تحصيلات السائق النقدية غير المعكوسة وغير المسلّمة في الحفل ويربطها.
 
         الأثر: cash_handovers + payments.cash_handover_id؛ فرق ≠ 0 يفتح واقعة payment_discrepancy
+
+        الشروط (DEC-275، DEC-276، DEC-283): السائق هو المستلم ← PERMISSION_DENIED (permission: cash.handover_confirm، reason: self_handover) قبل أي قفل؛ الحفل خارج النطاق ← RESOURCE_NOT_FOUND (event)، والسائق من مؤسسة أخرى ← (driver)؛ الحفل draft ← INVALID_STATE_TRANSITION (allowed_from [open, closing])، وclosed أو canceled ← EVENT_ALREADY_CLOSED؛ المتوقع 0 والمبلغ 0 ← VALIDATION_FAILED (amount_halalas، nothing_to_hand_over)؛ أي سائق في المؤسسة يسلّم نقدًا حصّله في هذا الحفل. الواقعة التلقائية تُعاد incident_id ويُعثر عليها من صف التدقيق (metadata.incident_id، DEC-284).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -3682,7 +3694,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
         '422':
           $ref: '#/components/responses/Error'
           description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
@@ -3704,14 +3716,15 @@ paths:
       x-permission: cash.handover_confirm
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [EVENT_ALREADY_CLOSED]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, RESOURCE_NOT_FOUND]
       x-domain-events: [cash.handover_recorded, incident.opened]
   /v1/events/{eventId}/settlement:
     get:
       operationId: getSettlement
       summary: تسوية الحفل
       tags: [Payments]
-      description: تسوية الحفل
+      description: |-
+        تسوية الحفل (الملف 13 §11) في لقطة REPEATABLE READ واحدة للقراءة فقط. الحفل خارج النطاق ← RESOURCE_NOT_FOUND (event، DEC-276).
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -3742,7 +3755,7 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/venues:
     get:
       operationId: listVenues
@@ -5371,7 +5384,8 @@ paths:
       operationId: getEventReconciliation
       summary: موانع إغلاق الحفل (S-10)
       tags: [Events & Shifts]
-      description: موانع إغلاق الحفل (S-10)
+      description: |-
+        موانع إغلاق الحفل (S-10) وتحذيراته في لقطة REPEATABLE READ واحدة للقراءة فقط (DEC-286)؛ blockers هي details.blockers لخطأ EVENT_CLOSE_BLOCKED نفسها.
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -5402,7 +5416,7 @@ paths:
       x-permission: event.manage
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/events/{eventId}/close:
     post:
       operationId: closeEvent
@@ -5414,6 +5428,8 @@ paths:
         الشروط: status=closing
 
         الأثر: status=closed + close_summary
+
+        close_summary (DEC-287): {closed_at, closed_by, note, tickets, finance, warnings} حيث tickets = Settlement.tickets، وfinance = {currency, amounts, drivers, discrepancies}، وwarnings = {open_incidents: [معرّفات], failed_messages: عدد, cash_discrepancies}؛ الملاحظة (حتى 500 محرف) سبب التدقيق؛ حفل open ← INVALID_STATE_TRANSITION (allowed_from [closing])؛ يقفل الحفل FOR NO KEY UPDATE فينتظر كل أمر مالي ثم يعيد قراءة الموانع داخل المعاملة. المطابقة والإغلاق حالة استخدام تجمع الوحدات (DEC-290).
       parameters:
       - $ref: '#/components/parameters/eventId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -7481,7 +7497,8 @@ paths:
       operationId: getEventSummaryReport
       summary: تقرير الحفل
       tags: [Reports & Exports]
-      description: تقرير الحفل
+      description: |-
+        تقرير الحفل (DEC-288): tickets_total يشمل الملغاة (وتُعد أيضًا في voided)؛ الأزمنة KPI-01 (claimed_at − queued_at) وKPI-02 (started_at − accepted_at) وKPI-03 (الدورات المسلّمة والمعاد صفها) وKPI-04 (المسلّمة)؛ الدورات الملغاة في canceled_requests وحدها. الحفل خارج النطاق ← RESOURCE_NOT_FOUND (event، DEC-276).
       parameters:
       - $ref: '#/components/parameters/eventId'
       responses:
@@ -7512,13 +7529,14 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/reports/drivers:
     get:
       operationId: getDriversReport
       summary: أداء السائقين
       tags: [Reports & Exports]
-      description: أداء السائقين
+      description: |-
+        أداء السائقين (DEC-288): صف لكل (سائق، موقع) بنسبة الحدث لوقته (FR-RPT-06)؛ الأعداد بزمن الإتمام في [from, to)، وساعات المناوبة مقصوصة على الفترة؛ ترقيم keyset بالمؤشر (employee_code, user_id, venue_id) موقّعًا HMAC مع المرشحات، وغيره ← PAGINATION_CURSOR_INVALID؛ from بعد to ← VALIDATION_FAILED (from، after_to)؛ venue_id خارج النطاق ← SCOPE_VENUE_DENIED.
       parameters:
       - name: venue_id
         in: query
@@ -7580,13 +7598,14 @@ paths:
       x-permission: report.read
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: [PAGINATION_CURSOR_INVALID, SCOPE_VENUE_DENIED]
   /v1/reports/payments:
     get:
       operationId: getPaymentsReport
       summary: تقرير التحصيل
       tags: [Reports & Exports]
-      description: تقرير التحصيل
+      description: |-
+        تقرير التحصيل (DEC-288؛ 07 يغلب 13 §13 على السلك): صف لكل حفل أُقيم في الفترة (event_date بتوقيت الرياض بين تاريخي from وto بتوقيت الرياض) بإجمالياته، والعكس والإعفاء معدودان منفصلين؛ قائمة التحصيلات المفصلة هي تصدير payments. from بعد to ← VALIDATION_FAILED (from، after_to)؛ venue_id خارج النطاق ← SCOPE_VENUE_DENIED.
       parameters:
       - name: venue_id
         in: query
@@ -7643,7 +7662,8 @@ paths:
       operationId: getMessagesReport
       summary: صحة رسائل واتساب
       tags: [Reports & Exports]
-      description: صحة رسائل واتساب
+      description: |-
+        صحة رسائل واتساب (DEC-288): إجماليات بالحالة الحالية للرسائل المنشأة في [from, to)، وstatus يضيّق الإجماليات والقائمة (القائمة افتراضيًا الفاشلة)؛ الرسائل بلا موقع لأصحاب نطاق المؤسسة دون venue_id فقط؛ بلا معرّف مستلم أو مرسل ولا جوال كامل. from بعد to ← VALIDATION_FAILED (from، after_to).
       parameters:
       - name: venue_id
         in: query
@@ -7699,7 +7719,10 @@ paths:
       operationId: createExport
       summary: طلب ملف تصدير CSV
       tags: [Reports & Exports]
-      description: 'الأثر: exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read'
+      description: |-
+        الأثر: exports(pending) + job.export_generate + audit_log إلزامي؛ audit يتطلب audit.read
+
+        قواعد التصدير (DEC-289، DEC-292): يرد 202 بالتصدير pending؛ job.export_generate يعيد حساب نطاق الطالب (غير نشط ← failed بـerror = requester_inactive، وموقع أو حفل سُحب ← scope_revoked)، ويقرأ في معاملة REPEATABLE READ READ ONLY واحدة، ويرفع الملف خارج أي معاملة (يبقى 24 ساعة)، ويفشل too_many_rows فوق 50 000 صف، ويعيد محاولة انقطاع التخزين (storage_unavailable، storage_error)؛ المرشحات تُجمع بـAND (drivers مع event_id = موقع الحفل في الفترة؛ بلا to = حتى وقت التوليد)؛ النوع audit يتطلب audit.read (PERMISSION_DENIED بـaudit_read_required)؛ حفل المرشح خارج النطاق ← RESOURCE_NOT_FOUND، وvenue_id المسمّى ← SCOPE_VENUE_DENIED؛ لا رمز ولا موضع مفتاح ولا كعب ولا صورة ولا جوال كامل في أي ملف. حد المعدل: فئة export (5 في الساعة لكل مستخدم).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -7769,13 +7792,16 @@ paths:
       x-permission: export.create
       x-idempotency: required
       x-rate-limit-class: export
-      x-error-codes: [SCOPE_VENUE_DENIED]
+      x-error-codes: [PERMISSION_DENIED, RESOURCE_NOT_FOUND, SCOPE_VENUE_DENIED]
   /v1/exports/{exportId}:
     get:
       operationId: getExport
       summary: حالة التصدير ورابط التنزيل
       tags: [Reports & Exports]
-      description: 'الشروط: طالب التصدير فقط'
+      description: |-
+        الشروط: طالب التصدير فقط
+
+        لطالبه وحده (غيره أو غير موجود ← RESOURCE_NOT_FOUND بـexport)؛ download_url عند ready وقبل الانتهاء، موقّع لمدة min(EXPORT_URL_TTL_S، المتبقي) مع Cache-Control: private, no-store، وكل رابط يُصدر يُدقَّق (export.create، metadata.download_link_issued) (DEC-289).
       parameters:
       - $ref: '#/components/parameters/exportId'
       responses:
@@ -7806,7 +7832,7 @@ paths:
       x-permission: export.create
       x-idempotency: none
       x-rate-limit-class: read
-      x-error-codes: []
+      x-error-codes: [RESOURCE_NOT_FOUND]
   /v1/admin/whatsapp/channel:
     get:
       operationId: getWhatsAppChannel
@@ -10074,6 +10100,8 @@ components:
           type: [object, 'null']
           properties: {}
           additionalProperties: true
+          description: |-
+            يُكتب عند الإغلاق ولا يتغير بعده (DEC-287): {closed_at, closed_by, note, tickets, finance: {currency, amounts, drivers, discrepancies}, warnings: {open_incidents, failed_messages, cash_discrepancies}}؛ null قبل الإغلاق
         version:
           type: integer
           minimum: 1
@@ -11119,6 +11147,8 @@ components:
                 type: [string, 'null']
                 format: uuid
             required: [type]
+          description: |-
+            cash_difference: فرق تسليم نقد غير صفري مع واقعته؛ delivered_due: تذكرة مسلّمة صارت due؛ reversed_without_replacement: تحصيل معكوس على تذكرة مسلّمة بلا تحصيل مسجل، ويبقى تاريخًا بعد الإعفاء (DEC-291)
         close_blockers:
           type: object
           properties:
@@ -11474,20 +11504,26 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/TicketSummary'
-              description: تذاكر غير delivered/voided
+              description: |-
+                تذاكر غير delivered ولا voided (DEC-286)
             keys_not_in_slots:
               type: array
               items:
                 $ref: '#/components/schemas/TicketSummary'
-              description: تذاكر مفتوحة مفتاحها مع شخص أو مجهول
+              description: |-
+                تذاكر مفتوحة حائز مفتاحها ليس خانة: سائق أو مشرف أو unknown، أو مفتاح مسودة ما زال مع العميل (DEC-286)
             open_requests:
               type: array
               items:
                 $ref: '#/components/schemas/QueueItem'
+              description: |-
+                مهام إحضار queued أو offered أو broadcast بجولتها الحية (DEC-286)
             open_tasks:
               type: array
               items:
                 $ref: '#/components/schemas/Task'
+              description: |-
+                كل مهمة مفتوحة أخرى: صف، إحضار accepted أو in_progress، مهمة تالية محجوزة، إعادة صف (DEC-286)
             unsettled_payments:
               type: array
               items:
@@ -11534,6 +11570,8 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/WhatsAppMessage'
+              description: |-
+                رسائل الحفل الصادرة الفاشلة، أحدث 200، مقنّعة (DEC-286)
             cash_discrepancies:
               type: array
               items:

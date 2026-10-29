@@ -1148,12 +1148,28 @@ interface HandoverExceptionApproved { ticket_id: UUID; cycle_id: UUID; approved_
 | `payment.recorded` | `POST /v1/tickets/{ticketId}/payments`، أو تحصيل مضمّن في TT-18 أو TT-19 أو TT-22 | المشرفون ← `ticket.updated` | — |
 | `payment.reversed` | `POST /v1/payments/{paymentId}/reverse` | المشرفون | واقعة `payment_discrepancy` إن كانت التذكرة مُسلّمة |
 | `payment.waived` | `POST /v1/tickets/{ticketId}/payment-waiver` | المشرفون | — |
+| `cash.handover_recorded` | `POST /v1/cash-handovers` | — | واقعة `payment_discrepancy` للحفل إن كان الفرق غير صفري (DEC-284) |
 
 ```ts
-interface PaymentRecorded { payment_id: UUID; ticket_id: UUID; method: 'cash' | 'pos'; amount_halalas: Halalas; collected_by: UUID }
-interface PaymentReversed { payment_id: UUID; ticket_id: UUID; reversed_by: UUID; reason: string; ticket_delivered: boolean; incident_id: UUID | null }
-interface PaymentWaived { ticket_id: UUID; waived_by: UUID; reason: string }
+// DEC-285: الحمولات كما يصدرها الخادم (13 §14)
+interface PaymentRecorded {
+  ticket_id: UUID; payment_id: UUID; cycle_id: UUID | null; method: 'cash' | 'pos'; amount_halalas: Halalas;
+  collected_by: UUID; source: 'separate' | 'handover' | 'exception' | 'reconcile' | 'replacement';
+  replaces_payment_id?: UUID;                          // للبديل وحده
+}
+interface PaymentReversed {
+  payment_id: UUID; ticket_id: UUID; method: 'cash' | 'pos'; amount_halalas: Halalas; reversed_by: UUID; reason: string;
+  with_replacement: boolean; replacement_payment_id: UUID | null; after_cash_handover: boolean;
+  ticket_delivered: boolean; incident_id: UUID | null;
+}
+interface PaymentWaived { ticket_id: UUID; amount_halalas: Halalas; waived_by: UUID; reason: string }
+interface CashHandoverRecorded {
+  cash_handover_id: UUID; event_id: UUID; driver_id: UUID; received_by: UUID; amount_halalas: Halalas;
+  expected_halalas: Halalas; difference_halalas: number; linked_payments_count: number; incident_id: UUID | null;
+}
 ```
+
+صف التدقيق `payment.record` يكتب `after.ticket_payment_status` (13 §5.5)؛ والواقعة التلقائية تصدر `incident.opened` بـ`auto_created: true` (DEC-284).
 
 ### 8.8 التنبيهات والوقائع
 

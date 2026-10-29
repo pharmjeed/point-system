@@ -108,7 +108,7 @@ interface ActorContext {
 | `incident.create` | — | ✓ | ✓ | ✓ | السائق: لتذاكر موقعه | تدقيق |
 | `incident.manage` | — | ✓ | ✓ | — | مواقع النطاق | تدقيق |
 | `report.read` | ✓ | ✓ | ✓ | — | مواقع النطاق؛ الجوالات مقنّعة دائمًا | — |
-| `export.create` | ✓ | ✓ | ✓ | — | فلاتر ضمن النطاق؛ الجوالات مقنّعة؛ لا صور؛ حد صفوف | تدقيق إلزامي للإنشاء والتنزيل |
+| `export.create` | ✓ | ✓ | ✓ | — | فلاتر ضمن النطاق؛ الجوالات مقنّعة؛ لا صور؛ حد صفوف 50 000 صف للملف وفئة المعدل `export` (5 في الساعة لكل مستخدم، 07 §1.9) (DEC-289، DEC-292)؛ النوع `audit` يتطلب `audit.read` أيضًا | تدقيق إلزامي للإنشاء والتنزيل |
 | `audit.read` | ✓ | ✓ | — | — | المؤسسة | قراءة السجل نفسها تُسجل: صف تدقيق `audit.read` بالمرشحات والعدد (DEC-168) |
 | `wa.channel_read` | ✓ | ✓ | — | — | مراجع الأسرار فقط، لا قيمها | — |
 | `wa.channel_manage` | ✓ | — | — | — | قناة فعالة واحدة | تدقيق |
@@ -272,7 +272,7 @@ interface ActorContext {
 | `GET /v1/reports/drivers` | `report.read` | النطاق | `SCOPE_VENUE_DENIED` |
 | `GET /v1/reports/payments` | `report.read` | النطاق | `SCOPE_VENUE_DENIED` |
 | `GET /v1/reports/messages` | `report.read` | النطاق؛ الأجسام منقّحة | `SCOPE_VENUE_DENIED` |
-| `POST /v1/exports` | `export.create` | فلاتر ضمن النطاق؛ حد صفوف | `SCOPE_VENUE_DENIED` |
+| `POST /v1/exports` | `export.create` | فلاتر ضمن النطاق؛ حد صفوف (50 000، DEC-289)؛ `audit` يتطلب `audit.read` (`PERMISSION_DENIED` بـ`audit_read_required`) | `SCOPE_VENUE_DENIED`، `RESOURCE_NOT_FOUND` (حفل المرشح خارج النطاق) |
 | `GET /v1/exports/{exportId}` | `export.create` | صاحب الطلب فقط؛ رابط تنزيل قصير | `RESOURCE_NOT_FOUND` |
 | `GET /v1/admin/whatsapp/channel` | `wa.channel_read` | مراجع الأسرار فقط | — |
 | `PUT /v1/admin/whatsapp/channel` | `wa.channel_manage` | قناة فعالة واحدة | `INVALID_STATE_TRANSITION` |
@@ -533,7 +533,7 @@ function requireDuty(a: ActorContext, poolId: string) {
 قواعد:
 1. **لا تعديل للنفس:** لا يغيّر أي مستخدم دوره أو نطاقاته أو حالة حسابه بنفسه (`PERMISSION_DENIED` بـ`reason = self_modification`).
 2. **الموافقة الذاتية مقيدة ومعلَّمة:** إذا نفّذ مشرف قائد استثناءً على عمل نفّذه بنفسه (`handover.exception` على مهمة هو مكلّفها، `payment.reverse` لتحصيل حصّله، `payment.waive` على تذكرة يسلّمها، `ticket.inspection_exception` لتذكرة أنشأها)، يُسمح فقط بسبب إلزامي وتُعلَّم `audit_log.metadata.self_approved = true` وتظهر في تقرير الحفل لمراجعة الإدارة.
-3. **ممنوع مطلقًا:** أن يؤكد المشرف استلام نقده بنفسه (`ck_cash_handover_distinct_people`).
+3. **ممنوع مطلقًا:** أن يؤكد المشرف استلام نقده بنفسه: `403 PERMISSION_DENIED` (`reason = self_handover`) قبل أي قفل، والقيد `ck_cash_handover_distinct_people` احتياطي (DEC-275).
 4. حساب المالك الأول يُنشأ بأداة التهيئة عند التثبيت؛ لا يوجد مسار API لإنشاء مالك.
 
 ---
