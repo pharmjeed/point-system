@@ -22,8 +22,6 @@ describe('reverse proxy (infra/caddy/Caddyfile)', () => {
     expect(directives.get('default-src')).toEqual(["'self'"]);
     expect(directives.get('script-src')).toEqual(["'self'"]);
     expect(directives.get('style-src')).toEqual(["'self'"]);
-    // DEC-192 (05 §14.1): injected <style> elements only (Radix scroll lock); style attributes stay blocked
-    expect(directives.get('style-src-elem')).toEqual(["'self'", "'unsafe-inline'"]);
     expect(directives.get('img-src')).toEqual(["'self'", 'blob:', 'data:', '{$STORAGE_ORIGIN}']);
     expect(directives.get('connect-src')).toEqual(["'self'", 'wss://{$DOMAIN}', '{$STORAGE_ORIGIN}']);
     expect(directives.get('frame-ancestors')).toEqual(["'none'"]);
@@ -31,8 +29,13 @@ describe('reverse proxy (infra/caddy/Caddyfile)', () => {
     for (const d of ['base-uri', 'form-action', 'font-src', 'worker-src', 'manifest-src', 'media-src']) {
       expect(directives.get(d), d).toEqual(["'self'"]);
     }
-    const others = [...directives].filter(([name]) => name !== 'style-src-elem');
-    expect(others.flatMap(([, values]) => values).join(' ')).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
+    // DEC-192: inline <style> elements only (the Radix scroll lock); style attributes and scripts stay blocked
+    expect(directives.get('style-src-elem')).toEqual(["'self'", "'unsafe-inline'"]);
+    const others = [...directives.entries()]
+      .filter(([name]) => name !== 'style-src-elem')
+      .map(([name, values]) => `${name} ${values.join(' ')}`)
+      .join('; ');
+    expect(others).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
   });
 
   it('security headers, one origin for /v1, /ws, the webhook and health; /metrics never proxied', () => {
