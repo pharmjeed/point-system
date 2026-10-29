@@ -3335,9 +3335,12 @@ paths:
                     paper_log_ref:
                       type: string
                       maxLength: 60
+                      description: 'سطر السجل الورقي المطبوع بصيغة P<الصفحة>-R<السطر> بخانتين لكلٍّ، مثل P03-R12؛ صيغة النموذج لا يفرضها الخادم (DEC-403)'
+                      examples: [P03-R12]
                     note:
                       type: string
                       maxLength: 500
+                      description: 'كل أسطر المركبة نفسها في السجل، والوقت الفعلي ومن استلم أو سلّم حين يختلف عن قيد النظام (DEC-403، DEC-404)'
                   required: [paper_log_ref]
                 parking_spot_id:
                   type: [string, 'null']
