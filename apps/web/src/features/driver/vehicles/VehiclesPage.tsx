@@ -1,11 +1,13 @@
-import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Car, SearchX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { displayMessage, isApiError } from '@/api/errors';
 import { listVehicles } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { TicketSummary } from '@/api/types';
 import { paths } from '@/app/paths';
 import {
+  Banner,
   EmptyState,
   FilterChips,
   ListItem,
@@ -17,7 +19,7 @@ import {
 } from '@/components';
 import { LoadError } from '@/features/common/QueryView';
 import { useServerNow } from '@/hooks/useNow';
-import { d12 } from '@/i18n/ar';
+import { buttons, d12 } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { formatClock } from '@/lib/format';
 import { useCommandGate } from '@/realtime/hooks';
@@ -44,6 +46,7 @@ function useDebounced<T>(value: T, ms: number): T {
  * versions only) and every resync reloads them. Offline, the last results stay on screen dimmed under D-15 أ.
  */
 export function VehiclesPage() {
+  const qc = useQueryClient();
   const gate = useCommandGate();
   const [text, setText] = useState('');
   const [filter, setFilter] = useState<VehicleFilter>('all');
@@ -52,8 +55,9 @@ export function VehiclesPage() {
   // letters only: nothing can match (07: q is digits), no request
   const impossible = typed.length > 0 && q.length === 0;
   const statuses = FILTER_STATUSES[filter];
+  const statusList = statuses.join(',');
   const list = useInfiniteQuery({
-    queryKey: queryKeys.vehicleSearch(q, statuses.join(',')),
+    queryKey: queryKeys.vehicleSearch(q, statusList),
     queryFn: ({ pageParam, signal }) =>
       listVehicles({ q, status: statuses, cursor: pageParam, limit: PAGE_SIZE }, signal),
     initialPageParam: null as string | null,
@@ -64,18 +68,26 @@ export function VehiclesPage() {
   const items = impossible ? [] : (list.data?.pages.flatMap((p) => p.items) ?? []);
   const filtered = typed.length > 0 || filter !== 'all';
 
-  // infinite list: the next page loads when the end of the list comes into view
+  // infinite list: the next page loads when the end of the list comes into view — not again after it failed
+  // (the inline «إعادة المحاولة» asks for it), so a lasting error never loops
   const sentinel = useRef<HTMLDivElement | null>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage, isFetchNextPageError } = list;
   useEffect(() => {
     const node = sentinel.current;
-    if (!node || !hasNextPage || typeof IntersectionObserver === 'undefined') return;
+    if (!node || !hasNextPage || isFetchNextPageError || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+
+  // 02 §1.9 PAGINATION_CURSOR_INVALID «إعادة تحميل القائمة من البداية»
+  const cursorInvalid = isFetchNextPageError && isApiError(list.error, 'PAGINATION_CURSOR_INVALID');
+  useEffect(() => {
+    if (cursorInvalid)
+      void qc.resetQueries({ queryKey: queryKeys.vehicleSearch(q, statusList), exact: true });
+  }, [cursorInvalid, qc, q, statusList]);
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="page-title">
@@ -120,6 +132,15 @@ export function VehiclesPage() {
               ))}
             </ul>
             {list.isFetchingNextPage ? <Skeleton variant="line" /> : null}
+            {isFetchNextPageError && !cursorInvalid ? (
+              <Banner
+                kind="error"
+                rounded
+                message={displayMessage(list.error)}
+                actionLabel={buttons.retry}
+                onAction={() => void fetchNextPage()}
+              />
+            ) : null}
             <div ref={sentinel} aria-hidden="true" />
           </div>
         </div>

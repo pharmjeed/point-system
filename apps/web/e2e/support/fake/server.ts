@@ -159,6 +159,13 @@ export class FakeServer {
     return this;
   }
 
+  /** Drops the faults still waiting for a route (the service is back). */
+  clearFaults(spec?: string): this {
+    for (let i = this.faults.length - 1; i >= 0; i -= 1)
+      if (!spec || this.faults[i]?.pattern.spec === spec) this.faults.splice(i, 1);
+    return this;
+  }
+
   callsTo(spec: string): FakeCall[] {
     return this.calls.filter((c) => c.route === spec);
   }
@@ -260,7 +267,7 @@ export class FakeServer {
     this.calls.push(call);
     if (fault?.reply === 'abort') {
       call.status = -1;
-      await route.abort('internetdisconnected');
+      await route.abort('internetdisconnected').catch(() => undefined);
       return;
     }
     const reply = fault
@@ -278,21 +285,26 @@ export class FakeServer {
     call.status = reply.status;
     call.reply = reply.body;
     this.realtime.afterChange(); // what the API's planners publish at commit (before the HTTP reply)
+    // a request the page dropped meanwhile (a reload during a delayed reply) has nobody to answer
     if (reply.raw) {
-      await route.fulfill({
-        status: reply.status,
-        contentType: reply.contentType,
-        headers: reply.headers,
-        body: reply.raw,
-      });
+      await route
+        .fulfill({
+          status: reply.status,
+          contentType: reply.contentType,
+          headers: reply.headers,
+          body: reply.raw,
+        })
+        .catch(() => undefined);
       return;
     }
-    await route.fulfill({
-      status: reply.status,
-      contentType: 'application/json',
-      headers: reply.headers,
-      body: reply.body === undefined ? '' : JSON.stringify(reply.body),
-    });
+    await route
+      .fulfill({
+        status: reply.status,
+        contentType: 'application/json',
+        headers: reply.headers,
+        body: reply.body === undefined ? '' : JSON.stringify(reply.body),
+      })
+      .catch(() => undefined);
   }
 
   private dispatch(def: RouteDef | undefined, input: Omit<Ctx, 'params' | 'user'>): Reply {

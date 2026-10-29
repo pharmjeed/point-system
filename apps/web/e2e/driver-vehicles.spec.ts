@@ -4,7 +4,7 @@ import { actorPage, expectCommandContract } from './support/actors';
 import { fakeOnly } from './support/backend';
 import { runOnlyAt390 } from './support/checks';
 import { acceptOfferOf, arrangeParked, EVENT_R1, requestRetrieval, startDuty } from './support/driver';
-import { createFake, SEED_IDS, type FakeServer, type FTicket } from './support/fake';
+import { createFake, errorReply, SEED_IDS, type FakeServer, type FTicket } from './support/fake';
 import { parkedCars } from './support/live';
 
 /**
@@ -155,6 +155,46 @@ test('PNT-069: the empty venue, and the next page of 50 when the list end comes 
   await page.mouse.wheel(0, 4000);
   await expect(rows(page)).toHaveCount(55);
   expect(fake.callsTo('GET /v1/tickets').at(-1)?.query?.get('cursor')).toBeTruthy();
+});
+
+test('PNT-069: a next page that fails stops loading and offers «إعادة المحاولة»; an invalid cursor reloads from the start', async ({
+  browser,
+}) => {
+  const fake = createFake();
+  const [car] = parkedCars(fake, 1);
+  olderCopies(fake, ticketOf(fake, car!.ticketId), 54);
+  startDuty(fake, 'DRV1');
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto('/d/vehicles');
+  await expect(rows(page)).toHaveCount(50);
+  const pages = () => fake.callsTo('GET /v1/tickets').filter((c) => c.query?.get('cursor')).length;
+
+  // 503 on the next page (read retries included): rows stay, one inline retry, no request loop
+  fake.failNext('GET /v1/tickets', errorReply('SERVICE_UNAVAILABLE'), 3);
+  await rows(page).nth(49).scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 4000);
+  const retry = page.getByRole('alert').filter({ hasText: errorMessagesAr.SERVICE_UNAVAILABLE });
+  await expect(retry).toBeVisible({ timeout: 15_000 });
+  await expect(rows(page)).toHaveCount(50);
+  const afterFailure = pages();
+  await page.waitForTimeout(1500);
+  expect(pages()).toBe(afterFailure); // the sentinel in view does not ask again by itself
+  await retry.getByRole('button', { name: 'إعادة المحاولة' }).click();
+  await expect(rows(page)).toHaveCount(55);
+
+  // 02 §1.9 PAGINATION_CURSOR_INVALID: the list reloads from its first page
+  await page.reload();
+  await expect(rows(page)).toHaveCount(50);
+  const firstPages = fake.callsTo('GET /v1/tickets').filter((c) => !c.query?.get('cursor')).length;
+  fake.failNext('GET /v1/tickets', errorReply('PAGINATION_CURSOR_INVALID'));
+  await rows(page).nth(49).scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 4000);
+  await expect
+    .poll(() => fake.callsTo('GET /v1/tickets').filter((c) => !c.query?.get('cursor')).length)
+    .toBeGreaterThan(firstPages);
+  await expect(rows(page).first()).toBeVisible();
+  expect(await rows(page).count()).toBeGreaterThanOrEqual(50); // page 1 again (page 2 if in view again)
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('PNT-069 AC1: a driver who is not assigned gets the minimal projection; the assignee the masked phone and the slot', async ({
