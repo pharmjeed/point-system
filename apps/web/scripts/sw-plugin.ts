@@ -44,7 +44,10 @@ export function serviceWorkerPlugin(options: { appDir: string; alias: Record<str
         define: {
           __PRECACHE__: JSON.stringify(precache),
           __SW_VERSION__: JSON.stringify(version),
-          __BRAND__: JSON.stringify(process.env.VITE_BRAND_STAFF_NAME_AR ?? ''),
+          // the .env file (config.env) or the process (CI, the manifest fallback of vite.config.ts)
+          __BRAND__: JSON.stringify(
+            String(config.env.VITE_BRAND_STAFF_NAME_AR || process.env.VITE_BRAND_STAFF_NAME_AR || ''),
+          ),
         },
         build: {
           outDir,
