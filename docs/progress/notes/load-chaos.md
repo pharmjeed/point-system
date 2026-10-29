@@ -52,10 +52,19 @@ responses»).
 
 ## Results
 
-- **PNT-097 (load, AC-13 / TC-039):** see `docs/test-evidence/load/2026-10-29.md` (the run after the review, with the
-  coverage checks, and the first run `48ba8732`).
-- **PNT-098 (chaos, AC-06 / TC-013 … TC-017, 17 §12):** see `docs/test-evidence/chaos/2026-10-29.md` — all 13 default
-  scenarios, `db_freeze` and the strict `wa_outage_temporary` check included.
+- **PNT-097 (load, AC-13 / TC-039):** run `240398ca` (after the review, commit `3c2767a`) — 5 venues, 50 drivers on
+  Socket.IO, 100 presses in 60 s by k6 through signed webhooks: M1 request save p95 189 ms (< 2 s), M2 assignment
+  publish p95 91 ms (< 3 s), 0 server errors in 2000 requests (< 0.1 %), complete samples (100/100 presses observed,
+  900/900 recipient samples, no socket issue), 100/100 delivered 76.9 s after the first press, no stuck task, outbox
+  row, pending notification or alert; consistency queries and schema invariants green — 12/12 checks. The first run
+  `48ba8732` (M1 p95 125 ms, M2 p95 55 ms) is kept in the evidence. Met on a shared 4-vCPU host; 17 §11 asks for the
+  same profile on a production-sized staging (owner action).
+- **PNT-098 (chaos, AC-06 / TC-013 … TC-017, 17 §12):** run `ce684ee4` (commit `9e7c99b`) — the 13 default scenarios
+  pass, 115/115 checks: KP-1 … KP-5 (+ KP-4 without status webhooks), the database stopped 60 s (Retry-After, a device
+  socket kept through it) and paused 60 s (read 503 in 7.0 s, command 5.0 s, readiness 2.0 s, heartbeat ack 7.0 s),
+  the WhatsApp `190` outage of 10 min, the temporary-error outage (every one of the 7 requests received exactly its
+  current state; the two early W-02 held, not failed), Push outage, worker stopped 2 min, three workers. The kill
+  points also run in CI on every push to main.
 
 ## Proposed decisions
 
