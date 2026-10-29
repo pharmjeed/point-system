@@ -17,14 +17,27 @@ export interface CommandMeta {
   idempotent: boolean;
   /** operation stored with the key, e.g. 'POST /v1/task-offers/{offerId}/accept' */
   operation: string;
+  /**
+   * The route accepts an Idempotency-Key and ignores it (never stored, never replayed): a descriptive write that
+   * keeps no audit row and whose answer must stay fresh (POST /v1/me/heartbeat: canon §9 «—», server_time).
+   */
+  ignoreKey?: boolean;
 }
 
 /**
  * Marks a state-changing route: the handler runs inside one transaction opened by the CommandInterceptor
  * (L0 idempotency claim first when a key is present) and receives it through @CurrentTx().
  */
-export const Command = (operation: string, opts: { idempotent?: boolean } = {}) =>
-  SetMetadata(COMMAND_KEY, { idempotent: opts.idempotent ?? true, operation } satisfies CommandMeta);
+export const Command = (operation: string, opts: { idempotent?: boolean; ignoreKey?: boolean } = {}) => {
+  const idempotent = opts.idempotent ?? true;
+  if (opts.ignoreKey && idempotent)
+    throw new Error(`${operation}: a ✓ command cannot ignore its Idempotency-Key`);
+  return SetMetadata(COMMAND_KEY, {
+    idempotent,
+    operation,
+    ...(opts.ignoreKey ? { ignoreKey: true } : {}),
+  } satisfies CommandMeta);
+};
 
 export const CurrentTx = createParamDecorator((_: unknown, ctx: ExecutionContext) => {
   const tx = ctx.switchToHttp().getRequest().tx;
