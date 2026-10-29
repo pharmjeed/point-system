@@ -141,11 +141,26 @@ restore TC-037 on staging) stays an owner task: PNT-102 remains `in_progress`.
 ## 7. Tests and results
 
 - `pnpm lint` (eslint, prettier, brand, secrets) and `pnpm typecheck`: clean.
-- Targeted integration runs: `g4-full-event` 14/14 (four runs, the last with the ingest assertion),
+- `pnpm test` (unit + web-unit, under the lock): 68 files, 1178/1178 passed (with `rehearsal-checks` 4/4 and the
+  DEC-192 CSP test).
+- `pnpm test:int` (full, under the lock, PostgreSQL 16.15): 71 files passed + 1 skipped, 608 passed + 1 skipped,
+  505 s.
+- Targeted integration runs during the work: `g4-full-event` 14/14 (four runs, the last with the ingest assertion),
   `incident-writer` 5/5, `handover-exception-payment` 3/3, `wa-ingest-latency` 2/2; the suites around the changes —
   `wa-button`, `wa-inbound`, `dispatch-s4-early-request`, `tickets-parking`, `analytics-projector`,
   `g1-vertical-slice` — 43/43; the 10 suites that touch incidents 85/85.
-- Rehearsal: 20 cars (passed, 182 s), 90 cars over 120 s (passed, 446 s — every scripted moment exercised: field
-  cancel, no-show → repark → asked again, locked code → exceptional handover with the driver's cash, opt-out and
-  resume, two VIP waivers, POS reversal with replacement, lost network with a car, four breaks, the cash shortfall).
-- Full rehearsal and full `pnpm test:int`: below once run.
+- Rehearsal, smaller runs while building it: 20 cars (passed, 182 s); 90 cars over 120 s (passed, 446 s — every
+  scripted moment exercised).
+- Rehearsal, the evidence run (`pnpm ops:rehearsal` with its defaults, under the lock, built first):
+  **PASSED** in 630 s (616 s of play) → `docs/test-evidence/rehearsal/2026-10-29.md`. 150 cars (RMS 80: 36 paper /
+  44 WhatsApp; LYL 70: 30 / 40), all delivered; 152 retrieve tasks, 87 reserved as next (W-03), 1 repark, 0
+  escalations; request → delivered p50/p95 RMS 68.5 / 90.7 s, LYL 42.9 / 79.4 s; RMS billable 1,600.00, collected
+  1,560.00 (= recorded payments), waived 40.00, due 0; cash 940.00 collected, 935.00 handed over (−5.00 recorded,
+  `payment_discrepancy` open for review); 21 alerts raised, all resolved (the critical one acknowledged first);
+  offer delivery p95 103 ms (M2 < 3 s), request saved p95 113 ms (M1 < 2 s); 10,321 bot requests, command p95 56 ms,
+  0 server errors, 0 unexpected refusals; 6,630 domain events → 6,630 analytics rows; every 10 §14.1 / 11 §1.7 and
+  consistency.sql check 0; the schema invariants passed. Scripted moments: field cancel, early requests, no-show →
+  repark (W-08) → asked again, five wrong codes → locked → exceptional handover with the driver's cash, opt-out and
+  resume, two VIP waivers, POS reversal with replacement, a driver without network for 130 s with a car, four
+  breaks, a next task moved by the supervisor, the cash shortfall.
+- Open defects: none of this stream's. The human rehearsal (owner) may still find some (17 severity).
