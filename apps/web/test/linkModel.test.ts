@@ -96,6 +96,14 @@ describe('D-05 local checks before «التالي» (DEC-356)', () => {
       method: 'qr',
     });
   });
+
+  it('a draft saved before the WhatsApp choice existed (a stub number only) comes back as paper', () => {
+    expect(channelForm(ticket({ status: 'received' }), { paperSerial: '004521' })).toMatchObject({
+      channel: 'paper',
+      paperSerial: '004521',
+    });
+    expect(channelForm(ticket({}), { channel: 'whatsapp', paperSerial: '004521' }).channel).toBe('whatsapp');
+  });
 });
 
 describe('D-06 QR right before the submit', () => {

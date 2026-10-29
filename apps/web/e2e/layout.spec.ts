@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { driverMe, MockApi, staffMe } from './support/api';
 import { expectMobileLayout } from './support/checks';
 import {
@@ -58,6 +58,8 @@ const PAGES: Array<{
   shows?: string | RegExp;
   /** Served by the fake backend as this seeded user instead of the static mock. */
   as?: SeedUserKey;
+  /** UI steps that bring the screen into the state to check (a mode chosen, a panel opened). */
+  act?: (page: Page) => Promise<void>;
 }> = [
   { path: '/login', me: null, area: 'driver', heading: /تسجيل الدخول/ },
   { path: '/staff/login', me: null, area: 'staff', heading: /دخول المشرفين والإدارة/ },
@@ -137,6 +139,26 @@ const PAGES: Array<{
     shows: 'الحفل: حفل تجريبي — ريماس 1',
   },
   {
+    name: 'D-05 QR',
+    prepare: (fake) => intakeDraft(fake, false),
+    act: (page) => page.getByRole('radio', { name: 'رمز QR يمسحه العميل' }).check(),
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /استلام مركبة/,
+    shows: 'طريقة الربط',
+  },
+  {
+    name: 'D-05 paper',
+    prepare: (fake) => intakeDraft(fake, false),
+    act: (page) => page.getByRole('radio', { name: 'تذكرة ورقية' }).click(),
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /استلام مركبة/,
+    shows: 'انسخ الرقم المطبوع على الكعب كما هو.',
+  },
+  {
     name: 'D-06',
     prepare: (fake) => intakeDraft(fake, true),
     me: null,
@@ -156,6 +178,37 @@ const PAGES: Array<{
     area: 'driver',
     heading: /تذكرة ورقية/,
     shows: 'سلّمت الكعب للعميل',
+  },
+  {
+    name: 'D-07 WhatsApp sending',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: '+966501234567', linked: false });
+      return `/d/intake/${ticketId}/link`;
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /ربط واتساب/,
+    shows: 'جارٍ الإرسال…',
+  },
+  {
+    name: 'D-07 QR panel',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      const { ticketId } = arrangeSubmitted(fake, 'DRV1', { whatsapp: '+966501234567', linked: false });
+      fake.whatsapp.w01(ticketId, 'failed');
+      return `/d/intake/${ticketId}/link`;
+    },
+    act: async (page) => {
+      await page.getByRole('button', { name: 'الربط عبر QR' }).click();
+      await expect(page.locator('.pt-qr__code svg')).toBeVisible();
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /ربط واتساب/,
+    shows: 'بانتظار رسالتك…',
   },
   {
     name: 'D-08',
@@ -180,6 +233,19 @@ const PAGES: Array<{
     area: 'driver',
     heading: /إحضار/,
     shows: 'عند البدء يصل العميل إشعار «جارٍ إحضار سيارتك».',
+  },
+  {
+    name: 'D-11 WhatsApp code',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      const { ticketId } = arrangeRetrieval(fake, 'DRV1', 'ready', { whatsapp: '+966501234567' });
+      return `/d/tickets/${ticketId}/handover`;
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /التسليم/,
+    shows: 'العميل لم يصله الرمز؟',
   },
   {
     name: 'D-11 with collection',
@@ -265,6 +331,7 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(path);
       await expect(page.locator('main')).toBeVisible();
       if (p.heading) await expect(page.getByRole('heading', { level: 1 })).toHaveText(p.heading);
+      if (p.act) await p.act(page);
       if (p.shows) await expect(page.getByText(p.shows).first()).toBeVisible();
       if (p.as) await expect(page.locator('.pt-skel-card')).toHaveCount(0); // data loaded, not skeletons
       await page.evaluate(() => document.fonts.ready);

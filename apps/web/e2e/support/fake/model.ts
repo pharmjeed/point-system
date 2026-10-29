@@ -245,6 +245,8 @@ export interface FakeWhatsApp {
   health: 'healthy' | 'degraded' | 'down';
   /** The W-01 template is approved (else WA_TEMPLATE_NOT_APPROVED on the direct link). */
   templateApproved: boolean;
+  /** A QR lifetime shorter than `link.qr_ttl_min` (a spec that watches a code expire); null = the setting. */
+  qrTtlMs: number | null;
   /** Numbers that pressed «إيقاف» (12 §7.6). */
   readonly optedOut: Set<string>;
   readonly linkCodes: FLinkCode[];

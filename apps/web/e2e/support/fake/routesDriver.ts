@@ -413,6 +413,7 @@ export function registerDriverRoutes(s: FakeServer): void {
   s.whatsapp = {
     health: 'healthy',
     templateApproved: true,
+    qrTtlMs: null,
     optedOut: new Set<string>(),
     linkCodes: [],
     codeStatus: new Map(),
@@ -1264,7 +1265,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       status: 'active',
       created_by: u.id,
       created_at: now(),
-      expires_at: new Date(Date.now() + ttl * 60_000).toISOString(),
+      expires_at: new Date(Date.now() + (s.whatsapp.qrTtlMs ?? ttl * 60_000)).toISOString(),
       inbound_phone: null,
       received_at: null,
       revoke_reason: null,

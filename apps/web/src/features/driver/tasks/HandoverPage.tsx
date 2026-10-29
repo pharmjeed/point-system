@@ -383,6 +383,7 @@ function HandoverForm({
                 className="pt-link"
                 id="code-resend"
                 disabled={!canResend}
+                aria-busy={resend.pending || undefined}
                 onClick={onResend}
               >
                 {fmt(d11.resendLeft, { n: resendsLeft ?? 0 })}

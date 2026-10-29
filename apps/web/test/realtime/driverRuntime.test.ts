@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, TaskCard } from '@/api/types';
+import { useLinkStore } from '@/features/driver/linkStore';
 import { homeRegistry, resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { playSound } from '@/lib/audio';
 import { driverEvents, startRealtime } from '@/realtime/driverRuntime';
@@ -373,5 +374,93 @@ describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
     useOfferLive.getState().setOnScreen(IDS.offerA); // D-04, or the Sheet open
     onEvent(claimed());
     expect(useUiStore.getState().toasts.map((t) => t.message)).toEqual(['قبل الطلب سائق آخر']);
+  });
+});
+
+describe('ticket.updated and the WhatsApp link (02 D-07, D-10, D-11; 14 §5.1; 09 §5.1)', () => {
+  let qc: QueryClient;
+  let onEvent: (e: ServerEvent) => void;
+  beforeEach(() => {
+    qc = new QueryClient();
+    onEvent = driverEvents(options(qc));
+    useLinkStore.getState().reset();
+  });
+
+  const summary = (patch: Record<string, unknown> = {}) => ({
+    id: IDS.ticketA,
+    display_number: 125,
+    status: 'parking',
+    channel: 'whatsapp',
+    wa_link_status: 'pending_send',
+    version: 5,
+    plate: { country: 'SA', display: '1234' },
+    vehicle: {},
+    ...patch,
+  });
+  const detail = (version: number) =>
+    qc.setQueryData(queryKeys.ticket(IDS.ticketA), { ...summary(), version, projection: 'full' });
+
+  it('W-01 refused: «تعذر إرسال تذكرة #n للعميل.» once per ticket, gone when the link is no longer failed', () => {
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'failed' })));
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'failed',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([
+      { kind: 'waFailed', key: `waFailed:${IDS.ticketA}`, ticketId: IDS.ticketA, ticketNumber: 125 },
+    ]);
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 6 })));
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('the customer stopped the messages: «العميل أوقف رسائل واتساب…» (14 §5.1)', () => {
+    onEvent(
+      event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'opted_out' })),
+    );
+    expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['optedOut']);
+  });
+
+  it('the pending QR confirmation is kept for D-07 (the privileged payload only), and cleared with it', () => {
+    const pending = {
+      link_code_id: globalThis.crypto.randomUUID(),
+      inbound_phone_masked: '05•••••887',
+      received_at: '2026-10-29T18:00:00.000Z',
+    };
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'ticket.wa_link_changed',
+          wa_link_status: 'pending_confirmation',
+          wa_link_pending: pending,
+        }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toEqual(pending);
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_pending: null })));
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a message state re-reads the ticket although its version did not move (W-05 on D-10 / D-11)', () => {
+    detail(5);
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed' })));
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-05', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
   });
 });
