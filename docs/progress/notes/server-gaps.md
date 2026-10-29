@@ -197,6 +197,9 @@ entry, `job.heartbeat_sweep` at duty start, `job.retention_purge` by the SystemM
   cause, so it answers `422 VALIDATION_FAILED` with empty `details`; the filter's `fields: body / malformed_json`
   branch for a plain body-parser error is no longer reached. 08 asks nothing more (the real client never sends one);
   left as is.
+- **A red test on the base.** The full integration run failed once, on `f2a0b2e` already:
+  `manual-reconcile-paper-draft.int.test.ts` (f055e9c) expected `payment.recorded` without `cycle_id`, which
+  33bcdf8 added later as DEC-285 / 11 §8.7 require. The expectation now carries `cycle_id: null`; no code changed.
 - **S-04 and the quota alerts (for the staff UI).** `alertContext()` shows only `details.display_number` or
   `details.driver_name`, so a quota row reads «فشل إرسال رسالة واتساب» with no context and no ticket link. A context
   line from `details.quota` / `count` / `threshold` needs UI copy, best together with the canon type of
