@@ -196,6 +196,7 @@ export function startRealtime(options: AcquireOptions): RealtimeHandle {
         qc.setQueryData(queryKeys.home, snapshot);
         void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true });
         void qc.invalidateQueries({ queryKey: ['tickets'] });
+        void qc.invalidateQueries({ queryKey: queryKeys.vehicles }); // D-12 lists (no event for others' tickets)
         return { ok: true, serverTime: snapshot.server_time };
       } catch (error) {
         // a definitive answer (no assignment, no session…) is the server's state: nothing to wait for

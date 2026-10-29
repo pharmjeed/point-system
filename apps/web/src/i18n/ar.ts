@@ -577,6 +577,60 @@ export const d11 = {
 /** D-12 — المركبات */
 export const d12 = {
   title: 'المركبات',
+  search: 'ابحث برقم اللوحة أو رقم التذكرة',
+  /** 02 D-12 «ربط الفلاتر بالحالات». */
+  filters: {
+    all: 'الكل',
+    parked: 'متوقفة',
+    requested: 'مطلوبة',
+    retrieving: 'جارٍ الإحضار',
+    ready: 'جاهزة',
+    intake: 'قيد التسجيل والصف',
+  },
+  /** «مطلوبة» · منذ 1:40 — since the open request (`requested_at`). */
+  since: 'منذ {time}',
+  emptyAll: 'لا توجد مركبات مسجلة في الحفلات المفتوحة.',
+  emptySearch: 'لا توجد مركبات مطابقة.',
+} as const;
+
+/** D-13 — تفاصيل المركبة */
+export const d13 = {
+  createdBy: 'سجّلها: {name} · {time}',
+  channel: 'قناة العميل: {channel} «{status}»',
+  /** A paper ticket has no WhatsApp link to state. */
+  channelOnly: 'قناة العميل: {channel}',
+  channelName: { whatsapp: 'واتساب', paper: 'تذكرة ورقية' },
+  phone: 'الجوال: {phone}',
+  spot: 'الموقف {label}',
+  keySlot: 'خانة المفتاح {label}',
+  photos: 'الصور',
+  /** The S-03 row (02 S-03 «التحصيل: «مستحق»»): `payment_status` is in the minimal projection. */
+  payment: 'التحصيل: «{status}»',
+  onBehalf: 'طلب الإحضار نيابة عن العميل',
+  onBehalfDone: 'سُجّل طلب الإحضار #{n}.',
+  cancel: 'إلغاء طلب الإحضار',
+  cancelTitle: 'إلغاء طلب الإحضار #{n}؟ سيُبلغ العميل بالإلغاء.',
+  /** INVALID_STATE_TRANSITION on the cancel (02 D-13 errors table). */
+  cancelAfterAssignment: 'لا يمكن الإلغاء بعد إسناد الطلب. تواصل مع المشرف.',
+  changePhone: 'تغيير رقم الجوال',
+  newPhone: 'الرقم الجديد',
+  verified: 'تحققت من صاحب المركبة أمامي',
+  /**
+   * 02 D-05's consent sentence without the customer brand: canon §1 rule 2 keeps that name off the staff
+   * screens except D-07, S-03 and S-13 (docs/progress/notes/s5-web.md DEC-PROPOSED-11).
+   */
+  consent: 'وافق العميل على استلام رسائل واتساب لهذه التذكرة',
+  phoneNote: 'ستُرسل تذكرة جديدة للرقم الجديد، وتتوقف أزرار الرسائل السابقة.',
+  report: 'إبلاغ عن واقعة',
+  /** The D-10 «إبلاغ عن مشكلة» types (02 D-10), the same Sheet. */
+  reportTypes: {
+    key_missing: 'المفتاح غير موجود في الخانة',
+    vehicle_damage: 'ضرر لم يُسجّل',
+    wrong_vehicle: 'المركبة ليست في الموقف / مركبة خاطئة',
+    other: 'أخرى',
+  },
+  reportDescription: 'الوصف',
+  reported: 'أُبلغ المشرف.',
 } as const;
 
 /** D-14 — حسابي */
@@ -838,6 +892,7 @@ export const ar = {
   d10,
   d11,
   d12,
+  d13,
   d14,
   d15,
   live,

@@ -70,12 +70,6 @@ const PAGES: Array<{
   },
   { path: '/d/start', me: driverMe(), area: 'driver', heading: /بدء الوردية/ },
   { path: '/d', me: driverMe({ onDuty: true, state: 'busy_with_next' }), area: 'driver' },
-  {
-    path: '/d/vehicles',
-    me: driverMe({ onDuty: true, state: 'retrieving' }),
-    area: 'driver',
-    heading: /المركبات/,
-  },
   { path: '/d/account', me: driverMe({ onDuty: true }), area: 'driver', heading: /حسابي/ },
   { path: '/ops', me: staffMe(), area: 'staff', heading: /التشغيل/ },
   { path: '/drivers', me: null, as: 'ADM1', area: 'staff', heading: /السائقون/ },
@@ -198,6 +192,58 @@ const PAGES: Array<{
     area: 'driver',
     heading: /التسليم/,
     shows: /المبلغ المستحق: 20\.00/,
+  },
+  // PNT-069 / PNT-070 — D-12, D-13 (both projections) and D-14 with data
+  {
+    name: 'D-12 (fake)',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      arrangeParked(fake, 'DRV1', { serial: '004611', keyTag: '81', spot: 'A-12', slot: '22' });
+      const b = arrangeParked(fake, 'DRV1', { serial: '004612', keyTag: '82', spot: 'A-13', slot: '23' });
+      requestRetrieval(fake, b.ticketId);
+      return '/d/vehicles';
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /المركبات/,
+    shows: 'متوقفة',
+  },
+  {
+    name: 'D-13 minimal (fake)',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      return `/d/vehicles/${arrangeParked(fake, 'DRV1').ticketId}`;
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /^#\d+$/,
+    shows: 'طلب الإحضار نيابة عن العميل',
+  },
+  {
+    name: 'D-13 full (fake)',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      return `/d/vehicles/${arrangeRetrieval(fake, 'DRV1', 'accepted').ticketId}`;
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /^#\d+$/,
+    shows: /خانة المفتاح/,
+  },
+  {
+    name: 'D-14 (fake)',
+    prepare: (fake) => {
+      startDuty(fake, 'DRV1');
+      return '/d/account';
+    },
+    me: null,
+    as: 'DRV1',
+    area: 'driver',
+    heading: /حسابي/,
+    shows: 'إبقاء الشاشة مضاءة أثناء الوردية',
   },
 ];
 

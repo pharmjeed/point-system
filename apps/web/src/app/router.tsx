@@ -4,7 +4,6 @@ import { AccountPage } from '@/features/driver/AccountPage';
 import { DriverHomePage } from '@/features/driver/DriverHomePage';
 import { DriverLayout, DriverTaskLayout } from '@/features/driver/DriverLayout';
 import { StartShiftPage } from '@/features/driver/StartShiftPage';
-import { VehiclesPage } from '@/features/driver/VehiclesPage';
 import { BootSkeleton, NotFoundPage, RootRedirect, SessionEndedPage } from '@/features/system/SystemPages';
 import { paths } from './paths';
 import { RootLayout } from './RootLayout';
@@ -15,6 +14,7 @@ import { staffRoutes } from './routes.staff';
  * VITE_ENABLE_GALLERY=true; otherwise the branch is dead code and the chunk is not emitted.
  */
 const tasks = () => import('@/features/driver/tasks');
+const vehicles = () => import('@/features/driver/vehicles');
 
 const galleryRoutes: RouteObject[] =
   import.meta.env.VITE_ENABLE_GALLERY === 'true'
@@ -52,7 +52,9 @@ export const routes: RouteObject[] = [
         element: <DriverLayout />,
         children: [
           { index: true, element: <DriverHomePage /> },
-          { path: 'vehicles', element: <VehiclesPage /> },
+          // D-12 / D-13: one lazy chunk (the bundle budget of the first load)
+          { path: 'vehicles', lazy: async () => ({ Component: (await vehicles()).VehiclesPage }) },
+          { path: 'vehicles/:ticketId', lazy: async () => ({ Component: (await vehicles()).VehiclePage }) },
           { path: 'account', element: <AccountPage /> },
         ],
       },

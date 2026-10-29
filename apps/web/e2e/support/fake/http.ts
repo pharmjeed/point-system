@@ -24,10 +24,10 @@ export const ok = (data: unknown, status = 200): Reply => ({
   body: status === 204 ? undefined : { data, meta: meta() },
 });
 
-/** A list reply: `meta.next_cursor` is always null (the fake serves one page). */
-export const page = (data: unknown[]): Reply => ({
+/** A list reply: `meta.next_cursor` is null unless the route pages (`GET /v1/tickets`). */
+export const page = (data: unknown[], nextCursor: string | null = null): Reply => ({
   status: 200,
-  body: { data, meta: meta({ next_cursor: null }) },
+  body: { data, meta: meta({ next_cursor: nextCursor }) },
 });
 
 export function errorReply(

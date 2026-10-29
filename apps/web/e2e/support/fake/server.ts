@@ -64,11 +64,15 @@ export type Handler = (ctx: Ctx) => Reply;
 export interface FakeCall {
   method: string;
   path: string;
+  /** The query string (D-12 search: `q`, `status`, `cursor`). */
+  query?: URLSearchParams;
   /** The route spec that answered ("POST /v1/tickets/:ticketId/handover"), or null. */
   route: string | null;
   headers: Record<string, string>;
   body: unknown;
   status: number;
+  /** The JSON reply (projection checks of D-13). */
+  reply?: unknown;
   at: number;
 }
 
@@ -101,6 +105,8 @@ export class FakeServer {
   /** Uploaded objects by media id (the fake private object storage). */
   readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
   readonly devices = new Map<string, FDevice>();
+  /** `POST /v1/incidents` from the driver screens (D-13 «إبلاغ عن واقعة»). */
+  readonly incidents: Array<Record<string, unknown>> = [];
   /** `/ws` (off until a spec enables it): Socket.IO frames over `page.routeWebSocket` (PNT-065). */
   readonly realtime = new FakeRealtime(this);
   /** What a driver sees live (set by the driver routes; read by the realtime hub). */
@@ -157,11 +163,16 @@ export class FakeServer {
     return this.calls.filter((c) => c.route === spec);
   }
 
-  /** Attaches a page: its `/v1/*` requests are answered here, as its own session (optionally signed in). */
-  async attach(page: Page, as?: SeedUserKey): Promise<Session> {
+  /**
+   * Attaches a page: its `/v1/*` requests are answered here, as its own session (optionally signed in).
+   * `context: true` routes at the context level, which also sees the requests a Service Worker passes on
+   * (the PWA spec runs with workers allowed).
+   */
+  async attach(page: Page, as?: SeedUserKey, options: { context?: boolean } = {}): Promise<Session> {
     const session: Session = { userId: null, deviceId: null };
     if (as) this.signIn(session, as);
-    await page.route(
+    const target = options.context ? page.context() : page;
+    await target.route(
       (url) => url.pathname.startsWith('/v1/') || url.pathname.startsWith(STORAGE_PREFIX),
       (route) => this.serve(route, session),
     );
@@ -239,6 +250,7 @@ export class FakeServer {
     const call: FakeCall = {
       method,
       path: url.pathname,
+      query: url.searchParams,
       route: def?.pattern.spec ?? null,
       headers,
       body,
@@ -264,6 +276,7 @@ export class FakeServer {
           session,
         });
     call.status = reply.status;
+    call.reply = reply.body;
     this.realtime.afterChange(); // what the API's planners publish at commit (before the HTTP reply)
     if (reply.raw) {
       await route.fulfill({

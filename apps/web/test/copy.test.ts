@@ -80,6 +80,7 @@ const NOT_IN_02: Record<string, string[]> = {
     'settings', // labels from canon §12 (checked below)
   ],
   d05: ['makeOther', 'colorOther'], // labels of the «أخرى» free-text inputs
+  d13: ['consent'], // 02 D-05's sentence without the customer brand (canon §1 rule 2) — notes/s5-web.md
 };
 
 const SCREENS = {
@@ -96,6 +97,8 @@ const SCREENS = {
   d09: ar.d09,
   d10: ar.d10,
   d11: ar.d11,
+  d12: ar.d12,
+  d13: ar.d13,
   d14: ar.d14,
 } as const;
 
@@ -110,6 +113,17 @@ describe('screen copy comes from 02', () => {
       expect(missing).toEqual([]);
     });
   }
+
+  it('the live in-page texts of the driver are 14 §5.1 word for word (14 is their final reference)', () => {
+    const notifications = readFileSync(
+      new URL('../../../docs/14_Notification_Matrix_Templates.md', import.meta.url),
+      'utf8',
+    );
+    const missing = flatten(ar.live)
+      .filter(([, text]) => !pattern(text).test(notifications))
+      .map(([key, text]) => `${key}: ${text}`);
+    expect(missing).toEqual([]);
+  });
 
   it('S-09 setting labels are the «المعنى» column of canon §12', () => {
     const section = canon.slice(canon.indexOf('## 12.'), canon.indexOf('## 13.'));
