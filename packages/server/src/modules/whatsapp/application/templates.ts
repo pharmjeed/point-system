@@ -10,7 +10,14 @@ import { audit } from '../../../core/audit/audit-writer.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { classifyGraphFailure, type GraphFailure } from '../domain/graph-errors.js';
-import { activeChannel, type ChannelRow, type Queryable } from '../infra/channel.js';
+import {
+  activeChannel,
+  phoneNumberFacts,
+  storePhoneNumberFacts,
+  type ChannelRow,
+  type PhoneNumberFacts,
+  type Queryable,
+} from '../infra/channel.js';
 import type { GraphTemplate } from '../infra/graph-client.js';
 import type { WhatsappRuntime } from '../runtime.js';
 import { setChannelHealth } from './channel-health.js';
@@ -94,6 +101,11 @@ export interface RemoteTemplate {
 export interface RemoteSync {
   channelId: string;
   templates: RemoteTemplate[];
+  /**
+   * The number's quality rating and messaging limit from `GET /{phone_number_id}` (12 §3.1, F-18), read in the same
+   * network phase; null when that read failed (the sync does not depend on it).
+   */
+  numberStatus: PhoneNumberFacts | null;
 }
 
 function syncError(f: GraphFailure, ch: ChannelRow): AppError {
@@ -173,7 +185,9 @@ export class WhatsappTemplates {
       }
       templates.push({ definition, remote: found, created });
     }
-    return { channelId: ch.id, templates };
+    // the messaging limit the quota alert compares with (GAP-9) and the quality shown in S-13; best effort
+    const number = await this.rt.graph.phoneNumber(ch, token);
+    return { channelId: ch.id, templates, numberStatus: number.ok ? phoneNumberFacts(number.body) : null };
   }
 
   /** DB phase, inside the command transaction: upsert rows (whatsapp_templates_org_id_name_language_key). */
@@ -220,6 +234,10 @@ export class WhatsappTemplates {
         degraded ??= `template_${t.definition.name}_${status}`;
     }
     if (degraded) await setChannelHealth(tx, sync.channelId, 'degraded', degraded, 'wa.templates_manage');
+    // (the audit key avoids «phone»: redact() would hide the whole value, 05 §7.6)
+    const numberUpdated = sync.numberStatus
+      ? await storePhoneNumberFacts(tx, sync.channelId, sync.numberStatus)
+      : false;
     await audit(tx, {
       orgId: actor.orgId,
       actor: { type: 'user', id: actor.userId, role: actor.role },
@@ -231,6 +249,7 @@ export class WhatsappTemplates {
         command: 'templates_sync',
         changed,
         created: sync.templates.filter((t) => t.created).map((t) => t.definition.name),
+        number_status: sync.numberStatus ? { ...sync.numberStatus, updated: numberUpdated } : null,
       },
     });
     return this.list(tx, actor.orgId);

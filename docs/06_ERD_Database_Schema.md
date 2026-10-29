@@ -783,7 +783,7 @@ erDiagram
 #### 35) `whatsapp_messages`
 - **الغرض:** كل رسالة صادرة أو واردة وحالتها لدى المزود، بمحتوى منقّح.
 - **أعمدة أساسية:** `direction`، `wa_message_id` (wamid)، `notification_id`، `customer_id`، `recipient_wa_id`/`sender_wa_id`، `recipient_user_id`/`sender_user_id` (BSUID، DEC-35)، `ticket_id`، `venue_id`، `event_id`، `kind`، `template_name`، `purpose` (W-xx)، `body_redacted` (الرمز مقنّع)، `payload_redacted`، `button_payload_hash`، `status` و`status_rank`، `error_*`، `pricing_category`، `billable`، `ordering_key` (= التذكرة لترتيب رسائلها)، أوقات كل حالة.
-- **القيود:** `uq_whatsapp_messages_wamid` (**معرّف الرسالة فريد** — ثابت §9؛ يحمي من تكرار Webhook)، `ck_wa_messages_direction_status` (الوارد حالته `received` فقط والعكس)، `ix_whatsapp_messages_ticket`، `ix_whatsapp_messages_customer`، `ix_whatsapp_messages_failed`.
+- **القيود:** `uq_whatsapp_messages_wamid` (**معرّف الرسالة فريد** — ثابت §9؛ يحمي من تكرار Webhook)، `ck_wa_messages_direction_status` (الوارد حالته `received` فقط والعكس)، `ix_whatsapp_messages_ticket`، `ix_whatsapp_messages_customer`، `ix_whatsapp_messages_failed`؛ و`ix_whatsapp_messages_accepted` (جزئي على الصادر الذي قبله المزود `(org_id, queued_at)` لعدّادي حصص واتساب في `SystemMonitor`، 12 §13؛ الترحيل `0005`، مقترح في `docs/progress/notes/server-gaps.md`).
 - **الكتابة/القراءة:** `job.wa_send` (صادر)، `job.wa_process_inbound` (وارد وحالات). تحديث الحالة لا يخفض الرتبة أبدًا (§5.8). يُقرأ في S-03 و`GET /v1/reports/messages` وقائمة الرسائل الفاشلة في S-02.
 
 #### 36) `whatsapp_inbound_events`

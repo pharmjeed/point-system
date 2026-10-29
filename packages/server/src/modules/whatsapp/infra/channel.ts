@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { WaChannelMode, WaHealthStatus } from '@point/shared';
 import type { SecretResolver } from '../../../core/secrets/secret-resolver.js';
+import type { GraphPhoneNumber } from './graph-client.js';
 
 export type Queryable = {
   query<R extends pg.QueryResultRow = any>(text: string, params?: unknown[]): Promise<pg.QueryResult<R>>;
@@ -33,6 +34,48 @@ export async function activeChannel(q: Queryable, orgId: string): Promise<Channe
     orgId,
   ]);
   return r.rows[0] ?? null;
+}
+
+export interface PhoneNumberFacts {
+  quality_rating: string | null;
+  messaging_limit_tier: string | null;
+}
+
+const META_ENUM = /^[A-Z0-9_]{1,32}$/;
+const metaEnum = (v: unknown) => (typeof v === 'string' && META_ENUM.test(v) ? v : null);
+
+/**
+ * The descriptive fields of `GET /{phone_number_id}` kept on the channel (12 §3.1): the quality rating and the
+ * messaging limit, read from the current `whatsapp_business_manager_messaging_limit` (F-18) before the legacy
+ * `messaging_limit_tier`. Anything that is not a Meta enum value is ignored.
+ */
+export function phoneNumberFacts(body: GraphPhoneNumber | null | undefined): PhoneNumberFacts {
+  return {
+    quality_rating: metaEnum(body?.quality_rating),
+    messaging_limit_tier:
+      metaEnum(body?.whatsapp_business_manager_messaging_limit) ?? metaEnum(body?.messaging_limit_tier),
+  };
+}
+
+/**
+ * Stores those facts on the channel row when they changed; a missing value keeps the stored one. One statement:
+ * callers outside a transaction (the sender's probe) commit it at once, a command transaction keeps it with its own
+ * changes (the template sync).
+ */
+export async function storePhoneNumberFacts(
+  q: Queryable,
+  channelId: string,
+  facts: PhoneNumberFacts,
+): Promise<boolean> {
+  if (!facts.quality_rating && !facts.messaging_limit_tier) return false;
+  const r = await q.query(
+    `UPDATE whatsapp_channel SET quality_rating = COALESCE($2, quality_rating),
+            messaging_limit_tier = COALESCE($3, messaging_limit_tier)
+      WHERE id = $1 AND (quality_rating IS DISTINCT FROM COALESCE($2, quality_rating)
+                         OR messaging_limit_tier IS DISTINCT FROM COALESCE($3, messaging_limit_tier))`,
+    [channelId, facts.quality_rating, facts.messaging_limit_tier],
+  );
+  return (r.rowCount ?? 0) > 0;
 }
 
 export async function activeChannels(q: Queryable): Promise<ChannelRow[]> {

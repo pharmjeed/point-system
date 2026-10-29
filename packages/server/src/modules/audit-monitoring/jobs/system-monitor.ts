@@ -20,6 +20,17 @@ import {
   type OutboxHealth,
   type StuckPhase,
 } from '../domain/monitor-rules.js';
+import {
+  MESSAGING_LIMIT_KEY_PREFIX,
+  SERVICE_QUOTA_KEY_PREFIX,
+  WA_MESSAGING_LIMIT_SILENCE_MS,
+  WA_QUOTA_MONTH_TIME_ZONE,
+  WA_QUOTA_REFRESH_MS,
+  WA_SERVICE_WINDOW_HOURS,
+  waQuotaConditions,
+  type WaQuotaCondition,
+  type WaQuotaSnapshot,
+} from '../domain/wa-quota.js';
 import { ensureRetentionScheduled } from './retention-purge.js';
 
 /** Only one process evaluates the alert conditions per tick (api and worker both run the monitor). */
@@ -32,6 +43,8 @@ export interface SystemMonitorOptions {
   lagResolveAfterMs?: number;
   /** RETENTION_PURGE_CRON_UTC: the monitor keeps one job.retention_purge scheduled; null disables that */
   retentionCron?: string | null;
+  /** the WhatsApp quota counts (12 §13) are recomputed at most this often per process (default 60 s; 0 = every tick) */
+  quotaRefreshMs?: number;
 }
 
 export interface OrgLagReport extends OutboxHealth {
@@ -58,6 +71,12 @@ export interface StuckTask {
   since: Date;
 }
 
+/** A WhatsApp quota alert row (GAP-9): its venue and dedupe key. */
+export interface QuotaAlertRef {
+  venue_id: string;
+  dedupe_key: string;
+}
+
 export interface MonitorReport {
   /** false when another process held the evaluation lock */
   evaluated: boolean;
@@ -65,6 +84,8 @@ export interface MonitorReport {
   stuck: { raised: string[]; resolved: string[] };
   /** `draft_abandoned` raised (ticket ids) and resolved because the draft left `received` (PNT-075) */
   drafts: { raised: string[]; resolved: string[] };
+  /** WhatsApp quota alerts (12 §13, raised as `wa_send_failed`, GAP-9) created and resolved by this tick */
+  quota: { raised: QuotaAlertRef[]; resolved: QuotaAlertRef[] };
 }
 
 export interface AbandonedDraft {
@@ -89,6 +110,8 @@ export interface AbandonedDraft {
  *  - raises/resolves `task_stuck` (StuckDetector, `task_stuck:{task_id}`);
  *  - raises `draft_abandoned` (`draft_abandoned:{ticket_id}`) for intake drafts left in `received` beyond
  *    `intake.draft_abandoned_alert_min`, and resolves the live ones whose draft left `received` (14 §8);
+ *  - counts the WhatsApp quotas of 12 §13 (`point_wa_service_messages_month`,
+ *    `point_wa_unique_users_24h_outside_window`) and raises/resolves their alerts at its thresholds (GAP-9);
  *  - keeps the daily job.retention_purge scheduled.
  * It runs in the worker and in the api (a stopped worker is still detected); a transaction-scoped advisory
  * lock lets one process evaluate per tick. Time comes from the injected clock; `tick()` is public for tests.
@@ -99,6 +122,8 @@ export class SystemMonitor {
   private stopped = true;
   readonly intervalMs: number;
   private readonly lagResolveAfterMs: number;
+  private readonly quotaRefreshMs: number;
+  private quotaCache: { atMs: number; rows: WaQuotaSnapshot[] } | null = null;
 
   constructor(
     private readonly db: Database,
@@ -108,6 +133,7 @@ export class SystemMonitor {
   ) {
     this.intervalMs = opts.intervalMs ?? 10_000;
     this.lagResolveAfterMs = opts.lagResolveAfterMs ?? OUTBOX_LAG_RESOLVE_AFTER_MS;
+    this.quotaRefreshMs = opts.quotaRefreshMs ?? WA_QUOTA_REFRESH_MS;
   }
 
   start(): void {
@@ -144,12 +170,13 @@ export class SystemMonitor {
       const outbox = await this.evaluateOutboxLag(tx);
       const stuck = await this.evaluateStuckTasks(tx);
       const drafts = await this.evaluateAbandonedDrafts(tx);
+      const quota = await this.evaluateWaQuota(tx);
       if (this.opts.retentionCron !== null)
         await ensureRetentionScheduled(
           tx,
           this.opts.retentionCron ?? process.env.RETENTION_PURGE_CRON_UTC ?? '0 2 * * *',
         );
-      return { evaluated: true, outbox, stuck, drafts };
+      return { evaluated: true, outbox, stuck, drafts, quota };
     });
     return (
       report ?? {
@@ -157,6 +184,7 @@ export class SystemMonitor {
         outbox: [],
         stuck: { raised: [], resolved: [] },
         drafts: { raised: [], resolved: [] },
+        quota: { raised: [], resolved: [] },
       }
     );
   }
@@ -424,6 +452,170 @@ export class SystemMonitor {
     return { raised, resolved };
   }
 
+  // ------------------------------------------------------------------ WhatsApp quotas (GAP-9: 12 §13, F-03, F-18)
+
+  /**
+   * The two quota counts of every organization's active channel at `tx.now` (05 §12.2, 12 §13):
+   *  - service messages: session texts the provider accepted (`wa_message_id` set, not `failed`) on the channel since
+   *    the start of the month in WA_QUOTA_MONTH_TIME_ZONE (F-03 counts per business number);
+   *  - unique users outside the window: distinct customers sent a template (accepted, not `failed`) in the last 24 h
+   *    with no inbound message from them in the 24 h before that send (F-04, F-18), for the whole organization (the
+   *    limit is per business portfolio).
+   * `ix_whatsapp_messages_accepted` (migration 0005) makes both range scans; the window test is one probe of
+   * `ix_whatsapp_messages_customer` per send. JIT is off for the transaction: compiling these plans costs far more
+   * than running them.
+   */
+  async waQuota(tx: Tx): Promise<WaQuotaSnapshot[]> {
+    await tx.query(`SET LOCAL jit = off`);
+    const channels = await tx.rows<{
+      org_id: string;
+      channel_id: string;
+      tier: string | null;
+      month: string;
+      month_start: Date;
+    }>(
+      `SELECT c.org_id, c.id AS channel_id, c.messaging_limit_tier AS tier,
+              to_char($1::timestamptz AT TIME ZONE $2, 'YYYY-MM') AS month,
+              date_trunc('month', $1::timestamptz AT TIME ZONE $2) AT TIME ZONE $2 AS month_start
+         FROM whatsapp_channel c WHERE c.is_active ORDER BY c.org_id`,
+      [tx.now, WA_QUOTA_MONTH_TIME_ZONE],
+    );
+    const out: WaQuotaSnapshot[] = [];
+    for (const c of channels) {
+      const service = await tx.one<{ n: number }>(
+        `SELECT count(*)::int AS n FROM whatsapp_messages m
+          WHERE m.org_id = $1 AND m.direction = 'outbound' AND m.wa_message_id IS NOT NULL
+            AND m.channel_id = $2 AND m.kind = 'session_text' AND m.status <> 'failed'
+            AND m.queued_at >= $3 AND m.queued_at <= $4`,
+        [c.org_id, c.channel_id, c.month_start, tx.now],
+      );
+      const outside = await tx.one<{ n: number }>(
+        `SELECT count(DISTINCT m.customer_id)::int AS n
+           FROM whatsapp_messages m
+           LEFT JOIN LATERAL (
+             SELECT 1 AS hit FROM whatsapp_messages i
+              WHERE i.customer_id = m.customer_id AND i.direction = 'inbound'
+                AND i.received_at > m.queued_at - make_interval(hours => $3) AND i.received_at <= m.queued_at
+              LIMIT 1) w ON true
+          WHERE m.org_id = $1 AND m.direction = 'outbound' AND m.wa_message_id IS NOT NULL
+            AND m.kind = 'template' AND m.status <> 'failed' AND m.customer_id IS NOT NULL
+            AND m.queued_at > $2::timestamptz - make_interval(hours => $3) AND m.queued_at <= $2
+            AND w.hit IS NULL`,
+        [c.org_id, tx.now, WA_SERVICE_WINDOW_HOURS],
+      );
+      out.push({
+        orgId: c.org_id,
+        channelId: c.channel_id,
+        month: c.month,
+        serviceMessagesMonth: service.n,
+        uniqueUsers24hOutsideWindow: outside.n,
+        limitTier: c.tier,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The quota counts, recomputed at most every `quotaRefreshMs` in this process (in `tx`, or in a short transaction
+   * of their own), and the two gauges of 05 §12.2 (the highest organization's value: one active channel per
+   * organization, one organization in V1).
+   */
+  async waQuotaSnapshot(tx?: Tx): Promise<WaQuotaSnapshot[]> {
+    const at = (tx?.now ?? this.clock.now()).getTime();
+    const cached = this.quotaCache;
+    if (cached && at >= cached.atMs && at - cached.atMs < this.quotaRefreshMs) return cached.rows;
+    const rows = tx ? await this.waQuota(tx) : await this.db.transaction((t) => this.waQuota(t));
+    this.quotaCache = { atMs: at, rows };
+    metrics.waServiceMessagesMonth.set(rows.reduce((m, r) => Math.max(m, r.serviceMessagesMonth), 0));
+    metrics.waUniqueUsers24h.set(rows.reduce((m, r) => Math.max(m, r.uniqueUsers24hOutsideWindow), 0));
+    return rows;
+  }
+
+  /**
+   * 12 §13 thresholds → alerts (DEC-PROPOSED-1 of docs/progress/notes/server-gaps.md). A condition that holds is
+   * raised as `wa_send_failed` (warning, ticket-less) for every venue with an open or closing event plus the venues
+   * already alerted (DEC-46), its details refreshed while it lasts; a condition that ended (the month changed, the
+   * 24 h count fell under the threshold, the limit rose, the channel changed) is resolved automatically. A
+   * supervisor's resolution is kept: the service-message alert stays resolved for the rest of its month (the month
+   * is part of its key), the messaging-limit alert for its 24 h window.
+   */
+  private async evaluateWaQuota(tx: Tx): Promise<MonitorReport['quota']> {
+    const raised: QuotaAlertRef[] = [];
+    const resolved: QuotaAlertRef[] = [];
+    const snapshots = await this.waQuotaSnapshot(tx);
+    const live = await tx.rows<AlertRow>(
+      `SELECT * FROM alerts WHERE type = 'wa_send_failed' AND status <> 'resolved'
+          AND (starts_with(dedupe_key, $1) OR starts_with(dedupe_key, $2))
+        ORDER BY id FOR NO KEY UPDATE`,
+      [SERVICE_QUOTA_KEY_PREFIX, MESSAGING_LIMIT_KEY_PREFIX],
+    );
+    const holding = new Map<string, { orgId: string; condition: WaQuotaCondition }>();
+    for (const s of snapshots)
+      for (const condition of waQuotaConditions(s))
+        holding.set(condition.dedupeKey, { orgId: s.orgId, condition });
+
+    const ended = new Map<string, Set<string>>();
+    for (const a of live) {
+      if (!a.dedupe_key || holding.has(a.dedupe_key)) continue;
+      const keys = ended.get(a.org_id) ?? new Set<string>();
+      keys.add(a.dedupe_key);
+      ended.set(a.org_id, keys);
+    }
+    for (const [orgId, keys] of ended) {
+      const rows = await autoResolveAlerts(tx, {
+        orgId,
+        dedupeKeys: [...keys],
+        note: 'whatsapp quota back under the 12 §13 threshold',
+      });
+      resolved.push(...rows.map((a) => ({ venue_id: a.venue_id, dedupe_key: a.dedupe_key ?? '' })));
+    }
+
+    for (const [key, { orgId, condition }] of holding) {
+      const liveVenues = new Set(live.filter((a) => a.dedupe_key === key).map((a) => a.venue_id));
+      const venues = [...new Set([...(await affectedVenueIds(tx, orgId)), ...liveVenues])].sort();
+      if (!venues.length) continue;
+      const silentSince = key.startsWith(SERVICE_QUOTA_KEY_PREFIX)
+        ? new Date(0)
+        : new Date(tx.now.getTime() - WA_MESSAGING_LIMIT_SILENCE_MS);
+      const silenced = new Set(
+        (
+          await tx.rows<{ venue_id: string }>(
+            `SELECT DISTINCT venue_id FROM alerts
+              WHERE org_id = $1 AND dedupe_key = $2 AND status = 'resolved' AND resolved_by IS NOT NULL
+                AND resolved_at > $3`,
+            [orgId, key, silentSince],
+          )
+        ).map((r) => r.venue_id),
+      );
+      for (const venueId of venues) {
+        if (silenced.has(venueId) && !liveVenues.has(venueId)) continue;
+        const { created } = await raiseAlert(tx, {
+          orgId,
+          venueId,
+          type: 'wa_send_failed',
+          dedupeKey: key,
+          details: condition.details,
+        });
+        if (created) raised.push({ venue_id: venueId, dedupe_key: key });
+      }
+    }
+    if (raised.length || resolved.length)
+      this.logger.warn(
+        {
+          raised: raised.map((r) => r.dedupe_key),
+          resolved: resolved.map((r) => r.dedupe_key),
+          quotas: snapshots.map((s) => ({
+            org_id: s.orgId,
+            service_messages_month: s.serviceMessagesMonth,
+            unique_users_24h_outside_window: s.uniqueUsers24hOutsideWindow,
+            messaging_limit_tier: s.limitTier,
+          })),
+        },
+        'whatsapp quota',
+      );
+    return { raised, resolved };
+  }
+
   // ------------------------------------------------------------------ gauges (05 §12.2)
 
   async refreshGauges(): Promise<void> {
@@ -494,5 +686,7 @@ export class SystemMonitor {
     metrics.waInboundLag.set(oldest ? Math.max(0, (now.getTime() - new Date(oldest).getTime()) / 1000) : 0);
 
     metrics.dbPoolInUse.set(Math.max(0, this.db.pool.totalCount - this.db.pool.idleCount));
+
+    await this.waQuotaSnapshot();
   }
 }

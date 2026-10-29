@@ -57,7 +57,7 @@ import {
   w09VariantFor,
   type SendFacts,
 } from '../domain/send-rules.js';
-import { activeChannel, type ChannelRow } from '../infra/channel.js';
+import { activeChannel, phoneNumberFacts, storePhoneNumberFacts, type ChannelRow } from '../infra/channel.js';
 import { phoneFromWaId } from '../infra/customers.js';
 import type { GraphSendResponse } from '../infra/graph-client.js';
 import type { WhatsappRuntime } from '../runtime.js';
@@ -1160,12 +1160,16 @@ export class WhatsappSender {
   // Channel health (12 §5.14) and the webhook silence check (14 §8)
   // ---------------------------------------------------------------------------------------------
 
-  /** GET /{phone_number_id}; the result is kept per process for a minute. */
+  /**
+   * GET /{phone_number_id}; the result is kept per process for a minute. The number's quality rating and messaging
+   * limit it reports are stored on the channel (12 §3.1, F-18): the quota alert reads the limit (GAP-9).
+   */
   private async probe(ch: ChannelRow, token: string): Promise<boolean> {
     const res = await this.rt.graph.phoneNumber(ch, token);
     const ok = res.ok && res.body.health_status?.can_send_message !== 'BLOCKED';
     const quality = res.ok ? (res.body.quality_rating ?? null) : null;
     this.rt.probes.set(ch.id, { at: this.nowMs(), ok, quality });
+    if (res.ok) await storePhoneNumberFacts(this.db, ch.id, phoneNumberFacts(res.body));
     this.ctx.logger.info({ channel_id: ch.id, ok, quality }, 'whatsapp channel probe');
     return ok;
   }
