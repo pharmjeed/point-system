@@ -130,7 +130,19 @@ export class Database {
    * container health check gives it 3 s). The query itself stays bounded by the pool's own timeouts.
    */
   async ping(timeoutMs: number): Promise<void> {
-    const q = this.query('SELECT 1', [], { timeoutMs });
+    await this.boundedQuery('SELECT 1', [], timeoutMs);
+  }
+
+  /**
+   * One query answered within `timeoutMs` — the wait for a pooled connection included — or rejected as a database
+   * error (the readiness probe: a database that stopped answering reads as unavailable, not as a probe that hangs).
+   */
+  async boundedQuery<R extends pg.QueryResultRow = any>(
+    text: string,
+    params: unknown[],
+    timeoutMs: number,
+  ): Promise<pg.QueryResult<R>> {
+    const q = this.query<R>(text, params, { timeoutMs });
     q.catch(() => {}); // settled by the pool's own timeouts when the deadline wins
     let timer: NodeJS.Timeout | undefined;
     const deadline = new Promise<never>((_, reject) => {
@@ -140,7 +152,7 @@ export class Database {
       );
     });
     try {
-      await Promise.race([q, deadline]);
+      return await Promise.race([q, deadline]);
     } finally {
       clearTimeout(timer);
     }

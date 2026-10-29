@@ -9,7 +9,17 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createTestDatabase, type TestDatabase } from '@point/db/testing';
-import { AppError, Command, CurrentTx, Database, FakeClock, Public, audit, type Tx } from '@point/server';
+import {
+  AppError,
+  Command,
+  CurrentTx,
+  Database,
+  FakeClock,
+  Public,
+  audit,
+  enqueue,
+  type Tx,
+} from '@point/server';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/bootstrap.js';
@@ -139,18 +149,44 @@ describe('API skeleton', () => {
 
   it('/health/live and /health/ready are ok; API responses are not cached', async () => {
     expect((await request(app.getHttpServer()).get('/health/live')).body).toEqual({ status: 'ok' });
-    expect((await request(app.getHttpServer()).get('/health/ready')).status).toBe(200);
+    const ready = await request(app.getHttpServer()).get('/health/ready');
+    expect(ready.status).toBe(200);
+    expect(ready.body).toEqual({ status: 'ok', checks: { db: true, outbox_lag_s: null } }); // 07 healthReady
     const r = await request(app.getHttpServer()).get('/v1/test/boom');
     expect(r.headers['cache-control']).toBe('no-store');
   });
 
-  it('/health/ready fails when the database is down', async () => {
+  it('/health/ready is degraded while the outbox lags beyond ops.outbox_lag_alert_s (07, 14 §8)', async () => {
+    const at = (s: number) => new Date(Date.now() - s * 1000); // the app runs on the system clock here
+    const row = await db.transaction((tx) =>
+      enqueue(tx, { type: 'job.dispatch_sweep', orgId: ORG, availableAt: at(10), dedupeKey: 'ready-a' }),
+    );
+    try {
+      let r = await request(app.getHttpServer()).get('/health/ready');
+      expect(r.status).toBe(200);
+      expect(r.body.status).toBe('ok'); // 10 s is under the 30 s default
+      expect(r.body.checks.outbox_lag_s).toBeGreaterThanOrEqual(10);
+      await db.query(`UPDATE outbox_events SET available_at = $2 WHERE id = $1`, [row, at(60)]);
+      r = await request(app.getHttpServer()).get('/health/ready');
+      expect(r.status).toBe(200); // still ready: it serves, the operator sees why
+      expect(r.body.status).toBe('degraded');
+      expect(r.body.checks.db).toBe(true);
+      expect(r.body.checks.outbox_lag_s).toBeGreaterThanOrEqual(60);
+    } finally {
+      await db.query(`DELETE FROM outbox_events WHERE id = $1`, [row]);
+    }
+  });
+
+  it('/health/ready fails when the database is down: 503 SERVICE_UNAVAILABLE in the canon envelope', async () => {
     const dead = new Database({ connectionString: 'postgres://x:y@127.0.0.1:1/none' }, new FakeClock());
     const app2 = await createApp({ env: testEnv(), database: dead });
     await app2.init();
     try {
       const r = await request(app2.getHttpServer()).get('/health/ready');
       expect(r.status).toBe(503);
+      expect(r.body.error).toMatchObject({ code: 'SERVICE_UNAVAILABLE', retryable: true });
+      expect(r.body.error.request_id).toMatch(/^req_/);
+      expect(r.headers['retry-after']).toBeTruthy();
     } finally {
       await app2.close();
       await dead.close().catch(() => {});

@@ -281,7 +281,7 @@ pc build                                          # الصورتان point-backe
 pc run --rm migrate                               # «applied N migration(s)» ثم «database is up to date» في المرات التالية
 pc up -d                                          # api و worker ثم web بعد سلامة api
 pc ps                                             # كل الخدمات healthy
-curl -fsS https://app.<domain>/health/ready       # {"status":"ok"}
+curl -fsS https://app.<domain>/health/ready       # {"status":"ok","checks":{"db":true,"outbox_lag_s":null}} (degraded: the outbox lags)
 ```
 
 - **لا بذر في الإنتاج:** بيانات التطوير (`pnpm db:seed`) ترفض العمل في staging وproduction (`SeedRefusedError`، رمز الخروج 3، DEC-56)، ولا تُشغَّل على أي قاعدة حقيقية.
