@@ -1,12 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInvariants } from '@point/db';
 import { SEED_IDS, seedKeySlotId, seedSpotId } from '@point/db/seed';
+import {
+  ANALYTICS_PII_DENYLIST,
+  analyticsName,
+  DOMAIN_EVENT_TYPES,
+  findPiiValues,
+  SERVER_ANALYTICS_PROPERTIES,
+  type DomainEventType,
+} from '@point/shared';
 import {
   auditMonitoringJobs,
   auditMonitoringProjectors,
   EXPORTS_STORAGE,
   incidentsJobs,
   incidentsProjectors,
+  metrics,
   OBJECT_STORAGE,
   paymentsReportsJobs,
   useCasesJobs,
@@ -16,8 +26,8 @@ import { createSessionCookie } from '@point/server/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCustomerApp, messagesTo, press, type CustomerApp } from './customer-harness.js';
-import { CSRF, newKey } from './harness.js';
-import { err, ok, one, rows, U, type Res } from './dispatch-fixtures.js';
+import { CSRF, newKey, type SeedUserKey } from './harness.js';
+import { err, expectConsistent, ok, one, rows, U, type Res } from './dispatch-fixtures.js';
 
 /**
  * Gate G4 (16 PNT-093; 17 AC-12 / TC-036; 13 §10–§12): one full event of «قاعة ريماس» through the real routes,
@@ -95,7 +105,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
   let plateSeq = 3100;
 
   // ------------------------------------------------------------------------------------------------ requests
-  const cookieOf = async (as: string) => cookies.get(uid(as)) ?? (await w.sessionFor(as));
+  const cookieOf = async (as: string) => cookies.get(uid(as)) ?? (await w.sessionFor(as as SeedUserKey));
   async function cmd(
     as: string,
     method: 'post' | 'put' | 'patch',
@@ -245,7 +255,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     const ticketId: string = created.ticket.id;
     const plateDigits = String(plateSeq++);
     const serial = o.channel === 'paper' ? `G4-${serialSeq++}` : null;
-    w.clock.advanceSeconds(20);
+    await tick(20);
     const patched = ok(
       await cmd(as, 'patch', `/v1/tickets/${ticketId}/intake`, {
         expected_version: created.ticket.version,
@@ -258,7 +268,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
       }),
     );
     expect(patched.status).toBe('received');
-    w.clock.advanceSeconds(20);
+    await tick(20);
     await uploadPhotos(as, ticketId, PHOTO_KINDS.slice(0, o.photos ?? 4));
     const car: Car = {
       key,
@@ -291,7 +301,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
 
   /** complete-parking in the next free spot and key slot of the venue */
   async function park(as: string, car: Car, o: { taskId?: string; status?: string } = {}) {
-    w.clock.advanceSeconds(60);
+    await tick(60);
     const s = nextSpot();
     const k = nextSlot();
     const r = ok(
@@ -362,7 +372,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
   }
   /** key pickup → start → ready, with the minutes of a real retrieval in between */
   async function bring(as: string, car: Car) {
-    w.clock.advanceSeconds(30);
+    await tick(30);
     ok(await cmd(as, 'post', `/v1/tasks/${car.taskId}/key-pickup`, { key_slot_id: car.slotId }));
     await tick(20);
     ok(await cmd(as, 'post', `/v1/tasks/${car.taskId}/start-retrieval`, {}));
@@ -379,7 +389,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     return code!;
   }
   async function handOver(as: string, car: Car, payment?: Record<string, unknown> | null) {
-    w.clock.advanceSeconds(20);
+    await tick(20);
     const verification =
       car.channel === 'whatsapp'
         ? { method: 'code', code: await codeOf(car) }
@@ -397,8 +407,18 @@ describe('G4 — a full event through the real routes, closed with nothing open 
   const CASH = { method: 'cash', amount_halalas: FEE };
   const POS = (ref: string) => ({ method: 'pos', amount_halalas: FEE, pos_reference: ref });
 
+  /** point_analytics_rejected_total{source="server"} by reason (refused rows and values stored as null) */
+  const serverRejections = async () => {
+    const out: Record<string, number> = {};
+    for (const v of (await metrics.analyticsRejected.get()).values)
+      if (v.labels.source === 'server') out[String(v.labels.reason)] = v.value;
+    return out;
+  };
+  let rejectedBefore: Record<string, number> = {};
+
   // ------------------------------------------------------------------------------------------------ setup
   beforeAll(async () => {
+    rejectedBefore = await serverRejections();
     w = await createCustomerApp();
     storage = w.app.get<InMemoryObjectStorage>(OBJECT_STORAGE);
     // the real worker's other handlers and projectors (apps/worker/src/handlers.ts): incidents, payments and
@@ -997,7 +1017,7 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     // in LYL: on duty, takes a paper car in, the LYL supervisor asks for it, he brings and hands it over
     await startDuty('DRV3');
     const lyl = await intake('L1', 'DRV3', { channel: 'paper', event: SEED_IDS.events['EVT-L1'] });
-    w.clock.advanceSeconds(60);
+    await tick(60);
     ok(
       await cmd('DRV3', 'post', `/v1/tasks/${lyl.parkTaskId}/complete-parking`, {
         parking_spot_id: seedSpotId('P1-01'),
@@ -1013,5 +1033,455 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     await handOver('DRV3', lyl); // EVT-L1 is included: nothing to collect
     ok(await cmd('DRV3', 'post', '/v1/me/duty/end', {}));
     onDuty.delete('DRV3');
+  });
+
+  it('a reassignment to the driving supervisor and a withdrawal back to the queue (K9, K13)', async () => {
+    await brk('SUP-RD', false); // back last: he is the least idle, the requests go to the others first
+    const k9 = cars.get('K9')!;
+    await staffAsks(k9);
+    const x = await singleOfferTo(k9);
+    expect(x).not.toBe('SUP-RD');
+    await accept(x, k9);
+    // the driver is at the far gate: the supervisor gives the car to SUP-RD, who drives tonight
+    const re = ok(
+      await cmd('SUP-R', 'post', `/v1/tasks/${k9.taskId}/reassign`, {
+        reason: 'السائق بعيد عند البوابة الخلفية',
+        target_driver_id: U['SUP-RD'],
+      }),
+    );
+    expect(re.task).toMatchObject({ status: 'accepted', assignee: { id: U['SUP-RD'] } });
+    await pump();
+    await bring('SUP-RD', k9);
+    const done9 = await handOver('SUP-RD', k9, CASH);
+    expect(done9.payment.collected_by).toMatchObject({ id: U['SUP-RD'] });
+
+    const k13 = cars.get('K13')!;
+    await tick(30);
+    await staffAsks(k13);
+    const y = await singleOfferTo(k13);
+    await accept(y, k13);
+    const back = ok(
+      await cmd('SUP-R', 'post', `/v1/tasks/${k13.taskId}/reassign`, {
+        reason: 'السائق انشغل بطارئ',
+        target_driver_id: null,
+      }),
+    );
+    expect(back.ticket.status).toBe('requested');
+    await pump();
+    const z = await singleOfferTo(k13);
+    expect(z).not.toBe(y);
+    await accept(z, k13);
+    await bring(z, k13);
+    await handOver(z, k13, CASH);
+  });
+
+  it('a driver loses the network with a car (connection alert), then a POS payment that failed is reversed, the incident followed up and the fee waived (K2)', async () => {
+    const k2 = cars.get('K2')!;
+    await tick(20);
+    await staffAsks(k2);
+    const e = await singleOfferTo(k2);
+    await accept(e, k2);
+    await tick(30);
+    ok(await cmd(e, 'post', `/v1/tasks/${k2.taskId}/key-pickup`, { key_slot_id: k2.slotId }));
+    await tick(15);
+    ok(await cmd(e, 'post', `/v1/tasks/${k2.taskId}/start-retrieval`, {}));
+    const session = (
+      await one(w.db, `SELECT id FROM duty_sessions WHERE user_id = $1 AND status <> 'ended'`, [uid(e)])
+    ).id as string;
+    const changes = async () =>
+      (
+        await rows(
+          w.db,
+          `SELECT payload->'payload'->>'to' AS "to" FROM outbox_events
+            WHERE type = 'driver.connection_changed' AND aggregate_id = $1 ORDER BY seq`,
+          [session],
+        )
+      ).map((c) => c.to as string);
+    // the heartbeats of every phone kept every driver online so far
+    expect(await changes()).toEqual([]);
+    // the basement has no signal: no heartbeat for two minutes (uncertain after 45 s, offline after 120 s)
+    silent.add(e);
+    await tick(130, 5);
+    expect(await changes()).toEqual(['uncertain', 'offline']);
+    const lost = await one(
+      w.db,
+      `SELECT id, status FROM alerts WHERE type = 'driver_connection_lost_with_custody' AND dedupe_key = $1`,
+      [`driver_connection_lost_with_custody:${session}`],
+    );
+    expect(lost.status).toBe('open');
+    silent.delete(e);
+    await heartbeats(true);
+    await tick(20);
+    expect(await changes()).toEqual(['uncertain', 'offline', 'online']);
+    expect((await one(w.db, `SELECT status FROM alerts WHERE id = $1`, [lost.id])).status).toBe('resolved');
+    ok(await cmd(e, 'post', `/v1/tasks/${k2.taskId}/ready`, {}));
+    await pump();
+    const done = await handOver(e, k2, POS('AP2002'));
+
+    // the terminal's batch shows the transaction failed: reversed without replacement → due + incident
+    await tick(300, 30);
+    ok(
+      await cmd('SUP-R', 'post', `/v1/payments/${done.payment.id}/reverse`, {
+        reason: 'عملية الشبكة لم تكتمل في تقرير الجهاز',
+      }),
+    );
+    expect(
+      (await one(w.db, `SELECT payment_status FROM tickets WHERE id = $1`, [k2.ticketId])).payment_status,
+    ).toBe('due');
+    const incident = await one(
+      w.db,
+      `SELECT id, status, version FROM incidents WHERE type = 'payment_discrepancy' AND ticket_id = $1`,
+      [k2.ticketId],
+    );
+    expect(incident.status).toBe('open');
+    ok(
+      await cmd('SUP-R', 'patch', `/v1/incidents/${incident.id}`, {
+        expected_version: incident.version,
+        status: 'in_review',
+        owner_id: U['SUP-R'],
+      }),
+    );
+    // the host covers the guest's fee: waived, then the incident is resolved with the decision
+    ok(
+      await cmd('SUP-R', 'post', `/v1/tickets/${k2.ticketId}/payment-waiver`, {
+        reason: 'المضيف تحمّل رسوم التذكرة بعد فشل عملية الشبكة',
+      }),
+    );
+    ok(
+      await cmd('SUP-R', 'patch', `/v1/incidents/${incident.id}`, {
+        expected_version: incident.version + 1,
+        status: 'resolved',
+        resolution: 'أُعفيت التذكرة بموافقة المضيف',
+      }),
+    );
+    await pump();
+  });
+
+  it('ten minutes without the API: the venue works on the paper log, then the supervisor reconciles the car (TC-038, K15); a driver disabled and enabled again', async () => {
+    const k15 = cars.get('K15')!;
+    await staffAsks(k15);
+    const r = await singleOfferTo(k15);
+    await accept(r, k15);
+    // the API is unreachable for ten minutes: no request at all (the PWAs cannot reach it); the worker goes on.
+    // On paper: r takes the key, brings the car and hands it over against the stub, the cash is collected.
+    const all = [...onDuty];
+    for (const d of all) silent.add(d);
+    await tick(600, 30);
+    for (const d of all) silent.delete(d);
+    await heartbeats(true);
+    await pump();
+    const reconciled = ok(
+      await cmd('SUP-R', 'post', `/v1/tickets/${k15.ticketId}/manual-reconcile`, {
+        target_status: 'delivered',
+        reason: 'سُلّمت أثناء انقطاع النظام وفق السجل الورقي',
+        evidence: { paper_log_ref: 'PL-15', note: 'كعب ورقي مطابق وتوقيع العميل' },
+        payment: { ...CASH, collected_by: uid(r) },
+      }),
+    );
+    expect(reconciled).toMatchObject({ status: 'delivered', payment_status: 'collected' });
+    expect(
+      await rows(
+        w.db,
+        `SELECT DISTINCT reason FROM custody_events WHERE ticket_id = $1 AND reason = 'manual_reconcile'`,
+        [k15.ticketId],
+      ),
+    ).toEqual([{ reason: 'manual_reconcile' }]);
+    expect(
+      (
+        await one(w.db, `SELECT collected_by FROM payments WHERE ticket_id = $1 AND status = 'recorded'`, [
+          k15.ticketId,
+        ])
+      ).collected_by,
+    ).toBe(uid(r));
+    await tick(30);
+
+    // DRV6 reports his phone lost: the administrator disables the account (duty ended, sessions revoked) and
+    // enables it again once he has a new phone; he signs in and goes back on duty
+    const idle = await one(w.db, `SELECT driver_state FROM v_driver_state WHERE user_id = $1`, [U.DRV6]);
+    expect(idle.driver_state).toBe('available');
+    ok(await cmd('ADM1', 'post', `/v1/drivers/${U.DRV6}/disable`, { reason: 'أبلغ عن فقد جواله' }));
+    onDuty.delete('DRV6');
+    expect((await get('DRV6', '/v1/me')).body.error.code).toBe('AUTH_SESSION_REVOKED');
+    expect(
+      (
+        await one(
+          w.db,
+          `SELECT end_reason FROM duty_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
+          [U.DRV6],
+        )
+      ).end_reason,
+    ).toBe('disabled');
+    ok(await cmd('ADM1', 'post', `/v1/drivers/${U.DRV6}/enable`, {}));
+    await relogin('DRV6');
+    await startDuty('DRV6');
+    await pump();
+  });
+
+  it('closing: start-closing stops the intake, the reconciliation lists what is open, the last car and the cash are handed over, the event closes and the shift closes', async () => {
+    ok(await cmd('SUP-R', 'post', `/v1/events/${eventId}/start-closing`, {}));
+    err(
+      await cmd('DRV1', 'post', '/v1/tickets', { event_id: eventId, channel: 'paper' }),
+      'EVENT_NOT_OPEN',
+      409,
+    );
+    const k17 = cars.get('K17')!;
+    let rec = ok(await get('SUP-R', `/v1/events/${eventId}/reconciliation`));
+    expect(rec.can_close).toBe(false);
+    expect(rec.blockers.open_tickets.map((x: { id: string }) => x.id)).toEqual([k17.ticketId]);
+    expect(rec.blockers.unsettled_payments).toEqual([]);
+    expect(rec.blockers.cash_outstanding.length).toBeGreaterThan(0);
+    const blocked = err(
+      await cmd('SUP-R', 'post', `/v1/events/${eventId}/close`, {}),
+      'EVENT_CLOSE_BLOCKED',
+      409,
+    );
+    expect(blocked).toEqual({ blockers: rec.blockers });
+
+    // the last guest leaves during the closing (retrievals and money go on, 13 §12)
+    await customerAsks(k17);
+    const d = await singleOfferTo(k17);
+    await accept(d, k17);
+    await bring(d, k17);
+    await handOver(d, k17, CASH);
+
+    // the cash: every driver hands over what he holds; DRV2 is five riyals short (a recorded difference)
+    const s = ok(await get('SUP-R', `/v1/events/${eventId}/settlement`));
+    const owing = s.drivers.filter(
+      (x: { cash: { outstanding_halalas: number } }) => x.cash.outstanding_halalas > 0,
+    ) as { driver: { id: string }; cash: { outstanding_halalas: number } }[];
+    expect(owing.map((x) => x.driver.id)).toContain(U.DRV2);
+    for (const o of owing) {
+      const short = o.driver.id === U.DRV2 ? 500 : 0;
+      const h = ok(
+        await cmd('SUP-R', 'post', '/v1/cash-handovers', {
+          event_id: eventId,
+          driver_id: o.driver.id,
+          amount_halalas: o.cash.outstanding_halalas - short,
+          ...(short ? { note: 'نقص خمسة ريالات عند العد' } : {}),
+        }),
+        201,
+      );
+      expect(h.difference_halalas).toBe(short ? -short : 0);
+      expect(h.incident_id === null).toBe(short === 0);
+    }
+    await pump();
+
+    rec = ok(await get('SUP-R', `/v1/events/${eventId}/reconciliation`));
+    expect(rec.can_close).toBe(true);
+    expect(Object.values(rec.blockers).every((l) => (l as unknown[]).length === 0)).toBe(true);
+    expect(rec.warnings.cash_discrepancies.length).toBe(1); // warnings never block
+
+    await tick(60, 30);
+    const before = await one(w.db, `SELECT version FROM events WHERE id = $1`, [eventId]);
+    const closed = ok(
+      await cmd('SUP-R', 'post', `/v1/events/${eventId}/close`, {
+        expected_version: before.version,
+        note: 'انتهى الحفل؛ نقص نقدي موثق بواقعة',
+      }),
+    );
+    expect(closed.status).toBe('closed');
+    err(await cmd('SUP-R', 'post', `/v1/events/${eventId}/close`, {}), 'EVENT_ALREADY_CLOSED', 409);
+
+    // the shift closes: every remaining duty ends (shift_closed)
+    const shift = ok(await cmd('SUP-R', 'post', `/v1/shifts/${shiftId}/close`, {}));
+    expect(shift.status).toBe('closed');
+    for (const x of [...onDuty]) onDuty.delete(x);
+    expect(
+      await rows(w.db, `SELECT id FROM duty_sessions WHERE dispatch_pool_id = $1 AND status <> 'ended'`, [
+        POOL_R,
+      ]),
+    ).toEqual([]);
+    await pump();
+  });
+
+  // ============================================================================================== acceptance
+  it('PNT-093 AC: no open custody, the amounts match, the event is closed, the transfer succeeded, the invariants hold', async () => {
+    // the event is closed with its summary
+    const ev = await one(w.db, `SELECT status, closed_by, close_summary FROM events WHERE id = $1`, [
+      eventId,
+    ]);
+    expect(ev).toMatchObject({ status: 'closed', closed_by: U['SUP-R'] });
+
+    // no open custody: every car back with its customer (or never taken: the voided draft went back to him)
+    const tickets = await rows(
+      w.db,
+      `SELECT status, vehicle_holder_type, key_holder_type FROM tickets WHERE event_id = $1`,
+      [eventId],
+    );
+    expect(tickets.length).toBe(17);
+    expect(tickets.filter((x) => x.status === 'delivered').length).toBe(16);
+    expect(tickets.filter((x) => x.status === 'voided').length).toBe(1);
+    expect(
+      tickets.every((x) => x.vehicle_holder_type === 'customer' && x.key_holder_type === 'customer'),
+    ).toBe(true);
+    for (const sql of [
+      `SELECT a.id FROM spot_allocations a JOIN tickets t ON t.id = a.ticket_id WHERE t.event_id = $1 AND a.released_at IS NULL`,
+      `SELECT a.id FROM key_slot_allocations a JOIN tickets t ON t.id = a.ticket_id WHERE t.event_id = $1 AND a.released_at IS NULL`,
+      `SELECT id FROM tasks WHERE event_id = $1 AND status NOT IN ('completed','canceled')`,
+      `SELECT o.id FROM task_offers o JOIN tasks k ON k.id = o.task_id WHERE k.event_id = $1 AND o.status = 'active'`,
+      `SELECT c.id FROM claim_codes c JOIN tickets t ON t.id = c.ticket_id
+        WHERE t.event_id = $1 AND c.consumed_at IS NULL AND c.revoked_at IS NULL`,
+      `SELECT c.id FROM claim_codes c JOIN tickets t ON t.id = c.ticket_id WHERE t.event_id = $1 AND c.code_ciphertext IS NOT NULL`,
+      `SELECT rc.id FROM retrieval_cycles rc JOIN tickets t ON t.id = rc.ticket_id WHERE t.event_id = $1 AND rc.closed_at IS NULL`,
+    ])
+      expect(await rows(w.db, sql, [eventId]), sql).toEqual([]);
+
+    // the amounts match: the settlement equals the recorded payments; the cash handed over equals the cash
+    // collected plus the recorded differences; nothing outstanding, nothing due
+    const s = ok(await get('SUP-R', `/v1/events/${eventId}/settlement`));
+    const money = await one(
+      w.db,
+      `SELECT coalesce(sum(amount_halalas) FILTER (WHERE status = 'recorded'), 0)::int AS recorded,
+              coalesce(sum(amount_halalas) FILTER (WHERE status = 'recorded' AND method = 'cash'), 0)::int AS cash,
+              coalesce(sum(amount_halalas) FILTER (WHERE status = 'recorded' AND method = 'pos'), 0)::int AS pos,
+              count(*) FILTER (WHERE status = 'reversed')::int AS reversed
+         FROM payments WHERE event_id = $1`,
+      [eventId],
+    );
+    const handed = await one(
+      w.db,
+      `SELECT coalesce(sum(amount_halalas), 0)::int AS amount, coalesce(sum(expected_halalas), 0)::int AS expected,
+              coalesce(sum(difference_halalas), 0)::int AS difference, count(*)::int AS n
+         FROM cash_handovers WHERE event_id = $1`,
+      [eventId],
+    );
+    expect(s.amounts.collected_halalas).toBe(money.recorded);
+    expect(handed.expected).toBe(money.cash);
+    expect(handed.amount).toBe(money.cash + handed.difference);
+    expect(handed.difference).toBe(-500);
+    expect(money.reversed).toBe(2);
+    expect(s.amounts.billable_halalas).toBe(
+      s.amounts.collected_halalas + s.amounts.waived_halalas + s.amounts.due_halalas,
+    );
+    expect(s.amounts.due_halalas).toBe(0);
+    expect(s.integrity.ok).toBe(true);
+    expect(
+      s.drivers.every((d: { cash: { outstanding_halalas: number } }) => d.cash.outstanding_halalas === 0),
+    ).toBe(true);
+    expect(
+      await rows(
+        w.db,
+        `SELECT id FROM payments WHERE event_id = $1 AND method = 'cash' AND status = 'recorded' AND cash_handover_id IS NULL`,
+        [eventId],
+      ),
+    ).toEqual([]);
+    expect(ev.close_summary.finance).toEqual({
+      currency: 'SAR',
+      amounts: s.amounts,
+      drivers: s.drivers,
+      discrepancies: s.discrepancies,
+    });
+    expect(ev.close_summary.tickets).toEqual(s.tickets);
+    const diffIncident = await rows(
+      w.db,
+      `SELECT id FROM incidents WHERE type = 'payment_discrepancy' AND event_id = $1 AND ticket_id IS NULL`,
+      [eventId],
+    );
+    expect(diffIncident.length).toBe(1);
+    expect(ev.close_summary.warnings.cash_discrepancies.length).toBe(1);
+
+    // the transfer scenario: completed, the driver now in LYL, his RMS work kept with its venue and actor
+    expect(
+      await rows(
+        w.db,
+        `SELECT status, from_venue_id, to_venue_id FROM driver_transfers WHERE driver_id = $1`,
+        [U.DRV3],
+      ),
+    ).toEqual([{ status: 'completed', from_venue_id: RMS, to_venue_id: LYL }]);
+    expect(
+      (
+        await one(w.db, `SELECT count(*)::int AS n FROM tickets WHERE event_id = $1 AND created_by = $2`, [
+          eventId,
+          U.DRV3,
+        ])
+      ).n,
+    ).toBeGreaterThan(0);
+
+    // every command left its audit row; nothing is left for the worker (no dead, no failed row)
+    expect(
+      await rows(w.db, `SELECT type, status FROM outbox_events WHERE status IN ('failed','dead')`),
+    ).toEqual([]);
+
+    // the invariants: the 10 §14.1 / 11 §1.7 queries, the consistency queries of the restore drill, and
+    // docs/06_schema_invariants_test.sql on a fresh database built from the same migrations
+    await expectConsistent(w.db);
+    const consistency = readFileSync(
+      join(import.meta.dirname, '../../../infra/backup/consistency.sql'),
+      'utf8',
+    );
+    const checks = await rows<{ check_name: string; violations: string }>(w.db, consistency);
+    expect(checks.length).toBeGreaterThan(5);
+    expect(checks.filter((c) => Number(c.violations) !== 0)).toEqual([]);
+    const inv = await runInvariants(process.env.TEST_DATABASE_URL!);
+    expect(inv.passed).toBe(true);
+  });
+
+  // ============================================================================================== PNT-090 AC2
+  it('PNT-090 AC2: every domain event of the run — all 71 canon §7.1 types — has exactly one analytics row, inside the allow-list', async () => {
+    await pump();
+    const events = await rows<{ id: string; type: string; status: string }>(
+      w.db,
+      `SELECT id, type, status FROM outbox_events WHERE type = ANY($1::text[]) ORDER BY seq`,
+      [[...DOMAIN_EVENT_TYPES]],
+    );
+    expect(events.filter((e) => e.status !== 'done')).toEqual([]);
+    const analytics = await rows<{
+      name: string;
+      source_event_id: string;
+      properties: Record<string, unknown>;
+      actor_role: string;
+      text: string;
+    }>(
+      w.db,
+      `SELECT name, properties->>'source_event_id' AS source_event_id, properties, actor_role, a::text AS text
+         FROM analytics_events a WHERE source = 'server'`,
+    );
+    // exactly once: one row per committed domain event, named after its type (15 §4), none without its event
+    const byEvent = new Map<string, number>();
+    for (const a of analytics) byEvent.set(a.source_event_id, (byEvent.get(a.source_event_id) ?? 0) + 1);
+    const typeOf = new Map(events.map((e) => [e.id, e.type]));
+    expect([...byEvent.values()].every((n) => n === 1)).toBe(true);
+    expect(analytics.length).toBe(events.length);
+    for (const a of analytics)
+      expect(a.name).toBe(analyticsName(typeOf.get(a.source_event_id) as DomainEventType));
+    // every tracked server action of 15 §7 happened in this run
+    const seen = new Set(events.map((e) => e.type));
+    expect(DOMAIN_EVENT_TYPES.filter((t) => !seen.has(t))).toEqual([]);
+    expect(new Set(analytics.map((a) => a.name))).toEqual(new Set(DOMAIN_EVENT_TYPES.map(analyticsName)));
+
+    // the allow-list (15 §3, §7): only the catalog's keys, no denylisted key, no phone, plate, code or key position
+    const denied = new Set<string>(ANALYTICS_PII_DENYLIST);
+    for (const a of analytics) {
+      const type = typeOf.get(a.source_event_id) as DomainEventType;
+      const allowed = new Set([...Object.keys(SERVER_ANALYTICS_PROPERTIES[type]), 'source_event_id']);
+      const keys = Object.keys(a.properties);
+      expect(
+        keys.filter((k) => !allowed.has(k)),
+        `${a.name}`,
+      ).toEqual([]);
+      expect(
+        keys.filter((k) => denied.has(k)),
+        `${a.name}`,
+      ).toEqual([]);
+      expect(findPiiValues(a.properties), `${a.name}`).toEqual([]);
+      expect(['owner', 'admin', 'supervisor', 'driver', 'customer', 'system']).toContain(a.actor_role);
+    }
+    const all = analytics.map((a) => a.text).join('\n');
+    const props = analytics.map((a) => JSON.stringify(a.properties)).join('\n');
+    const secrets: string[] = [];
+    for (const p of phones) secrets.push(p, p.replace('+966', '0'), p.replace('+', ''));
+    for (const code of codesSeen) secrets.push(code);
+    for (const car of cars.values()) {
+      if (car.slotId) secrets.push(car.slotId);
+      if (car.spotId) secrets.push(car.spotId);
+      if (car.serial) secrets.push(car.serial);
+      secrets.push(`KT-${car.plateDigits}`);
+      expect(props.includes(`"${car.plateDigits}"`), `plate ${car.plateDigits}`).toBe(false);
+    }
+    expect(codesSeen.size).toBeGreaterThan(5);
+    expect(secrets.filter((x) => all.includes(x))).toEqual([]);
+    expect(/[؀-ۿ]/.test(props)).toBe(false);
+    // nothing was refused by the allow-list and no value fell outside its list (stored as null) during the run
+    expect(await serverRejections()).toEqual(rejectedBefore);
   });
 });
