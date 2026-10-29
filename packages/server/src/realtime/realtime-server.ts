@@ -168,8 +168,8 @@ export class RealtimeServer {
             );
         }
         ack?.({ data: { ok: true } });
-      } catch {
-        ack?.({ error: { code: 'INTERNAL_ERROR' } });
+      } catch (e) {
+        ack?.({ error: { code: dbUnavailableError(e)?.code ?? 'INTERNAL_ERROR' } });
       }
     });
   }
@@ -181,19 +181,23 @@ export class RealtimeServer {
     data.rooms = next;
   }
 
-  /** Re-checks the socket's session; an invalid one gets session.revoked (with the reason) and is disconnected. */
+  /**
+   * Re-checks the socket's session. Only a verdict on the session itself (an AUTH_* rejection of loadActor:
+   * unknown, expired, revoked, disabled) sends session.revoked with its reason and disconnects (07 §4). Any other
+   * failure — the database unreachable (17 §12), a fault — says nothing about the session: it is thrown to the
+   * caller and the socket keeps its session and rooms, so the client retries instead of signing out.
+   */
   private async revalidate(socket: Socket): Promise<ActorContext | null> {
     const data = socket.data as SocketData;
+    let actor: ActorContext;
     try {
-      const actor = await loadActor(this.deps.db, data.token, this.deps.clock.now());
-      data.actor = actor;
-      this.applyRooms(socket, roomsFor(actor));
-      return actor;
+      actor = await loadActor(this.deps.db, data.token, this.deps.clock.now());
     } catch (e) {
       const err = asAppError(e);
+      if (!err?.code.startsWith('AUTH_')) throw e;
       const reason =
-        (err?.details?.reason as string | undefined) ??
-        (err?.code === 'AUTH_SESSION_EXPIRED' ? 'expired_cleanup' : 'admin');
+        (err.details?.reason as string | undefined) ??
+        (err.code === 'AUTH_SESSION_EXPIRED' ? 'expired_cleanup' : 'admin');
       socket.emit(
         'session.revoked',
         this.envelope(data.actor.orgId, { event: 'session.revoked', id: cryptoRandomId(), data: { reason } }),
@@ -201,11 +205,36 @@ export class RealtimeServer {
       socket.disconnect(true);
       return null;
     }
+    data.actor = actor;
+    this.applyRooms(socket, roomsFor(actor));
+    return actor;
   }
 
-  private async revalidateAll() {
-    if (!this.io) return;
-    for (const socket of this.io.of('/').sockets.values()) await this.revalidate(socket);
+  /** A revalidation that could not decide (database unreachable): the socket stays as it is until the next one. */
+  private async revalidateQuietly(socket: Socket): Promise<boolean> {
+    try {
+      await this.revalidate(socket);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Every 60 s (and on demand in tests): re-checks each connected socket's session. */
+  async revalidateAll(): Promise<{ checked: number; undecided: number }> {
+    if (!this.io) return { checked: 0, undecided: 0 };
+    let checked = 0;
+    let undecided = 0;
+    for (const socket of this.io.of('/').sockets.values()) {
+      checked++;
+      if (!(await this.revalidateQuietly(socket))) undecided++;
+    }
+    if (undecided)
+      this.deps.logger.warn(
+        { sockets: checked, undecided },
+        'socket sessions could not be re-checked (database unavailable?); they are kept',
+      );
+    return { checked, undecided };
   }
 
   private envelope(orgId: string, m: RealtimeMessage) {
@@ -264,7 +293,7 @@ export class RealtimeServer {
       for (const r of userRooms)
         for (const s of await this.io.in(r).fetchSockets()) {
           const local = this.io.of('/').sockets.get(s.id);
-          if (local) await this.revalidate(local);
+          if (local) await this.revalidateQuietly(local);
         }
       return;
     }
@@ -274,7 +303,7 @@ export class RealtimeServer {
       for (const r of userRooms)
         for (const s of await this.io.in(r).fetchSockets()) {
           const local = this.io.of('/').sockets.get(s.id);
-          if (local) await this.revalidate(local);
+          if (local) await this.revalidateQuietly(local);
         }
     }
   }
