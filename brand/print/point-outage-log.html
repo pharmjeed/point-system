@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>سجل الانقطاع — بوينت</title>
+<!--
+  نموذج داخلي للطباعة (PNT-101، docs/runbooks/paper-fallback.md). هوية «بوينت» لأنه للموظفين فقط؛ القيم من brand/tokens
+  والخطوط من brand/fonts والشعار ملف brand/logo الأصلي دون إعادة رسم (BRAND_GUIDELINES §2، §4، §5).
+
+  للطباعة استخدم الملف الجاهز brand/print/point-outage-log.pdf: الغلاف ثم 50 صفحة مرقمة P01…P50 (A4 أفقي)؛ يُطبع الغلاف
+  وعدد الصفحات المحسوب للموقع (paper-fallback.md §2).
+
+  هذا الملف هو المصدر. لا يخرج صحيحًا إلا مفتوحًا من مجلد brand/print/ داخل نسخة كاملة من المستودع (يقرأ ../fonts و../tokens
+  و../logo بمسارات نسبية)، وترقيم الصفحات يحتاج JavaScript. المعاملات: ?pages=N (1…50، الافتراضي 1) و&start=S (رقم أول صفحة،
+  الافتراضي 1) و&cover=0 (دون غلاف). مرجع كل سطر P<الصفحة>-R<السطر> هو evidence.paper_log_ref في «مطابقة يدوية بعد انقطاع».
+
+  إعادة توليد ملف PDF من جذر المستودع (Chrome أو Chromium: --allow-file-access-from-files يسمح للصفحة بقراءة الخطوط من القرص،
+  و--disable-pdf-tagging يمنع بنية الوسوم التي تضاعف حجم الملف):
+    chromium --headless --no-pdf-header-footer --disable-pdf-tagging --virtual-time-budget=15000 --allow-file-access-from-files \
+      --print-to-pdf=brand/print/point-outage-log.pdf "file://$PWD/brand/print/point-outage-log.html?pages=50"
+-->
+<link rel="stylesheet" href="../fonts/fonts.css">
+<link rel="stylesheet" href="../tokens/tokens.css">
+<style>
+  @page { size: A4 landscape; margin: 7mm; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--pt-surface); }
+  body { margin: 0; color: var(--pt-text); font-size: 8.5pt; line-height: 1.3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sheet { width: 283mm; height: 195mm; overflow: hidden; margin: 0 auto; padding: 0; display: flex; flex-direction: column; gap: 2mm; break-after: page; break-inside: avoid; }
+  .sheet:last-of-type { break-after: auto; }
+  @media screen { body { background: var(--pt-bg); padding: 8mm 0; } .sheet { background: var(--pt-surface); padding: 7mm; box-shadow: var(--pt-shadow-md); margin-bottom: 8mm; width: 297mm; height: 210mm; } }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 6mm; border-bottom: 0.6mm solid var(--pt-brand-navy); padding-bottom: 1.4mm; }
+  .top .brand { display: flex; align-items: center; gap: 4mm; }
+  .top img { height: 8mm; width: auto; }
+  .top h1 { margin: 0; font-size: 14pt; font-weight: 700; color: var(--pt-brand-navy); }
+  .top .sub { margin: 0.4mm 0 0; font-size: 8pt; color: var(--pt-text-muted); }
+  .pagebox { border: 0.4mm solid var(--pt-brand-navy); border-radius: var(--pt-radius-sm); padding: 0.8mm 3mm; text-align: center; min-width: 36mm; }
+  .pagebox b { display: block; font-size: 7.5pt; color: var(--pt-text-muted); font-weight: 600; }
+  .pagebox .no { font-family: var(--pt-font-mono); font-size: 15pt; font-weight: 600; color: var(--pt-brand-navy); direction: ltr; unicode-bidi: isolate; display: block; line-height: 1.1; }
+  .pagebox .word { font-size: 13pt; font-weight: 700; color: var(--pt-brand-navy); display: block; line-height: 1.2; }
+
+  .meta { display: grid; grid-template-columns: 1.3fr 2fr 1fr 2fr; gap: 1.6mm; }
+  .field { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-xs); padding: 0.7mm 1.6mm; height: 8.5mm; }
+  .field b { display: block; font-size: 7pt; color: var(--pt-text-muted); font-weight: 600; }
+
+  table.log { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.log th { background: var(--pt-brand-navy); color: var(--pt-ink-0); font-size: 7.2pt; font-weight: 600; padding: 0.8mm 0.8mm; border: 0.3mm solid var(--pt-brand-navy); text-align: center; vertical-align: middle; line-height: 1.2; }
+  table.log th small { display: block; font-weight: 400; font-size: 6.2pt; opacity: 0.9; }
+  table.log td { border: 0.3mm solid var(--pt-border-strong); height: 15mm; padding: 0.3mm 0.9mm; vertical-align: top; font-size: 6.3pt; color: var(--pt-text-muted); }
+  table.log td.ref { font-family: var(--pt-font-mono); font-weight: 600; font-size: 7pt; color: var(--pt-brand-navy); text-align: center; vertical-align: middle; background: var(--pt-ink-100); direction: ltr; unicode-bidi: isolate; white-space: nowrap; padding: 0.5mm 0.3mm; }
+  /* خطوط الكتابة متصلة لا منقطة: المنقط يُرسم في PDF نقطةً نقطة فيضاعف حجم الملف */
+  table.log td .l { display: block; border-bottom: 0.2mm solid var(--pt-ink-300); height: 4.7mm; line-height: 4.6mm; white-space: nowrap; overflow: hidden; }
+  table.log td .l:last-child { border-bottom: 0; }
+  .boxes { display: flex; flex-wrap: wrap; gap: 0 1.3mm; line-height: 1.32; padding-top: 0.2mm; }
+  .boxes span { white-space: nowrap; }
+  .boxes span::before { content: "☐"; font-size: 7pt; margin-inline-end: 0.5mm; color: var(--pt-brand-navy); }
+  .boxes.one { min-height: 4.7mm; border-bottom: 0.2mm solid var(--pt-ink-300); }
+  col.c-ref { width: 13mm; } col.c-time { width: 12mm; } col.c-act { width: 27mm; } col.c-ticket { width: 22mm; }
+  col.c-plate { width: 27mm; } col.c-spot { width: 23mm; } col.c-verify { width: 30mm; } col.c-pay { width: 28mm; }
+  col.c-driver { width: 26mm; } col.c-to { width: 24mm; } col.c-notes { width: 25mm; } col.c-rec { width: 23mm; }
+
+  .foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 4mm; margin-top: auto; font-size: 6.9pt; }
+  .foot .remind { color: var(--pt-text); max-width: 160mm; line-height: 1.35; }
+  .foot .sign { display: flex; gap: 4mm; white-space: nowrap; }
+  .foot .sign span { border-bottom: 0.2mm solid var(--pt-ink-400); padding: 0 0 0.8mm; min-width: 28mm; }
+  .mono { font-family: var(--pt-font-mono); direction: ltr; unicode-bidi: isolate; }
+
+  /* الغلاف */
+  .cover-body { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; flex: 1; min-height: 0; }
+  .panel { border: 0.3mm solid var(--pt-border-strong); border-radius: var(--pt-radius-sm); padding: 2mm 2.6mm; display: flex; flex-direction: column; gap: 1.6mm; min-height: 0; }
+  .panel h2 { margin: 0; font-size: 9.5pt; font-weight: 700; color: var(--pt-brand-navy); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6mm; }
+  .grid2 .wide { grid-column: span 2; }
+  .cover .field { height: 9.5mm; }
+  .rules { margin: 0; padding-inline-start: 4.5mm; font-size: 7.4pt; line-height: 1.38; color: var(--pt-text); }
+  .rules li { margin: 0 0 0.7mm; }
+  table.ref { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7pt; }
+  table.ref th, table.ref td { border: 0.3mm solid var(--pt-border-strong); padding: 0.6mm 1.2mm; text-align: start; vertical-align: top; }
+  table.ref th { background: var(--pt-ink-100); color: var(--pt-brand-navy); font-weight: 600; width: 22mm; }
+  .signoff { display: grid; gap: 2.4mm; font-size: 7.4pt; }
+  .signoff div { border-bottom: 0.2mm solid var(--pt-ink-400); padding-bottom: 2mm; }
+  .note { margin: 0; font-size: 7.4pt; line-height: 1.4; color: var(--pt-text); }
+</style>
+</head>
+<body>
+
+<template id="cover">
+<section class="sheet cover" aria-label="غلاف سجل الانقطاع">
+  <header class="top">
+    <div class="brand">
+      <img src="../logo/point/point-lockup-horizontal-rtl.svg" alt="بوينت · POINT">
+      <div>
+        <h1>سجل الانقطاع المرقّم — الغلاف</h1>
+        <p class="sub">الإجراء الورقي عند تعطل النظام كله (دليل «الإجراء الورقي عند الانقطاع الكلي»). يبقى الغلاف مع الصفحات حتى تُطابق كل الأسطر ويُحفظ الأصل.</p>
+      </div>
+    </div>
+    <div class="pagebox"><b>الصفحة</b><span class="word">الغلاف</span><b>&nbsp;</b></div>
+  </header>
+
+  <div class="cover-body">
+    <div class="panel">
+      <h2>بيانات الحفل والانقطاع</h2>
+      <div class="grid2">
+        <div class="field"><b>الموقع</b></div>
+        <div class="field"><b>التاريخ</b></div>
+        <div class="field wide"><b>الحفل</b></div>
+        <div class="field wide"><b>المشرف المسؤول (الاسم والتوقيع)</b></div>
+        <div class="field"><b>بدء الانقطاع (24 س)</b></div>
+        <div class="field"><b>عودة النظام (24 س)</b></div>
+        <div class="field wide"><b>أرقام دفتر التذاكر الورقية: من … إلى …</b></div>
+        <div class="field"><b>رقم المشغّل التقني</b></div>
+        <div class="field"><b>رقم الإدارة</b></div>
+        <div class="field"><b>الصفحات المطبوعة: من P01 إلى P__</b></div>
+        <div class="field"><b>الصفحات المستخدمة</b></div>
+      </div>
+      <h2>ماذا يُكتب في كل فعل</h2>
+      <table class="ref">
+        <tr><th>استلام</th><td>الوقت، رقم الكعب، اللوحة والشركة واللون، السائق؛ الأضرار في الملاحظات</td></tr>
+        <tr><th>صف</th><td>الموقف (أو وصف المكان) وخانة المفتاح، ويُكتبان على بطاقة المفتاح أيضًا</td></tr>
+        <tr><th>طلب</th><td>الوقت ورقم التذكرة # أو الكعب؛ يكتبه المشرف ويوزع الأقدم أولًا</td></tr>
+        <tr><th>إحضار</th><td>الخانة التي أُخذ منها المفتاح، والموقف</td></tr>
+        <tr><th>تسليم</th><td>طريقة التحقق (وتوقيع المشرف لتذكرة واتساب)، والتحصيل إن وُجد</td></tr>
+        <tr><th>نقل عهدة</th><td>المسلِّم في عمود السائق، والمستلم وتوقيعه في «نقل العهدة إلى»</td></tr>
+        <tr><th>تصحيح</th><td>مرجع السطر المصحَّح في الملاحظات، والأصل مشطوب بخط واحد</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>القواعد</h2>
+      <ol class="rules">
+        <li>سطر لكل فعل، يُكتب لحظة الفعل لا بعده. الوقت بتوقيت الرياض بصيغة 24 ساعة.</li>
+        <li>لا تمسح ولا تستخدم مزيلًا: اشطب بخط واحد واكتب سطر «تصحيح» يذكر مرجع السطر الأصلي.</li>
+        <li>الاستلام: أعطِ العميل كعب التذكرة الورقية (ولو كان عميل واتساب) وعلّق بطاقة الرقم نفسه على المفتاح. صف الأضرار كتابةً؛ لا تصوّر بكاميرا الجوال.</li>
+        <li>الإحضار: مفتاح تذكرة واتساب هو الذي على علاقته رقم التذكرة، ومعه الموقف. علاقة بلا رقم: حدّد المركبة بلوحتها وجرّب المفاتيح بحضور المشرف وتوقيعه، وافتح المركبة بالمفتاح قبل تحريكها.</li>
+        <li>التسليم: الورقية بمطابقة رقم الكعب مع بطاقة المفتاح. تذكرة واتساب بطريقتين من ثلاث (رسالة التذكرة غير المحوّلة على جوال العميل برقمها ولوحتها، الاستمارة أو الهوية، وصف المحتويات) وتوقيع المشرف. اللوحة وحدها لا تكفي.</li>
+        <li>لا تكتب رمز التسليم ولا رقم بطاقة دفع ولا جوال العميل. للشبكة رقم الإيصال فقط.</li>
+        <li>أي مفتاح أو مركبة تنتقل بين شخصين = سطر «نقل عهدة» باسمَي الطرفين وتوقيعهما.</li>
+        <li>السجل بيد المشرف أو سائق يكلفه، ولا يُترك دون حارس.</li>
+        <li>بعد عودة النظام لا تُدخل شيئًا في التطبيق قبل إذن المشرف؛ المشرف يطابق كل سطر ويكتب في عمود المطابقة الحالة والوقت وأحرفه.</li>
+      </ol>
+      <h2>بعد المطابقة</h2>
+      <div class="signoff">
+        <div>طوبقت كل الأسطر: ☐ — المشرف (الاسم والتوقيع):</div>
+        <div>عدد المطابقات: ____ · الوقائع المفتوحة: ____ · وقت الانتهاء:</div>
+        <div>مكان حفظ الأصل الورقي:</div>
+      </div>
+      <h2>تجهيز الحقيبة قبل الحفل</h2>
+      <p class="note">عدد الصفحات = ⌈(مغادرات ساعة الذروة × 3 + وصولها × 2) × 1.1 ÷ 10⌉، ولا يقل عن 20 لكل موقع (دليل الإجراء الورقي §2). معها: هذا الغلاف، ودفتر التذاكر الورقية بمداه، ونموذجا تسليم النقد. كل علاقة مفتاح في اللوحة تحمل رقم التذكرة والموقف.</p>
+    </div>
+  </div>
+</section>
+</template>
+
+<template id="sheet">
+<section class="sheet" aria-label="صفحة من سجل الانقطاع">
+  <header class="top">
+    <div class="brand">
+      <img src="../logo/point/point-lockup-horizontal-rtl.svg" alt="بوينت · POINT">
+      <div>
+        <h1>سجل الانقطاع المرقّم</h1>
+        <p class="sub">سطر لكل فعل لحظة الفعل. يُطابَق كل سطر بعد عودة النظام عبر «مطابقة يدوية بعد انقطاع». القواعد كاملة على الغلاف.</p>
+      </div>
+    </div>
+    <div class="pagebox"><b>الصفحة</b><span class="no" data-page>P__</span><b>من ____</b></div>
+  </header>
+
+  <div class="meta">
+    <div class="field"><b>الموقع</b></div>
+    <div class="field"><b>الحفل</b></div>
+    <div class="field"><b>التاريخ</b></div>
+    <div class="field"><b>المشرف المسؤول</b></div>
+  </div>
+
+  <table class="log">
+    <colgroup>
+      <col class="c-ref"><col class="c-time"><col class="c-act"><col class="c-ticket"><col class="c-plate"><col class="c-spot">
+      <col class="c-verify"><col class="c-pay"><col class="c-driver"><col class="c-to"><col class="c-notes"><col class="c-rec">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>السطر<small>المرجع</small></th>
+        <th>الوقت<small>24 ساعة</small></th>
+        <th>الفعل</th>
+        <th>التذكرة<small># التذكرة · رقم الكعب</small></th>
+        <th>المركبة<small>اللوحة · الشركة واللون</small></th>
+        <th>المكان<small>الموقف · خانة المفتاح</small></th>
+        <th>التحقق عند التسليم<small>الطريقة · توقيع المشرف</small></th>
+        <th>التحصيل<small>المبلغ · الوسيلة · الإيصال</small></th>
+        <th>السائق<small>الاسم أو الرمز · التوقيع</small></th>
+        <th>نقل العهدة إلى<small>المستلم · التوقيع</small></th>
+        <th>ملاحظات<small>أضرار · تصحيح لـ</small></th>
+        <th>المطابقة<small>يملؤها المشرف</small></th>
+      </tr>
+    </thead>
+    <tbody data-rows></tbody>
+  </table>
+
+  <div class="foot">
+    <div class="remind">لا مسح: اشطب بخط واحد واكتب «تصحيح». لا رمز تسليم ولا رقم بطاقة ولا جوال عميل. تسليم واتساب بطريقتين وتوقيع المشرف. نقل العهدة باسمَي الطرفين وتوقيعهما.</div>
+    <div class="sign"><span>الأسطر المستخدمة: ____</span><span>طوبقت كلها: ☐</span><span>المشرف (الأحرف):</span></div>
+  </div>
+</section>
+</template>
+
+<template id="row">
+<tr>
+  <td class="ref" data-ref>P__-R__</td>
+  <td></td>
+  <td><div class="boxes"><span>استلام</span><span>صف</span><span>طلب</span><span>إحضار</span><span>تسليم</span><span>نقل عهدة</span><span>تصحيح</span></div></td>
+  <td><span class="l">#</span><span class="l">كعب</span></td>
+  <td><span class="l">اللوحة</span><span class="l">الشركة · اللون</span></td>
+  <td><span class="l">الموقف</span><span class="l">الخانة/العلاقة</span></td>
+  <td><div class="boxes one"><span>كعب</span><span>رسالة</span><span>استمارة/هوية</span><span>المحتويات</span></div><span class="l">توقيع المشرف</span></td>
+  <td><span class="l">المبلغ</span><div class="boxes one"><span>نقد</span><span>شبكة</span></div><span class="l">الإيصال</span></td>
+  <td><span class="l">الاسم/الرمز</span><span class="l">التوقيع</span></td>
+  <td><span class="l">المستلم</span><span class="l">التوقيع</span></td>
+  <td></td>
+  <td><div class="boxes one"><span>سُوّي</span></div><span class="l">الحالة · الوقت · الأحرف</span></td>
+</tr>
+</template>
+
+<main id="sheets"></main>
+
+<script>
+  // ?pages=N&start=S&cover=0 — صفحات مرقمة مسبقًا (الافتراضي غلاف وصفحة واحدة تبدأ من 1). دون JavaScript لا يظهر شيء: استخدم ملف PDF.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var start = Math.min(Math.max(parseInt(q.get('start') || '1', 10) || 1, 1), 99);
+    var pages = Math.min(Math.max(parseInt(q.get('pages') || '1', 10) || 1, 1), 50, 100 - start);
+    var withCover = q.get('cover') !== '0';
+    var rowsPerPage = 10;
+    var sheets = document.getElementById('sheets');
+    var two = function (n) { return (n < 10 ? '0' : '') + n; };
+    if (withCover) sheets.appendChild(document.getElementById('cover').content.cloneNode(true));
+    var sheetTpl = document.getElementById('sheet');
+    var rowTpl = document.getElementById('row');
+    for (var p = 0; p < pages; p++) {
+      var page = 'P' + two(start + p);
+      var sheet = sheetTpl.content.cloneNode(true);
+      sheet.querySelector('[data-page]').textContent = page;
+      var body = sheet.querySelector('[data-rows]');
+      for (var r = 1; r <= rowsPerPage; r++) {
+        var row = rowTpl.content.cloneNode(true);
+        row.querySelector('[data-ref]').textContent = page + '-R' + two(r);
+        body.appendChild(row);
+      }
+      sheets.appendChild(sheet);
+    }
+  })();
+</script>
+</body>
+</html>
