@@ -5,7 +5,9 @@
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import * as shared from '../src/index.js';
+import { ERROR_CATALOG, type ErrorCode } from '../src/index.js';
 import { readDoc } from './docs.js';
+import { openApiOperations } from './openapi-doc.js';
 
 function openApiStringEnums(): { name: string; values: string[] }[] {
   const lines = readDoc('07_openapi.yaml').split('\n');
@@ -44,4 +46,46 @@ describe('OpenAPI string enums ↔ @point/shared', () => {
       else expect(options).toEqual(values);
     },
   );
+});
+
+/**
+ * Server sweep: the error codes each operation documents (`x-error-codes` and the response descriptions) are canon
+ * §8 codes, each under the HTTP status the catalog gives it, and every `x-error-codes` entry has its response. The
+ * served side (a route answering only documented codes) is apps/api/test/openapi-errors.int.test.ts.
+ */
+describe('OpenAPI error codes ↔ the canon catalog', () => {
+  const ops = openApiOperations(readDoc('07_openapi.yaml'));
+
+  it('reads every operation with its responses', () => {
+    expect(ops).toHaveLength(131);
+    expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(120);
+    expect(ops.filter((o) => o.requestBody)).toHaveLength(81);
+  });
+
+  it('every operation with a request body documents 413 PAYLOAD_TOO_LARGE (08 §4.15, DEC-130)', () => {
+    const missing = ops
+      .filter((o) => o.requestBody && !o.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
+      .map((o) => `${o.method} ${o.path}`);
+    expect(missing).toEqual([]);
+  });
+
+  it('every documented code is a canon code listed under its own HTTP status', () => {
+    const problems: string[] = [];
+    for (const op of ops) {
+      for (const [status, codes] of op.responses)
+        for (const code of codes) {
+          const def = ERROR_CATALOG[code as ErrorCode];
+          if (!def) problems.push(`${op.method} ${op.path}: ${code} is not a canon code`);
+          else if (def.http !== status)
+            problems.push(`${op.method} ${op.path}: ${code} under ${status}, canon ${def.http}`);
+        }
+      for (const code of op.xErrorCodes) {
+        const def = ERROR_CATALOG[code as ErrorCode];
+        if (!def) problems.push(`${op.method} ${op.path}: x-error-codes ${code} is not a canon code`);
+        else if (!op.responses.get(def.http)?.includes(code))
+          problems.push(`${op.method} ${op.path}: x-error-codes ${code} has no ${def.http} response`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
 });

@@ -102,6 +102,29 @@ entry, `job.heartbeat_sweep` at duty start, `job.retention_purge` by the SystemM
 `apps/worker/test/handlers.test.ts` (+2: no canon job without a handler; the network jobs run outside a transaction),
 `packages/server/test/job-catalog.test.ts` (18: a producer per job type).
 
+## Sweep 4 — every route of 07 served with its documented errors
+
+- `apps/api/test/routes-contract.test.ts` (unit): the report-only check (`ROUTES_COMPLETE=1`) is now strict — every
+  canon §9 route but the internal `GET /metrics` is declared by a controller (130 of 131) with its permission, public
+  flag and ✓ `@Command`; `GET /metrics` is the internal metrics server (`startMetricsServer`), now tested in
+  `metrics-catalog.test.ts` (200 `text/plain` with the catalog and without the backup textfile metric, 404 elsewhere).
+- `packages/shared/test/openapi.test.ts` (+3, unit; reader `packages/shared/test/openapi-doc.ts`, no YAML
+  dependency): the 131 operations with their responses; every code a response description or `x-error-codes` lists
+  is a canon §8 code under the catalog's HTTP status, and every `x-error-codes` entry has its response; every
+  operation with a request body (81) documents `413 PAYLOAD_TOO_LARGE`.
+- `apps/api/test/openapi-errors.int.test.ts` (2, integration): each of the 130 served routes (`/v1`,
+  `/webhooks/whatsapp`, `/health`) is called with dummy ids and an empty body — anonymously, without an
+  Idempotency-Key where ✓, and as each seeded role holding its permission (OWN1, ADM1, SUP-R, SUP-RD, DRV1) — and
+  every error envelope must be documented for the operation under the status it came with (over 200 route/code pairs,
+  none undocumented); then a body over the limit on each of the 81 body routes must answer `413 PAYLOAD_TOO_LARGE`
+  with `details.max_bytes` (1 MB JSON, 3 MB raw webhook). The codes a route reaches only with real data stay with
+  its module's tests (08 §10).
+
+| Found | Fixed |
+|---|---|
+| `PAYLOAD_TOO_LARGE` (08 §4.15, DEC-130) is answered by every route with a JSON body, but no OpenAPI operation documented it (the two media routes listed only `MEDIA_TOO_LARGE` under 413) and 07 §2's list of general errors left it out | `'413': PAYLOAD_TOO_LARGE` on the 81 operations with a `requestBody` (`MEDIA_TOO_LARGE \| PAYLOAD_TOO_LARGE` on the two media ones); 07 §2 general errors |
+| Its envelope had no `details.max_bytes` (08 §4.15): the Express adapter of Nest 12 hands a body-parser error over as the `cause` of an `HttpException`, so the filter built `{}` | `toHttpAppError` takes `limit` from the cause (1048576, or 3145728 on the webhook) |
+
 ## Proposed decisions
 
 - DEC-PROPOSED-1: WhatsApp quota alerts without a canon type — context: 12 §13 gives alert thresholds for
@@ -170,3 +193,7 @@ entry, `job.heartbeat_sweep` at duty start, `job.retention_purge` by the SystemM
   for its own transaction; reports and exports may meet the same cost on large tables. Proposal for the deployment:
   `ALTER ROLE point_api SET jit = off; ALTER ROLE point_worker SET jit = off;` (`infra/db/bootstrap-roles.sql`,
   DEPLOYMENT §10) after a measurement on the chosen host.
+- **Malformed JSON.** Under Nest 12 a body that is not JSON reaches the filter as a `BadRequestException` without a
+  cause, so it answers `422 VALIDATION_FAILED` with empty `details`; the filter's `fields: body / malformed_json`
+  branch for a plain body-parser error is no longer reached. 08 asks nothing more (the real client never sends one);
+  left as is.

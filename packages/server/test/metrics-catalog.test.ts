@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { metrics, registry } from '../src/core/metrics/metrics.js';
+import { metrics, registry, startMetricsServer } from '../src/core/metrics/metrics.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -59,6 +60,24 @@ describe('metric catalog (05 §12.2)', () => {
     const names = (await registry.getMetricsAsJSON()).map((m) => m.name);
     const known = new Set(docs.map((d) => d.name));
     expect(names.filter((n) => !n.startsWith('point_process_') && !known.has(n))).toEqual([]);
+  });
+
+  it('GET /metrics on the internal metrics server (canon §9.8) answers the registry; any other path is 404', async () => {
+    const server = startMetricsServer(0, '127.0.0.1');
+    try {
+      await new Promise<void>((r) => (server.listening ? r() : server.once('listening', () => r())));
+      const port = (server.address() as AddressInfo).port;
+      const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/plain');
+      const body = await res.text();
+      expect(body).toContain('# TYPE point_http_request_duration_seconds histogram');
+      expect(body).toContain('# TYPE point_wa_service_messages_month gauge');
+      expect(body).not.toContain('point_backup_last_success_timestamp_seconds');
+      expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(404);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
   });
 
   it('every registered metric is populated somewhere in the api, worker or server code', () => {
