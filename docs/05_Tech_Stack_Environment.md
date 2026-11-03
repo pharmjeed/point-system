@@ -513,12 +513,12 @@ volumes:
 
 | المقياس | النوع | الوصف |
 |---|---|---|
-| `point_http_request_duration_seconds{route,status}` | Histogram | زمن الأوامر والاستعلامات (هدف p95 لحفظ الطلب أقل من ثانيتين) |
+| `point_http_request_duration_seconds{route,status}` | Histogram | زمن كل رد HTTP انتهى (هدف p95 لحفظ الطلب أقل من ثانيتين)؛ `route` الفعل وقالب مسار القاموس (`GET /v1/tickets/{ticketId}`) أو `unmatched`، والطلب الذي تخلى عنه العميل بـ`status = aborted` (DEC-416) |
 | `point_retrieval_request_ingest_seconds` | Histogram | من استلام Webhook زر «طلب السيارة» (`whatsapp_inbound_events.received_at`) إلى التزام دورة الإحضار؛ يرصده العامل بعد التزام معاملة الوارد للضغطة التي فتحت دورة وحدها، وهو مرجع هدف «حفظ الطلب» (15 §10، 17 H-08 M1؛ DEC-367) |
-| `point_dispatch_publish_seconds` | Histogram | من التزام الإسناد أو العرض إلى نشر حدث WebSocket (هدف p95 أقل من 3 ثوانٍ) |
+| `point_dispatch_publish_seconds` | Histogram | من التزام الإسناد أو العرض إلى نشر حدث WebSocket (هدف p95 أقل من 3 ثوانٍ)؛ يُقاس من لحظة المعاملة المنتجة (`occurred_at`) حتى بث `task.offered` و`task.broadcast` و`task.claimed` و`task.updated` الناتج عن قبول أو إعادة إسناد، حدًا أعلى في كل نسخة API (DEC-416) |
 | `point_dispatch_time_to_claim_seconds` | Histogram | من دخول الطابور إلى القبول المؤكد — المؤشر الأهم |
 | `point_dispatch_pass_duration_seconds{reason}` | Histogram | زمن تمريرة التوزيع (هدف p95 أقل من 50 ms) |
-| `point_dispatch_pool_lock_wait_seconds` | Histogram | انتظار قفل مجموعة التوزيع |
+| `point_dispatch_pool_lock_wait_seconds` | Histogram | انتظار قفل مجموعة التوزيع (L1، ويُحسب أيضًا في `point_db_lock_wait_seconds`؛ DEC-416) |
 | `point_dispatch_offers_total{mode,outcome}` | Counter | العروض الفردية والبث ونتائجها (`accepted`، `expired`، `revoked`…) |
 | `point_dispatch_accept_rejections_total{code}` | Counter | رفض القبول حسب رمز الخطأ |
 | `point_dispatch_escalations_total` | Counter | التصعيد للمشرف |
@@ -540,16 +540,16 @@ volumes:
 | `point_wa_send_total{outcome,error_code}` | Counter | محاولات الإرسال ونتائجها |
 | `point_wa_skipped_total{reason}` | Counter | إشعارات لم تُرسل وسببها |
 | `point_wa_webhook_duration_seconds` | Histogram | زمن رد معالج `POST /webhooks/whatsapp` |
-| `point_wa_webhook_received_total` · `point_wa_webhook_last_received_timestamp_seconds` | Counter · Gauge | الوارد ووقت آخر حدث |
+| `point_wa_webhook_received_total` · `point_wa_webhook_last_received_timestamp_seconds` | Counter · Gauge | الوارد ووقت آخر حدث (الوقت من `whatsapp_inbound_events` في كل عملية، DEC-417) |
 | `point_wa_inbound_backlog` · `point_wa_inbound_processing_lag_seconds` | Gauge | صفوف الوارد المعلّقة وعمر أقدمها |
 | `point_wa_button_sender_mismatch_total` · `point_wa_status_orphan_total` | Counter | ضغطات زر من رقم آخر · حالات بلا رسالة مطابقة |
-| `point_wa_service_messages_month` · `point_wa_unique_users_24h_outside_window` | Gauge | استهلاك حصص Meta (الملف 12 §13) |
-| `point_wa_channel_health` | Gauge | 0 `healthy` · 1 `degraded` · 2 `down` |
+| `point_wa_service_messages_month` · `point_wa_unique_users_24h_outside_window` | Gauge | استهلاك حصص Meta (الملف 12 §13)؛ التعريف في DEC-413، ويُعدّ مرة في الدقيقة على الأكثر لكل عملية |
+| `point_wa_channel_health` | Gauge | 0 `healthy` · 1 `degraded` · 2 `down`؛ يضبطه `SystemMonitor` من القاعدة في كل عملية (أسوأ قناة نشطة، DEC-417) |
 | `point_push_send_total{outcome}` | Counter | Web Push ونتائجه |
-| `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري |
-| `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات |
+| `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري؛ إعادة الاتصال = مقبس جديد للجلسة خلال 10 دقائق من فقد سابقه على العملية نفسها (DEC-416) |
+| `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات؛ انتظار القفل زمن كل جملة قفل قانونية L1–L8، ومنها ما ينتهي بـ`55P03` أو بجمود (DEC-416) |
 | `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159)؛ وصفر صريح لموقع فيه حفل ووردية مفتوحان بلا مناوبة (15 §12 «غياب السائقين قبل الطلبات») |
-| `point_backup_last_success_timestamp_seconds` | Gauge | آخر نسخة احتياطية ناجحة؛ من ملف نصي لـnode_exporter يكتبه سكربت النسخ، لا عملية دائمة (DEC-303) |
+| `point_backup_last_success_timestamp_seconds` | Gauge | آخر نسخة احتياطية ناجحة؛ من ملف نصي لـnode_exporter يكتبه سكربت النسخ، لا عملية دائمة، فلا تسجله الـAPI ولا العامل (DEC-303، DEC-418) |
 
 ### 12.3 تنبيهات النظام (من المعمارية §15، قيم أولية تُضبط بعد التجربة)
 
