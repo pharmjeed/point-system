@@ -30,6 +30,8 @@ const b64 = (s) => Buffer.from(s.padEnd(32, '.')).toString('base64');
 const database = await createDatabase(admin, 'point_e2e');
 let app;
 const stop = async (code = 0) => {
+  // bounded: an open socket or keep-alive must not hold the run (CI teardown timed out waiting for close())
+  setTimeout(() => process.exit(code), 10_000).unref();
   await app?.close().catch(() => {});
   await dropDatabase(admin, database.name).catch(() => {});
   process.exit(code);

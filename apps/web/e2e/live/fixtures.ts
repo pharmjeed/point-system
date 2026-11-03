@@ -63,7 +63,10 @@ async function startApi(): Promise<{ apiOrigin: string; databaseUrl: string; sto
       if (child.exitCode !== null) return;
       const exited = new Promise((r) => child.once('exit', r));
       child.kill('SIGTERM');
+      // the server drops its database and exits within 10 s; past 20 s it is killed so the teardown never hangs
+      const killer = setTimeout(() => child.kill('SIGKILL'), 20_000);
       await exited;
+      clearTimeout(killer);
     },
   };
 }
