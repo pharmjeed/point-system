@@ -62,7 +62,7 @@ import { staffPaths } from './staffPaths';
 import { ForbiddenPage, PageSkeleton, QueryError, Tabs } from './ui';
 import { VenueEventPicker } from './VenueEventPicker';
 import './staff.css';
-import { useStaffCommandsReady } from './commandReady';
+import { useOnline } from '@/hooks/useOnline';
 
 type BoardTab = 'queue' | 'active' | 'next' | 'drivers' | 'alerts' | 'failed' | 'custody';
 
@@ -83,7 +83,7 @@ export function OpsBoardPage() {
 
 function Board({ me }: { me: Me }) {
   const navigate = useNavigate();
-  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const lastSyncAt = useUiStore((s) => s.lastSyncAt);
   const sel = useOpsSelection(can(me, 'venue.read'));
   const [tab, setTab] = useState<BoardTab>('queue');

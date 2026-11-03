@@ -24,8 +24,8 @@ import { FakeRealtime } from './support/fake/realtime';
 
 /**
  * The staff audit items closed in the final round (docs/progress/notes/audit-close.md): S-05 table from 1024 px
- * (A-S05-2), the shell's alerts badge and shared venue (A-SHELL-1), commands held while a resync runs
- * (A-SHELL-2), the scope-denied read (A-SHELL-3), the S-09 draft-abandoned timer (A-S09-1), the S-10 close
+ * (A-S05-2), the shell's alerts badge and shared venue (A-SHELL-1), commands not held by a resync but by the
+ * offline browser (A-SHELL-2, DEC-380), the scope-denied read (A-SHELL-3), the S-09 draft-abandoned timer (A-S09-1), the S-10 close
  * confirmation (A-S10-1), the S-11 payments rows (A-S11-1), self-approval in the S-13 audit log (A-S11-2) and
  * the S-03 waiver row (A-S03-1).
  */
@@ -138,7 +138,7 @@ test('A-SHELL-1: «التنبيهات (n)» in the TopBar of every staff screen 
   await expect(page.locator('#reports-venue')).toHaveValue(OTHER_VENUE_ID);
 });
 
-test('A-SHELL-2: while a resync runs (sync.required) the staff commands wait, then come back', async ({
+test('A-SHELL-2 / DEC-380: a resync (sync.required) does not hold the staff commands; only the offline browser does', async ({
   page,
 }) => {
   const alertId = crypto.randomUUID();
@@ -185,12 +185,19 @@ test('A-SHELL-2: while a resync runs (sync.required) the staff commands wait, th
   const ack = page.locator(`li[data-alert-id="${alertId}"]`).getByRole('button', { name: 'إقرار' });
   await expect(ack).toBeEnabled();
 
+  // 02 §1.6 «إعادة المزامنة»: driver commands wait, supervisor commands are not held (the server re-checks each one)
   stall = true;
   hub.emit(STAFF_USER_ID, 'sync.required', { reason: 'test', scope: 'venue' });
-  await expect(ack).toBeDisabled();
   await expect.poll(() => release !== null).toBe(true);
+  await expect(ack).toBeEnabled();
   stall = false;
   (release as unknown as () => void)();
+  await expect(ack).toBeEnabled();
+
+  // S-02 «بلا اتصال … وتعطيل الأوامر»: the offline browser disables them, the return enables them again
+  await page.context().setOffline(true);
+  await expect(ack).toBeDisabled();
+  await page.context().setOffline(false);
   await expect(ack).toBeEnabled();
 });
 

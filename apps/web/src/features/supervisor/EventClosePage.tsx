@@ -54,7 +54,7 @@ import { IncidentDialog } from './TicketActions';
 import { ForbiddenPage, PageSkeleton, ReadError, Section } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 import './staff.css';
-import { useStaffCommandsReady } from './commandReady';
+import { useOnline } from '@/hooks/useOnline';
 
 /**
  * S-10 — إغلاق الحفل والمطابقة (02 §4 S-10, PNT-087, 13 §10–§12): step 1 «بدء الإغلاق» (`start-closing`), step 2
@@ -93,7 +93,7 @@ export function EventClosePage() {
 }
 
 function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: () => void }) {
-  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const navigate = useNavigate();
   const qc = useQueryClient();
   const closingOrDone = event.status === 'closing' || event.status === 'closed';

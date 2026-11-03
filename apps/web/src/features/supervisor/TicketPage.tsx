@@ -40,7 +40,7 @@ import { TicketActionDialog } from './TicketActions';
 import { buildTimeline, layoutLabels } from './timelineModel';
 import { Fact, PageSkeleton, ReadError, Tabs } from './ui';
 import './staff.css';
-import { useStaffCommandsReady } from './commandReady';
+import { useOnline } from '@/hooks/useOnline';
 
 type TicketTab = 'timeline' | 'custody' | 'messages' | 'photos' | 'payments' | 'incidents';
 
@@ -116,7 +116,7 @@ function TicketView({
   timeline: TicketTimeline | null;
   onBack: () => void;
 }) {
-  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<TicketTab>('timeline');
   const [menuOpen, setMenuOpen] = useState(false);

@@ -16,7 +16,7 @@ import { commands, staffKeys } from './staffApi';
 import { staffPaths } from './staffPaths';
 import { ReasonDialog, REASON_MIN } from './ui';
 import { useStaffCommand } from './useStaffCommand';
-import { useStaffCommandsReady } from './commandReady';
+import { useOnline } from '@/hooks/useOnline';
 
 /**
  * Alerts with «إقرار» / «حل» (S-04, and the S-02 alerts tab). Acknowledge sends no note; resolve asks for a
@@ -87,7 +87,7 @@ function AlertRow({
   onResolve: () => void;
 }) {
   const qc = useQueryClient();
-  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const ack = useStaffCommand(
     (_: Record<string, never>, key: string) => commands.acknowledgeAlert(alert.id, { note: null }, key),
     {

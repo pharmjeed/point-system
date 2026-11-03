@@ -37,7 +37,7 @@ import { IncidentDialog } from './TicketActions';
 import { Fact, ForbiddenPage, PageSkeleton, ReadError, Section } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 import './staff.css';
-import { useStaffCommandsReady } from './commandReady';
+import { useOnline } from '@/hooks/useOnline';
 
 const STATUSES: IncidentStatus[] = ['open', 'in_review', 'resolved', 'closed'];
 const SEVERITIES: IncidentSeverity[] = ['high', 'medium', 'low'];
@@ -184,7 +184,7 @@ export function IncidentPage() {
 }
 
 function IncidentDetail({ me, incident }: { me: Me; incident: Incident }) {
-  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const navigate = useNavigate();
   const [edit, setEdit] = useState<IncidentEdit>(() => editFrom(incident));
   const [touched, setTouched] = useState(false);
