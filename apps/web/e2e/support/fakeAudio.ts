@@ -23,6 +23,8 @@ export interface AudioLog {
   resumes: number;
   started: string[];
   stopped: string[];
+  /** `Date.now()` of each entry of `stopped` (same index): when the page stopped that sound (TC-042). */
+  stoppedAt: number[];
   vibrate: unknown[];
   state: string | null;
 }
@@ -35,6 +37,7 @@ export async function installFakeAudio(page: Page, options: { resumes?: boolean 
         resumes: 0,
         started: [] as string[],
         stopped: [] as string[],
+        stoppedAt: [] as number[],
         vibrate: [] as unknown[],
         state: null as string | null,
       };
@@ -77,6 +80,7 @@ export async function installFakeAudio(page: Page, options: { resumes?: boolean 
             },
             stop() {
               log.stopped.push(node.buffer?.name ?? '?');
+              log.stoppedAt.push(Date.now());
             },
           };
           return node;
