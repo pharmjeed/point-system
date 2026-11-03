@@ -17,7 +17,6 @@ import {
   TextArea,
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { useOnline } from '@/hooks/useOnline';
 import { buttons, incidentSeverity, incidentStatus, incidentType } from '@/i18n/ar';
 import { s12, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
@@ -38,6 +37,7 @@ import { IncidentDialog } from './TicketActions';
 import { Fact, ForbiddenPage, PageSkeleton, ReadError, Section } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 import './staff.css';
+import { useStaffCommandsReady } from './commandReady';
 
 const STATUSES: IncidentStatus[] = ['open', 'in_review', 'resolved', 'closed'];
 const SEVERITIES: IncidentSeverity[] = ['high', 'medium', 'low'];
@@ -184,7 +184,7 @@ export function IncidentPage() {
 }
 
 function IncidentDetail({ me, incident }: { me: Me; incident: Incident }) {
-  const online = useOnline();
+  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
   const navigate = useNavigate();
   const [edit, setEdit] = useState<IncidentEdit>(() => editFrom(incident));
   const [touched, setTouched] = useState(false);

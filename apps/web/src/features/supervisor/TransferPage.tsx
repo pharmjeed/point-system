@@ -17,7 +17,6 @@ import {
   TextField,
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { useOnline } from '@/hooks/useOnline';
 import { buttons, transferStatus } from '@/i18n/ar';
 import { s07, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
@@ -33,6 +32,7 @@ import { fromBlockItems, riyadhLocalToUtcIso, utcIsoToRiyadhLocal } from './tran
 import { ForbiddenPage, PageSkeleton, ReadError, ReasonDialog, reasonOk, Section } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 import './staff.css';
+import { useStaffCommandsReady } from './commandReady';
 
 /**
  * S-07 — نقل سائق (02 §4 S-07, PNT-086, DEC-32): destination among the venues of the scope, now or at a set
@@ -71,7 +71,7 @@ export function TransferPage() {
 }
 
 function TransferForm({ me, item, onBack }: { me: Me; item: DriverListItem; onBack: () => void }) {
-  const online = useOnline();
+  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
   const driverId = item.user.id;
   const fromVenueId = item.active_assignment?.venue_id ?? null;
   const venues = useVenues();

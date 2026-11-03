@@ -1,6 +1,16 @@
-import { Activity, Bell, Building2, CarFront, ChartColumn, Menu, ShieldCheck, Users } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  BellRing,
+  Building2,
+  CarFront,
+  ChartColumn,
+  Menu,
+  ShieldCheck,
+  Users,
+} from 'lucide-react';
 import { useState } from 'react';
-import { Outlet, useOutletContext } from 'react-router';
+import { Outlet, useNavigate, useOutletContext } from 'react-router';
 import type { Me } from '@/api/types';
 import { RequireStaff } from '@/app/guards';
 import { canAdmin, canUseDriverShell, paths } from '@/app/paths';
@@ -22,10 +32,13 @@ import { ConnectionSheet } from '@/features/session/ConnectionSheet';
 import { useNotificationSetup, usePushRelink } from '@/features/session/pushSetup';
 import { useConnection } from '@/features/session/useConnection';
 import { useLogout } from '@/features/session/useLogout';
+import { useLiveAlerts } from '@/features/supervisor/liveAlerts';
+import { can } from '@/features/supervisor/permissions';
 import { useBrand } from '@/hooks/useMe';
 import { useTelemetry } from '@/hooks/useTelemetry';
 import { useThemeArea } from '@/hooks/useThemeArea';
 import { buttons, d03, d14, d15, nav } from '@/i18n/ar';
+import { staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { THEME_PREFS, type ThemePref } from '@/lib/theme';
 import { useRealtime } from '@/realtime/hooks';
@@ -145,6 +158,10 @@ function StaffFrame({ me }: { me: Me }) {
   const signOut = useLogout('staff');
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const navigate = useNavigate();
+  // 02 §1.3 «شارة «التنبيهات» تعرض عدد التنبيهات open وتفتح S-04», on every staff screen (audit A-SHELL-1)
+  const liveAlerts = useLiveAlerts(me);
+  const openAlerts = (liveAlerts.data?.items ?? []).filter((a) => a.status === 'open').length;
   const items = canAdmin(me)
     ? [...STAFF_NAV, { to: paths.admin, label: nav.admin, icon: ShieldCheck }]
     : STAFF_NAV;
@@ -158,6 +175,16 @@ function StaffFrame({ me }: { me: Me }) {
           connection={connection.state}
           lastSync={connection.lastSync}
           onConnectionClick={() => setSheetOpen(true)}
+          actions={
+            can(me, 'alert.read') ? (
+              <IconButton
+                icon={BellRing}
+                label={fmt(staff.alertsCount, { n: openAlerts })}
+                badge={openAlerts || undefined}
+                onClick={() => navigate(paths.opsAlerts)}
+              />
+            ) : null
+          }
         />
       }
       banner={

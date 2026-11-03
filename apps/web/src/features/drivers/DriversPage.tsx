@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, User, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { createDriver, listDrivers, type DriverInput } from '@/api/drivers';
 import { queryKeys } from '@/api/queryClient';
 import { listVenues } from '@/api/setup';
@@ -9,6 +10,7 @@ import { can } from '@/app/permissions';
 import {
   Button,
   ConnectionIndicator,
+  DataTable,
   DriverStateChip,
   EmptyState,
   FilterChips,
@@ -23,16 +25,18 @@ import { fieldError, NO_ERRORS, toFormErrors, type FormErrors } from '@/features
 import { QueryView } from '@/features/common/QueryView';
 import { UserStatusChip } from '@/features/common/StateChip';
 import { useStaffMe } from '@/features/ops/StaffLayout';
+import { useSelectionStore } from '@/features/supervisor/selection';
 import { useCommand } from '@/hooks/useCommand';
 import { useServerNow } from '@/hooks/useNow';
 import { nav, ui } from '@/i18n/ar';
 import { s05, staff } from '@/i18n/ar.staff';
 import { errorMessagesAr } from '@/i18n/errors';
 import { fmt } from '@/i18n/fmt';
-import { formatClock } from '@/lib/format';
+import { formatClock, formatTime } from '@/lib/format';
 import { normalizeSaudiMobile } from '@/lib/phone';
 import { matchesFilter, matchesSearch, stateOf, type DriverFilter } from './driverModel';
 import { TempSecretDialog } from './TempSecretDialog';
+import '@/features/supervisor/staff.css';
 
 const FILTERS: DriverFilter[] = ['all', 'available', 'busy', 'on_break', 'off_duty', 'disabled'];
 
@@ -47,7 +51,17 @@ export function DriversPage() {
   const scoped = me.scopes
     .filter((s) => s.scope_type === 'venue' && s.venue_id)
     .map((s) => s.venue_id as string);
-  const [venueId, setVenueId] = useState<string>(scoped.length === 1 ? (scoped[0] as string) : '');
+  // the venue chosen in S-02 / S-11 / S-12 carries over and back (02 §1.3, DEC-320; audit A-SHELL-1); «كل
+  // المواقع» stays local to S-05 (the shared selection always names one venue)
+  const shared = useSelectionStore((s) => s.venueId);
+  const setShared = useSelectionStore((s) => s.setVenue);
+  const [venueId, setLocalVenue] = useState<string>(
+    shared ?? (scoped.length === 1 ? (scoped[0] as string) : ''),
+  );
+  const setVenueId = (id: string) => {
+    setLocalVenue(id);
+    if (id && id !== shared) setShared(id);
+  };
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<DriverFilter>('all');
   const [adding, setAdding] = useState(false);
@@ -100,32 +114,32 @@ export function DriversPage() {
           return shown.length === 0 ? (
             <EmptyState icon={Users} title={s05.empty} />
           ) : (
-            <ul className="pt-list" aria-label={nav.drivers}>
-              {shown.map((d) => (
-                <li key={d.user.id}>
-                  <ListItem
-                    icon={User}
-                    to={`/drivers/${d.user.id}`}
-                    title={
-                      <>
-                        {d.user.full_name} ·{' '}
-                        <bdi dir="ltr" className="pt-num">
-                          {d.user.employee_code}
-                        </bdi>
-                      </>
-                    }
-                    meta={<RowMeta driver={d} now={now} />}
-                    trailing={
-                      d.user.status === 'disabled' ? (
-                        <UserStatusChip status="disabled" />
-                      ) : (
-                        <DriverStateChip state={stateOf(d)} />
-                      )
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* below 1024px the 02 S-05 DriverRow list; from 1024px the 02 S-05 table (02 §1.4, 03 §3.16) */}
+              <ul className="pt-list st-below-desktop" aria-label={nav.drivers}>
+                {shown.map((d) => (
+                  <li key={d.user.id}>
+                    <ListItem
+                      icon={User}
+                      to={`/drivers/${d.user.id}`}
+                      title={
+                        <>
+                          {d.user.full_name} ·{' '}
+                          <bdi dir="ltr" className="pt-num">
+                            {d.user.employee_code}
+                          </bdi>
+                        </>
+                      }
+                      meta={<RowMeta driver={d} now={now} />}
+                      trailing={<StateCell driver={d} />}
+                    />
+                  </li>
+                ))}
+              </ul>
+              <div className="st-desktop-only">
+                <DriversTable rows={shown} now={now} />
+              </div>
+            </>
           );
         }}
       </QueryView>
@@ -242,6 +256,118 @@ function AddDriverSheet({
         onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))}
       />
     </FormSheet>
+  );
+}
+
+function StateCell({ driver }: { driver: DriverListItem }) {
+  return driver.user.status === 'disabled' ? (
+    <UserStatusChip status="disabled" />
+  ) : (
+    <DriverStateChip state={stateOf(driver)} />
+  );
+}
+
+type SortKey = 'name' | 'code' | 'duty';
+
+/**
+ * 02 S-05 «على الشاشات الكبيرة: جدول بأعمدة: الاسم، الرقم الوظيفي، الحالة، المهمة، الاتصال، بداية المناوبة،
+ * الجهاز». «المهمة» and «الجهاز» show «—»: `DriverLive` has task ids without ticket numbers and no device state
+ * (staff-gaps.md API gaps 1–2, audit A-S06-1); the five other columns come from `GET /v1/drivers`.
+ */
+function DriversTable({ rows, now }: { rows: DriverListItem[]; now: number }) {
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
+  const liveOf = (d: DriverListItem) =>
+    d.user.status !== 'disabled' && d.live && d.live.driver_state !== 'off_duty' ? d.live : null;
+  const value = (d: DriverListItem, key: SortKey) =>
+    key === 'name'
+      ? d.user.full_name
+      : key === 'code'
+        ? (d.user.employee_code ?? '')
+        : (liveOf(d)?.duty_started_at ?? '');
+  const sorted = [...rows].sort((a, b) => {
+    const c = value(a, sort.key).localeCompare(value(b, sort.key), 'ar');
+    return sort.dir === 'asc' ? c : -c;
+  });
+  return (
+    <DataTable<DriverListItem>
+      layout="table"
+      rows={sorted}
+      rowKey={(d) => d.user.id}
+      sort={sort}
+      onSort={(key) =>
+        setSort((s) => ({
+          key: key as SortKey,
+          dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc',
+        }))
+      }
+      columns={[
+        {
+          key: 'name',
+          label: s05.table.name,
+          sortable: true,
+          render: (d) => (
+            <Link className="pt-link" to={`/drivers/${d.user.id}`}>
+              {d.user.full_name}
+            </Link>
+          ),
+        },
+        {
+          key: 'code',
+          label: s05.table.employeeCode,
+          sortable: true,
+          render: (d) => (
+            <bdi dir="ltr" className="pt-num">
+              {d.user.employee_code}
+            </bdi>
+          ),
+        },
+        {
+          key: 'state',
+          label: s05.table.state,
+          render: (d) => {
+            const live = liveOf(d);
+            return (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <StateCell driver={d} />
+                {live?.driver_state === 'available' && live.available_since ? (
+                  <span>
+                    {fmt(staff.since, { time: '' })}
+                    <bdi dir="ltr" className="pt-num">
+                      {formatClock((now - Date.parse(live.available_since)) / 1000)}
+                    </bdi>
+                  </span>
+                ) : null}
+              </span>
+            );
+          },
+        },
+        { key: 'task', label: s05.table.task, render: () => staff.none },
+        {
+          key: 'connection',
+          label: s05.table.connection,
+          render: (d) => {
+            const live = liveOf(d);
+            return live ? <ConnectionIndicator state={live.connection_state ?? 'offline'} /> : staff.none;
+          },
+        },
+        {
+          key: 'duty',
+          label: s05.table.dutyStart,
+          sortable: true,
+          render: (d) => {
+            const at = liveOf(d)?.duty_started_at;
+            return at ? (
+              <bdi dir="ltr" className="pt-num">
+                {formatTime(at)}
+              </bdi>
+            ) : (
+              staff.none
+            );
+          },
+        },
+        { key: 'device', label: s05.table.device, render: () => staff.none },
+      ]}
+    />
   );
 }
 

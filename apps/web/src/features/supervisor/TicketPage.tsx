@@ -16,7 +16,6 @@ import {
   Timeline,
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { useOnline } from '@/hooks/useOnline';
 import {
   components,
   custodyHolder,
@@ -41,6 +40,7 @@ import { TicketActionDialog } from './TicketActions';
 import { buildTimeline, layoutLabels } from './timelineModel';
 import { Fact, PageSkeleton, ReadError, Tabs } from './ui';
 import './staff.css';
+import { useStaffCommandsReady } from './commandReady';
 
 type TicketTab = 'timeline' | 'custody' | 'messages' | 'photos' | 'payments' | 'incidents';
 
@@ -116,7 +116,7 @@ function TicketView({
   timeline: TicketTimeline | null;
   onBack: () => void;
 }) {
-  const online = useOnline();
+  const online = useStaffCommandsReady(); // online, confirmed and synced (A-SHELL-2)
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<TicketTab>('timeline');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -275,6 +275,9 @@ function TicketView({
             {tab === 'payments' ? (
               <Payments
                 payments={timeline.payments}
+                waiverReason={
+                  ticket.payment_status === 'waived' ? (ticket.payment_waiver_reason ?? staff.none) : null
+                }
                 canReverse={available.includes('reverse')}
                 onReverse={() => setActive('reverse')}
               />
@@ -373,16 +376,24 @@ function Photo({ media }: { media: Media }) {
 
 function Payments({
   payments,
+  waiverReason,
   canReverse,
   onReverse,
 }: {
   payments: Payment[];
+  /** The waiver's reason when the fee was waived (02 S-03 «السجلات والعكس والإعفاء», 13 §6; audit A-S03-1). */
+  waiverReason: string | null;
   canReverse: boolean;
   onReverse: () => void;
 }) {
-  if (!payments.length) return <EmptyState title={s03.emptyPayments} />;
+  if (!payments.length && waiverReason === null) return <EmptyState title={s03.emptyPayments} />;
   return (
     <ul className="pt-list">
+      {waiverReason !== null ? (
+        <li>
+          <ListItem title={s03.action.waiver} meta={fmt(s03.waiverReason, { reason: waiverReason })} />
+        </li>
+      ) : null}
       {payments.map((p) => (
         <li key={p.id}>
           <ListItem

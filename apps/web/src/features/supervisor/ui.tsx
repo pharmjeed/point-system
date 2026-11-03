@@ -109,12 +109,13 @@ export function PageSkeleton({ rows = 2 }: { rows?: number }) {
 }
 
 /** 02 §1.6 «عدم الصلاحية»: «لا تملك صلاحية عرض هذه الصفحة.» + «العودة». */
-export function ForbiddenState({ backTo = paths.ops }: { backTo?: string }) {
+export function ForbiddenState({ backTo = paths.ops, scope = false }: { backTo?: string; scope?: boolean }) {
   const navigate = useNavigate();
   return (
     <EmptyState
       icon={ShieldX}
-      title={ui.forbiddenPage}
+      // 02 §1.9: SCOPE_VENUE_DENIED «هذا العنصر خارج نطاق موقعك.», as the shared QueryView (audit A-SHELL-3)
+      title={scope ? ui.scopeDenied : ui.forbiddenPage}
       actionLabel={buttons.back}
       actionIcon={ArrowRight}
       onAction={() => navigate(backTo)}
@@ -179,7 +180,13 @@ export function ReadError({
   backTo?: string;
 }) {
   if (isNotFound(error)) return <NotFoundState backTo={backTo} />;
-  if (isForbidden(error)) return <ForbiddenState backTo={backTo} />;
+  if (isForbidden(error))
+    return (
+      <ForbiddenState
+        backTo={backTo}
+        scope={error instanceof ApiError && error.code === 'SCOPE_VENUE_DENIED'}
+      />
+    );
   return <QueryError error={error} onRetry={onRetry} />;
 }
 

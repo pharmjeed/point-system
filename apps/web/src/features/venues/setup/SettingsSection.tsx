@@ -37,6 +37,8 @@ export const SETTINGS_FIELDS: Record<SettingsGroup, Field[]> = {
     { kind: 'bool', key: 'dispatch.idle_driver_alert' },
     { kind: 'int', key: 'dispatch.accept_grace_ms', unit: 'ms', min: 0, max: 5000 },
     { kind: 'bool', key: 'dispatch.offline_drivers_last' },
+    // 02 S-09 «المؤقتات»: dispatch.* and intake.draft_abandoned_alert_min (DEC-340); 07 VenueSettings minimum 1
+    { kind: 'int', key: 'intake.draft_abandoned_alert_min', unit: 'min', min: 1 },
   ],
   handover: [
     { kind: 'int', key: 'handover.code_ttl_min', unit: 'min', min: 5 },

@@ -1,4 +1,5 @@
 import { api, apiFetch, type ApiResult } from '@/api/client';
+import { ApiError } from '@/api/errors';
 import type {
   Alert,
   AlertSeverity,
@@ -305,8 +306,18 @@ export const fetchOutbox = (
   signal?: AbortSignal,
 ) => getPage<OutboxEvent>(withQuery('/v1/admin/outbox', { ...filters, cursor, limit: 50 }), signal);
 
-export const fetchWaChannel = (signal?: AbortSignal) =>
-  get<WhatsAppChannel | null>('/v1/admin/whatsapp/channel', signal);
+/**
+ * The one WhatsApp channel, or null before the owner sets it up: the server answers RESOURCE_NOT_FOUND while no
+ * row exists (07 §2.7, DEC-142), which S-13 shows as «لم تُضبط القناة بعد.» with the owner's create form (PUT).
+ */
+export const fetchWaChannel = async (signal?: AbortSignal): Promise<WhatsAppChannel | null> => {
+  try {
+    return await get<WhatsAppChannel>('/v1/admin/whatsapp/channel', signal);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'RESOURCE_NOT_FOUND') return null;
+    throw e;
+  }
+};
 
 export const fetchWaTemplates = (signal?: AbortSignal) =>
   get<WhatsAppTemplate[]>('/v1/admin/whatsapp/templates', signal);

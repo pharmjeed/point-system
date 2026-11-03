@@ -3,7 +3,7 @@ import { newId } from '../../../core/crypto/ids.js';
 import type { EventEnvelope, Tx } from '../../../core/db/tx.js';
 import { registerTxPlanner, unregisterTxPlanner, type TxPlanner } from '../../../core/db/tx-planners.js';
 import { publishRealtime } from '../../../core/realtime/realtime-publisher.js';
-import { custodyTouchesTaskCard, loadTaskCard, loadTaskView } from '../../tickets-custody/index.js';
+import { custodyRepublishesTaskCard, loadTaskCard, loadTaskView } from '../../tickets-custody/index.js';
 import { loadDriverLives, loadOfferCards } from './cards.js';
 
 type Env = EventEnvelope<Record<string, any>>;
@@ -296,8 +296,7 @@ class Plan {
           p.reason === 'official_transfer' &&
           taskId &&
           (p.subject === 'key' || p.subject === 'vehicle') &&
-          (custodyTouchesTaskCard(p.subject, p.from?.type, p.to?.type) ||
-            (p.subject === 'key' && (p.from?.type === 'driver' || p.to?.type === 'driver')))
+          custodyRepublishesTaskCard(p.subject, p.from?.type, p.to?.type)
         ) {
           // an official spot / slot transfer: the task (bumped) stays with its driver, his card shows the new place;
           // the key leaving or reaching a driver may set or reset the assignee's pickup (`key_picked_up_at`, bumped
