@@ -48,6 +48,16 @@ export const s05 = {
   employeeCode: 'الرقم الوظيفي',
   initialVenue: 'الموقع الأولي (اختياري)',
   tempSecret: 'الرقم السري المؤقت: {secret}. أعطه للسائق؛ سيُطلب منه تغييره عند أول دخول. لن يظهر مرة أخرى.',
+  /** 02 S-05 «على الشاشات الكبيرة: جدول بأعمدة …» */
+  table: {
+    name: 'الاسم',
+    employeeCode: 'الرقم الوظيفي',
+    state: 'الحالة',
+    task: 'المهمة',
+    connection: 'الاتصال',
+    dutyStart: 'بداية المناوبة',
+    device: 'الجهاز',
+  },
   // not in 02 (docs/progress/notes/pnt-023.md)
   venue: 'الموقع',
   allVenues: 'كل المواقع',
@@ -199,6 +209,8 @@ export const s09 = {
     'dispatch.idle_driver_alert': 'تنبيه المشرف بوجود متاح بينما الأقدم محجوز تالٍ',
     'dispatch.accept_grace_ms': 'سماحية وصول القبول بعد انتهاء العرض بسبب تأخر الشبكة',
     'dispatch.offline_drivers_last': 'تأخير السائقين ذوي الاتصال غير المؤكد في ترتيب العرض الفردي',
+    // canon §12 «المعنى» (DEC-340: listed in the timers tab)
+    'intake.draft_abandoned_alert_min': 'تنبيه مسودة استلام متروكة دون إرسال',
     'handover.code_ttl_min': 'صلاحية رمز التسليم من الجاهزية',
     'handover.max_attempts': 'محاولات الرمز قبل القفل',
     'handover.max_resends': 'حد إعادة الإرسال',
@@ -447,6 +459,7 @@ export const s03 = {
   emptyMessages: 'لا توجد رسائل.',
   emptyPhotos: 'لا توجد صور.',
   emptyPayments: 'لا يوجد تحصيل مسجّل.',
+  waiverReason: 'السبب: {reason}', // not in 02: the waiver row of «التحصيل» (A-S03-1, notes/audit-close.md)
   emptyIncidents: 'لا توجد وقائع مرتبطة.',
   noActions: 'لا توجد إجراءات متاحة لهذه التذكرة الآن.',
   action: {
@@ -651,6 +664,8 @@ export const s10 = {
   cashDiffOf: 'فرق تحصيل {name} {amount}',
   openIncident: 'فتح واقعة',
   close: 'إغلاق الحفل',
+  // not in 02: the 03 §4.5 confirmation of «إغلاق الحفل» (closed is final, 11 §6.4; 13 §12) — notes/audit-close.md
+  closeConfirmBody: 'إغلاق الحفل نهائي: لا يُعاد فتحه بعده ولا يُقبل عليه أي تحصيل أو عكس أو إعفاء.',
   closed: 'أُغلق الحفل. التقرير متاح.',
   viewReport: 'عرض التقرير',
   blockedHint: 'لا يمكن الإغلاق قبل حل البنود المظللة.',
@@ -778,6 +793,9 @@ export const s13 = {
     age: 'العمر',
     olderThan: 'أقدم من (ثانية)',
     empty: 'لا توجد أحداث عالقة أو فاشلة.',
+    // not in 02: the result of «إعادة المحاولة» (02 S-13 / DEC-150; audit A-S13-2, notes/audit-close.md)
+    requeued: 'أُعيد الحدث إلى الطابور: «{status}».',
+    canceled: 'أُغلق الحدث «ملغى» دون إعادة: {reason}',
   },
   audit: {
     actor: 'الفاعل',
@@ -786,6 +804,9 @@ export const s13 = {
     entityId: 'معرّف الكيان',
     before: 'قبل',
     after: 'بعد',
+    // not in 02 (audit A-S11-2, notes/audit-close.md): 09 §10 rule 2 `metadata.self_approved`
+    metadata: 'بيانات إضافية',
+    selfApproved: 'اعتماد ذاتي',
     search: 'بحث',
     empty: 'لا توجد سجلات مطابقة.',
   },

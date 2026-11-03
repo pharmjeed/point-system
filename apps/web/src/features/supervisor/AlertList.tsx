@@ -9,7 +9,6 @@ import { AlertItem, EmptyState, Icon, TextArea } from '@/components';
 import { alertSeverity, alertStatus, alertType, buttons } from '@/i18n/ar';
 import { s04 } from '@/i18n/ar.staff';
 import { formatTime } from '@/lib/format';
-import { useOnline } from '@/hooks/useOnline';
 import { applyAlertReply } from './cache';
 import { alertContext } from './opsModel';
 import { can } from './permissions';
@@ -17,6 +16,7 @@ import { commands, staffKeys } from './staffApi';
 import { staffPaths } from './staffPaths';
 import { ReasonDialog, REASON_MIN } from './ui';
 import { useStaffCommand } from './useStaffCommand';
+import { useOnline } from '@/hooks/useOnline';
 
 /**
  * Alerts with «إقرار» / «حل» (S-04, and the S-02 alerts tab). Acknowledge sends no note; resolve asks for a
@@ -87,7 +87,7 @@ function AlertRow({
   onResolve: () => void;
 }) {
   const qc = useQueryClient();
-  const online = useOnline();
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const ack = useStaffCommand(
     (_: Record<string, never>, key: string) => commands.acknowledgeAlert(alert.id, { note: null }, key),
     {

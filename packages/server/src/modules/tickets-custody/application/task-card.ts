@@ -147,3 +147,21 @@ export function custodyTouchesTaskCard(
   const holder = subject === 'key' ? 'key_slot' : 'spot';
   return fromType === holder || toType === holder;
 }
+
+/**
+ * The official custody transfers after which the dispatch planner republishes the open task's TaskCard to its
+ * assignee (RT-2): the spot / slot moves above, and a key leaving or reaching a driver — the key of an accepted
+ * retrieval leaving its assignee for a supervisor or `unknown` resets `key_picked_up_at` (bumped in the
+ * transfer without a task event), and one reaching him is the pickup. A card that did not change keeps its
+ * version and the client ignores it (07 §4.5).
+ */
+export function custodyRepublishesTaskCard(
+  subject: 'vehicle' | 'key',
+  fromType: string | null | undefined,
+  toType: string | null | undefined,
+): boolean {
+  return (
+    custodyTouchesTaskCard(subject, fromType, toType) ||
+    (subject === 'key' && (fromType === 'driver' || toType === 'driver'))
+  );
+}

@@ -17,7 +17,7 @@ import {
 import type { KpiTileProps } from '@/components/Kpi';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { can } from '@/features/supervisor/permissions';
-import { useVenueEvents, useVenues } from '@/features/supervisor/selection';
+import { useSelectionStore, useVenueEvents, useVenues } from '@/features/supervisor/selection';
 import {
   commands,
   fetchDriversReport,
@@ -56,8 +56,11 @@ function Reports({ me }: { me: Me }) {
   const [params] = useSearchParams();
   const venues = useVenues(can(me, 'venue.read'));
   const venueList = venues.data?.items ?? [];
-  const [venueId, setVenueId] = useState<string>('');
-  const effectiveVenue = venueId || venueList[0]?.id || '';
+  // the venue chosen in S-02 / S-05 / S-12 carries over (02 §1.3, DEC-320; audit A-SHELL-1): the shared selection
+  const venueId = useSelectionStore((s) => s.venueId);
+  const setVenueId = useSelectionStore((s) => s.setVenue);
+  const effectiveVenue =
+    (venueId && venueList.some((v) => v.id === venueId) ? venueId : null) ?? venueList[0]?.id ?? '';
   const events = useVenueEvents(effectiveVenue || null, REPORT_EVENT_STATUSES);
   const [eventId, setEventId] = useState<string>(params.get('event') ?? '');
   const initial = lastWeek(serverNow());
@@ -250,15 +253,33 @@ function PaymentsCard({ filters, enabled }: { filters: PeriodFilters; enabled: b
       ) : report.isPending && enabled ? (
         <PageSkeleton rows={1} />
       ) : t ? (
-        <KpiStrip
-          items={[
-            { label: paymentMethod.cash, value: formatHalalas(t.cash_halalas ?? 0), icon: Wallet },
-            { label: paymentMethod.pos, value: formatHalalas(t.pos_halalas ?? 0), icon: Wallet },
-            { label: s11.paymentsCols.reversed, value: n(t.reversed) },
-            { label: s11.paymentsCols.waived, value: n(t.waived) },
-            { label: s11.paymentsCols.outstanding, value: n(t.outstanding) },
-          ]}
-        />
+        <>
+          <KpiStrip
+            items={[
+              { label: paymentMethod.cash, value: formatHalalas(t.cash_halalas ?? 0), icon: Wallet },
+              { label: paymentMethod.pos, value: formatHalalas(t.pos_halalas ?? 0), icon: Wallet },
+              { label: s11.paymentsCols.reversed, value: n(t.reversed) },
+              { label: s11.paymentsCols.waived, value: n(t.waived) },
+              { label: s11.paymentsCols.outstanding, value: n(t.outstanding) },
+            ]}
+          />
+          {/* 02 S-11 «المبالغ حسب الوسيلة لكل حفل، العكس، الإعفاءات»: one row per event of the period (13 §13) */}
+          {report.data?.rows.length ? (
+            <DataTable
+              layout="auto"
+              rows={report.data.rows}
+              rowKey={(r) => r.event_id}
+              columns={[
+                { key: 'event', label: staff.event, render: (r) => r.event_name_ar ?? staff.none },
+                { key: 'cash', label: paymentMethod.cash, render: (r) => formatHalalas(r.cash_halalas ?? 0) },
+                { key: 'pos', label: paymentMethod.pos, render: (r) => formatHalalas(r.pos_halalas ?? 0) },
+                { key: 'reversed', label: s11.paymentsCols.reversed, render: (r) => n(r.reversed) },
+                { key: 'waived', label: s11.paymentsCols.waived, render: (r) => n(r.waived) },
+                { key: 'outstanding', label: s11.paymentsCols.outstanding, render: (r) => n(r.outstanding) },
+              ]}
+            />
+          ) : null}
+        </>
       ) : null}
     </Section>
   );

@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { Search, UserCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { AuditEntry } from '@/api/types';
 import { Button, DataTable, EmptyState, Select, TextField } from '@/components';
+import { StateChip } from '@/features/common/StateChip';
 import { periodToUtc } from '@/features/reports/period';
 import { useVenues } from '@/features/supervisor/selection';
 import { fetchAuditLog, staffKeys } from '@/features/supervisor/staffApi';
@@ -165,7 +166,19 @@ export function AuditLogSection() {
                 <bdi dir="ltr">{[r.entity_type, r.entity_id].filter(Boolean).join(':') || staff.none}</bdi>
               ),
             },
-            { key: 'reason', label: staff.reason, render: (r) => r.reason ?? staff.none },
+            {
+              key: 'reason',
+              label: staff.reason,
+              render: (r) => (
+                <span className="st-inline-list">
+                  <span>{r.reason ?? staff.none}</span>
+                  {/* 09 §10 rule 2: an exception a driving supervisor approved on his own work */}
+                  {isSelfApproved(r) ? (
+                    <StateChip tone="warning" icon={UserCheck} label={s13.audit.selfApproved} />
+                  ) : null}
+                </span>
+              ),
+            },
             {
               key: 'diff',
               label: `${s13.audit.before} / ${s13.audit.after}`,
@@ -178,8 +191,11 @@ export function AuditLogSection() {
   );
 }
 
+const isSelfApproved = (entry: AuditEntry) => entry.metadata?.self_approved === true;
+
 function Diff({ entry }: { entry: AuditEntry }) {
-  if (!entry.before && !entry.after && !entry.request_id) return <>{staff.none}</>;
+  const metadata = entry.metadata && Object.keys(entry.metadata).length ? entry.metadata : null;
+  if (!entry.before && !entry.after && !metadata && !entry.request_id) return <>{staff.none}</>;
   return (
     <details className="st-details">
       <summary>{`${s13.audit.before} / ${s13.audit.after}`}</summary>
@@ -193,6 +209,12 @@ function Diff({ entry }: { entry: AuditEntry }) {
         <>
           <span className="st-muted">{s13.audit.after}</span>
           <pre className="st-json">{JSON.stringify(entry.after, null, 2)}</pre>
+        </>
+      ) : null}
+      {metadata ? (
+        <>
+          <span className="st-muted">{s13.audit.metadata}</span>
+          <pre className="st-json">{JSON.stringify(metadata, null, 2)}</pre>
         </>
       ) : null}
       {entry.request_id ? (

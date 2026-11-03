@@ -29,7 +29,6 @@ import {
 } from '@/components';
 import type { KpiTileProps } from '@/components/Kpi';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { useOnline } from '@/hooks/useOnline';
 import { useServerNow } from '@/hooks/useNow';
 import { alertType, buttons, custodyHolder, taskStatus, taskType, waMessageStatus } from '@/i18n/ar';
 import { custodySubject, s02, s12, staff } from '@/i18n/ar.staff';
@@ -38,7 +37,7 @@ import { cx } from '@/lib/cx';
 import { formatClock, formatSinceMinutes, formatTime } from '@/lib/format';
 import { useUiStore } from '@/stores/ui';
 import { AlertList } from './AlertList';
-import { AlertSoundBanner, useLiveAlerts } from './OpsArea';
+import { AlertSoundBanner } from './OpsArea';
 import {
   driverTaskInfo,
   liveAlerts,
@@ -63,6 +62,7 @@ import { staffPaths } from './staffPaths';
 import { ForbiddenPage, PageSkeleton, QueryError, Tabs } from './ui';
 import { VenueEventPicker } from './VenueEventPicker';
 import './staff.css';
+import { useOnline } from '@/hooks/useOnline';
 
 type BoardTab = 'queue' | 'active' | 'next' | 'drivers' | 'alerts' | 'failed' | 'custody';
 
@@ -83,12 +83,11 @@ export function OpsBoardPage() {
 
 function Board({ me }: { me: Me }) {
   const navigate = useNavigate();
-  const online = useOnline();
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const lastSyncAt = useUiStore((s) => s.lastSyncAt);
   const sel = useOpsSelection(can(me, 'venue.read'));
   const [tab, setTab] = useState<BoardTab>('queue');
   const now = useServerNow(1000);
-  const liveAlertsQuery = useLiveAlerts(me);
 
   const boards = useQueries({
     queries: sel.eventIds.map((id) => ({
@@ -115,15 +114,11 @@ function Board({ me }: { me: Me }) {
   const pending =
     sel.venues.isPending || sel.events.isPending || (sel.eventIds.length > 0 && !board && !boardError);
 
-  const openAlertsCount = (liveAlertsQuery.data?.items ?? []).filter((a) => a.status === 'open').length;
-
   const header = (
     <div className="st-head">
       <h1 className="pt-page-title">{s02.title}</h1>
       <div className="st-head__actions">
-        <Button variant="secondary" compact iconStart={BellRing} onClick={() => navigate(paths.opsAlerts)}>
-          {fmt(staff.alertsCount, { n: openAlertsCount })}
-        </Button>
+        {/* «التنبيهات (n)» is in the staff TopBar on every screen (02 §1.3, StaffLayout) */}
         {can(me, 'incident.read') ? (
           <Button
             variant="ghost"

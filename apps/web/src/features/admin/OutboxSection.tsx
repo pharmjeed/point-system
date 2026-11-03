@@ -12,7 +12,9 @@ import { useOnline } from '@/hooks/useOnline';
 import { buttons } from '@/i18n/ar';
 import { outboxStatus, s13, staff } from '@/i18n/ar.staff';
 import { onlyDigits } from '@/lib/digits';
+import { fmt } from '@/i18n/fmt';
 import { formatClock, formatDateTime } from '@/lib/format';
+import { useUiStore } from '@/stores/ui';
 import { useCursorPages } from './useCursorPages';
 
 const STATUSES: OutboxStatus[] = ['failed', 'dead', 'pending', 'processing', 'canceled', 'done'];
@@ -127,10 +129,23 @@ export function OutboxSection({ me }: { me: Me }) {
 
 function RetryButton({ event }: { event: OutboxEvent }) {
   const online = useOnline();
+  const pushToast = useUiStore((s) => s.pushToast);
+  // DEC-150: a stale or superseded job.* row is closed `canceled` with its reason instead of requeued; the reply
+  // says which, so the toast does too (the default filter hides canceled rows; audit A-S13-2)
   const retry = useStaffCommand(
     (_: Record<string, never>, key: string) => commands.retryOutbox(event.id, key),
     {
       invalidate: [['staff', 'admin', 'outbox']],
+      successMessage: null,
+      onSuccess: (r) => {
+        pushToast({
+          message:
+            r.status === 'canceled'
+              ? fmt(s13.outbox.canceled, { reason: r.last_error ?? staff.none })
+              : fmt(s13.outbox.requeued, { status: outboxStatus[r.status] ?? r.status }),
+          tone: r.status === 'canceled' ? 'info' : 'success',
+        });
+      },
     },
   );
   return (

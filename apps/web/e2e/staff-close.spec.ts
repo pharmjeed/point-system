@@ -99,6 +99,12 @@ test('a refused close (EVENT_CLOSE_BLOCKED) shows the server text and its blocke
   const close = page.getByRole('button', { name: 'إغلاق الحفل' });
   await expect(close).toBeEnabled();
   await close.click();
+  // 03 §4.5 (audit A-S10-1): `closed` is final, the close is confirmed first — nothing is sent before
+  const confirm = page.getByRole('alertdialog', { name: 'إغلاق الحفل' });
+  await expect(confirm).toContainText('إغلاق الحفل نهائي');
+  expect(api.callsTo('POST', `/v1/events/${EVENT_ID}/close`)).toHaveLength(0);
+  await confirm.getByRole('button', { name: 'إغلاق الحفل' }).click();
+  await expect(confirm).toBeHidden();
   await expect(page.getByRole('alert').filter({ hasText: refusal })).toBeVisible();
   const openTickets = page.getByRole('region', { name: 'التذاكر المفتوحة' });
   await expect(openTickets).toContainText('#51');

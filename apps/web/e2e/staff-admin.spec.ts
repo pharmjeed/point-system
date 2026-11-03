@@ -106,8 +106,32 @@ test('outbox: failed and dead events with «إعادة المحاولة»', asyn
   await expect(page.getByText('job.push.send').filter({ visible: true })).toHaveCount(0);
   await expect(page.getByText('job.whatsapp.send').filter({ visible: true })).toBeVisible();
   await page.getByRole('button', { name: 'إعادة المحاولة' }).first().click();
-  await expect(page.locator('.pt-toast').filter({ hasText: 'تم تنفيذ الإجراء.' })).toBeVisible();
+  // the reply says what happened (DEC-150; audit A-S13-2): requeued here
+  await expect(
+    page.locator('.pt-toast').filter({ hasText: 'أُعيد الحدث إلى الطابور: «معلّق».' }),
+  ).toBeVisible();
   expect(api.callsTo('POST', '/v1/admin/outbox/ob-1/retry')[0]?.headers['idempotency-key']).toBeTruthy();
+});
+
+test('audit A-S13-2: a stale job.* row closed `canceled` by the retry says so, with its reason', async ({
+  page,
+}) => {
+  const api = new MockApi(page, roleMe('admin'));
+  mockStaffApi(api);
+  api.on(
+    'POST',
+    '/v1/admin/outbox/ob-1/retry',
+    ok({ id: 'ob-1', status: 'canceled', last_error: 'canceled_stale: ticket version changed' }),
+  );
+  await api.install();
+  await page.goto('/admin/outbox');
+  await page.getByRole('button', { name: 'إعادة المحاولة' }).first().click();
+  await expect(
+    page
+      .locator('.pt-toast')
+      .filter({ hasText: 'أُغلق الحدث «ملغى» دون إعادة: canceled_stale: ticket version changed' }),
+  ).toBeVisible();
+  await expect(page.locator('.pt-toast').filter({ hasText: 'تم تنفيذ الإجراء.' })).toHaveCount(0);
 });
 
 test('audit log: read only, before/after on demand', async ({ page }) => {
@@ -188,4 +212,70 @@ test('WhatsApp channel and templates show the customer brand; secrets are refere
   expect(
     api.callsTo('POST', '/v1/admin/whatsapp/templates/sync')[0]?.headers['idempotency-key'],
   ).toBeTruthy();
+});
+
+test('audit A-S13-1: no channel yet — «لم تُضبط القناة بعد.», the owner creates it with PUT, the admin reads only', async ({
+  page,
+}) => {
+  const me = { ...roleMe('owner'), brand: { customer_name_ar: CUSTOMER } };
+  const api = new MockApi(page, me);
+  mockStaffApi(api);
+  let channel: Record<string, unknown> | null = null;
+  // 07 §2.7 / DEC-142: GET answers RESOURCE_NOT_FOUND until the first PUT creates the only channel
+  api.on('GET', '/v1/admin/whatsapp/channel', () =>
+    channel ? ok(channel) : apiError('RESOURCE_NOT_FOUND', 404),
+  );
+  api.on('PUT', '/v1/admin/whatsapp/channel', (req) => {
+    const body = req.postDataJSON() as Record<string, unknown>;
+    channel = {
+      ...waChannelFixture(),
+      display_name: body.display_name,
+      business_account_id: body.business_account_id,
+      phone_number_id: body.phone_number_id,
+      phone_display: body.phone_display,
+      api_version: body.api_version,
+      mode: body.mode,
+    };
+    return ok(channel);
+  });
+  await api.install();
+  await page.goto('/admin/channel');
+  await expect(page.getByText('لم تُضبط القناة بعد.')).toBeVisible();
+  // not the generic not-found state of a 404 read
+  await expect(page.getByText('لم نجد هذا العنصر')).toHaveCount(0);
+  const save = page.getByRole('button', { name: 'حفظ' });
+  await expect(save).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'إلغاء' })).toHaveCount(0);
+  await expect(page.locator('#wa-display_name')).toHaveValue(CUSTOMER);
+  await page.locator('#wa-business_account_id').fill('102030405060708');
+  await page.locator('#wa-phone_number_id').fill('908070605040302');
+  await page.locator('#wa-api_version').fill('v26.0');
+  await page.locator('#wa-access_token_secret_ref').fill('env://A');
+  await page.locator('#wa-app_secret_ref').fill('env://B');
+  await page.locator('#wa-verify_token_secret_ref').fill('env://C');
+  await save.click();
+  await expect(page.getByText('لم تُضبط القناة بعد.')).toHaveCount(0);
+  await expect(page.getByText('سليمة')).toBeVisible();
+  await expect(page.locator('#wa-business_account_id')).toHaveCount(0);
+  const put = api.callsTo('PUT', '/v1/admin/whatsapp/channel')[0];
+  expect(put?.headers['idempotency-key']).toBeTruthy();
+  expect(put?.body).toEqual({
+    display_name: CUSTOMER,
+    business_account_id: '102030405060708',
+    phone_number_id: '908070605040302',
+    phone_display: null,
+    api_version: 'v26.0',
+    mode: 'simulator',
+    access_token_secret_ref: 'env://A',
+    app_secret_ref: 'env://B',
+    verify_token_secret_ref: 'env://C',
+  });
+
+  // the administration (wa.channel_read only) sees the empty state and no form
+  channel = null;
+  api.me = { ...roleMe('admin'), brand: { customer_name_ar: CUSTOMER } };
+  await page.reload();
+  await expect(page.getByText('لم تُضبط القناة بعد.')).toBeVisible();
+  await expect(page.locator('#wa-business_account_id')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'فتح' })).toHaveCount(0);
 });

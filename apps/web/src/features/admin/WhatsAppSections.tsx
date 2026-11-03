@@ -67,19 +67,23 @@ export function ChannelSection({ me }: { me: Me }) {
       ) : (
         <EmptyState title={s13.channel.empty} />
       )}
-      {manage && !editing ? (
+      {/* no channel yet (RESOURCE_NOT_FOUND, DEC-142): the owner gets the create form at once (PUT creates the
+          only channel, 07 §2.7; DEPLOYMENT.md §8), the administration reads the empty state only */}
+      {manage && c && !editing ? (
         <Button variant="secondary" onClick={() => setEditing(true)}>
           {buttons.open}
         </Button>
       ) : null}
-      {manage && editing ? <ChannelForm channel={c} onDone={() => setEditing(false)} /> : null}
+      {manage && (editing || !c) ? (
+        <ChannelForm channel={c} onDone={c ? () => setEditing(false) : undefined} />
+      ) : null}
     </div>
   );
 }
 
 const SECRET_REF_FORMAT = 'env://NAME · sm://path';
 
-function ChannelForm({ channel, onDone }: { channel: WhatsAppChannel | null; onDone: () => void }) {
+function ChannelForm({ channel, onDone }: { channel: WhatsAppChannel | null; onDone?: () => void }) {
   const online = useOnline();
   const qc = useQueryClient();
   const brand = useBrand();
@@ -99,7 +103,7 @@ function ChannelForm({ channel, onDone }: { channel: WhatsAppChannel | null; onD
     {
       onSuccess: (saved) => {
         qc.setQueryData(staffKeys.waChannel(), saved);
-        onDone();
+        onDone?.();
       },
     },
   );
@@ -171,9 +175,11 @@ function ChannelForm({ channel, onDone }: { channel: WhatsAppChannel | null; onD
         <Button type="submit" loading={save.pending} disabled={!online || !ready}>
           {buttons.save}
         </Button>
-        <Button variant="ghost" onClick={onDone}>
-          {buttons.cancel}
-        </Button>
+        {onDone ? (
+          <Button variant="ghost" onClick={onDone}>
+            {buttons.cancel}
+          </Button>
+        ) : null}
       </div>
     </form>
   );

@@ -50,6 +50,7 @@ export {
 } from './application/intake-service.js';
 export {
   bumpTaskCardVersion,
+  custodyRepublishesTaskCard,
   custodyTouchesTaskCard,
   loadTaskCard,
   type TaskCard,

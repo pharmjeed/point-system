@@ -294,3 +294,14 @@
     display: initial;
   }
 }
+/* a list below 1024px, its table from 1024px (02 §1.4 «والقوائم جداول DataTable»; S-05, S-04, S-12) */
+@media (min-width: 1024px) {
+  .st-below-desktop {
+    display: none;
+  }
+}
+@media (max-width: 1023px) {
+  .st-desktop-only {
+    display: none;
+  }
+}

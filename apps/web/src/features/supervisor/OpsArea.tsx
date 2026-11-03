@@ -1,13 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet } from 'react-router';
-import type { Alert, Me } from '@/api/types';
+import type { Alert } from '@/api/types';
 import { Banner } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { staff } from '@/i18n/ar.staff';
 import { AlertSoundController, htmlAudioPlayer, SOUND_FILES } from './alertSound';
-import { can } from './permissions';
-import { fetchAlerts, LIVE_REFETCH_MS, staffKeys, type AlertFilters } from './staffApi';
+import { useLiveAlerts } from './liveAlerts';
 
 /**
  * «التشغيل» destination (02 §1.4: S-02 and its S-03, S-04, S-12). A pathless layout under the staff shell that
@@ -16,7 +14,7 @@ import { fetchAlerts, LIVE_REFETCH_MS, staffKeys, type AlertFilters } from './st
  * (autoplay rules, 02 §1.10).
  */
 
-export const LIVE_ALERT_FILTERS: AlertFilters = { status: ['open', 'acknowledged'] };
+export { LIVE_ALERT_FILTERS, useLiveAlerts } from './liveAlerts';
 
 interface AlertSoundContextValue {
   enabled: boolean;
@@ -29,16 +27,6 @@ const AlertSoundContext = createContext<AlertSoundContextValue>({
 });
 
 export const useAlertSound = () => useContext(AlertSoundContext);
-
-/** Live alerts of the scope (every venue), refreshed with the board (15 §11.1). */
-export function useLiveAlerts(me: Me) {
-  return useQuery({
-    queryKey: staffKeys.alerts(LIVE_ALERT_FILTERS),
-    queryFn: ({ signal }) => fetchAlerts(LIVE_ALERT_FILTERS, signal),
-    enabled: can(me, 'alert.read'),
-    refetchInterval: LIVE_REFETCH_MS,
-  });
-}
 
 export function OpsArea() {
   const me = useStaffMe();

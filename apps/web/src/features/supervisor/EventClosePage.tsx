@@ -28,7 +28,6 @@ import {
   TextField,
 } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { useOnline } from '@/hooks/useOnline';
 import { buttons, eventStatus, taskStatus, taskType } from '@/i18n/ar';
 import { s10, staff } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
@@ -55,6 +54,7 @@ import { IncidentDialog } from './TicketActions';
 import { ForbiddenPage, PageSkeleton, ReadError, Section } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 import './staff.css';
+import { useOnline } from '@/hooks/useOnline';
 
 /**
  * S-10 — إغلاق الحفل والمطابقة (02 §4 S-10, PNT-087, 13 §10–§12): step 1 «بدء الإغلاق» (`start-closing`), step 2
@@ -93,7 +93,7 @@ export function EventClosePage() {
 }
 
 function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: () => void }) {
-  const online = useOnline();
+  const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
   const navigate = useNavigate();
   const qc = useQueryClient();
   const closingOrDone = event.status === 'closing' || event.status === 'closed';
@@ -115,6 +115,7 @@ function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: (
     staffKeys.settlement(event.id),
   ];
   const [confirmStart, setConfirmStart] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [flagged, setFlagged] = useState(false);
   const [closedNow, setClosedNow] = useState(false);
   const start = useStaffCommand(
@@ -133,6 +134,7 @@ function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: (
     rec.data && closeBlocked ? withBlockers(rec.data, closeBlocked.details) : rec.data;
   const onClose = async () => {
     const result = await close.run({});
+    setConfirmClose(false);
     if (!result) {
       setFlagged(true);
       void qc.invalidateQueries({ queryKey: staffKeys.reconciliation(event.id) });
@@ -191,7 +193,7 @@ function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: (
             size="lg"
             loading={close.pending}
             disabled={!online || !recData || blockers.length > 0}
-            onClick={onClose}
+            onClick={() => setConfirmClose(true)}
           >
             {s10.close}
           </Button>
@@ -208,6 +210,20 @@ function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: (
         loading={start.pending}
         error={start.message ?? undefined}
         onConfirm={() => start.run({})}
+      />
+      {/* 03 §4.5: «إغلاق الحفل» needs a confirmation — `closed` is final (11 §6.4, 13 §12); a refusal closes the
+          dialog and shows the blockers or the message under the button */}
+      <Dialog
+        id="close-confirm"
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        onCancel={() => setConfirmClose(false)}
+        title={s10.close}
+        body={s10.closeConfirmBody}
+        confirmLabel={s10.close}
+        destructive
+        loading={close.pending}
+        onConfirm={() => void onClose()}
       />
     </div>
   );
