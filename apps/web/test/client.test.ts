@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, apiFetch, onApiError } from '@/api/client';
+import { api, apiFetch, freshServerTime, onApiError, onApiSuccess } from '@/api/client';
 import { ApiError, NetworkError, displayMessage } from '@/api/errors';
 import { errorMessagesAr } from '@/i18n/errors';
 import { clockOffsetMs } from '@/lib/serverClock';
@@ -44,6 +44,42 @@ describe('apiFetch (07 §1, DEC-29)', () => {
     expect(header(calls[0], 'Idempotency-Key')).toBeNull();
     // meta.server_time feeds the server clock (02 §1.7)
     expect(clockOffsetMs()).toBeGreaterThan(110_000);
+  });
+
+  it('a replayed answer (meta.replayed) never moves the server clock nor «آخر مزامنة» (realtime:RT-4)', async () => {
+    const now = new Date().toISOString();
+    vi.stubGlobal('fetch', respond(200, { data: {}, meta: { request_id: 'r0', server_time: now } }));
+    await api.get('/v1/me');
+    const before = clockOffsetMs();
+    // 07 §1.4: the stored answer of the first attempt, 90 s old, replayed verbatim
+    const stored = new Date(Date.now() - 90_000).toISOString();
+    vi.stubGlobal(
+      'fetch',
+      respond(
+        201,
+        { data: { id: 't' }, meta: { request_id: 'r1', server_time: stored, replayed: true } },
+        { 'Idempotent-Replayed': 'true' },
+      ),
+    );
+    const seen: Array<string | null> = [];
+    const off = onApiSuccess(({ meta }) => seen.push(freshServerTime(meta)));
+    const res = await api.post('/v1/tickets', { body: {}, idempotencyKey: 'k-1' });
+    off();
+    expect(res.meta.replayed).toBe(true);
+    expect(Math.abs(clockOffsetMs() - before)).toBeLessThan(5_000);
+    expect(seen).toEqual([null]);
+    // the header alone marks the replay too
+    vi.stubGlobal(
+      'fetch',
+      respond(
+        201,
+        { data: {}, meta: { request_id: 'r2', server_time: stored } },
+        { 'Idempotent-Replayed': 'true' },
+      ),
+    );
+    await api.post('/v1/tickets', { body: {}, idempotencyKey: 'k-1' });
+    expect(Math.abs(clockOffsetMs() - before)).toBeLessThan(5_000);
+    expect(freshServerTime({ request_id: 'r3', server_time: now })).toBe(now);
   });
 
   it('adds X-Requested-With: point-web on every unsafe method and Idempotency-Key when given', async () => {

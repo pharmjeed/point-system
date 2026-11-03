@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router';
-import { onApiError, onApiSuccess } from '@/api/client';
+import { freshServerTime, onApiError, onApiSuccess } from '@/api/client';
 import { queryKeys } from '@/api/queryClient';
 import type { Me } from '@/api/types';
 import { currentOwner, detachDrafts, forgetUserDrafts } from '@/features/driver/intakePersistence';
@@ -45,7 +45,8 @@ export function RootLayout() {
   useEffect(
     () =>
       onApiSuccess(({ meta }) => {
-        markSynced(meta.server_time);
+        const fresh = freshServerTime(meta); // a replayed answer is not a sync time (realtime:RT-4)
+        if (fresh) markSynced(fresh);
         noteContact(); // any reply confirms the connection (02 §1.3 indicator)
       }),
     [markSynced],
