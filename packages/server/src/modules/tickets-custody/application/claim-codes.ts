@@ -336,16 +336,20 @@ export async function claimCodeState(
   };
 }
 
-/** The current code state of a ticket's cycle for TicketDetail (null without any code). */
+/**
+ * The current code state of a ticket's cycle for TicketDetail and the TaskCard (null without any code).
+ * `maxResends` is the venue's `handover.max_resends` when the caller already has it; otherwise it is read.
+ */
 export async function loadClaimCodeState(
   q: Queryable,
   venueId: string,
   cycleId: string | null,
+  maxResends?: number,
 ): Promise<ClaimCodeState | null> {
   if (!cycleId) return null;
   const row = await latestClaimCode(q, cycleId);
   if (!row) return null;
-  return claimCodeState(q, row, (await venueSettingsFor(q, venueId)).handover.max_resends);
+  return claimCodeState(q, row, maxResends ?? (await venueSettingsFor(q, venueId)).handover.max_resends);
 }
 
 /**

@@ -233,7 +233,7 @@ export class OperationsBoardQuery {
     const nextWaitMs = settings.dispatch.next_task_wait_alert_s * 1000;
     const cards = [];
     for (const r of rows) {
-      const card = await loadTaskCard(tx, r.id, viewer, now);
+      const card = await loadTaskCard(tx, r.id, viewer, now, { maxResends: settings.handover.max_resends });
       if (!card) continue;
       const badges: BoardBadge[] = [];
       if (

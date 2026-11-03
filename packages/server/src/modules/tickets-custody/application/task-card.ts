@@ -9,8 +9,18 @@ import { iso, taskView, type Queryable, type TaskReadRow, type Viewer } from './
  * assignee and staff (the TicketDetail projection, DEC-208): state only, the handover code itself never appears
  * (DEC-38); null for park/repark tasks and paper tickets. `ready_at` is the cycle's readiness (D-04 «منذ», DEC-348).
  * Used by the HTTP reads and by the realtime `task.updated` messages to the assignee.
+ *
+ * A code is issued at `ready` only (TT-17; a resend needs `ready` too), so a cycle without `ready_at` has none and
+ * its lookup is skipped. A caller that already holds the venue settings (the operations board, one card per row)
+ * passes `maxResends` so the code state does not read them again.
  */
-export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer, now: Date) {
+export async function loadTaskCard(
+  q: Queryable,
+  taskId: string,
+  viewer: Viewer,
+  now: Date,
+  opts: { maxResends?: number } = {},
+) {
   const r = await q.query<
     TaskReadRow & {
       t_id: string;
@@ -108,8 +118,8 @@ export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer,
         ? { amount_halalas: Number(k.fee_halalas), allowed_methods: k.allowed_payment_methods }
         : null,
     claim_code:
-      k.type === 'retrieve' && (isAssignee || staff)
-        ? await loadClaimCodeState(q, k.venue_id, k.cycle_id)
+      k.type === 'retrieve' && k.ready_at && (isAssignee || staff)
+        ? await loadClaimCodeState(q, k.venue_id, k.cycle_id, opts.maxResends)
         : null,
   };
 }

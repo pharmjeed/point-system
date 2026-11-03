@@ -35,6 +35,7 @@ import {
 import { newKey } from './harness.js';
 import { captureRealtime } from './dispatch-s4-fixtures.js';
 import { rooms } from '@point/shared';
+import { loadTaskCard } from '@point/server';
 import { ORG } from './wa-harness.js';
 
 let phoneSeq = 5_300_000;
@@ -178,6 +179,28 @@ describe('S3 handover codes (PNT-047) and the exceptional handover (PNT-078)', (
       expect(JSON.stringify(body)).not.toMatch(codePattern(t.code!));
     // …nor any table: outbox, audit, timeline, messages (body masked), attempts, idempotency answers
     expect(await tablesContaining(w, t.code!, codePattern(t.code!))).toEqual([]);
+  });
+
+  it('review:10: the TaskCard skips the code lookup before ready and takes max_resends from a caller that has it', async () => {
+    const t = await readyTicket({ ready: false });
+    const sqls: string[] = [];
+    const q = {
+      query: (text: string, params?: unknown[]) => {
+        sqls.push(text);
+        return w.db.query(text, params);
+      },
+    } as unknown as Parameters<typeof loadTaskCard>[0];
+    const viewer = { userId: t.driver, role: 'driver' as const };
+    const started = await loadTaskCard(q, t.taskId, viewer, w.clock.now());
+    expect(started).toMatchObject({ ready_at: null, claim_code: null });
+    expect(sqls.filter((s) => /claim_codes|FROM venues/.test(s))).toEqual([]);
+    ok(await markReady(w, t.driver, t.taskId));
+    sqls.length = 0;
+    const ready = await loadTaskCard(q, t.taskId, viewer, w.clock.now(), { maxResends: 3 });
+    expect(ready!.claim_code).toMatchObject({ resend_no: 0, resends_left: 3 });
+    expect(sqls.filter((s) => /FROM venues/.test(s))).toEqual([]);
+    // without the setting the card reads it, with the same result
+    expect((await loadTaskCard(w.db, t.taskId, viewer, w.clock.now()))!.claim_code).toEqual(ready!.claim_code);
   });
 
   it('TC-028: the code delivers once — a new key afterwards is TICKET_CLOSED, the same key replays the saved 200; W-06 follows', async () => {
