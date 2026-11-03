@@ -24,7 +24,7 @@ jobs:
   checks:
     name: lint · typecheck · unit · db · integration · build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -129,7 +129,7 @@ jobs:
   e2e:
     name: e2e (Playwright 360/390/430, RTL · G1 on the real API)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45  # the mocked suite (~1,000 cases at three widths) takes ~13 min, then the live G1 run
     services:
       postgres: # for the G1 run against the real API (PNT-036)
         image: postgres:16
