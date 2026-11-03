@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleAlert, Images, Phone, XCircle } from 'lucide-react';
+import { CircleAlert, Images, MessageCircle, Phone, XCircle } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { getTicket } from '@/api/field';
@@ -22,7 +22,7 @@ import { fmt } from '@/i18n/fmt';
 import { formatTime } from '@/lib/format';
 import { useCommandGate } from '@/realtime/hooks';
 import { useDriverMe } from '../DriverLayout';
-import { plateValue, vehicleSummary } from '../fieldModel';
+import { driverPaths, plateValue, vehicleSummary } from '../fieldModel';
 import { CancelRetrievalDialog, ChangePhoneSheet, OnBehalfSheet, PhotosSheet, ReportSheet } from './actions';
 import { restrictedRows, vehicleActions } from './model';
 
@@ -45,7 +45,8 @@ type Open = 'onBehalf' | 'cancel' | 'phone' | 'report' | 'photos' | null;
  * /v1/tickets/{ticketId}`: `minimal` = status, plate, vehicle, event, channel, link status and payment status;
  * `full` for the assignee of an open task and the creator during intake adds the masked phone, the spot, the
  * key slot and the photos — 07 §1.10, 09 §5.1). The actions of 02 D-13: the request on behalf of the
- * customer (parked), the cancel before the assignment, the phone change and the incident report.
+ * customer (parked), the cancel before the assignment, the phone change, «إعادة الربط بواتساب» (→ D-07) and the
+ * incident report.
  */
 export function VehiclePage() {
   const me = useDriverMe();
@@ -190,6 +191,16 @@ export function VehiclePage() {
             onClick={() => setOpen('phone')}
           >
             {d13.changePhone}
+          </Button>
+        ) : null}
+        {actions.relink ? (
+          <Button
+            variant="ghost"
+            fullWidth
+            iconStart={MessageCircle}
+            onClick={() => navigate(driverPaths.intakeLink(ticket.id))}
+          >
+            {d13.relink}
           </Button>
         ) : null}
         {actions.report ? (

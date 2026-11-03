@@ -130,13 +130,13 @@ e2e/                  Playwright specs + support/api.ts (static in-browser mock)
 | `/session-ended` | D-15 (c) | reason text: transfer / disabled / admin / expired |
 | `/d/start` | D-03 | assignment, shift and open events (`GET /v1/me/home`), audio test, notifications, wake lock, «بدء الوردية» |
 | `/d`, `/d/vehicles`, `/d/account` | D-04, D-12, D-14 | driver shell, three tabs; D-04 = the `GET /v1/me/home` snapshot kept current by the realtime events (polling only as the fallback) |
-| `/d/vehicles/:ticketId` | D-13 | the ticket as the server projects it for this driver; request on behalf, cancel before the assignment, phone change, incident report |
-| `/d/intake/:ticketId/vehicle` | D-05 | plate, make, model, colour, paper stub number → `PATCH /v1/tickets/{id}/intake` |
-| `/d/intake/:ticketId/key-photos` | D-06 | key tag, photos (compress → `POST …/media` → PUT → `POST /v1/media/{id}/complete`), submit |
-| `/d/intake/:ticketId/link` | D-07 | paper channel (WhatsApp modes: PNT-043/044) |
+| `/d/vehicles/:ticketId` | D-13 | the ticket as the server projects it for this driver; request on behalf, cancel before the assignment, phone change, «إعادة الربط بواتساب» (→ D-07), incident report |
+| `/d/intake/:ticketId/vehicle` | D-05 | plate, make, model, colour, the customer's ticket — WhatsApp by number + verbal consent, WhatsApp by QR, or the paper stub — → `PATCH /v1/tickets/{id}/intake` |
+| `/d/intake/:ticketId/key-photos` | D-06 | key tag, photos (compress → `POST …/media` → PUT → `POST /v1/media/{id}/complete`), the QR mode's `whatsapp-link {qr}`, submit |
+| `/d/intake/:ticketId/link` | D-07 | أ direct send (status, resend, QR, paper conversion DEC-40), ب the customer-brand QR panel (countdown, new code, full screen, «هل هو جوال العميل الذي أمامك؟» → `whatsapp-link/confirm`), ج paper stub; also from D-13 |
 | `/d/tasks/:taskId/park` | D-08 | spot and key slot pickers → `POST /v1/tasks/{id}/complete-parking` |
-| `/d/tasks/:taskId` | D-10 | key pickup → start → ready; D-09 offers are accepted on D-04 |
-| `/d/tickets/:ticketId/handover` | D-11 | paper stub (code: PNT-047) and the collection → `POST /v1/tickets/{id}/handover` |
+| `/d/tasks/:taskId` | D-10 | key pickup → start → ready, «إبلاغ عن مشكلة» (`POST /v1/incidents`); D-09 offers are accepted on D-04 |
+| `/d/tickets/:ticketId/handover` | D-11 | the code (WhatsApp; «العميل لم يصله الرمز؟ │ إعادة الإرسال (متبقٍ n)», manual verification) or the paper stub, and the collection → `POST /v1/tickets/{id}/handover` |
 | `/ops`, `/drivers`, `/venues`, `/reports`, `/admin` | S-02, S-05, S-08, S-11, S-13 | staff shell, four destinations (+ admin by permission) |
 | `/drivers/:driverId` | S-06 | profile, assignment history, account actions by permission (PNT-023) |
 | `/venues/:venueId` | S-08 venue page | «الحفلات» (اليوم · القادمة · المغلقة) / «الورديات» (`?tab=shifts`) |
@@ -226,6 +226,13 @@ preview strings). `components/bundle.js` is never imported.
   (installability, precache, offline shell, push and its replacement, `push.click`, the subscription — service
   workers allowed in that spec only); unit tests under `test/realtime/`, `test/audio.test.ts`, `test/push.test.ts`,
   `test/intakePersistence.test.ts`.
+- WhatsApp and the field help (driver-gaps): `e2e/driver-whatsapp.spec.ts` (D-05 by number and by QR, D-06 code before
+  the submit, D-07 modes أ / ب with the confirmation, fallbacks and refusals, D-13 relink, the notices after D-07),
+  `e2e/driver-help.spec.ts` (D-10 report and the W-05 banner, D-11 resend, manual verification, the no-code state,
+  the supervisor's reissue and the 14 §5.1 banners); unit tests `test/linkModel.test.ts`, `test/intakeErrors.test.ts`
+  and the WhatsApp events in `test/realtime/driverRuntime.test.ts`. The fake's WhatsApp side follows the API: a
+  matching confirmation links, a code at `ready` for a linked ticket only, `ticket.updated` to the privileged drivers
+  with `wa_link_pending`, `fake.whatsapp.expireCode` for `job.link_code_expire`.
 - Gate G1 (PNT-036): `e2e/live/g1.live.spec.ts` (project `g1-live`, only with `E2E_BACKEND=live`) runs the same path
   against the real API: `/v1` through the `vite preview` proxy to `localhost:API_PORT`, drivers signed in through D-01,
   photos into the API's in-memory private bucket, then the actors, the custody chain and one audit row per command

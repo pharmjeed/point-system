@@ -21,14 +21,17 @@ export interface Promotion {
  * A banner of 14 §5.1 raised by a server event (02 D-10, 14 §3.1–§3.2): the retrieval canceled («أُلغي طلب
  * الإحضار — تذكرة n», no sound), the task withdrawn or reassigned away («سحب المشرف المهمة…», `reminder`),
  * the repark the supervisor's cancel created (DEC-30: «أعد سيارة تذكرة n…» → D-08, `next_due`), the early
- * request during parking (02 D-08's sentence, `reminder`). Shown until dismissed or until its cause is gone.
+ * request during parking (02 D-08's sentence, `reminder`), W-01 failed after the driver left D-07 (02 D-07
+ * «بعد المغادرة»: «تعذر إرسال تذكرة #n للعميل.» with «فتح» → D-13), the customer who stopped the messages
+ * (14 §5.1 «العميل أوقف الرسائل»). Shown until dismissed or until its cause is gone.
  */
-export type NoticeKind = 'canceled' | 'withdrawn' | 'repark' | 'early';
+export type NoticeKind = 'canceled' | 'withdrawn' | 'repark' | 'early' | 'waFailed' | 'optedOut';
 
 export interface DriverNotice {
   /** `${kind}:${taskId}`: one notice per cause. */
   key: string;
   kind: NoticeKind;
+  /** The task of the notice; the ticket's id for the WhatsApp ones (`waFailed`, `optedOut`). */
   taskId: string;
   ticketId: string;
   ticketNumber: number;

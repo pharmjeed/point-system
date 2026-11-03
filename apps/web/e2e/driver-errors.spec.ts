@@ -137,6 +137,7 @@ test('D-05/D-06: serial and key tag in use inline, a dropped photo upload retake
   await page.locator('#plate-digits').fill('1234');
   await page.getByLabel('الشركة المصنعة').selectOption('toyota');
   await page.getByRole('radio', { name: 'أبيض' }).click();
+  await page.getByRole('radio', { name: 'تذكرة ورقية' }).click();
   await page.getByLabel('رقم التذكرة الورقية').fill('004522');
   await pressCommand(fake, 'PATCH /v1/tickets/:ticketId/intake', page.locator('#intake-next'), {
     expectStatus: 409,
@@ -227,6 +228,7 @@ test('D-05: an empty draft is cancelled; a draft with data answers DRAFT_HAS_DAT
   await page.locator('#plate-digits').fill('77');
   await page.getByLabel('الشركة المصنعة').selectOption('kia');
   await page.getByRole('radio', { name: 'أسود' }).click();
+  await page.getByRole('radio', { name: 'تذكرة ورقية' }).click();
   await page.getByLabel('رقم التذكرة الورقية').fill('004540');
   await pressCommand(fake, 'PATCH /v1/tickets/:ticketId/intake', page.locator('#intake-next'));
   await expect(page).toHaveURL(/\/key-photos$/);

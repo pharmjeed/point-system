@@ -224,6 +224,49 @@ export interface FClaim {
   max_resends: number;
 }
 
+/** A QR link code (06 `link_codes`, 12 §7.2): one live code per ticket. */
+export interface FLinkCode {
+  id: string;
+  ticket_id: string;
+  code: string;
+  status: 'active' | 'pending_confirmation' | 'consumed' | 'expired' | 'revoked';
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  /** The sender of the customer's message (pending_confirmation): E.164, masked in every view. */
+  inbound_phone: string | null;
+  received_at: string | null;
+  revoke_reason: string | null;
+}
+
+/** The WhatsApp side of the fake (12): what the provider and the customer do, set by the specs. */
+export interface FakeWhatsApp {
+  /** The single channel's health (`channel_health`; `down` → WA_CHANNEL_UNAVAILABLE). */
+  health: 'healthy' | 'degraded' | 'down';
+  /** The W-01 template is approved (else WA_TEMPLATE_NOT_APPROVED on the direct link). */
+  templateApproved: boolean;
+  /** A QR lifetime shorter than `link.qr_ttl_min` (a spec that watches a code expire); null = the setting. */
+  qrTtlMs: number | null;
+  /** Numbers that pressed «إيقاف» (12 §7.6). */
+  readonly optedOut: Set<string>;
+  readonly linkCodes: FLinkCode[];
+  /** The W-05 send status per ticket (`ClaimCodeState.sent_status`; `sent` when unset). */
+  readonly codeStatus: Map<string, 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'skipped'>;
+  /** The customer scans the QR and sends its code (12 §7.2 step 3): the ticket waits for the driver. */
+  customerSends(ticketId: string, phoneE164: string): void;
+  /**
+   * `job.link_code_expire` (11 §8.11) for the ticket's live code: `expired`; a message nobody answered sends
+   * the link back to `none` (ticket.wa_link_changed).
+   */
+  expireCode(ticketId: string): void;
+  /** The provider's answer to the ticket's W-01 (direct link, or after a confirmed QR). */
+  w01(ticketId: string, result: 'linked' | 'failed'): void;
+  /** The provider's answer to W-05 (the handover code): a `message` status on `ticket.updated`. */
+  w05(ticketId: string, status: 'sent' | 'failed' | 'skipped'): void;
+  /** The customer presses «إيقاف» (12 §7.6): every open ticket of the number is `opted_out`. */
+  optOut(phoneE164: string): void;
+}
+
 export interface FCycle {
   id: string;
   ticket_id: string;

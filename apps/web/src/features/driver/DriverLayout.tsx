@@ -11,8 +11,9 @@ import { hasOpenDuty, paths } from '@/app/paths';
 import { AppShell, Banner, BottomNav, EmptyState, ToastViewport, TopBar, type NavItem } from '@/components';
 import { useBrand } from '@/hooks/useMe';
 import { useThemeArea } from '@/hooks/useThemeArea';
-import { buttons, d08, d15, live, nav } from '@/i18n/ar';
+import { buttons, d07, d08, d15, live, nav } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
+import { withTicket } from '@/i18n/fmtNode';
 import { runAudioTest } from '@/lib/audio';
 import { usePrefs } from '@/lib/prefs';
 import { useScreenWakeLock } from '@/lib/wakeLock';
@@ -51,7 +52,7 @@ export function driverNav(home: DriverHome | undefined): NavItem[] {
 }
 
 /** WhatsApp health from `channel.status` when newer than the snapshot's `channel_health` (07 §4.3). */
-function useChannelHealth(home: DriverHome | undefined) {
+export function useChannelHealth(home: DriverHome | undefined) {
   const channel = useSyncStore((s) => s.channel);
   if (channel && (!home || Date.parse(channel.changedAt) >= Date.parse(home.server_time)))
     return channel.health;
@@ -106,7 +107,9 @@ function DriverBanners({ me, home }: { me: Me; home: DriverHome | undefined }) {
 /**
  * The live notices of 14 §5.1 over every driver screen (driverRuntime raises them): withdrawn (red, with
  * `reminder`), canceled (no sound), the DEC-30 repark with «فتح» → D-08, the early request during parking
- * (02 D-08's sentence; on that D-08 its own banner says it). A notice whose cause is gone leaves by itself.
+ * (02 D-08's sentence; on that D-08 its own banner says it), W-01 failed after D-07 (02 D-07 «بعد المغادرة»,
+ * «فتح» → D-13; not over that ticket's D-07, which shows it), the customer who stopped the messages (not over
+ * that ticket's D-07 / D-11, which show it). A notice whose cause is gone leaves by itself.
  */
 function DriverNotices({ home }: { home: DriverHome | undefined }) {
   const navigate = useNavigate();
@@ -114,6 +117,8 @@ function DriverNotices({ home }: { home: DriverHome | undefined }) {
   const dismiss = useFieldStore((s) => s.dismissNotice);
   const prune = useFieldStore((s) => s.pruneNotices);
   const parkMatch = useMatch('/d/tasks/:taskId/park');
+  const linkTicket = useMatch('/d/intake/:ticketId/link')?.params.ticketId;
+  const handoverTicket = useMatch('/d/tickets/:ticketId/handover')?.params.ticketId;
   useEffect(() => {
     if (!home) return;
     const live = (taskId: string) =>
@@ -121,7 +126,12 @@ function DriverNotices({ home }: { home: DriverHome | undefined }) {
     // the repark and the early request concern a task still in the driver's hands
     prune((n) => (n.kind === 'repark' || n.kind === 'early' ? live(n.taskId) : true));
   }, [home, prune]);
-  const shown = notices.filter((n) => !(n.kind === 'early' && parkMatch?.params.taskId === n.taskId));
+  const shown = notices.filter(
+    (n) =>
+      !(n.kind === 'early' && parkMatch?.params.taskId === n.taskId) &&
+      !(n.kind === 'waFailed' && linkTicket === n.ticketId) &&
+      !(n.kind === 'optedOut' && (linkTicket === n.ticketId || handoverTicket === n.ticketId)),
+  );
   if (!shown.length) return null;
   const banner = (n: DriverNotice) => {
     const close = () => dismiss(n.key);
@@ -158,6 +168,20 @@ function DriverNotices({ home }: { home: DriverHome | undefined }) {
         );
       case 'early':
         return <Banner kind="warning" message={d08.early} actionLabel={buttons.gotIt} onAction={close} />;
+      case 'waFailed':
+        return (
+          <Banner
+            kind="error"
+            message={withTicket(d07.sendFailedAfter, n.ticketNumber)}
+            actionLabel={buttons.open}
+            onAction={() => {
+              close();
+              navigate(`${paths.driverVehicles}/${n.ticketId}`);
+            }}
+          />
+        );
+      case 'optedOut':
+        return <Banner kind="warning" message={live.optedOut} actionLabel={buttons.gotIt} onAction={close} />;
     }
   };
   return (

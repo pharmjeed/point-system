@@ -1957,6 +1957,32 @@ a.pt-listitem:active,
   color: var(--pt-red-700);
   font-weight: var(--pt-weight-semibold);
 }
+/* an expired code stays visible but cannot be mistaken for a live one (02 D-07 «انتهت صلاحية الرمز.») */
+.pt-qr__code.is-expired {
+  opacity: 0.25;
+}
+.pt-qr__status {
+  margin: 0;
+  font-size: var(--pt-text-lg);
+  line-height: var(--pt-leading-lg);
+  font-weight: var(--pt-weight-semibold);
+  color: var(--pt-ink-950);
+}
+/* D-07 «ملء الشاشة»: the customer panel alone over the driver area; a small «إغلاق» or a long press returns */
+.pt-qr-full {
+  position: fixed;
+  inset: 0;
+  /* over the TopBar and the BottomNav, under the confirmation Dialog, the Sheets, the toasts and the offer */
+  z-index: calc(var(--pt-z-topbar) + 1);
+  overflow-y: auto;
+  background: var(--pt-ink-0);
+}
+.pt-qr-full__close {
+  position: absolute;
+  inset-block-start: var(--pt-space-2);
+  inset-inline-end: var(--pt-space-2);
+  z-index: 1;
+}
 .pt-qr__driverhint {
   margin: 0;
   display: inline-flex;

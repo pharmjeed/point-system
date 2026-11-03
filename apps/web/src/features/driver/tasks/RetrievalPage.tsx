@@ -26,13 +26,16 @@ import {
   waitingSeconds,
 } from '../fieldModel';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
+import { ReportSheet } from '../vehicles/actions';
 import { TaskGone, TaskScreen, TaskSkeleton, useTicket } from './common';
 
 /**
  * D-10 — المهمة الحالية (الإحضار): the four steps «المفتاح ← الإحضار ← جاهزة ← التسليم» with one button on
  * the current step — `key-pickup`, `start-retrieval`, `ready`, then D-11 (02 D-10). Key slot, spot, damage
- * notes and photos are the assignee's full projection; photos open through ≤ 300 s signed URLs.
- * «إبلاغ عن مشكلة» (incidents) is PNT-083; supervisor withdrawal and repark arrive with S4/S5.
+ * notes and photos are the assignee's full projection; photos open through ≤ 300 s signed URLs. «إبلاغ عن
+ * مشكلة» opens the report Sheet (`POST /v1/incidents` with the ticket, DEC-237); a W-05 the provider refused
+ * shows «تعذر إرسال الرسالة للعميل. أُبلغ المشرف.» (the driver sees W-01 and W-05 only, 09 §5.1). Withdrawal
+ * and repark are the frame's notices (14 §5.1).
  */
 export function RetrievalPage() {
   const { taskId = '' } = useParams();
@@ -70,6 +73,7 @@ function Retrieval({ card }: { card: TaskCardData }) {
   const now = useServerNow(1000);
   const ticket = useTicket(card.ticket.id);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [custodyIssue, setCustodyIssue] = useState<string | null>(null);
   const step = retrievalStep(card);
 
@@ -121,6 +125,9 @@ function Retrieval({ card }: { card: TaskCardData }) {
   const spotNote = card.parking?.spot_note ?? detail?.current_spot_note ?? null;
   const plate = plateValue(card.ticket.plate);
   const offlineDisabled = !gate.ready;
+  // 02 D-10 «فشل رسالة العميل»: W-05 refused or skipped (the detail follows `ticket.updated` `message`)
+  const sent = (detail?.claim_code ?? card.claim_code)?.sent_status;
+  const messageFailed = step === 3 && (sent === 'failed' || sent === 'skipped');
   const error = command.error ? displayMessage(command.error) : undefined;
 
   const keyLine = keySlot
@@ -180,6 +187,7 @@ function Retrieval({ card }: { card: TaskCardData }) {
         error={error}
       />
       {!online ? <Banner kind="offline" rounded message={d10.needsConnection} /> : null}
+      {messageFailed ? <Banner kind="error" rounded message={d10.messageFailed} /> : null}
       <Card>
         <div className="flex flex-col gap-2">
           {keyLine ? <p className="m-0">{keyLine}</p> : null}
@@ -193,7 +201,19 @@ function Retrieval({ card }: { card: TaskCardData }) {
           ) : null}
         </div>
       </Card>
+      <button
+        type="button"
+        className="pt-link self-center"
+        id="report-problem"
+        disabled={!detail}
+        onClick={() => setReportOpen(true)}
+      >
+        {d10.report}
+      </button>
       {detail ? <PhotosSheet ticket={detail} open={photosOpen} onOpenChange={setPhotosOpen} /> : null}
+      {detail ? (
+        <ReportSheet ticket={detail} title={d10.report} open={reportOpen} onOpenChange={setReportOpen} />
+      ) : null}
       <Dialog
         open={custodyIssue !== null}
         onOpenChange={(open) => {

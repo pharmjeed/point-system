@@ -1,11 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { ApiError, displayMessage, fallbackMessageAr } from '@/api/errors';
-import { handover, resendHandoverCode, type HandoverInput } from '@/api/field';
+import { handover, reportIncident, resendHandoverCode, type HandoverInput } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
-import type { PaymentMethod, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
+import type { ClaimCodeState, PaymentMethod, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
 import { paths } from '@/app/paths';
 import {
   Banner,
@@ -15,31 +15,41 @@ import {
   Icon,
   PlateBadge,
   SegmentedControl,
+  Sheet,
+  TextArea,
   TextField,
 } from '@/components';
+import { FieldError } from '@/components/Field';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
+import { useServerNow } from '@/hooks/useNow';
 import { useCommandGate } from '@/realtime/hooks';
-import { d11, paymentMethod, ui } from '@/i18n/ar';
+import { buttons, d11, d13, live, paymentMethod, ui } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
 import { formatHalalas, formatTime } from '@/lib/format';
 import { onlyDigits } from '@/lib/digits';
 import { useFieldStore } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
-import { driverPaths, findTicketTask, plateValue, vehicleSummary } from '../fieldModel';
+import { driverPaths, findTicketTask, newestClaim, plateValue, vehicleSummary } from '../fieldModel';
 import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
 
 /** Shown 2 s before moving on (02 D-11 «بعد ثانيتين»). */
 const SUCCESS_MS = 2000;
+/** 02 D-11 «مع تعطيل الرابط 30 ث بعد كل إرسال». */
+export const RESEND_COOLDOWN_MS = 30_000;
+const DESCRIPTION_MIN = 3; // 07 `createIncident.description` minLength
 
 /**
  * D-11 — التسليم والتحصيل: the paper stub number (paper channel) or the six-digit code (WhatsApp, PNT-047),
  * the collection section when the ticket is `due`, then `POST /v1/tickets/{ticketId}/handover` — verification,
  * payment and closing are one server transaction (13). The code is never pre-filled or shown and the cells are
- * cleared after a wrong attempt (DEC-38).
+ * cleared after a wrong attempt (DEC-38). «العميل لم يصله الرمز؟ │ إعادة الإرسال (متبقٍ n)» before the expiry:
+ * the resend (30 s apart) and a Sheet with «إعادة إرسال الرمز» / «طلب المشرف (تحقق يدوي)» — a
+ * `manual_verification` incident the supervisor settles in S-03 (DEC-210); the 14 §5.1 banners: W-05 not
+ * sent, the code expired (by server time), locked, the customer who stopped the messages.
  */
 export function HandoverPage() {
   const { ticketId = '' } = useParams();
@@ -115,7 +125,13 @@ function HandoverForm({
   const methods: PaymentMethod[] = card.payment_due?.allowed_methods?.length
     ? card.payment_due.allowed_methods
     : ['cash', 'pos'];
-  const claim = card.claim_code ?? ticket.claim_code ?? null;
+  const [codeState, setCodeState] = useState<ClaimCodeState | null>(null);
+  // the newest code state wins: this screen's resend reply until the ticket catches up, then the server's —
+  // also a code the supervisor reissued (DEC-207) or the first one of a ticket linked after `ready`
+  const claim = newestClaim(ticket.claim_code, codeState, card.claim_code);
+  const now = useServerNow(1000);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [sheet, setSheet] = useState<'help' | 'supervisor' | null>(null);
 
   const [stub, setStub] = useState('');
   const [code, setCode] = useState('');
@@ -126,11 +142,41 @@ function HandoverForm({
     field: 'stub' | 'code' | 'payment';
     message: string;
   } | null>(null);
-  const [attemptsLeft, setAttemptsLeft] = useState<number | undefined>(claim?.attempts_left);
-  const [locked, setLocked] = useState(!!claim?.locked_at);
+  // what this screen's own attempts learned, for the code they were made on: a newer code starts afresh
+  const [attempt, setAttempt] = useState<{ issuedAt: string | null; left?: number; locked?: boolean }>({
+    issuedAt: null,
+  });
+  const issuedAt = claim?.issued_at ?? null;
+  const mine = attempt.issuedAt === issuedAt ? attempt : null;
+  const attemptsLeft =
+    mine?.left !== undefined && claim
+      ? Math.min(mine.left, claim.attempts_left)
+      : (mine?.left ?? claim?.attempts_left);
+  const locked = !!mine?.locked || !!claim?.locked_at;
+  // 14 §3.4 handover.code_issued «أُرسل الرمز للعميل» for a code this screen did not ask for
+  const ownCodes = useRef(new Set<string>());
+  const seenCode = useRef(issuedAt);
+  useEffect(() => {
+    if (!issuedAt || issuedAt === seenCode.current) return;
+    const newer = !seenCode.current || Date.parse(issuedAt) > Date.parse(seenCode.current);
+    seenCode.current = issuedAt;
+    if (newer && !ownCodes.current.has(issuedAt)) pushToast({ message: live.codeIssued, tone: 'info' });
+  }, [issuedAt, pushToast]);
 
   const submit = useCommand((body: HandoverInput, key: string) => handover(ticket.id, body, key));
   const resend = useCommand((_: { ticket: string }, key: string) => resendHandoverCode(ticket.id, key));
+  const askSupervisor = useCommand((body: { description: string }, key: string) =>
+    reportIncident(
+      {
+        venue_id: ticket.venue_id,
+        event_id: ticket.event_id,
+        ticket_id: ticket.id,
+        type: 'manual_verification',
+        description: body.description,
+      },
+      key,
+    ),
+  );
 
   const send = async (withPayment: boolean) => {
     const body: HandoverInput = {
@@ -176,10 +222,12 @@ function HandoverForm({
       if (error.is('HANDOVER_CODE_INVALID')) {
         setCode('');
         const left = Number(error.details.attempts_left);
-        if (Number.isFinite(left)) setAttemptsLeft(left);
+        if (Number.isFinite(left)) setAttempt({ issuedAt, left });
+        void qc.invalidateQueries({ queryKey: queryKeys.ticket(ticket.id) });
       } else if (error.is('HANDOVER_CODE_LOCKED')) {
         setCode('');
-        setLocked(true);
+        setAttempt({ issuedAt, locked: true });
+        void qc.invalidateQueries({ queryKey: queryKeys.ticket(ticket.id) });
       } else if (error.is('PAYMENT_ALREADY_RECORDED')) {
         // 02 D-11: silent sync, then the same handover without the collection data (a new intent)
         await qc.invalidateQueries({ queryKey: queryKeys.ticket(ticket.id) });
@@ -216,12 +264,23 @@ function HandoverForm({
   const onResend = async () => {
     try {
       const state = await resend.run({ ticket: ticket.id });
-      setAttemptsLeft(state.attempts_left);
-      setLocked(false);
+      ownCodes.current.add(state.issued_at);
+      setCodeState(state);
+      setCode('');
+      setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
+      setSheet(null);
       submit.reset();
       pushToast({ message: d11.resent, tone: 'success' });
-    } catch {
-      // shown under the button
+      void qc.invalidateQueries({ queryKey: queryKeys.ticket(ticket.id) });
+    } catch (error) {
+      // shown under the link; a code locked meanwhile disables the input
+      if (error instanceof ApiError && error.is('HANDOVER_CODE_LOCKED'))
+        setAttempt({ issuedAt, locked: true });
+      if (error instanceof ApiError && error.is('NOT_TASK_ASSIGNEE')) {
+        pushToast({ message: error.message_ar, tone: 'error' });
+        void refresh();
+        navigate(paths.driverHome, { replace: true });
+      }
     }
   };
 
@@ -251,6 +310,38 @@ function HandoverForm({
       ? errorText
       : null;
   const plate = plateValue(card.ticket.plate);
+  // 14 §5.1 / 02 D-11 (WhatsApp only): expired by server time, W-05 not sent, the customer stopped the messages
+  const expired = !!claim && !locked && Date.parse(claim.expires_at) <= now;
+  const sendFailed = claim?.sent_status === 'failed' || claim?.sent_status === 'skipped';
+  const optedOut = ticket.wa_link_status === 'opted_out' || !!ticket.customer?.opted_out;
+  // no code for this retrieval: the server issues one at `ready` only for a linked ticket (07 ready); a ticket
+  // linked since gets its first code from the resend, any other is verified by the supervisor (DEC-210)
+  const linked = ticket.wa_link_status === 'linked';
+  const noCode = !claim;
+  const resendsLeft = claim?.resends_left;
+  const exhausted = resendsLeft === 0;
+  const coolingDown = cooldownUntil > Date.now(); // the device clock: 30 s from this press (re-rendered each second)
+  const canResend =
+    gate.ready && !locked && !coolingDown && !exhausted && !resend.pending && (!noCode || linked);
+  const resendError = resend.error ? displayMessage(resend.error) : undefined;
+  const resendButton = (
+    <Button
+      variant="secondary"
+      loading={resend.pending}
+      disabled={!canResend && !resend.pending}
+      error={resendError}
+      onClick={onResend}
+    >
+      {d11.newCode}
+    </Button>
+  );
+  // the way to the supervisor stays open whenever the code cannot settle it — except a locked code, which
+  // already raised `handover_code_locked` for him (02 D-11 «العميل لم يصله الرمز؟», DEC-210)
+  const helpTrigger = (
+    <button type="button" className="pt-link" onClick={() => setSheet('help')}>
+      {d11.notReceived}
+    </button>
+  );
 
   return (
     <TaskScreen title={withTicket(d11.title, ticket.display_number)} backTo={driverPaths.task(card.task.id)}>
@@ -280,11 +371,37 @@ function HandoverForm({
             }}
           />
         </section>
+      ) : noCode ? (
+        // no code reached the customer for this retrieval (07 ready: linked tickets only)
+        <section className="flex flex-col gap-3" aria-labelledby="verify-title" data-code-none>
+          <h2 className="pt-section-title" id="verify-title">
+            {d11.askCode}
+          </h2>
+          {optedOut ? (
+            <Banner kind="warning" rounded message={live.optedOut} />
+          ) : linked ? null : (
+            <Banner kind="warning" rounded message={fallbackMessageAr('WA_NOT_LINKED')} />
+          )}
+          {linked ? (
+            // linked after `ready`: the resend issues the first code (07 «دورة بلا رمز تأخذ أول رمز لها»)
+            <>
+              {resendButton}
+              <div className="flex justify-center" data-code-help>
+                {helpTrigger}
+              </div>
+            </>
+          ) : (
+            <Button variant="secondary" onClick={() => setSheet('supervisor')}>
+              {d11.askSupervisor}
+            </Button>
+          )}
+        </section>
       ) : (
         <section className="flex flex-col gap-3" aria-labelledby="verify-title">
           <h2 className="pt-section-title" id="verify-title">
             {d11.askCode}
           </h2>
+          <p className="m-0 text-sm text-text-muted">{d11.codeHint}</p>
           <CodeInput
             id="handover-code"
             value={code}
@@ -297,7 +414,7 @@ function HandoverForm({
             locked={locked}
             error={codeError ?? undefined}
           />
-          {claim && !locked ? (
+          {!locked ? (
             <p className="m-0 text-sm text-text-muted">
               {fmt(d11.codeMeta, {
                 n: attemptsLeft ?? claim.attempts_left,
@@ -305,16 +422,49 @@ function HandoverForm({
               })}
             </p>
           ) : null}
-          {error?.is('HANDOVER_CODE_EXPIRED') ? (
-            <Button
-              variant="secondary"
-              loading={resend.pending}
-              disabled={!gate.ready}
-              error={resend.error ? displayMessage(resend.error) : undefined}
-              onClick={onResend}
-            >
-              {d11.newCode}
-            </Button>
+          {locked ? <Banner kind="error" rounded message={live.codeLocked} /> : null}
+          {optedOut ? <Banner kind="warning" rounded message={live.optedOut} /> : null}
+          {!locked && (expired || error?.is('HANDOVER_CODE_EXPIRED')) ? (
+            <>
+              <Banner kind="warning" rounded message={live.codeExpired} />
+              {resendButton}
+            </>
+          ) : null}
+          {!locked && !expired && sendFailed ? (
+            <Banner kind="error" rounded message={live.codeSendFailed} />
+          ) : null}
+          {!locked && exhausted ? (
+            // 08 RESEND_LIMIT_REACHED: no resend left — the supervisor (the Sheet below)
+            <p className="m-0 text-sm text-text-muted" data-resend-limit>
+              {fallbackMessageAr('RESEND_LIMIT_REACHED')}
+            </p>
+          ) : null}
+          {!locked ? (
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1" data-code-help>
+              {helpTrigger}
+              {expired || error?.is('HANDOVER_CODE_EXPIRED') ? null : (
+                <>
+                  <span aria-hidden="true" className="text-text-muted">
+                    │
+                  </span>
+                  <button
+                    type="button"
+                    className="pt-link"
+                    id="code-resend"
+                    disabled={!canResend}
+                    aria-busy={resend.pending || undefined}
+                    onClick={onResend}
+                  >
+                    {fmt(d11.resendLeft, { n: resendsLeft ?? 0 })}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+          {resendError && !expired && !error?.is('HANDOVER_CODE_EXPIRED') ? (
+            <FieldError id="resend-error" role="alert">
+              {resendError}
+            </FieldError>
           ) : null}
         </section>
       )}
@@ -366,11 +516,119 @@ function HandoverForm({
         size="lg"
         id="handover-submit"
         loading={submit.pending}
-        disabled={!gate.ready || locked}
+        disabled={!gate.ready || locked || (!paper && noCode)}
         onClick={onSubmit}
       >
         {d11.submit}
       </Button>
+      {paper ? null : (
+        <CodeHelpSheet
+          open={sheet !== null}
+          onOpenChange={(open) => setSheet(open ? (sheet ?? 'help') : null)}
+          supervisorOnly={sheet === 'supervisor'}
+          canResend={canResend}
+          resendLoading={resend.pending}
+          onResend={onResend}
+          ready={gate.ready}
+          request={askSupervisor}
+          onReported={() => {
+            setSheet(null);
+            pushToast({ message: d13.reported, tone: 'success' });
+          }}
+        />
+      )}
     </TaskScreen>
+  );
+}
+
+/**
+ * «العميل لم يصله الرمز؟» (02 D-11): «إعادة إرسال الرمز», or «طلب المشرف (تحقق يدوي)» with a mandatory
+ * description → a `manual_verification` incident; the supervisor completes the exceptional handover in S-03.
+ * Without a code to resend (a ticket not linked at `ready`) it opens on the supervisor request alone.
+ */
+function CodeHelpSheet({
+  open,
+  onOpenChange,
+  supervisorOnly,
+  canResend,
+  resendLoading,
+  onResend,
+  ready,
+  request,
+  onReported,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  supervisorOnly: boolean;
+  canResend: boolean;
+  resendLoading: boolean;
+  onResend: () => Promise<void>;
+  ready: boolean;
+  request: ReturnType<typeof useCommand<{ description: string }, unknown>>;
+  onReported: () => void;
+}) {
+  const [opened, setAsking] = useState(false);
+  const asking = opened || supervisorOnly;
+  const [description, setDescription] = useState('');
+  const send = async () => {
+    try {
+      await request.run({ description: description.trim() });
+      setAsking(false);
+      setDescription('');
+      onReported();
+    } catch {
+      // shown under the button
+    }
+  };
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={supervisorOnly ? d11.askSupervisor : d11.notReceived}
+    >
+      <div className="flex flex-col gap-3">
+        {supervisorOnly ? null : (
+          <>
+            <Button
+              variant="secondary"
+              fullWidth
+              loading={resendLoading}
+              disabled={!canResend && !resendLoading}
+              onClick={onResend}
+            >
+              {d11.resendCode}
+            </Button>
+            <Button variant="secondary" fullWidth onClick={() => setAsking(true)} disabled={asking}>
+              {d11.askSupervisor}
+            </Button>
+          </>
+        )}
+        {asking ? (
+          <>
+            <TextArea
+              id="manual-verification-description"
+              label={d13.reportDescription}
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            {request.error ? (
+              <FieldError id="manual-verification-error" role="alert">
+                {displayMessage(request.error)}
+              </FieldError>
+            ) : null}
+            <Button
+              fullWidth
+              size="lg"
+              loading={request.pending}
+              disabled={description.trim().length < DESCRIPTION_MIN || !ready}
+              onClick={send}
+            >
+              {buttons.confirm}
+            </Button>
+          </>
+        ) : null}
+      </div>
+    </Sheet>
   );
 }

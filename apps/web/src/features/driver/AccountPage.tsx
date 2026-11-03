@@ -76,6 +76,8 @@ export function AccountPage() {
   const onBreak = (home?.driver_state ?? me.driver_state) === 'on_break' || duty?.status === 'on_break';
   const venue = home?.venue?.name_ar ?? me.active_assignment?.venue_name_ar ?? '';
   const cash = home?.cash_outstanding_halalas ?? 0;
+  // «نقد بعهدتك: {المبلغ}» (02 D-14) — also in the end-of-shift dialogs (13 §8.7): it goes to the supervisor (S-10)
+  const cashLine = cash > 0 ? fmt(d14.cash, { amount: formatHalalas(cash) }) : undefined;
   const b = { brand: brand.staffNameAr };
   const deviceId = me.session.device_id ?? null;
   const check = notifications.check;
@@ -272,6 +274,8 @@ export function AccountPage() {
         open={confirmEnd}
         onOpenChange={setConfirmEnd}
         title={d14.endShiftConfirm}
+        // 13 §8.7: the cash in hand does not block the end of the shift; D-14 reminds the driver of it first
+        body={cashLine}
         confirmLabel={d14.endShift}
         loading={endShift.pending}
         error={
@@ -296,6 +300,7 @@ export function AccountPage() {
         open={confirmLogout}
         onOpenChange={setConfirmLogout}
         title={d14.logoutDuringDuty}
+        body={cashLine}
         confirmLabel={d14.endAndLogout}
         loading={endShift.pending || signOut.pending}
         error={endShift.error ? displayMessage(endShift.error) : undefined}

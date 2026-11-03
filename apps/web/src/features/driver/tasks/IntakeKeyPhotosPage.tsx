@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { ApiError, displayMessage, isApiError } from '@/api/errors';
-import { patchIntake, submitIntake, type IntakePatch } from '@/api/field';
+import { linkWhatsApp, patchIntake, submitIntake, type IntakePatch } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { MediaKind, TicketDetail } from '@/api/types';
 import { paths } from '@/app/paths';
@@ -13,6 +13,7 @@ import { useCommandGate } from '@/realtime/hooks';
 import { components, d05, d06, mediaKind, ui } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { withTicket } from '@/i18n/fmtNode';
+import { serverNow } from '@/lib/serverClock';
 import { useUiStore } from '@/stores/ui';
 import {
   driverPaths,
@@ -24,6 +25,8 @@ import {
 } from '../fieldModel';
 import { forgetIntake } from '../intakePersistence';
 import { intakeSession, step1Session, useIntakeDraft, useIntakeStore, type PhotoSlot } from '../intakeStore';
+import { needsQrAtSubmit, reusableQr } from '../linkModel';
+import { useLinkStore } from '../linkStore';
 import { useCachedHome, useRefreshHome } from '../useDriverHome';
 import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
 import { useIntakeTicket } from './intakeDraft';
@@ -34,20 +37,33 @@ const STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos }];
 
 type SubmitBody = { expected_version: number; acknowledge_incomplete_inspection?: boolean };
 
-/** Codes that send the driver back to D-05 with the field highlighted (02 D-06 table). */
+/** INTAKE_INCOMPLETE naming the customer's number only (a WhatsApp draft with no number and no live code). */
+const onlyPhoneMissing = (error: ApiError) =>
+  Array.isArray(error.details.missing) &&
+  error.details.missing.length === 1 &&
+  error.details.missing[0] === 'customer_phone';
+
+/**
+ * Codes that send the driver back to D-05 with the field highlighted (02 D-06 table), and the two channel
+ * errors whose way out is a choice on D-05 (02 D-07 rows: «سلّم العميل تذكرة ورقية»): the W-01 template
+ * not approved (the submit's direct link) and the channel down (the QR issued before the submit).
+ */
 const STEP1_CODES = [
   'CONSENT_REQUIRED',
   'PHONE_INVALID',
   'PLATE_INVALID',
   'WA_CUSTOMER_OPTED_OUT',
   'PAPER_SERIAL_IN_USE',
+  'WA_TEMPLATE_NOT_APPROVED',
+  'WA_CHANNEL_UNAVAILABLE',
 ];
 
 /**
  * D-06 — استلام مركبة (2): key tag, inspection photos (required angles from the venue settings, extras up to
- * `inspection.max_extra_photos`), damage notes, then «إتمام التسجيل»: `PATCH …/intake` (key_tag, notes)
- * and `POST …/submit-intake`; INSPECTION_INCOMPLETE asks to continue with an acknowledged incomplete
- * inspection (DEC-31).
+ * `inspection.max_extra_photos`), damage notes, then «إتمام التسجيل»: `PATCH …/intake` (key_tag, notes), in
+ * the QR mode only `POST …/whatsapp-link {method: qr}` (the code D-07 shows; one still valid for a minute is
+ * reused), then `POST …/submit-intake`; INSPECTION_INCOMPLETE asks to continue with an acknowledged
+ * incomplete inspection (DEC-31).
  */
 export function IntakeKeyPhotosPage() {
   const { ticketId = '' } = useParams();
@@ -105,6 +121,7 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     undefined,
     intakeSession<SubmitBody>(ticket.id, 'submit'),
   );
+  const issueQr = useCommand((body: { method: 'qr' }, key: string) => linkWhatsApp(ticket.id, body, key));
 
   useEffect(() => {
     update(ticket.id, { keyTag, notes });
@@ -121,6 +138,8 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         (saved) => {
           if (!active) return;
           storeTicket(saved);
+          // a paper save revokes the live link codes (`channel_paper`): the QR in memory goes with them
+          if (pendingSave.channel === 'paper') useLinkStore.getState().setQr(ticket.id, null);
           update(ticket.id, { pendingSave: null });
         },
         (error: unknown) => {
@@ -171,6 +190,12 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
     draft.pendingSave?.plate ? { ...draft.pendingSave.plate, display: '' } : ticket.plate,
   );
 
+  /** 02 D-05/D-06: the QR mode's code, issued while the ticket is still `received` (no version change). */
+  const issueCode = async () => {
+    const linked = await issueQr.run({ method: 'qr' });
+    if (linked.qr) useLinkStore.getState().setQr(ticket.id, linked.qr);
+  };
+
   const runSubmit = async (acknowledge: boolean) => {
     setInspection(null);
     const tag = keyTag.trim();
@@ -187,11 +212,26 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         storeTicket(saved);
         version = saved.version;
       }
-      const submitted = await submit.run({
+      const qrMode = needsQrAtSubmit(ticket);
+      const reused = qrMode && !!reusableQr(useLinkStore.getState().qr[ticket.id], serverNow());
+      if (qrMode && !reused) await issueCode();
+      const body = {
         expected_version: version,
         ...(acknowledge ? { acknowledge_incomplete_inspection: true } : {}),
-      });
+      };
+      let submitted: TicketDetail;
+      try {
+        submitted = await submit.run(body);
+      } catch (error) {
+        // the code kept in memory was no longer live on the server (revoked or used meanwhile): the server
+        // sees a WhatsApp draft with neither a number nor a code — once more with a fresh code
+        if (!reused || !isApiError(error, 'INTAKE_INCOMPLETE') || !onlyPhoneMissing(error)) throw error;
+        useLinkStore.getState().setQr(ticket.id, null);
+        await issueCode();
+        submitted = await submit.run(body);
+      }
       storeTicket(submitted);
+      useLinkStore.getState().setMethod(ticket.id, qrMode ? 'qr' : 'direct');
       // the inputs and the draft row go; photos still uploading stay until the server confirmed them (the
       // ticket is `parking`: 09 §6.2 takes them, 02 D-06 completes the inspection with them; PNT-071)
       void forgetIntake(ticket.id, { keepPendingPhotos: true });
@@ -207,7 +247,10 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
         return;
       }
       if (error.is('INTAKE_INCOMPLETE') && stepOfMissing(error.details.missing) === 'vehicle') {
-        update(ticket.id, { step1Error: { code: error.code, message: error.message_ar } });
+        const missing = Array.isArray(error.details.missing) ? error.details.missing.map(String) : [];
+        // no live code on the server: the next «إتمام التسجيل» issues a fresh one
+        if (missing.includes('customer_phone')) useLinkStore.getState().setQr(ticket.id, null);
+        update(ticket.id, { step1Error: { code: error.code, message: error.message_ar, missing } });
         navigate(driverPaths.intakeVehicle(ticket.id));
         return;
       }
@@ -232,10 +275,10 @@ function KeyPhotosStep({ ticket }: { ticket: TicketDetail }) {
       : isApiError(submit.error, 'INTAKE_INCOMPLETE')
         ? displayMessage(submit.error)
         : undefined;
-  const formError = [save.error, submit.error].find(
+  const formError = [save.error, issueQr.error, submit.error].find(
     (e) => e && !isApiError(e, 'KEY_TAG_IN_USE', 'INSPECTION_INCOMPLETE', 'INTAKE_INCOMPLETE'),
   );
-  const pending = save.pending || submit.pending;
+  const pending = save.pending || issueQr.pending || submit.pending;
   const blocked = !gate.ready || !!draft.pendingSave;
 
   return (

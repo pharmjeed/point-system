@@ -239,8 +239,16 @@ export function ChangePhoneSheet({ ticket, open, onOpenChange, onDone }: ActionP
 
 type ReportType = keyof typeof d13.reportTypes;
 
-/** «إبلاغ عن واقعة» — the D-10 Sheet: a type and a mandatory description → `POST /v1/incidents`. */
-export function ReportSheet({ ticket, open, onOpenChange }: Omit<ActionProps, 'onDone'>) {
+/**
+ * «إبلاغ عن واقعة» (D-13) and «إبلاغ عن مشكلة» (D-10, `title`): a type and a mandatory description →
+ * `POST /v1/incidents` with the ticket (a driver's report always names its ticket, DEC-237).
+ */
+export function ReportSheet({
+  ticket,
+  open,
+  onOpenChange,
+  title = d13.report,
+}: Omit<ActionProps, 'onDone'> & { title?: string }) {
   const gate = useCommandGate();
   const pushToast = useUiStore((s) => s.pushToast);
   const [type, setType] = useState<ReportType | ''>('');
@@ -270,7 +278,7 @@ export function ReportSheet({ ticket, open, onOpenChange }: Omit<ActionProps, 'o
     }
   };
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={d13.report}>
+    <Sheet open={open} onOpenChange={onOpenChange} title={title}>
       <div className="flex flex-col gap-4">
         <Radio
           name="report-type"

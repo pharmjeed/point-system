@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, TaskCard } from '@/api/types';
+import { useLinkStore } from '@/features/driver/linkStore';
 import { homeRegistry, resetHomeRegistry } from '@/features/driver/useDriverHome';
 import { playSound } from '@/lib/audio';
 import { driverEvents, startRealtime } from '@/realtime/driverRuntime';
@@ -373,5 +374,174 @@ describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
     useOfferLive.getState().setOnScreen(IDS.offerA); // D-04, or the Sheet open
     onEvent(claimed());
     expect(useUiStore.getState().toasts.map((t) => t.message)).toEqual(['قبل الطلب سائق آخر']);
+  });
+});
+
+describe('ticket.updated and the WhatsApp link (02 D-07, D-10, D-11; 14 §5.1; 09 §5.1)', () => {
+  let qc: QueryClient;
+  let onEvent: (e: ServerEvent) => void;
+  beforeEach(() => {
+    qc = new QueryClient();
+    onEvent = driverEvents(options(qc));
+    useLinkStore.getState().reset();
+  });
+
+  const summary = (patch: Record<string, unknown> = {}) => ({
+    id: IDS.ticketA,
+    display_number: 125,
+    status: 'parking',
+    channel: 'whatsapp',
+    wa_link_status: 'pending_send',
+    version: 5,
+    plate: { country: 'SA', display: '1234' },
+    vehicle: {},
+    ...patch,
+  });
+  const detail = (version: number) =>
+    qc.setQueryData(queryKeys.ticket(IDS.ticketA), { ...summary(), version, projection: 'full' });
+
+  it('W-01 refused: «تعذر إرسال تذكرة #n للعميل.» once per ticket, gone when the link is no longer failed', () => {
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'failed' })));
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'failed',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([
+      { kind: 'waFailed', key: `waFailed:${IDS.ticketA}`, ticketId: IDS.ticketA, ticketNumber: 125 },
+    ]);
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 6 })));
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('the failure of an older W-01 (superseded by a resend) on a ticket not failed raises no notice', () => {
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'linked',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'pending_send',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('an older ticket.updated arriving late raises no notice (versions)', () => {
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 7 })));
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'failed', version: 6 }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('the customer stopped the messages: «العميل أوقف رسائل واتساب…» (14 §5.1)', () => {
+    onEvent(
+      event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'opted_out' })),
+    );
+    expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['optedOut']);
+  });
+
+  it('the pending QR confirmation is kept for D-07 (the privileged payload only), and cleared with it', () => {
+    const pending = {
+      link_code_id: globalThis.crypto.randomUUID(),
+      inbound_phone_masked: '05•••••887',
+      received_at: '2026-10-29T18:00:00.000Z',
+    };
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'ticket.wa_link_changed',
+          wa_link_status: 'pending_confirmation',
+          wa_link_pending: pending,
+        }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toEqual(pending);
+    // the API leaves the field out when nothing waits (ticket-updates.ts): any other link state clears it
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'none', version: 6 }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a pending confirmation without the field (a viewer the API does not privilege) keeps nothing stale', () => {
+    const first = {
+      link_code_id: globalThis.crypto.randomUUID(),
+      inbound_phone_masked: '05•••••887',
+      received_at: '2026-10-29T18:00:00.000Z',
+    };
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'ticket.wa_link_changed',
+          wa_link_status: 'pending_confirmation',
+          wa_link_pending: first,
+        }),
+      ),
+    );
+    // the code expired unanswered (none), then another message waits — announced without the field
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'none', version: 6 }),
+      ),
+    );
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'pending_confirmation', version: 7 }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a handover code issued or locked (no version move) re-reads the ticket and the task card (14 §3.4)', () => {
+    detail(5);
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    onEvent(event('ticket.updated', summary({ cause: 'handover.code_issued', status: 'ready' })));
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.home, exact: true });
+  });
+
+  it('a message state re-reads the ticket although its version did not move (W-05 on D-10 / D-11)', () => {
+    detail(5);
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed' })));
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-05', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
   });
 });

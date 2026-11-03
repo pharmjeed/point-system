@@ -1,4 +1,5 @@
 import type {
+  ClaimCodeState,
   DriverHome,
   DriverState,
   MediaKind,
@@ -321,4 +322,16 @@ export function findTicketTask(home: DriverHome | undefined, ticketId: string): 
 /** «ينتظر منذ 2:40» source: seconds since the request by server time. */
 export function waitingSeconds(requestedAt: string | null | undefined, now: number): number {
   return requestedAt ? Math.max(0, (now - Date.parse(requestedAt)) / 1000) : 0;
+}
+
+/**
+ * D-11: the newest handover-code state — the latest issued code wins (a resend's reply until the ticket's own
+ * state catches up); on a tie the first one given (the ticket's, which follows `ticket.updated`: W-05
+ * `sent_status`). Never the code itself (DEC-38).
+ */
+export function newestClaim(...states: Array<ClaimCodeState | null | undefined>): ClaimCodeState | null {
+  let best: ClaimCodeState | null = null;
+  for (const state of states)
+    if (state && (!best || Date.parse(state.issued_at) > Date.parse(best.issued_at))) best = state;
+  return best;
 }

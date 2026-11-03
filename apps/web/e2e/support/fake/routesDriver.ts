@@ -7,10 +7,10 @@
  */
 import { randomInt } from 'node:crypto';
 import { fail, fakeNowMs, ok, page, uuid, validation, type Reply } from './http';
-import type { FCycle, FMedia, FOffer, FTask, FTicket, FUser } from './model';
+import type { FCycle, FLinkCode, FMedia, FOffer, FTask, FTicket, FUser } from './model';
 import { effectiveSettings, normalizePhone } from './routesSetup';
 import { STORAGE_PREFIX, type Ctx, type FakeServer } from './server';
-import { assignmentView, driverState, dutyView, openDuty, userRef } from './views';
+import { assignmentView, driverState, dutyView, mask, openDuty, userRef } from './views';
 
 /** 07 §1.8: the 17 plate letters on the wire («ه», not the display form «هـ») and their Latin pairs. */
 const PLATE_EN: Record<string, string> = {
@@ -165,7 +165,7 @@ export function registerDriverRoutes(s: FakeServer): void {
           revoked_at: null,
           resend_no: t.claim.resend_no,
           resends_left: Math.max(0, t.claim.max_resends - t.claim.resend_no),
-          sent_status: 'sent',
+          sent_status: s.whatsapp.codeStatus.get(t.id) ?? 'sent',
         }
       : null;
   const mediaView = (m: FMedia) => ({
@@ -254,9 +254,13 @@ export function registerDriverRoutes(s: FakeServer): void {
       projection: 'full',
       vehicle_detail: { make: t.vehicle_make, model: t.vehicle_model, color: t.vehicle_color, type: null },
       customer: t.customer_phone
-        ? { phone_masked: `05•••••${t.customer_phone.slice(-3)}`, consent: null, opted_out: false }
+        ? {
+            phone_masked: mask(t.customer_phone),
+            consent: null,
+            opted_out: s.whatsapp.optedOut.has(t.customer_phone),
+          }
         : null,
-      wa_link_pending: null,
+      wa_link_pending: pendingView(t),
       ...(staff || creatorIntake ? { paper_serial: t.paper_serial } : {}),
       key_tag: t.key_tag,
       inspection_status: t.inspection_status,
@@ -349,6 +353,135 @@ export function registerDriverRoutes(s: FakeServer): void {
           : null,
       claim_code: claimView(t),
     };
+  };
+
+  // ---------------------------------------------------------------- WhatsApp (12 §7, simplified)
+
+  const codesOf = (t: FTicket) => s.whatsapp.linkCodes.filter((l) => l.ticket_id === t.id);
+  /** The live code waiting for «هل هو جوال العميل الذي أمامك؟» (masked number only, 09 §5.1). */
+  function pendingView(t: FTicket) {
+    const l = codesOf(t).find((x) => x.status === 'pending_confirmation');
+    return l
+      ? {
+          link_code_id: l.id,
+          inbound_phone_masked: l.inbound_phone ? mask(l.inbound_phone) : '',
+          received_at: l.received_at ?? l.created_at,
+        }
+      : null;
+  }
+  const revokeCodes = (t: FTicket, reason: string, statuses: FLinkCode['status'][] = ['active']) => {
+    for (const l of codesOf(t))
+      if (statuses.includes(l.status)) {
+        l.status = 'revoked';
+        l.revoke_reason = reason;
+      }
+  };
+  const CODE_ALPHABET = 'ACDEFHJKMNPRTUVWXY3479';
+  const newCode = () =>
+    Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(0, CODE_ALPHABET.length)]).join('');
+  const qrView = (l: FLinkCode) => {
+    const url = `https://wa.me/966500000000?text=${encodeURIComponent(l.code)}`;
+    return {
+      link_code_id: l.id,
+      code: l.code,
+      status: l.status,
+      expires_at: l.expires_at,
+      wa_me_url: url,
+      prefilled_text: l.code,
+      qr_text: url,
+    };
+  };
+  /** Ticket events whose creator hears about them in any ticket status (realtime-rules CREATOR_EVENTS). */
+  const CREATOR_EVENTS = new Set([
+    'ticket.created',
+    'ticket.intake_submitted',
+    'ticket.wa_link_changed',
+    'ticket.customer_phone_changed',
+    'ticket.inspection_completed',
+    'ticket.voided',
+  ]);
+  /**
+   * `ticket.updated` as the API's coalescer sends it (07 §4.3, notifications ticket-updates.ts): to the
+   * privileged drivers — the creator for a creator event, a W-01 state or while the ticket is in intake, and
+   * the open task's assignee — with `wa_link_pending` while a message waits (left out otherwise) and the W-01
+   * / W-05 `message` state.
+   */
+  const publishTicket = (t: FTicket, cause: string, extra: Record<string, unknown> = {}) => {
+    const message = extra.message as { purpose?: string } | undefined;
+    const creator =
+      CREATOR_EVENTS.has(cause) ||
+      (cause === 'wa.message_status_changed' && message?.purpose === 'W-01') ||
+      t.status === 'received' ||
+      t.status === 'parking';
+    const targets = new Set(
+      [creator ? t.created_by : null, openTask(t)?.assignee_id].filter((x): x is string => !!x),
+    );
+    const pending = pendingView(t);
+    for (const userId of targets)
+      s.realtime.sendTo(
+        userId,
+        s.realtime.envelope(
+          'ticket.updated',
+          { cause, ...ticketSummary(t), ...(pending ? { wa_link_pending: pending } : {}), ...extra },
+          { aggregate: { type: 'ticket', id: t.id, version: t.version }, venueId: t.venue_id },
+        ),
+      );
+  };
+  s.whatsapp = {
+    health: 'healthy',
+    templateApproved: true,
+    qrTtlMs: null,
+    optedOut: new Set<string>(),
+    linkCodes: [],
+    codeStatus: new Map(),
+    customerSends(ticketId, phoneE164) {
+      const t = w().tickets.find((x) => x.id === ticketId) as FTicket;
+      const l = codesOf(t).find((x) => x.status === 'active');
+      if (!l) throw new Error('fake whatsapp: no active link code');
+      l.status = 'pending_confirmation';
+      l.inbound_phone = phoneE164;
+      l.received_at = now();
+      t.wa_link_status = 'pending_confirmation';
+      t.version += 1;
+      publishTicket(t, 'ticket.wa_link_changed');
+    },
+    expireCode(ticketId) {
+      const t = w().tickets.find((x) => x.id === ticketId) as FTicket;
+      const l = codesOf(t).find((x) => x.status === 'active' || x.status === 'pending_confirmation');
+      if (!l) throw new Error('fake whatsapp: no live link code');
+      const waited = l.status === 'pending_confirmation';
+      l.status = 'expired';
+      l.expires_at = now();
+      if (waited && t.wa_link_status === 'pending_confirmation') {
+        t.wa_link_status = 'none';
+        t.version += 1;
+        publishTicket(t, 'ticket.wa_link_changed');
+      }
+    },
+    w01(ticketId, result) {
+      const t = w().tickets.find((x) => x.id === ticketId) as FTicket;
+      t.wa_link_status = result;
+      t.version += 1;
+      publishTicket(t, 'ticket.wa_link_changed');
+    },
+    w05(ticketId, status) {
+      const t = w().tickets.find((x) => x.id === ticketId) as FTicket;
+      s.whatsapp.codeStatus.set(ticketId, status);
+      // a message state does not move the ticket's version (07 §4.3 `message`)
+      if (status !== 'skipped')
+        publishTicket(t, 'wa.message_status_changed', {
+          message: { id: uuid(), purpose: 'W-05', status, status_rank: status === 'failed' ? 9 : 2 },
+        });
+    },
+    optOut(phoneE164) {
+      s.whatsapp.optedOut.add(phoneE164);
+      for (const t of w().tickets)
+        if (t.customer_phone === phoneE164 && isOpen(t)) {
+          t.wa_link_status = 'opted_out';
+          t.version += 1;
+          publishTicket(t, 'ticket.wa_link_changed');
+        }
+    },
   };
 
   // ---------------------------------------------------------------- dispatch (10, simplified)
@@ -584,7 +717,7 @@ export function registerDriverRoutes(s: FakeServer): void {
         push_enabled: !!device?.push_subscription,
         pwa_installed: device?.display_mode === 'standalone',
       },
-      channel_health: 'healthy',
+      channel_health: s.whatsapp.health,
     });
   });
 
@@ -916,7 +1049,15 @@ export function registerDriverRoutes(s: FakeServer): void {
       next.key_tag = tag;
     }
     if ('notes' in b) next.notes = b.notes ?? null;
-    if (next.status === 'parking' && b.channel === 'paper') next.wa_link_status = 'none';
+    if ('consent' in b && b.consent && !next.customer_phone)
+      validation([{ field: 'consent', issue: 'customer_phone_required' }]);
+    if (b.channel === 'paper' && t.channel !== 'paper') {
+      // the live codes go (`channel_paper`); a linked customer keeps WhatsApp (11 §2.6, DEC-40)
+      if (t.wa_link_status === 'linked')
+        fail('INVALID_STATE_TRANSITION', { current_status: t.status, reason: 'ticket_linked' });
+      revokeCodes(t, 'channel_paper', ['active', 'pending_confirmation']);
+      next.wa_link_status = 'none';
+    }
     next.version += 1;
     Object.assign(t, next);
     return ok(ticketDetail(t, u));
@@ -1046,17 +1187,26 @@ export function registerDriverRoutes(s: FakeServer): void {
     if (!t.vehicle_make) missing.push('vehicle.make');
     if (!t.vehicle_color) missing.push('vehicle.color');
     if (!t.key_tag) missing.push('key_tag');
+    // as the API: a WhatsApp draft without a number needs a live or confirmed QR code (07 submit-intake)
+    const qr = codesOf(t).some((l) => ['active', 'pending_confirmation', 'consumed'].includes(l.status));
     if (t.channel === 'paper' && !t.paper_serial) missing.push('paper_serial');
-    if (t.channel === 'whatsapp' && t.customer_phone && !t.consent) fail('CONSENT_REQUIRED');
-    if (t.channel === 'whatsapp' && !t.customer_phone) missing.push('customer_phone');
+    if (t.channel === 'whatsapp' && !t.customer_phone && !qr && t.wa_link_status !== 'linked')
+      missing.push('customer_phone');
     if (missing.length) fail('INTAKE_INCOMPLETE', { missing });
+    const direct = t.channel === 'whatsapp' && !!t.customer_phone && t.wa_link_status !== 'linked' && !qr;
+    if (direct) {
+      if (!t.consent) fail('CONSENT_REQUIRED', { field: 'consent' });
+      if (s.whatsapp.optedOut.has(t.customer_phone as string)) fail('WA_CUSTOMER_OPTED_OUT');
+    }
     const photos = missingPhotos(t);
     if (photos.length && ctx.body?.acknowledge_incomplete_inspection !== true)
       fail('INSPECTION_INCOMPLETE', { missing: photos });
+    if (direct && !s.whatsapp.templateApproved)
+      fail('WA_TEMPLATE_NOT_APPROVED', { template_name: 'w01', template_status: 'pending' });
     t.inspection_status = photos.length ? 'incomplete' : 'complete';
     t.status = 'parking';
     t.submitted_at = now();
-    if (t.channel === 'whatsapp') t.wa_link_status = 'pending_send';
+    if (direct) t.wa_link_status = 'pending_send'; // W-01 planned (the provider answers later: whatsapp.w01)
     t.version += 1;
     return ok(ticketDetail(t, u));
   });
@@ -1091,6 +1241,106 @@ export function registerDriverRoutes(s: FakeServer): void {
     t.void_reason = 'empty_draft';
     t.version += 1;
     return ok(settleDriver(u));
+  });
+
+  // ---------------------------------------------------------------- WhatsApp link (07 §2.2, 12 §7.1–§7.2)
+
+  const QR_STATUSES = ['received', 'parking', 'parked'];
+  const QR_FROM = ['none', 'failed', 'opted_out', 'pending_send'];
+  s.on('POST /v1/tickets/:ticketId/whatsapp-link', (ctx) => {
+    const u = s.need(ctx, 'wa.link');
+    const t = ticketIn(ctx);
+    if (u.role === 'driver' && onDuty(u).venue_id !== t.venue_id) fail('DUTY_REQUIRED');
+    if (!isOpen(t)) fail('TICKET_CLOSED', { ticket_status: t.status });
+    const method = ctx.body?.method;
+    if (method !== 'direct' && method !== 'qr')
+      validation([{ field: 'method', issue: 'invalid_enum_value' }]);
+    if (t.channel !== 'whatsapp')
+      fail('INVALID_STATE_TRANSITION', { current_status: t.status, reason: 'paper_channel' });
+    if (s.whatsapp.health === 'down') fail('WA_CHANNEL_UNAVAILABLE', { health_status: 'down', since: null });
+    if (method === 'direct') {
+      const reason =
+        t.status === 'received'
+          ? 'submit_intake_links_directly'
+          : t.wa_link_status === 'linked'
+            ? 'already_linked'
+            : t.wa_link_status === 'pending_confirmation'
+              ? 'qr_pending_confirmation'
+              : null;
+      if (reason) fail('INVALID_STATE_TRANSITION', { current_status: t.status, reason });
+      if (!t.customer_phone) fail('PHONE_INVALID', { field: 'customer_phone', issue: 'missing' });
+      if (s.whatsapp.optedOut.has(t.customer_phone) || t.wa_link_status === 'opted_out')
+        fail('WA_CUSTOMER_OPTED_OUT');
+      if (!t.consent) fail('WA_CONSENT_MISSING');
+      if (!s.whatsapp.templateApproved)
+        fail('WA_TEMPLATE_NOT_APPROVED', { template_name: 'w01', template_status: 'pending' });
+      revokeCodes(t, 'linked_direct');
+      t.wa_link_status = 'pending_send';
+      t.version += 1;
+      return ok({ method, wa_link_status: t.wa_link_status, channel_health: s.whatsapp.health, qr: null });
+    }
+    if (!QR_STATUSES.includes(t.status))
+      fail('INVALID_STATE_TRANSITION', { current_status: t.status, allowed: QR_STATUSES });
+    if (!QR_FROM.includes(t.wa_link_status))
+      fail('INVALID_STATE_TRANSITION', {
+        current_status: t.status,
+        reason: t.wa_link_status === 'linked' ? 'already_linked' : 'qr_pending_confirmation',
+      });
+    revokeCodes(t, 'regenerated');
+    const ttl = Number(settingsOf(t.venue_id).link?.qr_ttl_min ?? 10);
+    const code: FLinkCode = {
+      id: uuid(),
+      ticket_id: t.id,
+      code: newCode(),
+      status: 'active',
+      created_by: u.id,
+      created_at: now(),
+      expires_at: new Date(fakeNowMs() + (s.whatsapp.qrTtlMs ?? ttl * 60_000)).toISOString(),
+      inbound_phone: null,
+      received_at: null,
+      revoke_reason: null,
+    };
+    s.whatsapp.linkCodes.push(code);
+    // the link status and the ticket's version do not change until the customer's message arrives
+    return ok({
+      method,
+      wa_link_status: t.wa_link_status,
+      channel_health: s.whatsapp.health,
+      qr: qrView(code),
+    });
+  });
+
+  s.on('POST /v1/tickets/:ticketId/whatsapp-link/confirm', (ctx) => {
+    const u = s.need(ctx, 'wa.link');
+    const t = ticketIn(ctx);
+    const b = ctx.body ?? {};
+    if (typeof b.link_code_id !== 'string' || typeof b.matches !== 'boolean')
+      validation([{ field: 'matches', issue: 'required' }]);
+    const l = codesOf(t).find((x) => x.id === b.link_code_id);
+    if (!l) return fail('RESOURCE_NOT_FOUND', { resource: 'link_code' });
+    if (u.role === 'driver' && l.created_by !== u.id)
+      fail('PERMISSION_DENIED', { permission: 'wa.link', reason: 'not_link_code_creator' });
+    if (!isOpen(t)) fail('INVALID_STATE_TRANSITION', { current_status: t.status, reason: 'ticket_closed' });
+    const expired =
+      l.status === 'expired' ||
+      (['active', 'pending_confirmation'].includes(l.status) && fakeNowMs() >= Date.parse(l.expires_at));
+    if (expired) fail('WA_LINK_CODE_EXPIRED', { expired_at: l.expires_at });
+    if (l.status !== 'pending_confirmation')
+      fail('INVALID_STATE_TRANSITION', { current_status: l.status, allowed: ['pending_confirmation'] });
+    if (b.matches) {
+      // the sender becomes the ticket's customer with the consent of his own message and the ticket is
+      // linked; W-01 is planned (12 §7.2 steps 5–6, link-service confirmQrLink)
+      l.status = 'consumed';
+      t.customer_phone = l.inbound_phone;
+      t.consent = true;
+      t.wa_link_status = 'linked';
+    } else {
+      l.status = 'revoked';
+      l.revoke_reason = 'driver_rejected_match';
+      t.wa_link_status = 'none';
+    }
+    t.version += 1;
+    return ok(ticketDetail(t, u));
   });
 
   // ---------------------------------------------------------------- parking (07 §2.3)
@@ -1357,8 +1607,13 @@ export function registerDriverRoutes(s: FakeServer): void {
     const u = s.need(ctx, 'incident.create');
     const b = ctx.body ?? {};
     s.needVenue(ctx, String(b.venue_id ?? ''));
-    if (b.ticket_id && !w().tickets.some((t) => t.id === b.ticket_id && s.inScope(u, t.venue_id)))
-      fail('TICKET_NOT_FOUND');
+    // DEC-237: a driver reports on an open ticket of his venue
+    if (u.role === 'driver' && !b.ticket_id)
+      validation([{ field: 'ticket_id', issue: 'required_for_driver' }]);
+    const ticket = b.ticket_id
+      ? w().tickets.find((t) => t.id === b.ticket_id && s.inScope(u, t.venue_id))
+      : undefined;
+    if (b.ticket_id && (!ticket || (u.role === 'driver' && !isOpen(ticket)))) fail('TICKET_NOT_FOUND');
     if (typeof b.description !== 'string' || b.description.trim().length < 3)
       validation([{ field: 'description', issue: 'too_short' }]);
     const incident = {
@@ -1497,7 +1752,9 @@ export function registerDriverRoutes(s: FakeServer): void {
     t.version += 1;
     const cycle = openCycle(t);
     if (cycle) cycle.ready_at = now();
-    if (t.channel === 'whatsapp') issueCode(t);
+    // as the API (use-cases/movement.ts markReady): a code for a linked WhatsApp ticket only; any other
+    // WhatsApp ticket is verified by the supervisor (`supervisor_exception`)
+    if (t.channel === 'whatsapp' && t.wa_link_status === 'linked') issueCode(t);
     task.version += 1;
     return ok(taskCard(task, u));
   });
@@ -1567,7 +1824,8 @@ export function registerDriverRoutes(s: FakeServer): void {
       }
     } else if (v.method === 'code') {
       const c = t.claim;
-      if (!c) fail('HANDOVER_CODE_EXPIRED');
+      // no code for the cycle (not linked at `ready`): the code method does not apply (claim-codes verify)
+      if (!c) validation([{ field: 'verification.method', issue: 'not_applicable' }]);
       if (c.consumed_at) fail('HANDOVER_CODE_CONSUMED');
       if (c.locked_at) fail('HANDOVER_CODE_LOCKED', { locked_at: c.locked_at });
       if (fakeNowMs() > Date.parse(c.expires_at)) fail('HANDOVER_CODE_EXPIRED');
@@ -1618,13 +1876,30 @@ export function registerDriverRoutes(s: FakeServer): void {
   });
 
   s.on('POST /v1/tickets/:ticketId/handover-code/resend', (ctx) => {
-    s.need(ctx, 'handover.resend_code');
+    const u = s.need(ctx, 'handover.resend_code');
     const t = ticketIn(ctx);
     if (t.status !== 'ready') fail('HANDOVER_NOT_READY');
-    if (t.channel !== 'whatsapp') fail('WA_NOT_LINKED');
-    if (t.claim?.locked_at) fail('HANDOVER_CODE_LOCKED', { locked_at: t.claim.locked_at });
+    const task = w().tasks.find(
+      (k) => k.ticket_id === t.id && k.type === 'retrieve' && k.status === 'in_progress',
+    );
+    if (u.role === 'driver' && task?.assignee_id !== u.id) fail('NOT_TASK_ASSIGNEE');
+    // as the API: the opt-out before the link, the channel, the lock (a supervisor reissues a locked code,
+    // DEC-207), the limit (08 §4.12–§4.13); a cycle without a code gets its first one
+    if (
+      t.channel === 'whatsapp' &&
+      (t.wa_link_status === 'opted_out' || (t.customer_phone && s.whatsapp.optedOut.has(t.customer_phone)))
+    )
+      fail('WA_CUSTOMER_OPTED_OUT');
+    if (t.channel !== 'whatsapp' || t.wa_link_status !== 'linked' || !t.customer_phone)
+      fail('WA_NOT_LINKED', { wa_link_status: t.wa_link_status });
+    if (s.whatsapp.health === 'down') fail('WA_CHANNEL_UNAVAILABLE', { health_status: 'down', since: null });
+    if (t.claim?.locked_at && !t.claim.consumed_at && u.role === 'driver')
+      fail('HANDOVER_CODE_LOCKED', { locked_at: t.claim.locked_at });
     if (t.claim && t.claim.resend_no >= t.claim.max_resends) fail('RESEND_LIMIT_REACHED');
     issueCode(t);
+    s.whatsapp.codeStatus.delete(t.id); // a new W-05 on its way
+    // 14 §3.4 handover.code_issued: the code's state changed, the ticket's version did not
+    publishTicket(t, 'handover.code_issued');
     return ok(claimView(t));
   });
 }

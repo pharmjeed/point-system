@@ -137,24 +137,40 @@ export interface Arranged {
   parkTaskId: string;
 }
 
-/** A paper ticket submitted by `as` (D-05 + D-06 done): the park task is in progress. */
+/**
+ * A ticket submitted by `as` (D-05 + D-06 done): the park task is in progress. Paper by default; `whatsapp`
+ * (the customer's E.164) links directly with the verbal consent, and W-01 is accepted unless `linked: false`.
+ */
 export function arrangeSubmitted(
   fake: FakeServer,
   as: SeedUserKey,
-  options: { eventId?: string; serial?: string; keyTag?: string; photos?: boolean } = {},
+  options: {
+    eventId?: string;
+    serial?: string;
+    keyTag?: string;
+    photos?: boolean;
+    whatsapp?: string;
+    linked?: boolean;
+  } = {},
 ): Arranged {
   const created = fake.exec(as, 'POST /v1/tickets', {}, { event_id: options.eventId ?? EVENT_R1 });
   const ticketId: string = created.ticket.id;
+  const channel = options.whatsapp
+    ? {
+        channel: 'whatsapp',
+        customer_phone: options.whatsapp,
+        consent: { method: 'verbal_staff_confirmed', confirmed: true },
+      }
+    : { channel: 'paper', paper_serial: options.serial ?? '004522' };
   const patched = fake.exec(
     as,
     'PATCH /v1/tickets/:ticketId/intake',
     { ticketId },
     {
       expected_version: created.ticket.version,
-      channel: 'paper',
+      ...channel,
       plate: { country: 'SA', digits: '5678', letters_ar: 'ر س ص', letters_en: 'R S X' },
       vehicle: { make: 'chevrolet', model: 'تاهو', color: 'black' },
-      paper_serial: options.serial ?? '004522',
       key_tag: options.keyTag ?? '61',
     },
   );
@@ -170,6 +186,7 @@ export function arrangeSubmitted(
       acknowledge_incomplete_inspection: options.photos === false,
     },
   );
+  if (options.whatsapp && options.linked !== false) fake.whatsapp.w01(ticketId, 'linked');
   return { ticketId, displayNumber: created.ticket.display_number, parkTaskId: created.task.id };
 }
 
@@ -196,7 +213,7 @@ export function parkTask(
 export function arrangeParked(
   fake: FakeServer,
   as: SeedUserKey,
-  options: { eventId?: string; spot?: string; slot?: string; serial?: string; keyTag?: string } = {},
+  options: Parameters<typeof arrangeSubmitted>[2] & { spot?: string; slot?: string } = {},
 ): Arranged {
   const arranged = arrangeSubmitted(fake, as, options);
   parkTask(fake, as, arranged.parkTaskId, options.spot ?? 'A-10', options.slot ?? '20');
