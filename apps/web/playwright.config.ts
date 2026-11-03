@@ -57,7 +57,9 @@ export default defineConfig({
     locale: 'ar-SA',
     timezoneId: 'Asia/Riyadh',
     trace: 'retain-on-failure',
-    launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},
+    // the full Chromium in its new headless mode, never the headless shell: Service Worker control, Screen Wake
+    // Lock and the installability report behave as in Chrome only there (the PWA and D-04 specs need them)
+    launchOptions: chromiumPath ? { executablePath: chromiumPath } : { channel: 'chromium' },
     // page.route() does not see requests a Service Worker handles: the mocked runs block the SW; the PWA
     // spec (e2e/pwa.spec.ts) opens its own context with service workers allowed (PNT-070)
     serviceWorkers: 'block',
