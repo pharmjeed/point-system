@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseTelemetryEvent, TelemetryBatchSchema } from '@shared/analytics';
+import { parseTelemetryEvent, TELEMETRY_LIMITS, TelemetryBatchSchema } from '@shared/analytics';
+import { recordServerTime } from '@/lib/serverClock';
 import {
   deviceFamily,
   flushTelemetry,
@@ -144,12 +145,91 @@ describe('client telemetry (15 §8/§9, DEC-167; contract:F5, decisions:F5)', ()
     expect(calls[1]!.body.events.map((e) => e.name)).toEqual(['app_started']);
   });
 
-  it('sign-out sends what is queued, then takes nothing more', async () => {
+  it('sign-out takes nothing more and sends nothing under the ended session', async () => {
     const { calls } = server(202);
     startTelemetry({ userId: 'u1', deviceId: DEVICE });
     stopTelemetry();
-    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await flushTelemetry();
+    expect(calls).toHaveLength(0); // the server session is gone: a send could only meet a 401
     expect(track('wake_lock_changed', { supported: true, state: 'released' })).toBe(false);
+    // the same user signs in again: what was left leaves under their new session
+    startTelemetry({ userId: 'u1', deviceId: DEVICE });
+    await flushTelemetry();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body.events.map((e) => e.name)).toEqual(['app_started']);
+  });
+
+  it('int-web review: a shared phone — what user A left queued never leaves under user B', async () => {
+    const DEVICE_B = '6a0d6c8e-2a51-4a3e-9c1f-6f0a1b2c3d4f';
+    const net = server('network', 202);
+    startTelemetry({ userId: 'uA', deviceId: DEVICE });
+    track('wake_lock_changed', { supported: true, state: 'acquired' });
+    track('audio_test_completed', { result: 'heard', audio_api: 'web_audio', context: 'duty_start' });
+    await flushTelemetry(); // offline: kept
+    expect(telemetryQueue()).toHaveLength(3);
+    stopTelemetry();
+    startTelemetry({ userId: 'uB', deviceId: DEVICE_B });
+    await flushTelemetry();
+    expect(net.calls).toHaveLength(1);
+    const [batch] = net.calls;
+    expect(batch!.body.device_id).toBe(DEVICE_B);
+    expect(batch!.body.events.map((e) => e.name)).toEqual(['app_started']);
+    expect(batch!.body.events[0]!.seq).toBe(1); // a fresh sequence for B
+  });
+
+  it('int-web review: a batch of user A failing after B signed in is never put back into B’s queue', async () => {
+    let release!: () => void;
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body));
+        if (calls.push({ url, init, body }) === 1) {
+          await new Promise<void>((r) => (release = r));
+          throw new TypeError('Failed to fetch');
+        }
+        return new Response(null, { status: 202 });
+      }),
+    );
+    startTelemetry({ userId: 'uA', deviceId: DEVICE });
+    track('wake_lock_changed', { supported: true, state: 'acquired' });
+    const inFlight = flushTelemetry();
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    stopTelemetry();
+    startTelemetry({ userId: 'uB', deviceId: null });
+    release();
+    await inFlight;
+    expect(telemetryQueue().map((e) => e.name)).toEqual(['app_started']); // B's own only
+    await flushTelemetry();
+    expect(calls[1]!.body.events.map((e) => e.name)).toEqual(['app_started']);
+    expect(calls[1]!.body.device_id).toBeNull();
+  });
+
+  it('a 401 (the session ended under the batch) keeps it for the same user, never another', async () => {
+    const { calls } = server(401, 202);
+    startTelemetry({ userId: 'u1', deviceId: DEVICE });
+    track('wake_lock_changed', { supported: true, state: 'acquired' });
+    await flushTelemetry();
+    expect(calls).toHaveLength(1);
+    expect(telemetryQueue().map((e) => e.name)).toEqual(['app_started', 'wake_lock_changed']);
+    stopTelemetry();
+    startTelemetry({ userId: 'u1', deviceId: DEVICE });
+    await flushTelemetry();
+    expect(calls[1]!.body.events.map((e) => e.name)).toEqual(['app_started', 'wake_lock_changed']);
+  });
+
+  it('int-web review: occurred_at is on server time — a phone 10 minutes fast stays inside the server window', async () => {
+    const { calls } = server(202);
+    const deviceNow = Date.now();
+    recordServerTime(new Date(deviceNow - 10 * 60_000).toISOString(), deviceNow); // the server is 10 min behind
+    startTelemetry({ userId: 'u1', deviceId: DEVICE });
+    track('offer_card_seen', { offer_id: OFFER, via: 'sync', mode: 'single' }, {}, { flush: true });
+    await flushTelemetry();
+    const seen = calls[0]!.body.events.find((e) => e.name === 'offer_card_seen')!;
+    const delta = Date.parse(String(seen.occurred_at)) - (Date.now() - 10 * 60_000); // vs the server's now
+    expect(Math.abs(delta)).toBeLessThan(5_000);
+    expect(delta).toBeLessThanOrEqual(TELEMETRY_LIMITS.futureWindowMs);
+    recordServerTime(new Date().toISOString());
   });
 
   it('app_started carries coarse device families only', () => {

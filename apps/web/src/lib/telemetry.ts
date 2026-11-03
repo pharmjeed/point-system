@@ -1,4 +1,5 @@
 import { buildUrl, CSRF_HEADER_NAME, CSRF_HEADER_VALUE } from '@/api/client';
+import { serverNow } from '@/lib/serverClock';
 
 /**
  * Client measurements of 15 §8 sent in batches to `POST /v1/telemetry` (15 §9, §13 item 6; DEC-147, DEC-167;
@@ -13,7 +14,14 @@ import { buildUrl, CSRF_HEADER_NAME, CSRF_HEADER_VALUE } from '@/api/client';
  *   and when the browser is back online, with `fetch(…, {keepalive: true})` and the CSRF header (DEC-29) —
  *   never `navigator.sendBeacon`, which cannot set it; at most 50 events and under 64 KB per batch;
  * - offline (a network error) the events stay in memory, up to 200, the oldest dropped first; a 429 waits
- *   `retry_after_s`; a batch the server refuses (4xx) is dropped (it would be refused again).
+ *   `retry_after_s`; a batch the server refuses (4xx) is dropped (it would be refused again), except a 401:
+ *   the session ended, so the batch waits for the same user's next sign-in;
+ * - the queue belongs to one user (`queueOwner`), past the session end: whatever is left when they sign
+ *   out is sent only under their own next session and device, and is dropped when another user signs in
+ *   on the same phone (a shared device; int-web review);
+ * - `occurred_at` is the device time corrected by the offset measured at the last sync (02 §1.7,
+ *   `serverNow`; 15 §9 «وقت الجهاز بعد فحص الانحراف»), so a phone whose clock runs fast is not refused as
+ *   `out_of_window` — the 15 §9.4 `offer_card_seen` fallback included.
  *
  * The route is not a command (DEC-149): no Idempotency-Key, no audit row.
  */
@@ -64,6 +72,8 @@ interface Session {
 }
 
 let session: Session | null = null;
+/** The user whose events are queued; kept after `stopTelemetry`, so another user's sign-in drops them. */
+let queueOwner: string | null = null;
 let queue: QueuedEvent[] = [];
 let seq = 0;
 let clientSessionId: string | null = null;
@@ -134,7 +144,14 @@ const INSTALLED_KEY = 'point.telemetry.pwa_installed';
  */
 export function startTelemetry(next: Session): void {
   if (session && session.userId === next.userId && session.deviceId === next.deviceId) return;
-  if (session && session.userId !== next.userId) queue = [];
+  if (queueOwner !== next.userId) {
+    // another user on this device (or the first sign-in): nothing queued for the previous one is theirs
+    queue = [];
+    seq = 0;
+    clientSessionId = null;
+    retryAfterUntil = 0;
+  }
+  queueOwner = next.userId;
   session = next;
   clientSessionId ??= newClientSessionId();
   attach();
@@ -155,12 +172,15 @@ export function startTelemetry(next: Session): void {
   }
 }
 
-/** Sign-out / session end: what is queued leaves now (best effort), then nothing more is taken. */
+/**
+ * Sign-out / session end: nothing more is taken. Both callers run once the server session is gone (the
+ * sign-out sends its batch before `POST /v1/auth/logout`), so a send here could only meet a 401: what is
+ * still queued stays with its owner — sent under the same user's next session, dropped when another user
+ * signs in (`startTelemetry`).
+ */
 export function stopTelemetry(): void {
   if (!session) return;
-  const last = session;
   session = null;
-  void (flushing ?? Promise.resolve()).then(() => send(last)); // the session's own events, under its device
   if (interval !== null) clearInterval(interval);
   interval = null;
   detach?.();
@@ -206,7 +226,7 @@ export function track(
   seq += 1;
   queue.push({
     name,
-    occurred_at: new Date().toISOString(),
+    occurred_at: new Date(serverNow()).toISOString(), // device time after the skew check (02 §1.7)
     seq,
     ...(context.screen ? { screen: context.screen } : {}),
     ...(context.task_id ? { task_id: context.task_id } : {}),
@@ -232,8 +252,8 @@ async function send(owner: Session): Promise<void> {
   const parse = await loadParser().catch(() => null);
   if (!parse) return; // the chunk could not load (offline first visit): kept for the next flush
   while (queue.length && Date.now() >= retryAfterUntil) {
-    // another user signed in meanwhile: the queue is theirs now
-    if (session && session.userId !== owner.userId) return;
+    // the session ended or another user signed in meanwhile: nothing more leaves under this one
+    if (session?.userId !== owner.userId || session.deviceId !== owner.deviceId) return;
     const deviceId = owner.deviceId;
     // the catalog check before the batch (DEC-167): an event that fails it is dropped
     queue = queue.filter((e) => parse(e).ok);
@@ -266,7 +286,7 @@ async function send(owner: Session): Promise<void> {
         }),
       });
     } catch {
-      requeue(batch); // offline: kept in memory for the next flush
+      requeue(owner, batch); // offline: kept in memory for the next flush
       return;
     }
     if (response.status === 429) {
@@ -277,18 +297,21 @@ async function send(owner: Session): Promise<void> {
       const fromBody = Number(body?.error?.details?.retry_after_s);
       const seconds = Number.isFinite(fromBody) && fromBody > 0 ? fromBody : header > 0 ? header : 60;
       retryAfterUntil = Date.now() + seconds * 1000;
-      requeue(batch);
+      requeue(owner, batch);
       return;
     }
-    if (response.status >= 500) {
-      requeue(batch);
+    if (response.status >= 500 || response.status === 401) {
+      // a 401: the session ended under this batch; it waits for the same user's next sign-in
+      requeue(owner, batch);
       return;
     }
     // 202, or a batch the server refuses (VALIDATION_FAILED, the session gone): sending it again would not help
   }
 }
 
-function requeue(batch: QueuedEvent[]): void {
+/** Puts a batch back, only while its user still owns the queue (never into the next user's). */
+function requeue(owner: Session, batch: QueuedEvent[]): void {
+  if (queueOwner !== owner.userId) return;
   queue = [...batch, ...queue];
   if (queue.length > TELEMETRY_MAX_QUEUE) queue.splice(0, queue.length - TELEMETRY_MAX_QUEUE);
 }
@@ -304,6 +327,7 @@ export function resetTelemetry(): void {
   detach?.();
   detach = null;
   session = null;
+  queueOwner = null;
   queue = [];
   seq = 0;
   clientSessionId = null;
