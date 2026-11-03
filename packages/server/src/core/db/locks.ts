@@ -90,3 +90,16 @@ export async function lockOpenDutyByUsers<R = any>(tx: Tx, userIds: readonly str
 }
 
 export { LOCK_LEVELS };
+
+/**
+ * Restarts the whole transaction (canon §14ب): `Database.transaction` retries SQLSTATE 40001 like a serialization
+ * failure (at most 3 attempts; the last one answers SERVICE_UNAVAILABLE, retryable). For a use-case that picked an
+ * earlier-level row from an unlocked read and finds, under a later lock, that it should have locked another one:
+ * taking the earlier level now would break the order, so the attempt rolls back and starts over.
+ */
+export class TxRestartError extends Error {
+  readonly code = '40001';
+  constructor(reason: string) {
+    super(`transaction restart: ${reason}`);
+  }
+}

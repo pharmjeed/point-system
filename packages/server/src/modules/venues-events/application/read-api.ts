@@ -20,15 +20,22 @@ export async function findDefaultDispatchPool(
 }
 
 /** The open shift of a dispatch pool (`uq_shifts_open_per_pool`: at most one), e.g. for SHIFT_NOT_OPEN. */
-export async function findOpenShiftForPool(
-  q: Q,
-  poolId: string,
-): Promise<{ id: string; venue_id: string; dispatch_pool_id: string; version: number } | null> {
-  const r = await q.query<{ id: string; venue_id: string; dispatch_pool_id: string; version: number }>(
-    `SELECT id, venue_id, dispatch_pool_id, version FROM shifts WHERE dispatch_pool_id = $1 AND status = 'open'`,
+export async function findOpenShiftForPool(q: Q, poolId: string): Promise<OpenShiftRow | null> {
+  const r = await q.query<OpenShiftRow>(
+    `SELECT id, venue_id, dispatch_pool_id, status, opened_at, version FROM shifts
+      WHERE dispatch_pool_id = $1 AND status = 'open'`,
     [poolId],
   );
   return r.rows[0] ?? null;
+}
+
+export interface OpenShiftRow {
+  id: string;
+  venue_id: string;
+  dispatch_pool_id: string;
+  status: 'open';
+  opened_at: Date | null;
+  version: number;
 }
 
 export interface VenueOpenEvent {

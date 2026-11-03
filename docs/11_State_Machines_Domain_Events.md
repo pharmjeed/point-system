@@ -380,7 +380,7 @@ stateDiagram-v2
 | `POST /v1/tickets/{ticketId}/payments` | `payment.record` | `ready` (أو ضمن TT-18) | `payments` و`payment_status = collected` |
 | `POST /v1/tickets/{ticketId}/payment-waiver` | `payment.waive` | `payment_status = due` | `waived` بسبب |
 | `POST /v1/payments/{paymentId}/reverse` | `payment.reverse` | تحصيل `recorded` | `reversed` و`payment_status = due` (§6.1) |
-| `POST /v1/tickets/{ticketId}/custody-transfers` | `ticket.custody_transfer` | أي حالة مفتوحة؛ الأهداف في DEC-250 (لا `customer`؛ المركبة `parked` إلى `spot` أو `unknown` فقط؛ السائق الحائز في مناوبة `on_duty` بالمجموعة) | عهدة بسبب `official_transfer` (السبب `note` للحدث). إن كانت للتذكرة مهمة `accepted` أو `in_progress` وانتقلت العهدة (مركبة أو مفتاح) لسائق آخر: المهمة تنتقل إليه بنفس حالتها (`task.reassigned`، `trigger = custody_transfer`، مع `from_status` و`target = driver`) بشرط ألا تكون لديه مهمة حركة نشطة (`MOVEMENT_IN_PROGRESS`)، فيغادر التوفر وتُسحب عروضه الفردية الحية، ويُسوّى السابق (TT-11 أو متاح) تحت قفل المجموعة (L1، يؤخذ دائمًا) مع تمريرة توزيع؛ ومهمة صف المسودة تتبع أيضًا ويبقى الاستلام للمنشئ. وصول المفتاح إلى مكلّف إحضار `accepted` (الحالي، أو من تنتقل إليه المهمة بالنقل نفسه) يضبط `key_picked_up_at` مع `task.key_picked_up` بـ`key_slot_id: null` ما لم يكن مضبوطًا قبله، وخروجه من المكلّف قبل البدء يعيده `NULL` بلا حدث (DEC-187، DEC-251)؛ الأحداث `custody.changed` و`task.reassigned` (و`task.key_picked_up` عند الاستلام) ثم `task.promoted` أو `driver.availability_changed` للسابق |
+| `POST /v1/tickets/{ticketId}/custody-transfers` | `ticket.custody_transfer` | أي حالة مفتوحة؛ الأهداف في DEC-250 (لا `customer`؛ المركبة `parked` إلى `spot` أو `unknown` فقط؛ السائق الحائز في مناوبة `on_duty` بالمجموعة) | عهدة بسبب `official_transfer` (السبب `note` للحدث). إن كانت للتذكرة مهمة `accepted` أو `in_progress` وانتقلت العهدة (مركبة أو مفتاح) لسائق آخر: المهمة تنتقل إليه بنفس حالتها (`task.reassigned`، `trigger = custody_transfer`، مع `from_status` و`target = driver`) بشرط ألا تكون لديه مهمة حركة نشطة (`MOVEMENT_IN_PROGRESS`)، فيغادر التوفر وتُسحب عروضه الفردية الحية، ويُسوّى السابق (TT-11 أو متاح) تحت قفل المجموعة (L1، يؤخذ دائمًا) مع تمريرة توزيع؛ ومهمة صف المسودة تتبع أيضًا ويبقى الاستلام للمنشئ. وصول المفتاح إلى مكلّف إحضار `accepted` (الحالي، أو من تنتقل إليه المهمة بالنقل نفسه) يضبط `key_picked_up_at` مع `task.key_picked_up` بـ`key_slot_id: null` ما لم يكن مضبوطًا قبله، وخروجه من المكلّف قبل البدء يعيده `NULL` بلا حدث (DEC-187، DEC-251)؛ ونقل يغيّر ما تعرضه بطاقة مكلّف باقٍ على مهمته دون حدث مهمة (إعادة `key_picked_up_at` إلى `NULL`، أو المفتاح من/إلى خانة، أو المركبة من/إلى موقف) يرفع `tasks.version` ويعيد `task.updated` (`TaskCard` للمكلّف و`Task` للمشرفين) بـ`cause` = `custody.changed` (07 §4.3)؛ الأحداث `custody.changed` و`task.reassigned` (و`task.key_picked_up` عند الاستلام) ثم `task.promoted` أو `driver.availability_changed` للسابق |
 
 ### 2.5 أثر ضغط «طلب السيارة» حسب حالة التذكرة
 
@@ -1121,7 +1121,7 @@ interface DriverEnabled { user_id: UUID; enabled_by: UUID }
 
 | الحدث | المنتج | WS | واتساب | تنبيه |
 |---|---|---|---|---|
-| `custody.changed` | كل صف في `custody_events` | المشرفون ← `ticket.updated` | — | يحل `driver_connection_lost_with_custody` عند زوال العهدة |
+| `custody.changed` | كل صف في `custody_events` | المشرفون ← `ticket.updated`؛ ونقل رسمي (`official_transfer`) للمفتاح من/إلى سائق أو خانة، أو للمركبة من/إلى موقف، والمهمة باقية لمكلّفها: المكلّف ← `task.updated` (`TaskCard` بإصدار أحدث)، المشرفون ← `task.updated` (`Task`) | — | يحل `driver_connection_lost_with_custody` عند زوال العهدة |
 | `handover.code_issued` | TT-17، إعادة الإرسال | المكلّف ← `task.updated` (دون الرمز) | W-05 (الرمز من `claim_codes.code_ciphertext`) | — |
 | `handover.code_attempt_failed` | محاولة خاطئة | المكلّف ← `task.updated`؛ المشرفون إن تبقّت محاولتان أو أقل | — | — |
 | `handover.code_locked` | بلوغ الحد | المكلّف ← `task.updated`؛ المشرفون ← `alert.raised` | — | يرفع `handover_code_locked` |
@@ -1149,8 +1149,8 @@ interface HandoverExceptionApproved { ticket_id: UUID; cycle_id: UUID; approved_
 | الحدث | المنتج | WS | أثر إضافي |
 |---|---|---|---|
 | `payment.recorded` | `POST /v1/tickets/{ticketId}/payments`، أو تحصيل مضمّن في TT-18 أو TT-19 أو TT-22 | المشرفون ← `ticket.updated` | — |
-| `payment.reversed` | `POST /v1/payments/{paymentId}/reverse` | المشرفون | واقعة `payment_discrepancy` إن كانت التذكرة مُسلّمة |
-| `payment.waived` | `POST /v1/tickets/{ticketId}/payment-waiver` | المشرفون | — |
+| `payment.reversed` | `POST /v1/payments/{paymentId}/reverse` | المشرفون؛ وبلا بديل مع مهمة مفتوحة مسندة: المكلّف ← `task.updated` (`TaskCard` بـ`payment_due`، إصدار أحدث) والمشرفون ← `task.updated` (`Task`) (13 §7.1) | واقعة `payment_discrepancy` إن كانت التذكرة مُسلّمة |
+| `payment.waived` | `POST /v1/tickets/{ticketId}/payment-waiver` | المشرفون؛ ومع مهمة مفتوحة مسندة: المكلّف ← `task.updated` (`TaskCard` بـ`payment_due: null`، إصدار أحدث) والمشرفون ← `task.updated` (`Task`) (13 §6) | — |
 | `cash.handover_recorded` | `POST /v1/cash-handovers` | — | واقعة `payment_discrepancy` للحفل إن كان الفرق غير صفري (DEC-284) |
 
 ```ts
@@ -1301,7 +1301,7 @@ interface WaCustomerOptedOut {
 | `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by: {id, full_name}}` — `offer_ids` الجولة المقبولة؛ يسبقه `task.updated` للفائز بإصدار المهمة نفسه فيتجاهل جهازه الحجز (DEC-220) | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
 | `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
-| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
+| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted`. وأمر يغيّر ما تعرضه بطاقة المكلّف دون حدث مهمة — نقل عهدة رسمي (`custody.changed`، §2.4) أو إعفاء من الرسوم أو عكس دفعة يعيدها مستحقة (`payment.waived`، `payment.reversed`، §8.7) — يرفع `tasks.version` وتُعاد البطاقة للمكلّف و`Task` للمشرفين بذلك `cause` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
 | `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265) | تحدّث البطاقات والقوائم |
 | `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |

@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import type { ActorContext } from '../../../core/actor-context/actor-context.js';
 import { audit } from '../../../core/audit/audit-writer.js';
 import { newId } from '../../../core/crypto/ids.js';
-import { lockEvents, lockTasks, lockTickets } from '../../../core/db/locks.js';
+import { lockEvents, lockTasks, lockTickets, TxRestartError } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import {
+  bumpTaskCardVersion,
   emitForTicket,
   invalidTransition,
   loadTicketDetail,
@@ -269,14 +270,17 @@ export class PaymentsService {
 
   /**
    * `POST /v1/tickets/{ticketId}/payment-waiver` — a supervisor waives a `due` fee with a reason (13 §6): full and
-   * final, on an open ticket or on a delivered one that became `due` after a reversal. L2 FOR SHARE → L5.
+   * final, on an open ticket or on a delivered one that became `due` after a reversal. L2 FOR SHARE → L4 open
+   * assigned task → L5 ticket.
    */
   async waive(tx: Tx, actor: ActorContext, ticketId: string, body: { reason: string }, requestId: string) {
     const reason = body.reason.trim();
     const head = await ticketHead(tx, actor, ticketId);
     await lockEvents(tx, [head.event_id], 'FOR SHARE'); // L2
+    const task = await lockAssignedOpenTask(tx, ticketId); // L4 (the assignee's TaskCard shows payment_due)
     const [locked] = (await lockTickets(tx, [ticketId])) as TicketRow[]; // L5
     const ticket = locked!;
+    await assertAssignedOpenTaskUnchanged(tx, ticketId, task);
     await recheckStaffScope(tx, actor, ticket.venue_id, { notFound: 'TICKET_NOT_FOUND' });
     const ev = await loadEventRow(tx, ticket.event_id);
     assertEventAcceptsMoney(ev);
@@ -291,6 +295,7 @@ export class PaymentsService {
         WHERE id = $1 AND version = $2 RETURNING *`,
       [ticket.id, ticket.version, tx.now, actor.userId, reason],
     );
+    if (task) await bumpTaskCardVersion(tx, task.id); // RT-2: payment_due leaves the card
     const amount = Number(ticket.fee_halalas);
     const selfApproved = await handsOverTicket(tx, actor.userId, ticket);
     await emitForTicket(tx, after, {
@@ -323,7 +328,8 @@ export class PaymentsService {
    * `POST /v1/payments/{paymentId}/reverse` (13 §7): the record becomes `reversed`, never deleted. Without a
    * replacement the ticket is `due` again — on a delivered ticket an unsettled payment with a
    * `payment_discrepancy` incident (§7.1); with one, a new `recorded` row keeps `collected_by`, `cycle_id` and
-   * `collected_at` and the ticket stays `collected` (§7.2). L2 FOR SHARE → L5 ticket → L9 payment.
+   * `collected_at` and the ticket stays `collected` (§7.2). L2 FOR SHARE → L4 open assigned task → L5 ticket →
+   * L9 payment.
    */
   async reverse(tx: Tx, actor: ActorContext, paymentId: string, body: ReverseBody, requestId: string) {
     const reason = body.reason.trim();
@@ -334,8 +340,10 @@ export class PaymentsService {
     );
     if (!head || head.org_id !== actor.orgId || !actor.venueIds.has(head.venue_id)) throw notFound('payment');
     await lockEvents(tx, [head.event_id], 'FOR SHARE'); // L2
+    const task = await lockAssignedOpenTask(tx, head.ticket_id); // L4 (payment_due may come back on the card)
     const [locked] = (await lockTickets(tx, [head.ticket_id])) as TicketRow[]; // L5
     const ticket = locked!;
+    await assertAssignedOpenTaskUnchanged(tx, head.ticket_id, task);
     const original = await tx.one<PaymentRow>(`SELECT * FROM payments WHERE id = $1 FOR NO KEY UPDATE`, [
       paymentId,
     ]); // L9
@@ -372,6 +380,7 @@ export class PaymentsService {
       `UPDATE tickets SET payment_status = $3, version = version + 1 WHERE id = $1 AND version = $2 RETURNING *`,
       [ticket.id, ticket.version, nextStatus],
     );
+    if (task && nextStatus === 'due') await bumpTaskCardVersion(tx, task.id); // RT-2: payment_due is back
     const delivered = ticket.status === 'delivered';
     const afterHandover = original.cash_handover_id !== null;
     const replacementId = replacement ? newId() : null;
@@ -464,6 +473,36 @@ async function ticketHead(tx: Pick<Tx, 'maybeOne'>, actor: ActorContext, ticketI
   if (!t || t.org_id !== actor.orgId || !actor.venueIds.has(t.venue_id))
     throw new AppError('TICKET_NOT_FOUND');
   return t;
+}
+
+const ASSIGNED_OPEN_TASK = `SELECT id FROM tasks
+  WHERE ticket_id = $1 AND status NOT IN ('completed','canceled') AND assignee_id IS NOT NULL`;
+
+/**
+ * The ticket's open task with an assignee, locked (L4), or null: its TaskCard shows `payment_due` (RT-2). Read
+ * without a lock first, then re-checked under the lock (the task may have closed in between).
+ */
+async function lockAssignedOpenTask(tx: Tx, ticketId: string): Promise<TaskHead | null> {
+  const r = await tx.maybeOne<{ id: string }>(ASSIGNED_OPEN_TASK, [ticketId]);
+  if (!r) return null;
+  const [task] = (await lockTasks(tx, [r.id])) as TaskHead[];
+  return task && task.assignee_id && task.status !== 'completed' && task.status !== 'canceled' ? task : null;
+}
+
+/**
+ * Under L5 (every assignment of a ticket's task holds the ticket lock: accept, promotion, reassignment), the open
+ * assigned task is the one locked at L4. One assigned between the unlocked read and L5 (an accept that committed
+ * meanwhile) would keep a same-version TaskCard with the old `payment_due`, which the client ignores; L4 cannot be
+ * taken after L5 (canon §14ب), so the transaction restarts and the next attempt locks that task.
+ */
+async function assertAssignedOpenTaskUnchanged(
+  tx: Tx,
+  ticketId: string,
+  locked: TaskHead | null,
+): Promise<void> {
+  const r = await tx.maybeOne<{ id: string }>(ASSIGNED_OPEN_TASK, [ticketId]);
+  if ((r?.id ?? null) !== (locked?.id ?? null))
+    throw new TxRestartError('the open task of the ticket was assigned before the ticket lock');
 }
 
 /** The open retrieve task with an assignee (accepted / in_progress), read without a lock. */

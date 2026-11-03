@@ -15,6 +15,8 @@ import {
 } from '../modules/dispatch/index.js';
 import { scopeStillGranted, staffEligibleForVenue } from '../modules/incidents/index.js';
 import {
+  bumpTaskCardVersion,
+  custodyTouchesTaskCard,
   isClosedTicket,
   moveCustody,
   type Holder,
@@ -186,6 +188,7 @@ export class CustodyTransferUseCase {
     });
 
     let settled: SettleOutcome | null = null;
+    let taskBumped = false;
     if (moves && task) {
       const keyNow = subject === 'key' ? to : { type: updated.key_holder_type, id: updated.key_holder_id };
       const pickedUp =
@@ -247,6 +250,7 @@ export class CustodyTransferUseCase {
       const reached = toType === 'driver' && toId === task.assignee_id;
       const left = from.type === 'driver' && from.id === task.assignee_id;
       if (reached && !task.key_picked_up_at) {
+        taskBumped = true;
         const k = await tx.one<TaskRow>(
           `UPDATE tasks SET key_picked_up_at = $2, version = version + 1 WHERE id = $1 RETURNING *`,
           [task.id, tx.now],
@@ -260,11 +264,23 @@ export class CustodyTransferUseCase {
           updated,
         );
       } else if (left && task.key_picked_up_at) {
+        taskBumped = true;
         await tx.query(`UPDATE tasks SET key_picked_up_at = NULL, version = version + 1 WHERE id = $1`, [
           task.id,
         ]);
       }
     }
+
+    // RT-2: the task stays with its driver but his TaskCard shows another spot / slot → a newer card
+    // (republished by the dispatch planner on custody.changed)
+    if (
+      task &&
+      !moves &&
+      !taskBumped &&
+      task.assignee_id &&
+      custodyTouchesTaskCard(subject, from.type, to.type)
+    )
+      await bumpTaskCardVersion(tx, task.id);
 
     await auditCommand(tx, actor, {
       action: 'ticket.custody_transfer',

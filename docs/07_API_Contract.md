@@ -258,6 +258,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 
 - الصلاحية: `duty.self` · مفتاح التكرار: — · نجاح: `200`
 - الشروط: دور driver أو supervisor مع can_drive
+- الرد `DriverHome`؛ ومعه `shift {id, status, opened_at}` للوردية المفتوحة لمجموعة التوزيع أو `null` (D-03، DEC-347) و`settings` لقطة إعدادات الموقع الفعلية التي تحتاجها شاشات السائق ولا يقرؤها: `inspection.required_photos` و`inspection.max_extra_photos` (D-06) و`parking.mode` و`keys.require_slot` (D-08) و`dispatch.single_offer_ttl_s` (حلقة D-09)، بافتراضيات Canon §12 مكمّلة، أو `null` بلا موقع (DEC-346)
 - أخطاء خاصة: `ASSIGNMENT_REQUIRED`
 
 #### `POST /v1/me/devices` — تسجيل جهاز المستخدم
@@ -977,6 +978,7 @@ POST /v1/tasks/6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c/ready
   "data": {
     "task": { "id": "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c", "status": "in_progress", "version": 6 },
     "ticket": { "id": "3f6c1a52-6a7e-4f0e-9d58-0a5b2b9c7e11", "display_number": 125, "status": "ready", "version": 13 },
+    "ready_at": "2026-10-29T21:09:40.000Z",
     "claim_code": { "issued_at": "2026-10-29T21:09:40.000Z", "expires_at": "2026-10-29T21:39:40.000Z", "attempts": 0,
                     "max_attempts": 5, "attempts_left": 5, "resend_no": 0, "resends_left": 3, "sent_status": "queued" },
     "payment_due": null
@@ -985,7 +987,7 @@ POST /v1/tasks/6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c/ready
 }
 ```
 
-الرمز نفسه لا يظهر هنا؛ يصل العميل في W-05. المهمة تبقى `in_progress` والسائق مشغولًا حتى التسليم.
+الرمز نفسه لا يظهر هنا؛ يصل العميل في W-05. `claim_code` في كل `TaskCard` لمهمة إحضار (للمكلّف والمشرف) هو `ClaimCodeState` الرمز الحالي للدورة كما في `TicketDetail` (DEC-208)، و`null` للصف والإعادة ولتذكرة الورق؛ و`ready_at` وقت جاهزية الدورة (سطر D-04 «بانتظار العميل · منذ …»، DEC-348) أو `null` قبلها. المهمة تبقى `in_progress` والسائق مشغولًا حتى التسليم.
 
 ### 3.5 التسليم
 
@@ -1172,7 +1174,7 @@ Content-Type: application/json
 ### 4.1 الاتصال والمصادقة
 
 - خادم Socket.IO على أصل الـAPI بالمسار `/ws` (نقل websocket مع السماح بالرجوع لـpolling).
-- المصادقة بكوكي `__Host-point_sid` المرسل مع المصافحة، ويُرفض الاتصال إذا ترويسة `Origin` لا تطابق `APP_BASE_URL`. الجلسة المبطلة أو المقيدة تُرفض بـ`connect_error` ورسالة `{ "code": "AUTH_SESSION_REVOKED" }` أو ما يناسب من Canon §8. وقاعدة لا يمكن الوصول إليها تُرفض بها المصافحة بـ`{ "code": "SERVICE_UNAVAILABLE" }` ولا تمس الجلسة؛ ولا يُبطل جلسةَ مقبس قائم إلا رفضٌ من رموز `AUTH_*` (المراجعة الدورية كل 60 ثانية التي لا تبلغ القاعدة تبقي المقبس، DEC-370).
+- المصادقة بكوكي `__Host-point_sid` المرسل مع المصافحة، ويُرفض الاتصال إذا ترويسة `Origin` لا تطابق `APP_BASE_URL`. ولأن المتصفح لا يرسل `Origin` في طلب GET من الأصل نفسه (معيار Fetch)، وهو مصافحة الاستطلاع الطويل (polling)، تُقبل مصافحة Engine.IO جديدة بلا `Origin` فقط إذا حملت `Sec-Fetch-Site: same-origin`، وتُرفض دونها بـ`403`؛ والجلسة لا تُفحص في هذه الخطوة بل في وسيط Socket.IO على المصافحة نفسها كما في نقل WebSocket، فالجلسة الغائبة أو المزوّرة أو المبطلة أو المنتهية تصل `connect_error` برمزها أدناه لا `403` مجردًا. واتصال WebSocket جديد مشروط بـ`Origin` مطابقة دائمًا؛ أما ترقية جلسة استطلاع قائمة إلى WebSocket فمربوطة بـ`sid` تلك الجلسة الذي لا يقرؤه إلا صفحة الأصل نفسه (المتصفح بلا Fetch Metadata، مثل Safari قبل 16.4، لا يصل إلى بديل الاستطلاع). الجلسة المبطلة أو المقيدة تُرفض بـ`connect_error` ورسالة `{ "code": "AUTH_SESSION_REVOKED" }` أو ما يناسب من Canon §8. وقاعدة لا يمكن الوصول إليها تُرفض بها المصافحة بـ`{ "code": "SERVICE_UNAVAILABLE" }` ولا تمس الجلسة؛ ولا يُبطل جلسةَ مقبس قائم إلا رفضٌ من رموز `AUTH_*` (المراجعة الدورية كل 60 ثانية التي لا تبلغ القاعدة تبقي المقبس، DEC-370).
 - العميل حين يغلق الخادم المقبس (`io server disconnect`) أو يرفض مصافحته — ولا يعيد Socket.IO الاتصال وحده بعدهما — يتصل من جديد بنفسه بعد تراجع: ثانية تتضاعف حتى 15 ثانية بتذبذب ±50%، و15 ثانية بعد رفض مصافحة `AUTH_*`؛ وبعد إغلاق الخادم أو رفض `AUTH_*` يعيد قراءة `GET /v1/me` ومؤقت إعادة الاتصال يجري (الجلسة المنتهية ← D-15 ج أو S-01 ويتوقف)، وأي رفض آخر (مثل `SERVICE_UNAVAILABLE`) يعيد الاتصال بعد التراجع نفسه بلا فحص؛ وإعادة الاتصال تجري مزامنة §4.5 الكاملة (DEC-398).
 - لا يرسل العميل اشتراكات؛ **الخادم** يقرر الغرف بعد التحقق ويعيد حسابها عند بدء/إنهاء المناوبة، والنقل، وتغيير النطاق، والتعطيل:
 
@@ -1212,8 +1214,8 @@ Content-Type: application/json
 | `task.claimed` | `pool:{poolId}:drivers` + `venue:{venueId}:supervisors` | `{task_id, offer_ids, result, claimed_by: {id, full_name}}` — `offer_ids` الجولة المقبولة؛ يسبقه `task.updated` للفائز بإصدار المهمة نفسه فيتجاهل جهازه الحجز (DEC-220) | تزيل البطاقة وتوقف أي صوت فورًا؛ لا صوت |
 | `offer.reminder` | `user:{recipientId}` | `{offer_id, task_id}` بلا `aggregate` (وصفي، DEC-220) | صوت `reminder` مرة واحدة إن كانت البطاقة ظاهرة |
 | `offer.closed` | `user:{recipientId}` | `{offer_id, task_id, close_reason}` | تزيل البطاقة وتوقف الصوت |
-| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
-| `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265) | تحدّث البطاقات والقوائم |
+| `task.updated` | `user:{assigneeId}` + المشرفون | للمكلّف `TaskCard`، للمشرف `Task` (بلا موقف ولا خانة مفتاح أبدًا، DEC-220)؛ `cause` مثل `task.promoted`. وأمر يغيّر ما تعرضه بطاقة المكلّف دون حدث مهمة — نقل عهدة رسمي من/إلى موقف أو خانة، أو للمفتاح من/إلى سائق (`custody.changed`؛ منه خروج المفتاح من مكلّف إحضار `accepted` الذي يعيد `key_picked_up_at` إلى `null`) أو إعفاء من الرسوم أو عكس دفعة يعيدها مستحقة (`payment.waived`، `payment.reversed`) — يرفع `tasks.version` وتُعاد البطاقة للمكلّف و`Task` للمشرفين بذلك `cause` | تحدّث المهمة الحالية/التالية؛ `task.promoted` يشغّل `next_due` |
+| `ticket.updated` | المشرفون + السائقون المعنيون: المنشئ أثناء الاستلام أو لأحداث المنشئ، ومكلّف المهمة المفتوحة، وحائزو العهدة قبل الحدث وبعده، وسائق الصف عند الطلب المبكر، وحائز إعادة الصف، والمحصّل؛ والناتج عن واقعة للمشرفين وحدهم (DEC-266) | `TicketSummary` + `cause` (+ `wa_link_pending` للمشرفين وللمنشئ والمكلّف في ربط QR، + `message` `{id, purpose, status, status_rank}` لرسالة واتساب تغيّرت حالتها: للمشرفين كلها، وللمنشئ والمكلّف W-01 وW-05 وحدهما، 09 §5.1)؛ بقية السائقين المعنيين الملخص وحده. رسالة واحدة لكل تذكرة وجمهور في المعاملة تُبنى قبل الالتزام من الحالة النهائية، و`cause` أول حدث `ticket.*` فيها (DEC-265)، فتقرأ الواجهة ما يعنيها من الحالة لا من `cause` وحده: الطلب المبكر أثناء الصف هو `pending_retrieval_at` في الملخص (وقد يصل بـ`cause` = `ticket.wa_link_changed` حين يستأنف الضغط موافقة موقوفة) | تحدّث البطاقات والقوائم |
 | `driver.state_changed` | `user:{driverId}` + المشرفون؛ ومن `driver.connection_changed` المشرفون وحدهم (الجهاز يعرض اتصاله بنفسه) | `DriverLive` بـ`aggregate {type: user, id, version: null}` لأن حقوله تخلط الوصفي بالحالة (DEC-220) | تحدّث شريط الحالة ولوحة السائقين |
 | `alert.raised` | `venue:{venueId}:supervisors` (و`org:{orgId}:admins` لتنبيهات النظام مثل `outbox_lag`) | `Alert` | يظهر في S-04؛ `critical` يشغّل `escalation` حتى الإقرار |
 | `alert.updated` | نفس الغرف | `Alert` | يوقف صوت التصعيد عند الإقرار أو الحل |

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { waMessageText } from '@point/shared';
+import { REALTIME_PAYLOAD_SCHEMAS, realtimeEnvelopeSchema, rooms, waMessageText } from '@point/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createCustomerApp,
@@ -26,7 +26,22 @@ import {
   submitIntake,
   U,
 } from './dispatch-fixtures.js';
+import { captureRealtime, type Published } from './dispatch-s4-fixtures.js';
 import { ORG } from './wa-harness.js';
+
+/** The frame the gateway emits for a relayed publication (RealtimeServer.envelope, canon §7 / 07 §4.2). */
+const frameOf = (n: Published & { message: Record<string, any> }) => ({
+  id: n.message.id,
+  type: n.message.event,
+  occurred_at: n.message.occurred_at,
+  org_id: n.org_id,
+  venue_id: n.message.venue_id ?? null,
+  dispatch_pool_id: n.message.dispatch_pool_id ?? null,
+  event_id: n.message.event_id ?? null,
+  aggregate: n.message.aggregate ?? null,
+  actor: n.message.actor ?? { type: 'system', id: null },
+  payload: n.message.data,
+});
 
 let phoneSeq = 3_100_000;
 const newPhone = () => `+96655${phoneSeq++}`;
@@ -409,6 +424,34 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
         waMessageText('W-11', 'received'),
         waMessageText('W-11', 'invalid'),
       ]);
+    });
+
+    it('an active code nobody answered: job.link_code_expire → expired; ticket.updated carries the canon cause job.link_code_expire (07 §4.2)', async () => {
+      const drv = await freshDriver(w);
+      const d = await qrDraft(w, drv);
+      const qr = ok(await link(w, drv, d.ticketId, 'qr')).qr;
+      ok(await submitIntake(w, drv, d.ticketId, { expected_version: d.version }));
+      await w.drain();
+      const rt = await captureRealtime(w);
+      try {
+        w.clock.advance(10 * 60_000 + 1);
+        await w.drain();
+        expect(
+          (await w.db.query(`SELECT status FROM link_codes WHERE id = $1`, [qr.link_code_id])).rows[0].status,
+        ).toBe('expired');
+        await rt.settle();
+        const updates = rt.of('ticket.updated').filter((m) => m.message.data.id === d.ticketId);
+        expect(updates.length).toBeGreaterThan(0);
+        expect(updates.some((m) => m.rooms.includes(rooms.user(drv)))).toBe(true);
+        for (const m of updates) {
+          expect(m.message.data.cause).toBe('job.link_code_expire');
+          const schema = realtimeEnvelopeSchema('ticket.updated', REALTIME_PAYLOAD_SCHEMAS['ticket.updated']);
+          const r = schema.safeParse(frameOf(m));
+          expect(r.success, JSON.stringify(r.error?.issues)).toBe(true);
+        }
+      } finally {
+        await rt.stop();
+      }
     });
 
     it('confirm errors: the code still waits for a message (INVALID_STATE_TRANSITION), another driver (PERMISSION_DENIED), an unknown code (RESOURCE_NOT_FOUND); a supervisor may confirm', async () => {

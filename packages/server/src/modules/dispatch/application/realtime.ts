@@ -3,7 +3,7 @@ import { newId } from '../../../core/crypto/ids.js';
 import type { EventEnvelope, Tx } from '../../../core/db/tx.js';
 import { registerTxPlanner, unregisterTxPlanner, type TxPlanner } from '../../../core/db/tx-planners.js';
 import { publishRealtime } from '../../../core/realtime/realtime-publisher.js';
-import { loadTaskCard, loadTaskView } from '../../tickets-custody/index.js';
+import { custodyTouchesTaskCard, loadTaskCard, loadTaskView } from '../../tickets-custody/index.js';
 import { loadDriverLives, loadOfferCards } from './cards.js';
 
 type Env = EventEnvelope<Record<string, any>>;
@@ -19,6 +19,8 @@ type Intent =
       env: Env;
     }
   | { kind: 'task_card'; taskId: string; userId: string; env: Env }
+  /** RT-2: the TaskCard of the open task's current assignee (resolved at flush) + the Task to the supervisors */
+  | { kind: 'assignee_card'; taskId: string | null; ticketId: string; env: Env }
   | { kind: 'task_view'; taskId: string; rooms: string[]; hideAssignee: boolean; env: Env }
   | {
       kind: 'plain';
@@ -28,6 +30,8 @@ type Intent =
       aggregate: Aggregate;
       env: Env;
     };
+
+type PlannedIntent = Exclude<Intent, { kind: 'assignee_card' }>;
 
 interface DriverChange {
   rooms: Set<string>;
@@ -70,6 +74,8 @@ const HANDLED: ReadonlySet<string> = new Set([
   'driver.enabled',
   'custody.changed',
   'ticket.reparking',
+  'payment.waived',
+  'payment.reversed',
 ]);
 
 class Plan {
@@ -286,13 +292,61 @@ class Plan {
             env: ev,
           });
           this.taskView(ev, taskId, sup);
+        } else if (
+          p.reason === 'official_transfer' &&
+          taskId &&
+          (p.subject === 'key' || p.subject === 'vehicle') &&
+          (custodyTouchesTaskCard(p.subject, p.from?.type, p.to?.type) ||
+            (p.subject === 'key' && (p.from?.type === 'driver' || p.to?.type === 'driver')))
+        ) {
+          // an official spot / slot transfer: the task (bumped) stays with its driver, his card shows the new place;
+          // the key leaving or reaching a driver may set or reset the assignee's pickup (`key_picked_up_at`, bumped
+          // without a task event when reset). A card the transaction already plans (key pickup, reassignment) is
+          // not repeated (resolveAssigneeCards); one that did not change is the same version and ignored (07 §4.5).
+          const ticketId = str(p.ticket_id);
+          if (ticketId) this.add(`assignee:${taskId}`, { kind: 'assignee_card', taskId, ticketId, env: ev });
         }
         return;
+      case 'payment.waived':
+      case 'payment.reversed': {
+        // payment_due on the open task's card (a reversal with a replacement leaves it `collected`)
+        const ticketId = str(p.ticket_id);
+        if (ticketId && !(ev.type === 'payment.reversed' && p.with_replacement))
+          this.add(`assignee:ticket:${ticketId}`, { kind: 'assignee_card', taskId: null, ticketId, env: ev });
+        return;
+      }
       case 'ticket.reparking':
         // the holder's repark task (next_due on the client)
         this.taskCard(ev, str(p.repark_task_id), str(p.assignee_id));
         return;
     }
+  }
+
+  /**
+   * RT-2: an `assignee_card` becomes the open task's TaskCard for its assignee and the Task for the supervisors,
+   * unless this transaction already plans them (a reassignment to the new holder, a key pickup).
+   */
+  private async resolveAssigneeCards(): Promise<PlannedIntent[]> {
+    const out: PlannedIntent[] = [];
+    for (const it of this.intents) {
+      if (it.kind !== 'assignee_card') {
+        out.push(it);
+        continue;
+      }
+      const k = await this.tx.maybeOne<{ id: string; assignee_id: string | null }>(
+        it.taskId
+          ? `SELECT id, assignee_id FROM tasks WHERE id = $1 AND status NOT IN ('completed','canceled')`
+          : `SELECT id, assignee_id FROM tasks WHERE ticket_id = $1 AND status NOT IN ('completed','canceled')`,
+        [it.taskId ?? it.ticketId],
+      );
+      if (!k?.assignee_id) continue;
+      if (!this.keys.has(`card:${k.id}:${k.assignee_id}`))
+        out.push({ kind: 'task_card', taskId: k.id, userId: k.assignee_id, env: it.env });
+      const sup = this.supervisors(it.env);
+      if (sup.length && !this.keys.has(`view:${k.id}:${sup.join(',')}`))
+        out.push({ kind: 'task_view', taskId: k.id, rooms: sup, hideAssignee: false, env: it.env });
+    }
+    return out;
   }
 
   async flush(): Promise<void> {
@@ -304,8 +358,8 @@ class Plan {
       return views.get(id) ?? null;
     };
     const gone = new Set<string>([...this.revoked].map((u) => rooms.user(u)));
-    for (const raw of this.intents) {
-      const it: Intent =
+    for (const raw of await this.resolveAssigneeCards()) {
+      const it: PlannedIntent =
         raw.kind === 'plain' || raw.kind === 'task_view'
           ? { ...raw, rooms: raw.rooms.filter((r) => !gone.has(r)) }
           : raw.kind === 'offer_card'

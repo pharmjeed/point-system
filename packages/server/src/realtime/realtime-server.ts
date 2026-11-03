@@ -1,4 +1,4 @@
-import type { Server as HttpServer } from 'node:http';
+import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import pg from 'pg';
 import { Server, type Socket } from 'socket.io';
 import { rooms as roomNames } from '@point/shared';
@@ -111,7 +111,7 @@ export class RealtimeServer {
       transports,
       serveClient: false,
       cors: { origin: this.origin, credentials: true },
-      allowRequest: (req, cb) => cb(null, req.headers.origin === this.origin),
+      allowRequest: (req, cb) => cb(null, this.allowHandshake(req)),
     });
     this.io = io;
     io.use(async (socket, next) => {
@@ -134,6 +134,24 @@ export class RealtimeServer {
     await this.listen();
     this.timer = setInterval(() => void this.revalidateAll(), this.deps.revalidateEveryMs ?? 60_000);
     this.timer.unref();
+  }
+
+  /**
+   * The Engine.IO handshake check (09 §7 rule 2, 07 §4.1): it runs for a request that opens a new Engine.IO
+   * session (no `sid`). A request with an Origin must carry APP_BASE_URL's. Browsers omit Origin on a same-origin
+   * GET (Fetch standard), which is what the long-polling handshake is, so a request without Origin is taken only
+   * when the browser marks it `Sec-Fetch-Site: same-origin` (a page cannot forge fetch metadata; a cross-site
+   * request always carries Origin). A new WebSocket connection always carries Origin in a browser, so one without
+   * it is refused. The upgrade of an established polling session to WebSocket carries the session's `sid` and is
+   * bound to it (engine.io checks the sid, not this hook); only the same-origin page that opened it can read it.
+   * The session itself is not checked here: the `io.use` middleware validates it on the same handshake and answers
+   * with the canon connect_error code (AUTH_* or SERVICE_UNAVAILABLE, DEC-370), which a bare 403 here would lose.
+   */
+  private allowHandshake(req: IncomingMessage): boolean {
+    const origin = req.headers.origin;
+    if (origin !== undefined) return origin === this.origin;
+    if ((req.headers.upgrade ?? '').toLowerCase() === 'websocket') return false;
+    return req.headers['sec-fetch-site'] === 'same-origin';
   }
 
   async close(): Promise<void> {

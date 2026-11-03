@@ -203,7 +203,7 @@ COMMIT;
 | الحفل ليس `closed` | `EVENT_ALREADY_CLOSED` |
 | `reason` نص غير فارغ | `REASON_REQUIRED` |
 
-الأثر في معاملة واحدة: `payment_status = 'waived'`، تعبئة `payment_waived_at` و`payment_waived_by` و`payment_waiver_reason` (يفرضها قيد المخطط)، `version + 1`، حدث `payment.waived`، صف `ticket_events`، تدقيق `payment.waive` مع السبب، وبث `ticket.updated` لغرفة المشرفين وللمكلّف إن وجد.
+الأثر في معاملة واحدة: `payment_status = 'waived'`، تعبئة `payment_waived_at` و`payment_waived_by` و`payment_waiver_reason` (يفرضها قيد المخطط)، `version + 1`، حدث `payment.waived`، صف `ticket_events`، تدقيق `payment.waive` مع السبب، وبث `ticket.updated` لغرفة المشرفين وللمكلّف إن وجد؛ وإن كانت للتذكرة مهمة مفتوحة لها مكلّف: تُقفل (L4، بين الحفل L2 والتذكرة L5)، و`tasks.version + 1`، و`task.updated` (`TaskCard` للمكلّف و`Task` للمشرفين) بـ`cause` = `payment.waived` لأن بطاقته تعرض `payment_due` (07 §4.3)؛ ومهمة أُسندت بين القراءة غير المقفلة وقفل التذكرة تعيد المعاملة من أولها (40001، Canon §14ب). ترتيب الأقفال: الحفل `FOR SHARE` (L2) ← المهمة المفتوحة المسندة (L4) ← التذكرة (L5).
 
 قواعد:
 
@@ -236,7 +236,7 @@ COMMIT;
 
 - `payments.status = 'reversed'` مع `reversed_at` و`reversed_by` و`reversal_reason`.
 - `tickets.payment_status`: من `collected` إلى `due`، و`version + 1`.
-- أحداث: `payment.reversed`، `ticket_events`، تدقيق `payment.reverse`، بث `ticket.updated`.
+- أحداث: `payment.reversed`، `ticket_events`، تدقيق `payment.reverse`، بث `ticket.updated`؛ وإن كانت للتذكرة مهمة مفتوحة لها مكلّف: تُقفل (L4، بين الحفل L2 والتذكرة L5)، و`tasks.version + 1`، و`task.updated` (`TaskCard` للمكلّف و`Task` للمشرفين) بـ`cause` = `payment.reversed` لأن بطاقته تعرض `payment_due` (07 §4.3)؛ ومهمة أُسندت بين القراءة غير المقفلة وقفل التذكرة تعيد المعاملة من أولها (40001، Canon §14ب). ترتيب الأقفال: الحفل `FOR SHARE` (L2) ← المهمة المفتوحة المسندة (L4) ← التذكرة (L5) ← التحصيل (L9). والعكس مع بديل (§7.2) يبقي التذكرة `collected` فلا يرفع إصدار المهمة.
 - إن كانت التذكرة **مفتوحة**: يُعاد التحصيل عند التسليم كالمعتاد بسجل جديد (الفهرس الفريد يسمح لأن السابق `reversed`).
 - إن كانت التذكرة **مسلّمة**: تصير بندًا في التسوية «مستحق على تذكرة مسلّمة» (`blockers.unsettled_payments`) ويمنع إغلاق الحفل حتى يُعفى (§6)، وتُفتح في المعاملة نفسها واقعة `payment_discrepancy` مرتبطة بالتذكرة (حدث `incident.opened`). هذا هو المسار الصحيح عندما لم يُستلم المال فعلًا (مثال: عملية شبكة ألغيت لاحقًا).
 

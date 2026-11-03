@@ -103,6 +103,11 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
       expect(n.message.aggregate).toEqual({ type: 'ticket', id: ticketId, version: created.ticket.version });
       expect(n.message).toMatchObject({ venue_id: RMS, dispatch_pool_id: POOL_R, event_id: EVT_R1 });
       expect(n.message.actor).toEqual({ type: 'user', id: U.DRV1 });
+      // review:8: no early request → no `pending_retrieval_at` key, so a bundle built before the field (strict
+      // TicketSummary without it) still parses the frame
+      expect(n.message.data).not.toHaveProperty('pending_retrieval_at');
+      const before = REALTIME_PAYLOAD_SCHEMAS['ticket.updated'].omit({ pending_retrieval_at: true });
+      expect(before.safeParse(n.message.data).success).toBe(true);
     }
     expectContract(notes);
   });

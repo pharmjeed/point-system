@@ -8,6 +8,7 @@ import {
   PUSH_NOTIFICATION_TYPES,
   PUSH_TTL_S,
   PushPayloadSchema,
+  REALTIME_CLIENT_PAYLOAD_SCHEMAS,
   REALTIME_PAYLOAD_SCHEMAS,
   SyncRequiredPayloadSchema,
   TicketSummarySchema,
@@ -171,6 +172,24 @@ const summary = {
 };
 
 describe('realtime payload contracts (07 §4.3)', () => {
+  it('the client variants drop an unknown top-level key instead of failing the frame (review:8); the server ones stay strict', () => {
+    const ok = { ...summary, cause: 'ticket.parked' };
+    const later = { ...ok, some_future_field: 'x' };
+    expect(TicketUpdatedPayloadSchema.safeParse(later).success).toBe(false);
+    expect(REALTIME_CLIENT_PAYLOAD_SCHEMAS['ticket.updated'].parse(later)).toEqual(ok);
+    expect(REALTIME_CLIENT_PAYLOAD_SCHEMAS['ticket.updated'].safeParse({ ...ok, version: 0 }).success).toBe(
+      false,
+    );
+    expect(REALTIME_CLIENT_PAYLOAD_SCHEMAS['sync.required'].parse({ reason: 'scope_changed', x: 1 })).toEqual(
+      {
+        reason: 'scope_changed',
+      },
+    );
+    expect(Object.keys(REALTIME_CLIENT_PAYLOAD_SCHEMAS).sort()).toEqual(
+      Object.keys(REALTIME_PAYLOAD_SCHEMAS).sort(),
+    );
+  });
+
   it('ticket.updated = TicketSummary + cause; fields outside 09 §5.1 fail', () => {
     expect(TicketSummarySchema.parse(summary)).toEqual(summary);
     const ok = { ...summary, cause: 'ticket.parked' };

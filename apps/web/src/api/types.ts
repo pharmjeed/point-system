@@ -555,6 +555,8 @@ export interface TicketSummary {
   wa_link_status: WaLinkStatus;
   payment_status: PaymentStatus;
   requested_at?: string | null;
+  /** an early request waiting for the parking to finish (DEC-13); read it, not the coalesced cause (DEC-265) */
+  pending_retrieval_at?: string | null;
   created_at?: string;
   version: number;
 }
@@ -640,6 +642,8 @@ export interface TaskCard {
   parking?: { spot_label?: string | null; zone_name?: string | null; spot_note?: string | null } | null;
   key_slot?: { id: string; board_name: string; label: string } | null;
   requested_at?: string | null;
+  /** the retrieval cycle's readiness (D-04 «بانتظار العميل · منذ …», DEC-348); null before it */
+  ready_at?: string | null;
   waiting_seconds?: number | null;
   payment_due?: { amount_halalas: number; allowed_methods: PaymentMethod[] } | null;
   claim_code?: ClaimCodeState | null;

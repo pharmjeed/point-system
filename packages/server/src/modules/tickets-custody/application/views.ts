@@ -154,6 +154,11 @@ export function ticketSummary(t: TicketSummaryRow) {
     wa_link_status: t.wa_link_status,
     payment_status: t.payment_status,
     requested_at: iso(t.cycle_requested_at),
+    // DEC-13 early request while received/parking/reparking: the driver reads it from the state, whatever the
+    // coalesced cause of the update (DEC-265, 14 §5.1 «طلب مبكر أثناء الصف»). Sent only while set (the field is
+    // optional): PWA bundles built before it parse `ticket.updated` with the strict TicketSummary schema, so an
+    // always-present key would make every frame invalid there (a full resync each time) until they update
+    ...(t.pending_retrieval_at ? { pending_retrieval_at: iso(t.pending_retrieval_at) } : {}),
     created_at: iso(t.created_at)!,
     version: t.version,
   };

@@ -35,6 +35,7 @@ import {
 import { newKey } from './harness.js';
 import { captureRealtime } from './dispatch-s4-fixtures.js';
 import { rooms } from '@point/shared';
+import { loadTaskCard } from '@point/server';
 import { ORG } from './wa-harness.js';
 
 let phoneSeq = 5_300_000;
@@ -153,10 +154,55 @@ describe('S3 handover codes (PNT-047) and the exceptional handover (PNT-078)', (
     expect(['sent', 'delivered', 'read']).toContain(detail.claim_code.sent_status);
     const sup = ok(await w.get(`/v1/tickets/${t.ticketId}`, 'SUP-R'));
     const home = ok(await w.get('/v1/me/home', t.driver));
+    // the TaskCard carries the code state (07 TaskCard, DEC-348 D-04 «منذ»), never the code (DEC-38)
+    const readyAt = (
+      await w.db.query<{ ready_at: Date }>(`SELECT ready_at FROM retrieval_cycles WHERE id = $1`, [
+        c.cycle_id,
+      ])
+    ).rows[0]!.ready_at;
+    const state = {
+      issued_at: new Date(c.issued_at).toISOString(),
+      expires_at: new Date(c.expires_at).toISOString(),
+      attempts: 0,
+      max_attempts: 5,
+      attempts_left: 5,
+      resend_no: 0,
+      resends_left: 3,
+    };
+    expect(t.ready!.claim_code).toMatchObject(state);
+    expect(t.ready!.ready_at).toBe(readyAt.toISOString());
+    expect(home.current_task.claim_code).toMatchObject(state);
+    expect(home.current_task.ready_at).toBe(readyAt.toISOString());
+    for (const card of [t.ready!.claim_code, home.current_task.claim_code])
+      expect(Object.keys(card).sort()).toEqual(Object.keys(detail.claim_code).sort());
     for (const body of [t.ready, detail, sup, home])
       expect(JSON.stringify(body)).not.toMatch(codePattern(t.code!));
     // …nor any table: outbox, audit, timeline, messages (body masked), attempts, idempotency answers
     expect(await tablesContaining(w, t.code!, codePattern(t.code!))).toEqual([]);
+  });
+
+  it('review:10: the TaskCard skips the code lookup before ready and takes max_resends from a caller that has it', async () => {
+    const t = await readyTicket({ ready: false });
+    const sqls: string[] = [];
+    const q = {
+      query: (text: string, params?: unknown[]) => {
+        sqls.push(text);
+        return w.db.query(text, params);
+      },
+    } as unknown as Parameters<typeof loadTaskCard>[0];
+    const viewer = { userId: t.driver, role: 'driver' as const };
+    const started = await loadTaskCard(q, t.taskId, viewer, w.clock.now());
+    expect(started).toMatchObject({ ready_at: null, claim_code: null });
+    expect(sqls.filter((s) => /claim_codes|FROM venues/.test(s))).toEqual([]);
+    ok(await markReady(w, t.driver, t.taskId));
+    sqls.length = 0;
+    const ready = await loadTaskCard(q, t.taskId, viewer, w.clock.now(), { maxResends: 3 });
+    expect(ready!.claim_code).toMatchObject({ resend_no: 0, resends_left: 3 });
+    expect(sqls.filter((s) => /FROM venues/.test(s))).toEqual([]);
+    // without the setting the card reads it, with the same result
+    expect((await loadTaskCard(w.db, t.taskId, viewer, w.clock.now()))!.claim_code).toEqual(
+      ready!.claim_code,
+    );
   });
 
   it('TC-028: the code delivers once — a new key afterwards is TICKET_CLOSED, the same key replays the saved 200; W-06 follows', async () => {
