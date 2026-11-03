@@ -72,7 +72,12 @@ jobs:
         run: shellcheck -s bash infra/backup/*.sh && shellcheck -s sh infra/compose/*.sh
       - name: PostgreSQL 16 client tools for the drill (the runner's newer pg_dump writes settings a 16 server refuses)
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+          sudo apt-get update -qq
+          if ! apt-cache show postgresql-client-16 >/dev/null 2>&1; then
+            sudo apt-get install -y -qq postgresql-common
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          fi
+          sudo apt-get install -y -qq postgresql-client-16
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
       - name: Restore drill (PNT-095, encrypted backup → restore → verify; openssl when age is absent)
         run: pg_dump --version && pnpm ops:restore-drill
