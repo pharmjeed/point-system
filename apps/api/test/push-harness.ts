@@ -60,9 +60,10 @@ export interface PushTestApp extends TestApp {
   /** Emits domain events in one transaction (planners run before COMMIT, as in a command). */
   emit(...events: DomainEventInput[]): Promise<void>;
   notes: Note[];
-  /** Publications relayed since the last `clearNotes()`, after a short settle. */
+  /** Publications relayed since the last `clearNotes()`, once every earlier commit's NOTIFY has arrived. */
   published(event?: string): Promise<Note[]>;
-  clearNotes(): void;
+  /** Waits until every NOTIFY committed so far has reached the listener, then forgets them. */
+  clearNotes(): Promise<void>;
 }
 
 let endpointSeq = 0;
@@ -86,9 +87,21 @@ export async function createPushTestApp(): Promise<PushTestApp> {
   const notes: Note[] = [];
   const listener = new pg.Client({ connectionString: t.tdb.url });
   await listener.connect();
+  // NOTIFYs reach a listener in commit order: a marker committed now arrives after every earlier publication
+  const markers = new Map<string, () => void>();
   listener.on('notification', (n) => {
-    if (n.channel === 'point_realtime' && n.payload) notes.push(JSON.parse(n.payload));
+    if (n.channel === 'point_test_marker' && n.payload) markers.get(n.payload)?.();
+    else if (n.channel === 'point_realtime' && n.payload) notes.push(JSON.parse(n.payload));
   });
+  await listener.query('LISTEN point_test_marker');
+  let markerSeq = 0;
+  const settle = async () => {
+    const id = `m${++markerSeq}`;
+    const arrived = new Promise<void>((r) => markers.set(id, r));
+    await t.db.query(`SELECT pg_notify('point_test_marker', $1)`, [id]);
+    await arrived;
+    markers.delete(id);
+  };
   await listener.query('LISTEN point_realtime');
 
   const w: PushTestApp = {
@@ -135,10 +148,11 @@ export async function createPushTestApp(): Promise<PushTestApp> {
     },
     notes,
     async published(event) {
-      await new Promise((r) => setTimeout(r, 80));
+      await settle();
       return event ? notes.filter((n) => n.message.event === event) : [...notes];
     },
-    clearNotes: () => {
+    async clearNotes() {
+      await settle();
       notes.length = 0;
     },
     async close() {

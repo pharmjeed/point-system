@@ -86,7 +86,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
   afterAll(async () => t.close());
 
   it('intake: the supervisors and the creator, cause ticket.created, published once (3 events)', async () => {
-    t.clearNotes();
+    await t.clearNotes();
     const created = ok(await startIntake(t, 'DRV1', { event_id: EVT_R1, channel: 'paper' }), 201);
     ticketId = created.ticket.id;
     parkTaskId = created.task.id;
@@ -109,7 +109,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
 
   it('submit and park: the creator follows his intake; the previous holder sees the summary', async () => {
     const k = await paperTicketInParking(t, 'DRV3');
-    t.clearNotes();
+    await t.clearNotes();
     ok(await completeParking(t, 'DRV3', k.taskId, { parking_spot_id: nextSpot(), key_slot_id: nextSlot() }));
     const notes = ticketNotes(await t.published(), k.ticketId);
     // ticket.parked + custody.changed ×2 + task.completed: one update; DRV3 was the holder (custody.changed)
@@ -120,7 +120,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
     expect(notes[0]!.message.data.status).toBe('parked');
     expectContract(notes);
 
-    t.clearNotes();
+    await t.clearNotes();
     t.clock.advanceSeconds(10);
     ok(await requestRetrieval(t, 'SUP-R', k.ticketId), 201);
     let req = ticketNotes(await t.published(), k.ticketId);
@@ -130,7 +130,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
     expect(req[0]!.message.data.requested_at).toBe(t.clock.now().toISOString());
 
     const offer = (await liveOffer(t.db, U.DRV2))!;
-    t.clearNotes();
+    await t.clearNotes();
     ok(await accept(t, 'DRV2', offer.id));
     req = ticketNotes(await t.published(), k.ticketId);
     expect(req.map((n) => [n.message.data.cause, ...n.rooms])).toEqual([
@@ -138,7 +138,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
       ['ticket.assigned', rooms.user(U.DRV2)],
     ]);
 
-    t.clearNotes();
+    await t.clearNotes();
     const slotId = (await one(t.db, `SELECT current_key_slot_id FROM tickets WHERE id = $1`, [k.ticketId]))
       .current_key_slot_id;
     ok(await keyPickup(t, 'DRV2', offer.task_id, slotId));
@@ -155,7 +155,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
 
   it('the WhatsApp adapter goes through the same builder: one update per transaction, W-01 state to the creator', async () => {
     const msgId = randomUUID();
-    t.clearNotes();
+    await t.clearNotes();
     await t.db.transaction((tx) =>
       recordMessageStatusChange(
         tx,
@@ -183,7 +183,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
     expectContract(notes);
 
     // W-02 is not a driver's message (09 §5.1): the supervisors see it, the creator only the summary
-    t.clearNotes();
+    await t.clearNotes();
     await t.db.transaction((tx) =>
       recordMessageStatusChange(
         tx,
@@ -208,7 +208,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
     expect(notes.filter((n) => n.rooms.includes(SUP_RMS)).length).toBe(1);
 
     // a link change written by the adapter (event + direct update): still one publication per audience
-    t.clearNotes();
+    await t.clearNotes();
     await t.db.transaction(async (tx) => {
       const [locked] = await lockTickets(tx, [ticketId]);
       await changeWaLinkStatus(tx, locked as never, 'failed', {
@@ -233,7 +233,7 @@ describe('ticket.updated — one TicketSummary per ticket and transaction (07 §
        VALUES ($1, $2, $3, $4, $5, 'key_missing', 'high', 'المفتاح ليس في خانته', $6)`,
       [incidentId, ORG, RMS, EVT_R1, ticketId, U['SUP-R']],
     );
-    t.clearNotes();
+    await t.clearNotes();
     await t.emit({
       type: 'incident.opened',
       orgId: ORG,
@@ -287,7 +287,7 @@ describe('sync.required, channel.status and the job.ws_publish fallback', () => 
       }),
       201,
     );
-    t.clearNotes();
+    await t.clearNotes();
     ok(await t.command('post', `/v1/events/${draft.id}/open`, { as: 'SUP-R' }));
     const notes = await t.published('sync.required');
     expect(notes).toHaveLength(1);
@@ -303,7 +303,7 @@ describe('sync.required, channel.status and the job.ws_publish fallback', () => 
     expectContract(notes);
 
     for (const type of ['event.closing_started', 'event.closed'] as const) {
-      t.clearNotes();
+      await t.clearNotes();
       await t.emit({
         type,
         orgId: ORG,
@@ -328,7 +328,7 @@ describe('sync.required, channel.status and the job.ws_publish fallback', () => 
     const session = await one(t.db, `SELECT id FROM duty_sessions WHERE user_id = $1 AND status <> 'ended'`, [
       U.DRV1,
     ]);
-    t.clearNotes();
+    await t.clearNotes();
     ok(await t.command('post', `/v1/shifts/${SEED_IDS.shifts['SHF-R']}/close`, { as: 'SUP-R' }));
     let notes = await t.published('sync.required');
     expect(notes).toHaveLength(1);
@@ -352,7 +352,7 @@ describe('sync.required, channel.status and the job.ws_publish fallback', () => 
       }),
       201,
     );
-    t.clearNotes();
+    await t.clearNotes();
     ok(await t.command('post', `/v1/shifts/${shift.id}/open`, { as: 'SUP-R' }));
     notes = await t.published('sync.required');
     expect(notes).toHaveLength(1);
@@ -367,7 +367,7 @@ describe('sync.required, channel.status and the job.ws_publish fallback', () => 
   });
 
   it('channel health: one channel.status for every staff room (07 §4.3), never twice', async () => {
-    t.clearNotes();
+    await t.clearNotes();
     await t.db.transaction((tx) =>
       setChannelHealth(tx, SEED_IDS.whatsappChannel, 'down', 'test', 'job.wa_send'),
     );
@@ -409,7 +409,7 @@ describe('sync.required, channel.status and the job.ws_publish fallback', () => 
     );
     const job = await one(t.db, `SELECT payload FROM outbox_events WHERE type = 'job.ws_publish'`);
     expect(job.payload.rooms).toEqual(target);
-    t.clearNotes();
+    await t.clearNotes();
     await t.drain();
     const notes = await t.published('sync.required');
     expect(notes).toHaveLength(1);
