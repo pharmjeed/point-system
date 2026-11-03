@@ -1,9 +1,12 @@
 import { plateView } from '../domain/plate.js';
+import { loadClaimCodeState } from './claim-codes.js';
 import { iso, taskView, type Queryable, type TaskReadRow, type Viewer } from './views.js';
 
 /**
  * TaskCard (07; D-04 / D-10): the driver's current or next task. Parking spot and key slot only for the
- * assignee and staff (09 §5.1); the handover code itself never appears (claim_code state arrives with PNT-047).
+ * assignee and staff (09 §5.1). `claim_code` is the ClaimCodeState of the retrieval cycle's current code for the
+ * assignee and staff (the TicketDetail projection, DEC-208): state only, the handover code itself never appears
+ * (DEC-38); null for park/repark tasks and paper tickets. `ready_at` is the cycle's readiness (D-04 «منذ», DEC-348).
  * Used by the HTTP reads and by the realtime `task.updated` messages to the assignee.
  */
 export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer, now: Date) {
@@ -30,6 +33,7 @@ export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer,
       current_spot_note: string | null;
       current_key_slot_id: string | null;
       requested_at: Date | null;
+      ready_at: Date | null;
     }
   >(
     `SELECT k.*, u.full_name AS assignee_full_name, u.employee_code AS assignee_employee_code,
@@ -37,7 +41,7 @@ export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer,
             t.plate_country, t.plate_digits, t.plate_letters_ar, t.plate_letters_en, t.plate_raw,
             t.vehicle_make, t.vehicle_model, t.vehicle_color, t.vehicle_type, t.payment_status, t.fee_halalas,
             e.allowed_payment_methods, t.current_spot_id, t.current_spot_note, t.current_key_slot_id,
-            c.requested_at
+            c.requested_at, c.ready_at
        FROM tasks k
        JOIN tickets t ON t.id = k.ticket_id
        JOIN events e ON e.id = t.event_id
@@ -94,6 +98,7 @@ export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer,
     parking,
     key_slot: keySlot,
     requested_at: iso(requestedAt),
+    ready_at: iso(k.ready_at),
     waiting_seconds: requestedAt
       ? Math.max(0, Math.floor((now.getTime() - requestedAt.getTime()) / 1000))
       : null,
@@ -101,7 +106,10 @@ export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer,
       k.payment_status === 'due' && (isAssignee || staff)
         ? { amount_halalas: Number(k.fee_halalas), allowed_methods: k.allowed_payment_methods }
         : null,
-    claim_code: null,
+    claim_code:
+      k.type === 'retrieve' && (isAssignee || staff)
+        ? await loadClaimCodeState(q, k.venue_id, k.cycle_id)
+        : null,
   };
 }
 

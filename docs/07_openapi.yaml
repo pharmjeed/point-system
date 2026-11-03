@@ -10877,6 +10877,10 @@ components:
         requested_at:
           type: [string, 'null']
           format: date-time
+        ready_at:
+          type: [string, 'null']
+          format: date-time
+          description: وقت جاهزية دورة الإحضار (retrieval_cycles.ready_at)، وnull قبلها أو لمهمة صف (D-04، DEC-348)
         waiting_seconds:
           type: [integer, 'null']
         payment_due:
@@ -10895,6 +10899,7 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ClaimCodeState'
           - type: 'null'
+          description: حالة رمز التسليم الحالي للدورة (لا الرمز نفسه أبدًا، DEC-38) لمهمة إحضار للمكلّف والمشرف، وnull للصف والإعادة وتذكرة الورق
         badges:
           type: array
           items:

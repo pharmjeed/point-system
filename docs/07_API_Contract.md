@@ -978,6 +978,7 @@ POST /v1/tasks/6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c/ready
   "data": {
     "task": { "id": "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c", "status": "in_progress", "version": 6 },
     "ticket": { "id": "3f6c1a52-6a7e-4f0e-9d58-0a5b2b9c7e11", "display_number": 125, "status": "ready", "version": 13 },
+    "ready_at": "2026-10-29T21:09:40.000Z",
     "claim_code": { "issued_at": "2026-10-29T21:09:40.000Z", "expires_at": "2026-10-29T21:39:40.000Z", "attempts": 0,
                     "max_attempts": 5, "attempts_left": 5, "resend_no": 0, "resends_left": 3, "sent_status": "queued" },
     "payment_due": null
@@ -986,7 +987,7 @@ POST /v1/tasks/6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c/ready
 }
 ```
 
-الرمز نفسه لا يظهر هنا؛ يصل العميل في W-05. المهمة تبقى `in_progress` والسائق مشغولًا حتى التسليم.
+الرمز نفسه لا يظهر هنا؛ يصل العميل في W-05. `claim_code` في كل `TaskCard` لمهمة إحضار (للمكلّف والمشرف) هو `ClaimCodeState` الرمز الحالي للدورة كما في `TicketDetail` (DEC-208)، و`null` للصف والإعادة ولتذكرة الورق؛ و`ready_at` وقت جاهزية الدورة (سطر D-04 «بانتظار العميل · منذ …»، DEC-348) أو `null` قبلها. المهمة تبقى `in_progress` والسائق مشغولًا حتى التسليم.
 
 ### 3.5 التسليم
 
