@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import { publishRealtime } from '@point/server';
+import { createSessionCookie } from '@point/server/testing';
 import { rooms } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ORIGIN } from './test-env.js';
@@ -147,8 +148,9 @@ describe('realtime gateway /ws', () => {
 });
 
 // realtime:RT-6 (07 §4.1 polling fallback): browsers send no Origin on a same-origin GET (Fetch standard), which
-// is what the Engine.IO polling handshake is; the server takes Sec-Fetch-Site: same-origin plus a valid session
-// instead. A WebSocket upgrade keeps the strict Origin check.
+// is what the Engine.IO polling handshake is; the server takes Sec-Fetch-Site: same-origin instead. The session is
+// validated by the io.use middleware as on every handshake, so a bad session gets the canon connect_error code.
+// A new WebSocket connection keeps the strict Origin check.
 describe('realtime gateway /ws — long-polling handshake without Origin (WS_TRANSPORTS=websocket,polling)', () => {
   let t: TestApp;
   let base: string;
@@ -165,24 +167,57 @@ describe('realtime gateway /ws — long-polling handshake without Origin (WS_TRA
     const r = await fetch(`${base}/ws/?EIO=4&transport=polling`, { headers });
     return { status: r.status, body: await r.text() };
   };
+  /** a socket.io client on long-polling only, without Origin (the browser's same-origin polling GET) */
+  const pollingConnect = (headers: Record<string, string>) => {
+    const s = io(base, { path: '/ws', transports: ['polling'], reconnection: false, extraHeaders: headers });
+    return new Promise<unknown>((resolve) => {
+      s.once('connect', () => {
+        s.close();
+        resolve('connected');
+      });
+      s.once('connect_error', (e: unknown) => {
+        s.close();
+        resolve(e);
+      });
+    });
+  };
 
-  it('same-origin fetch metadata + a valid session → 200 with the open packet', async () => {
+  it('same-origin fetch metadata + a valid session → 200 with the open packet, and the socket connects', async () => {
     const cookie = await t.sessionFor('DRV1');
     const r = await handshake({ cookie, 'sec-fetch-site': 'same-origin' });
     expect(r.status).toBe(200);
     expect(r.body).toMatch(/^0\{"sid":/);
     // the matching Origin keeps working
     expect((await handshake({ cookie, origin: ORIGIN })).status).toBe(200);
+    expect(await pollingConnect({ cookie, 'sec-fetch-site': 'same-origin' })).toBe('connected');
   });
 
-  it('no Origin is refused when the request is cross-site, has no fetch metadata, or has no valid session', async () => {
+  it('no Origin is refused (403) when the request is cross-site or has no fetch metadata', async () => {
     const cookie = await t.sessionFor('DRV1');
     expect((await handshake({ cookie, 'sec-fetch-site': 'cross-site' })).status).toBe(403);
     expect((await handshake({ cookie, 'sec-fetch-site': 'same-site' })).status).toBe(403);
     expect((await handshake({ cookie })).status).toBe(403);
-    expect((await handshake({ 'sec-fetch-site': 'same-origin' })).status).toBe(403);
+  });
+
+  it('a same-origin polling handshake with no, a forged or a revoked session gets the canon connect_error code (DEC-370)', async () => {
+    // the Engine.IO handshake opens; the session check is io.use's, as on the WebSocket path
+    expect((await handshake({ 'sec-fetch-site': 'same-origin' })).status).toBe(200);
+    expect(await pollingConnect({ 'sec-fetch-site': 'same-origin' })).toMatchObject({
+      data: { code: 'AUTH_UNAUTHENTICATED' },
+    });
+    const cookie = await t.sessionFor('DRV1');
     const forged = cookie.replace(/=.*$/, '=not-a-session');
-    expect((await handshake({ cookie: forged, 'sec-fetch-site': 'same-origin' })).status).toBe(403);
+    expect(await pollingConnect({ cookie: forged, 'sec-fetch-site': 'same-origin' })).toMatchObject({
+      data: { code: 'AUTH_UNAUTHENTICATED' },
+    });
+    const fresh = await createSessionCookie(t.db, SEED_IDS.users.DRV7, { now: t.clock.now(), hours: 48 });
+    await t.db.query(`UPDATE auth_sessions SET revoked_at = $2, revoked_reason = 'logout' WHERE id = $1`, [
+      fresh.sessionId,
+      t.clock.now(),
+    ]);
+    expect(await pollingConnect({ cookie: fresh.cookie, 'sec-fetch-site': 'same-origin' })).toMatchObject({
+      data: { code: 'AUTH_SESSION_REVOKED' },
+    });
   });
 
   it('a mismatching Origin is refused even with same-origin fetch metadata; a WebSocket without Origin is refused', async () => {
