@@ -1,4 +1,10 @@
-import { renderWaText, waMessageText } from '@point/shared';
+import {
+  REALTIME_PAYLOAD_SCHEMAS,
+  realtimeEnvelopeSchema,
+  renderWaText,
+  rooms,
+  waMessageText,
+} from '@point/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createCustomerApp,
@@ -14,6 +20,7 @@ import {
   type CustomerApp,
 } from './customer-harness.js';
 import { auditCount, err, expectConsistent, ok, outboxEvents, patchIntake, U } from './dispatch-fixtures.js';
+import { captureRealtime } from './dispatch-s4-fixtures.js';
 import { ORG } from './wa-harness.js';
 
 let phoneSeq = 4_200_000;
@@ -181,6 +188,48 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     expect(new Date(cycle.requested_at).getTime()).toBe(new Date(row.pending_retrieval_at).getTime());
     expect((await notifications(w, t.ticketId, 'W-02')).length).toBe(1); // no second W-02
     await expectConsistent(w.db);
+  });
+
+  it('decisions:F6: «إيقاف» then a press during parking — the coalesced ticket.updated (cause ticket.wa_link_changed, DEC-265) carries pending_retrieval_at to the parking driver', async () => {
+    const t = await linkedTicket({ parking: true });
+    await w.sim.client.sendStop(t.phone, { timestamp: w.ts() });
+    await settle(w, t.phone);
+    expect((await ticketRow(w, t.ticketId)).wa_link_status).toBe('opted_out');
+    const rt = await captureRealtime(w);
+    try {
+      await press(w, t.phone, { wamid: t.w01.wamid });
+      await settle(w, t.phone);
+      const row = await ticketRow(w, t.ticketId);
+      expect(row).toMatchObject({ status: 'parking', wa_link_status: 'linked' });
+      expect(row.pending_retrieval_at).toBeTruthy();
+      await rt.settle();
+      const toDriver = rt
+        .of('ticket.updated', rooms.user(t.driver))
+        .filter((m) => m.message.data.id === t.ticketId);
+      // the press transaction: one merged update whose cause is the first ticket.* event (the consent resume)
+      const press1 = toDriver.find((m) => m.message.data.cause === 'ticket.wa_link_changed')!;
+      expect(press1).toBeTruthy();
+      expect(toDriver.some((m) => m.message.data.cause === 'ticket.retrieval_requested_early')).toBe(false);
+      // …and the client still reads the early request from the ticket state (14 §5.1 «طلب مبكر أثناء الصف»)
+      expect(press1.message.data.pending_retrieval_at).toBe(new Date(row.pending_retrieval_at).toISOString());
+      const schema = realtimeEnvelopeSchema('ticket.updated', REALTIME_PAYLOAD_SCHEMAS['ticket.updated']);
+      const frame = {
+        id: press1.message.id,
+        type: 'ticket.updated',
+        occurred_at: (press1.message as Record<string, unknown>).occurred_at,
+        org_id: press1.org_id,
+        venue_id: press1.message.venue_id ?? null,
+        dispatch_pool_id: press1.message.dispatch_pool_id ?? null,
+        event_id: (press1.message as Record<string, unknown>).event_id ?? null,
+        aggregate: press1.message.aggregate ?? null,
+        actor: (press1.message as Record<string, unknown>).actor ?? { type: 'system', id: null },
+        payload: press1.message.data,
+      };
+      const r = schema.safeParse(frame);
+      expect(r.success, JSON.stringify(r.error?.issues)).toBe(true);
+    } finally {
+      await rt.stop();
+    }
   });
 
   it('inactive buttons: revoked or expired token → W-09 «inactive»; a delivered ticket → W-09 with its state; never a request', async () => {

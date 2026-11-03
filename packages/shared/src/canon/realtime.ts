@@ -63,6 +63,8 @@ export const TicketSummarySchema = z.strictObject({
   wa_link_status: WaLinkStatusSchema,
   payment_status: PaymentStatusSchema,
   requested_at: isoDateTime.nullable().optional(),
+  /** an early request waiting for the parking to finish (DEC-13) */
+  pending_retrieval_at: isoDateTime.nullable().optional(),
   created_at: isoDateTime.optional(),
   version: z.number().int().min(1),
 });

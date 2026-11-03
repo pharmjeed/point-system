@@ -10535,6 +10535,10 @@ components:
           type: [string, 'null']
           format: date-time
           description: وقت طلب الدورة المفتوحة إن وجدت
+        pending_retrieval_at:
+          type: [string, 'null']
+          format: date-time
+          description: طلب مبكر ينتظر انتهاء الصف (received/parking/reparking، DEC-13)؛ يقرؤه السائق من الحالة أيًا كان cause المدمج في ticket.updated (DEC-265، 14 §5.1)
         created_at:
           type: string
           format: date-time

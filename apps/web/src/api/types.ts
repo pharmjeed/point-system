@@ -555,6 +555,8 @@ export interface TicketSummary {
   wa_link_status: WaLinkStatus;
   payment_status: PaymentStatus;
   requested_at?: string | null;
+  /** an early request waiting for the parking to finish (DEC-13); read it, not the coalesced cause (DEC-265) */
+  pending_retrieval_at?: string | null;
   created_at?: string;
   version: number;
 }
