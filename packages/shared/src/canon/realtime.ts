@@ -158,6 +158,19 @@ export const REALTIME_PAYLOAD_SCHEMAS = {
 export type PublishedRealtimeEvent = keyof typeof REALTIME_PAYLOAD_SCHEMAS;
 
 /**
+ * The same payloads for a client to parse (review:8): unknown top-level keys are dropped instead of failing the
+ * frame, so an additive field the server ships later (07: new optional fields) does not make an installed PWA
+ * bundle reject every frame and resync until it updates. The strict REALTIME_PAYLOAD_SCHEMAS stay the server's
+ * contract (09 §5.1: no field outside the projection is published), checked by the contract tests.
+ */
+export const REALTIME_CLIENT_PAYLOAD_SCHEMAS = {
+  'ticket.updated': z.object(TicketUpdatedPayloadSchema.shape),
+  'sync.required': z.object(SyncRequiredPayloadSchema.shape),
+  'channel.status': z.object(ChannelStatusPayloadSchema.shape),
+  'incident.updated': z.object(IncidentUpdatedPayloadSchema.shape),
+} as const satisfies Record<PublishedRealtimeEvent, z.ZodType>;
+
+/**
  * The frame a socket receives (canon §7 envelope, 07 §4.2) for one realtime event. `aggregate` is the
  * entity whose state changed; its `version` is null for entities without a version column (the channel).
  */
