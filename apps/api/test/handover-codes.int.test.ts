@@ -200,7 +200,9 @@ describe('S3 handover codes (PNT-047) and the exceptional handover (PNT-078)', (
     expect(ready!.claim_code).toMatchObject({ resend_no: 0, resends_left: 3 });
     expect(sqls.filter((s) => /FROM venues/.test(s))).toEqual([]);
     // without the setting the card reads it, with the same result
-    expect((await loadTaskCard(w.db, t.taskId, viewer, w.clock.now()))!.claim_code).toEqual(ready!.claim_code);
+    expect((await loadTaskCard(w.db, t.taskId, viewer, w.clock.now()))!.claim_code).toEqual(
+      ready!.claim_code,
+    );
   });
 
   it('TC-028: the code delivers once — a new key afterwards is TICKET_CLOSED, the same key replays the saved 200; W-06 follows', async () => {

@@ -90,7 +90,11 @@ describe('TaskCard republished when the assignee card changes without a task eve
     const rt = await captureRealtime(t);
     try {
       ok(
-        await transfer(a.ticketId, { subject: 'key', to_holder_type: 'supervisor', to_holder_id: U['SUP-R'] }),
+        await transfer(a.ticketId, {
+          subject: 'key',
+          to_holder_type: 'supervisor',
+          to_holder_id: U['SUP-R'],
+        }),
         201,
       );
       await rt.settle();
@@ -99,7 +103,11 @@ describe('TaskCard republished when the assignee card changes without a task eve
         .of('task.updated', rooms.user(U.DRV1))
         .filter((m) => m.message.data.task?.id === a.retrieveTaskId);
       expect(cards).toHaveLength(1);
-      expect(cards[0]!.message.aggregate).toEqual({ type: 'task', id: a.retrieveTaskId, version: before + 1 });
+      expect(cards[0]!.message.aggregate).toEqual({
+        type: 'task',
+        id: a.retrieveTaskId,
+        version: before + 1,
+      });
       expect(cards[0]!.message.data).toMatchObject({
         cause: 'custody.changed',
         task: { id: a.retrieveTaskId, version: before + 1, status: 'accepted', key_picked_up_at: null },
@@ -117,7 +125,10 @@ describe('TaskCard republished when the assignee card changes without a task eve
 
   it('a key moved between two supervisors (no driver, no slot): no TaskCard is republished', async () => {
     const a = await assignedRetrieval(t, { parker: 'DRV2', driver: 'DRV1' });
-    ok(await transfer(a.ticketId, { subject: 'key', to_holder_type: 'supervisor', to_holder_id: U['SUP-R'] }), 201);
+    ok(
+      await transfer(a.ticketId, { subject: 'key', to_holder_type: 'supervisor', to_holder_id: U['SUP-R'] }),
+      201,
+    );
     const rt = await captureRealtime(t);
     try {
       ok(await transfer(a.ticketId, { subject: 'key', to_holder_type: 'unknown' }), 201);
@@ -225,7 +236,9 @@ describe('TaskCard republished after a fee waiver (RT-2)', () => {
       await rt.settle();
       // the accept's bump, then the waiver's (its first attempt restarted, the second locked the task at L4)
       expect(await taskVersion(taskId)).toBe(before + 2);
-      const cards = rt.of('task.updated', rooms.user(U.DRV1)).filter((m) => m.message.data.task?.id === taskId);
+      const cards = rt
+        .of('task.updated', rooms.user(U.DRV1))
+        .filter((m) => m.message.data.task?.id === taskId);
       expect(cards).toHaveLength(1);
       expect(cards[0]!.message.data).toMatchObject({
         cause: 'payment.waived',
