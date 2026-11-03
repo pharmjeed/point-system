@@ -16,6 +16,7 @@ import { applyOfferClosed } from '@/realtime/driverHome';
 import { useCommandGate } from '@/realtime/hooks';
 import { reportOfferSeen, requestResync } from '@/realtime/manager';
 import { useOfferLive } from '@/realtime/offerStore';
+import { useSyncStore } from '@/realtime/syncStore';
 import { useUiStore } from '@/stores/ui';
 import { driverPaths, fieldSettings, offerAction, plateValue, vehicleSummary } from './fieldModel';
 import { homeRegistry, updateHome, useCachedHome } from './useDriverHome';
@@ -112,6 +113,10 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
   const gate = useCommandGate();
   const home = useCachedHome();
   const visible = useDocumentVisible();
+  // D-15 ح covers the frame with the screen kept mounted under it (decisions:F1-d15h): the card is not on
+  // screen then, even with the page visible (int-web review)
+  const serviceDown = useSyncStore((s) => s.serviceDown);
+  const onScreen = visible && !serviceDown;
   const pushToast = useUiStore((s) => s.pushToast);
   const reminded = useOfferLive((s) => !!s.reminded[offer.offer_id]);
   const refusal = useOfferLive((s) => s.refusal);
@@ -120,20 +125,22 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
   const [error, setError] = useState<string | null>(null);
   const settings = fieldSettings(home);
 
-  // the card is on screen (D-04, or the Sheet open): `task.claimed` then says «قبل الطلب سائق آخر» (02 D-09)
+  // the card is on screen (D-04, or the Sheet open; never under D-15 ح): `task.claimed` then says «قبل الطلب
+  // سائق آخر» (02 D-09)
   useEffect(() => {
+    if (serviceDown) return;
     useOfferLive.getState().setOnScreen(offer.offer_id);
     return () => {
       if (useOfferLive.getState().onScreen === offer.offer_id) useOfferLive.getState().setOnScreen(null);
     };
-  }, [offer.offer_id]);
+  }, [offer.offer_id, serviceDown]);
 
-  // 15 §9.4: `client.offer_seen` once the card is really on screen
+  // 15 §9.4: `client.offer_seen` once the card is really on screen (D-15 ح gone, the page visible)
   useEffect(() => {
-    if (!visible) return;
+    if (!onScreen) return;
     const arrived = useOfferLive.getState().arrivedAt[offer.offer_id];
     reportOfferSeen(offer.offer_id, arrived ? serverNow() - Date.parse(arrived) : undefined);
-  }, [offer.offer_id, visible]);
+  }, [offer.offer_id, onScreen]);
 
   const dropCard = useCallback(
     (taskId: string | null) => {

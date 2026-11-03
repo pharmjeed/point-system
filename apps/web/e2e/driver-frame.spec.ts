@@ -343,6 +343,44 @@ test('decisions:F1-d15h: one SERVICE_UNAVAILABLE keeps D-11 and what was typed; 
   await expect(page.getByLabel('استلمت المبلغ')).toBeChecked();
 });
 
+test('int-web review: a request that arrives under D-15 ح is not reported as seen until the screen comes back', async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+  const fake = createFake();
+  fake.realtime.enable();
+  const [car] = parkedCars(fake, 1);
+  busyDriver(fake, 'DRV1');
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await page.goto('/d');
+  await expect(page.getByText('لا توجد طلبات إحضار الآن')).toBeVisible();
+  await connected(fake);
+
+  // the outage persists: D-15 ح covers D-04, which stays mounted (hidden, inert) underneath
+  fake.failNext('GET /v1/me/home', errorReply('SERVICE_UNAVAILABLE'), 1000);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const screen = page.locator('[data-screen="d15-service"]');
+  await expect(screen).toBeVisible({ timeout: 20_000 });
+
+  // a request reaches the socket meanwhile: the card lands in the hidden D-04, never on screen
+  requestRetrieval(fake, car!.ticketId);
+  await expect(offerCardOf(page)).toHaveCount(1);
+  await expect(offerCardOf(page)).toBeHidden();
+  await page.waitForTimeout(1500);
+  expect(fake.realtime.offersSeen).toHaveLength(0); // 15 §9.4: seen_at stays empty, the reminder still goes
+  expect(fake.telemetry.flatMap((b) => (b.body.events as Array<{ name: string }>) ?? [])).not.toContainEqual(
+    expect.objectContaining({ name: 'offer_card_seen' }),
+  );
+
+  // the service is back: D-04 shows the card, and only now is it reported once
+  fake.clearFaults('GET /v1/me/home');
+  await screen.getByRole('button', { name: 'إعادة المحاولة' }).click();
+  await expect(screen).toHaveCount(0);
+  await expectOneOffer(page, car!.displayNumber);
+  await expect(offerCardOf(page)).toBeVisible();
+  await expect.poll(() => fake.realtime.offersSeen.length).toBe(1);
+});
+
 test('PNT-065 / 03 §4.4: «الاتصال غير مؤكد» closes D-09 reserve and D-11 handover, dims the cards; the next confirmation reopens them', async ({
   browser,
 }) => {
