@@ -23,8 +23,46 @@ export const homeRegistry: LiveRegistry = createRegistry();
 /** Client time the snapshot now in the cache was requested: an older one never replaces it. */
 let appliedRequestedAt = 0;
 
+/**
+ * 02 D-15 ح only once SERVICE_UNAVAILABLE persists (08: «auto-retry بتباعد، ثم banner إن استمر»): past React
+ * Query's read retries (1 s, 2 s) and the engine's resync retry (5 s), so one pool wait or statement timeout
+ * never covers the task screens (decisions:F1-d15h). Before that the cached snapshot stays on screen as
+ * «قديم» (D-15 أ).
+ */
+export const SERVICE_DOWN_AFTER_MS = 10_000;
+/** Client time of the first SERVICE_UNAVAILABLE since the last read that succeeded. */
+let unavailableSince: number | null = null;
+let serviceDownTimer: ReturnType<typeof setTimeout> | null = null;
+
+function noteServiceUnavailable(): void {
+  const now = Date.now();
+  unavailableSince ??= now;
+  if (now - unavailableSince >= SERVICE_DOWN_AFTER_MS) {
+    setServiceDown(true);
+    return;
+  }
+  // still unanswered when the window ends (a retry that never comes back): D-15 ح then
+  serviceDownTimer ??= setTimeout(
+    () => {
+      serviceDownTimer = null;
+      if (unavailableSince !== null) setServiceDown(true);
+    },
+    SERVICE_DOWN_AFTER_MS - (now - unavailableSince),
+  );
+}
+
+function noteServiceAvailable(): void {
+  unavailableSince = null;
+  if (serviceDownTimer !== null) clearTimeout(serviceDownTimer);
+  serviceDownTimer = null;
+  setServiceDown(false);
+}
+
 /** Sign-out / session end / another user: forget everything the events taught. */
 export function resetHomeRegistry(): void {
+  unavailableSince = null;
+  if (serviceDownTimer !== null) clearTimeout(serviceDownTimer);
+  serviceDownTimer = null;
   homeRegistry.tasks.clear();
   homeRegistry.tickets.clear();
   homeRegistry.closedOffers.clear();
@@ -36,7 +74,7 @@ export function resetHomeRegistry(): void {
 /**
  * Reads the snapshot and merges it into the cache. A snapshot requested before the one already applied is
  * dropped (a slow poll answering after a resync). Clears `stale` when it started after the last trigger.
- * SERVICE_UNAVAILABLE turns on the D-15 ح screen until a read succeeds. A read aborted meanwhile (sign-out,
+ * SERVICE_UNAVAILABLE that persists for SERVICE_DOWN_AFTER_MS turns on the D-15 ح screen until a read succeeds. A read aborted meanwhile (sign-out,
  * session end) touches neither the cache nor the sync state.
  */
 export async function loadHomeSnapshot(qc: QueryClient, signal?: AbortSignal): Promise<DriverHome> {
@@ -46,11 +84,11 @@ export async function loadHomeSnapshot(qc: QueryClient, signal?: AbortSignal): P
   try {
     snapshot = await getHome(signal);
   } catch (error) {
-    if (!signal?.aborted && isApiError(error, 'SERVICE_UNAVAILABLE')) setServiceDown(true);
+    if (!signal?.aborted && isApiError(error, 'SERVICE_UNAVAILABLE')) noteServiceUnavailable();
     throw error;
   }
   if (signal?.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
-  setServiceDown(false);
+  noteServiceAvailable();
   const cached = qc.getQueryData<DriverHome>(queryKeys.home);
   if (cached && requestedAt < appliedRequestedAt) return cached;
   appliedRequestedAt = requestedAt;

@@ -8,6 +8,7 @@ import {
   arrangeRetrieval,
   arrangeSubmitted,
   EVENT_R1,
+  EVENT_R2,
   requestRetrieval,
   startDuty,
 } from './support/driver';
@@ -278,6 +279,68 @@ test('PNT-068 D-15 ح: SERVICE_UNAVAILABLE is a full screen with «إعادة ا
   await expect(screen).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'استلام مركبة' })).toBeVisible();
   await expect(page.getByRole('navigation')).toBeVisible();
+});
+
+/** Records whether D-15 ح was ever on screen (a MutationObserver from the first paint). */
+async function watchServiceScreen(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __d15Seen?: boolean };
+    w.__d15Seen = false;
+    new MutationObserver(() => {
+      if (document.querySelector('[data-screen="d15-service"]')) w.__d15Seen = true;
+    }).observe(document, { childList: true, subtree: true });
+  });
+}
+const serviceScreenSeen = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __d15Seen?: boolean }).__d15Seen === true);
+
+test('decisions:F1-d15h: one SERVICE_UNAVAILABLE keeps D-11 and what was typed; D-15 ح only when it persists, and the form survives it', async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const r = arrangeRetrieval(fake, 'DRV1', 'ready', { eventId: EVENT_R2, serial: '007001' });
+  const { page } = await actorPage(browser, fake, 'DRV1');
+  await watchServiceScreen(page);
+  await page.goto(`/d/tickets/${r.ticketId}/handover`);
+  await expect(page.getByText(/المبلغ المستحق: 20\.00/)).toBeVisible();
+  const stub = page.getByLabel('رقم الكعب');
+  await stub.fill('0070');
+  await page.getByLabel('استلمت المبلغ').check();
+
+  // a transient 503 (a pool wait, a statement timeout): the retry answers, nothing is lost
+  const before = fake.callsTo('GET /v1/me/home').length;
+  fake.failNext('GET /v1/me/home', errorReply('SERVICE_UNAVAILABLE'), 1);
+  await page.evaluate(() => window.dispatchEvent(new Event('online'))); // a resync now
+  await expect
+    .poll(
+      () =>
+        fake
+          .callsTo('GET /v1/me/home')
+          .slice(before)
+          .findIndex((c) => c.status === 503) !== -1 &&
+        fake.callsTo('GET /v1/me/home').at(-1)?.status === 200,
+      { timeout: 15_000 }, // the resync is tried again after RESYNC_RETRY_MS (5 s)
+    )
+    .toBe(true);
+  expect(fake.callsTo('GET /v1/me/home').some((c) => c.status === 503)).toBe(true);
+  await page.waitForTimeout(300);
+  expect(await serviceScreenSeen(page)).toBe(false);
+  await expect(stub).toHaveValue('0070');
+  await expect(page.getByLabel('استلمت المبلغ')).toBeChecked();
+
+  // the outage persists: D-15 ح covers the frame; D-11 stays mounted underneath, its state kept
+  fake.failNext('GET /v1/me/home', errorReply('SERVICE_UNAVAILABLE'), 1000);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const screen = page.locator('[data-screen="d15-service"]');
+  await expect(screen).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('#handover-submit')).toBeHidden();
+  fake.clearFaults('GET /v1/me/home');
+  await screen.getByRole('button', { name: 'إعادة المحاولة' }).click();
+  await expect(screen).toHaveCount(0);
+  await expect(stub).toHaveValue('0070');
+  await expect(page.getByLabel('استلمت المبلغ')).toBeChecked();
 });
 
 test('PNT-065 / 03 §4.4: «الاتصال غير مؤكد» closes D-09 reserve and D-11 handover, dims the cards; the next confirmation reopens them', async ({

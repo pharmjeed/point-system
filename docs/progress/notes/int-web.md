@@ -14,6 +14,7 @@ numbers the proposals below into `docs/DECISIONS.md`.
 | contract:F6 | S-11 «التحصيل» always sends `from`/`to`: a chosen event is reported over its Riyadh day (`periodToUtc(event_date, event_date)`, the server's event-day overlap of DEC-288), otherwise the period; without either the card waits instead of asking a 422. The e2e mock now refuses a payments query without `from`/`to` as the server does. | `e2e/staff-reports.spec.ts` «cards follow the filters …» |
 | decisions:F4 | S-03 «الخط الزمني» has an Arabic line for every ticket-scoped `ticket_events.type`: `task.*`, `handover.*`, `payment.recorded/reversed/waived`, `incident.opened/updated/resolved` (copy in DEC-PROPOSED-2, 02 §8.6 has none), a generic «تحديث على التذكرة» for a type the client does not know, and the template without its placeholder when `data` cannot fill it — never the raw key. `custody.changed` and `wa.message_status_changed` rows are skipped: the custody chain and the message lines already show them. | `test/staff/timelineModel.test.ts` «S-03 timeline texts for every ticket_events.type» |
 | decisions:F6 | The early-request notice (14 §5.1 «طلب مبكر أثناء الصف», `reminder`) no longer depends on the coalesced cause alone: a newer version of the parking driver's current park/repark ticket under another cause (DEC-265 keeps the first `ticket.*` cause, e.g. `ticket.wa_link_changed` after a resumed link) re-reads the ticket (joining a refetch in flight) and raises the notice when `pending_retrieval_at` is set; once per parking task, whichever path sees it first. | `test/realtime/driverRuntime.test.ts` «an early request merged under another cause …», «a newer version … without an early request …» |
+| decisions:F1-d15h | D-15 ح appears only once SERVICE_UNAVAILABLE persists for `SERVICE_DOWN_AFTER_MS` (10 s: past React Query's 1 s / 2 s retries and the engine's 5 s resync retry) with no read succeeding meanwhile; before that the cached snapshot stays as «قديم». The screen under D-15 ح stays mounted (hidden, `inert`), so D-08 / D-11 keep what was typed when the service returns. | `e2e/driver-frame.spec.ts` «decisions:F1-d15h: one SERVICE_UNAVAILABLE keeps D-11 …» (transient: never shown, stub and «استلمت المبلغ» kept; persistent: shown, the form survives the recovery) and the existing «PNT-068 D-15 ح» case; `test/realtime/driverRuntime.test.ts` «02 D-15 ح once SERVICE_UNAVAILABLE persists …» |
 
 ## Proposed decisions
 
@@ -45,4 +46,15 @@ promise a timeline text «لكل `ticket_events.type`», but list `ticket.*` key
 `other` «تحديث على التذكرة» (a type the client does not know). `custody.changed` and `wa.message_status_changed` rows
 are not drawn as ticket lines: the custody chain («السبب: من ← إلى») and the message lines («W-05 — وصلت») of the
 same timeline show them. — affected files: 02 §8.6 (the table), optionally 11 §1.6 (`incident.*` rows of TT-19).
+
+**DEC-PROPOSED-3 — D-15 ح after SERVICE_UNAVAILABLE persists; the screen under it keeps its state** — context:
+02 D-15 ح says only «شاشة كاملة», the web raised it on the first 503 and unmounted the task screen, while 08
+(SERVICE_UNAVAILABLE: «auto-retry بتباعد، ثم banner إن استمر»), 04 (PostgreSQL outage: stale data first, the paper
+procedure «إن طال الانقطاع») and 02 D-15 و (no disruption during a task or an unsaved form) ask for a persistent
+outage; since load-chaos the server answers 503 for a pool wait, a statement timeout, 55P03 and 57014
+(decisions:F1-d15h). — decision: the driver frame shows D-15 ح when `GET /v1/me/home` has answered
+SERVICE_UNAVAILABLE and no read has succeeded for 10 s (past the read retries and the 5 s resync retry); before
+that the snapshot stays on screen as «قديم» (D-15 أ) and commands wait for the sync as usual. Under D-15 ح the
+current screen stays mounted (hidden and inert), so D-08 / D-11 come back with what was typed. — affected files:
+02 D-15 ح (the 10 s rule and «الشاشة تحتها تحتفظ بحالتها»), 08 SERVICE_UNAVAILABLE UI handling (link to D-15 ح).
 

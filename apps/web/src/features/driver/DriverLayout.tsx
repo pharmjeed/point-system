@@ -197,8 +197,9 @@ function DriverNotices({ home }: { home: DriverHome | undefined }) {
 
 /**
  * 02 D-15 ح — «النظام غير متاح مؤقتًا. اتبع الإجراء الورقي حتى عودة الخدمة.» with «إعادة المحاولة», the
- * full screen while the snapshot answers SERVICE_UNAVAILABLE; the next read that succeeds (the retry, the
- * resync retries, the polling) brings the screens back with their drafts.
+ * full screen once the snapshot keeps answering SERVICE_UNAVAILABLE (SERVICE_DOWN_AFTER_MS); the screen under
+ * it stays mounted, so the next read that succeeds (the retry, the resync retries, the polling) brings it back
+ * with what was typed.
  */
 function ServiceUnavailable() {
   const qc = useQueryClient();
@@ -306,7 +307,15 @@ export function DriverFrame({ me, withNav, children }: { me: Me; withNav: boolea
       toast={<ToastViewport aboveNav={withNav && !serviceDown} />}
       bottomNav={withNav && !serviceDown ? <BottomNav items={driverNav(onDuty ? home : undefined)} /> : null}
     >
-      {serviceDown ? <ServiceUnavailable /> : children}
+      {serviceDown ? <ServiceUnavailable /> : null}
+      {/* the screen under D-15 ح stays mounted (hidden, inert): D-08 / D-11 keep what was typed */}
+      <div
+        style={{ display: serviceDown ? 'none' : 'contents' }}
+        aria-hidden={serviceDown || undefined}
+        inert={serviceDown || undefined}
+      >
+        {children}
+      </div>
       {serviceDown ? null : <FramePromotion />}
       <ConnectionSheet
         open={sheetOpen}

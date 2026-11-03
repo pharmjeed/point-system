@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, TaskCard } from '@/api/types';
 import { useLinkStore } from '@/features/driver/linkStore';
-import { homeRegistry, resetHomeRegistry } from '@/features/driver/useDriverHome';
+import {
+  homeRegistry,
+  loadHomeSnapshot,
+  resetHomeRegistry,
+  SERVICE_DOWN_AFTER_MS,
+} from '@/features/driver/useDriverHome';
 import { playSound } from '@/lib/audio';
 import { driverEvents, startRealtime } from '@/realtime/driverRuntime';
 import { RESYNC_RETRY_MS } from '@/realtime/engine';
@@ -76,7 +81,8 @@ describe('the driver resync counts only the server state as a sync (PNT-065 AC2)
     const s = useSyncStore.getState();
     expect(s).toMatchObject({ stale: true, lastSyncAt: null });
     expect(commandGate('online', s.stale).ready).toBe(false);
-    expect(s.serviceDown).toBe(status === 503); // 02 D-15 ح
+    // 02 D-15 ح waits until SERVICE_UNAVAILABLE persists (decisions:F1-d15h): one failure never covers the screens
+    expect(s.serviceDown).toBe(false);
   });
 
   it('a definitive 4xx (no assignment) is the server state: the sync is complete', async () => {
@@ -88,7 +94,7 @@ describe('the driver resync counts only the server state as a sync (PNT-065 AC2)
     await vi.waitFor(() => expect(useSyncStore.getState().stale).toBe(false));
   });
 
-  it('the retry after a 503 that succeeds clears stale and the D-15 ح screen', async () => {
+  it('the retry after a 503 that succeeds clears stale and never shows the D-15 ح screen', async () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(reply(503, errorBody('SERVICE_UNAVAILABLE', true)))
@@ -96,7 +102,7 @@ describe('the driver resync counts only the server state as a sync (PNT-065 AC2)
     vi.stubGlobal('fetch', fetch);
     const env = start();
     await vi.waitFor(() => expect(env.pending()).toContain(RESYNC_RETRY_MS));
-    expect(useSyncStore.getState().serviceDown).toBe(true);
+    expect(useSyncStore.getState().serviceDown).toBe(false); // transient: no D-15 ح
     env.run(RESYNC_RETRY_MS);
     await vi.waitFor(() => expect(useSyncStore.getState().stale).toBe(false));
     // «آخر مزامنة» is the snapshot's own server_time
@@ -127,6 +133,42 @@ describe('the driver resync counts only the server state as a sync (PNT-065 AC2)
     await new Promise((r) => setTimeout(r, 10));
     expect(qc.getQueryData(queryKeys.home)).toBeUndefined();
     expect(useSyncStore.getState()).toMatchObject({ stale: true, lastSyncAt: null });
+  });
+});
+
+describe('02 D-15 ح once SERVICE_UNAVAILABLE persists (decisions:F1-d15h, 08 «auto-retry … ثم banner إن استمر»)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('one 503 is not D-15 ح; still unavailable after SERVICE_DOWN_AFTER_MS it is; a read that succeeds ends it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const qc = new QueryClient();
+    let status = 503;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        status === 503
+          ? reply(503, errorBody('SERVICE_UNAVAILABLE', true))
+          : reply(200, { data: home(), meta: { server_time: '2026-10-29T18:00:05.000Z' } }),
+      ),
+    );
+    await expect(loadHomeSnapshot(qc)).rejects.toThrow();
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+    vi.advanceTimersByTime(SERVICE_DOWN_AFTER_MS - 1);
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+    vi.advanceTimersByTime(1); // nothing answered meanwhile
+    expect(useSyncStore.getState().serviceDown).toBe(true);
+    status = 200;
+    await loadHomeSnapshot(qc);
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+
+    // a 503 answered by a success inside the window never shows it
+    status = 503;
+    await expect(loadHomeSnapshot(qc)).rejects.toThrow();
+    vi.advanceTimersByTime(3000);
+    status = 200;
+    await loadHomeSnapshot(qc);
+    vi.advanceTimersByTime(SERVICE_DOWN_AFTER_MS);
+    expect(useSyncStore.getState().serviceDown).toBe(false);
   });
 });
 
