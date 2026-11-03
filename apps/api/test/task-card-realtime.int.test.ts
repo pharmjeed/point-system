@@ -4,11 +4,15 @@ import type { TestApp } from './harness.js';
 import {
   createS2App,
   err,
+  EVT_R2,
   keyPickup,
+  liveOffer,
   nextSlot,
   nextSpot,
   ok,
   one,
+  parkedPaperTicket,
+  requestRetrieval,
   RMS,
   startDuty,
   U,
@@ -184,6 +188,53 @@ describe('TaskCard republished after a fee waiver (RT-2)', () => {
       const home = ok(await t.get('/v1/me/home', 'DRV1'));
       expect(home.current_task).toMatchObject({ task: { version: before + 1 }, payment_due: null });
     } finally {
+      await rt.stop();
+    }
+  });
+
+  it('a retrieval accepted between the unlocked task read and the ticket lock: the waiver restarts and bumps that task', async () => {
+    const p = await parkedPaperTicket(t, 'DRV1', { eventId: EVT_R2 });
+    const r = ok(await requestRetrieval(t, 'SUP-R', p.ticketId), 201);
+    const offer = await liveOffer(t.db, U.DRV1);
+    expect(offer?.task_id).toBe(r.task.id);
+    const taskId = r.task.id as string;
+    const before = await taskVersion(taskId);
+    // another transaction holds the ticket (L5) while the waiver reads the still unassigned task and waits on L5;
+    // it then accepts the retrieval (as accept-offer does under L4 + L5) and commits
+    const other = await t.db.pool.connect();
+    const rt = await captureRealtime(t);
+    try {
+      await other.query('BEGIN');
+      await other.query(`SELECT id FROM tickets WHERE id = $1 FOR NO KEY UPDATE`, [p.ticketId]);
+      const waiver = waive(t, 'SUP-R', p.ticketId, { reason: 'ضيف العريس' });
+      for (let i = 0; ; i++) {
+        const w = await t.db.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`,
+        );
+        if (w.rows[0]!.n > 0) break;
+        if (i > 200) throw new Error('the waiver never waited on the ticket lock');
+        await new Promise((res) => setTimeout(res, 10));
+      }
+      await other.query(
+        `UPDATE tasks SET status = 'accepted', assignee_id = $2, accepted_at = now(), version = version + 1 WHERE id = $1`,
+        [taskId, U.DRV1],
+      );
+      await other.query('COMMIT');
+      ok(await waiver);
+      await rt.settle();
+      // the accept's bump, then the waiver's (its first attempt restarted, the second locked the task at L4)
+      expect(await taskVersion(taskId)).toBe(before + 2);
+      const cards = rt.of('task.updated', rooms.user(U.DRV1)).filter((m) => m.message.data.task?.id === taskId);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]!.message.data).toMatchObject({
+        cause: 'payment.waived',
+        task: { version: before + 2, status: 'accepted' },
+        payment_due: null,
+      });
+    } finally {
+      await other.query('ROLLBACK').catch(() => {});
+      other.release();
       await rt.stop();
     }
   });
