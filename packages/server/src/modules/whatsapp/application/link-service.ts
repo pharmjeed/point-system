@@ -338,6 +338,6 @@ export const linkCodeExpireHandler: JobHandler = {
         action: 'job.link_code_expire',
         metadata: { link_code_id: lc.id, reason: 'link_code_expired' },
       });
-    else await publishTicketUpdated(tx, t.id, 'wa.link_code_expired');
+    else await publishTicketUpdated(tx, t.id, 'job.link_code_expire'); // the canon §7.2 job is the cause (07 §4.2)
   },
 };
