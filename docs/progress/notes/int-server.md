@@ -14,6 +14,12 @@ The web stream owns `apps/web` (only `apps/web/src/api/types.ts` is touched here
 | decisions:F6 (server half) | Following the brief («prefer making the client read the ticket state»), the DEC-265 coalescing rule is unchanged; instead `TicketSummary` carries `pending_retrieval_at` (DEC-13; it was already in both TicketDetail projections, so no field becomes visible to anyone new), served by `ticketSummary()` and so by every `ticket.updated`, list and board. The shared `TicketSummarySchema`, `07_openapi.yaml` TicketSummary, the 07 §4.3 `ticket.updated` row and `apps/web/src/api/types.ts` have it. | `apps/api/test/wa-button.int.test.ts` «decisions:F6: «إيقاف» then a press during parking …» (the parking driver's only update of the press has cause `ticket.wa_link_changed` and carries `pending_retrieval_at`; the frame parses with the shared schema) |
 | realtime:RT-2 (server half) | A command that changes what the assignee's TaskCard shows without a task event bumps `tasks.version` (`bumpTaskCardVersion`) and the dispatch planner republishes the TaskCard to the assignee and the `Task` to the supervisors with the command's cause: an official custody transfer of the key into/out of a slot or of the vehicle into/out of a spot while the task stays with its driver (`custodyTouchesTaskCard`; skipped when a key pickup / reset or a reassignment already bumped and published it), a fee waiver, and a reversal without replacement (payment `due` again). `waive` and `reverse` now lock the ticket's open assigned task (L4, before L5). Because the version is newer, the web's existing version gate (`engine.ts` 07 §4.5, `applyTaskCard`) applies it with no client change, and a command sent with the old task `expected_version` is VERSION_CONFLICT. 07 §4.3 `task.updated` row documents it. | `apps/api/test/task-card-realtime.int.test.ts` (slot → slot: card v+1 with the new slot, supervisors' Task v+1, home agrees, pickup at the old slot CUSTODY_HOLDER_MISMATCH and at the new one OK; spot → spot; waiver → `payment_due: null`; reversal → `payment_due` back) |
 
+## Checks (at cbb9881)
+
+`pnpm lint` clean · `pnpm typecheck` clean · `pnpm test` 92 files / 1423 tests green · `pnpm test:int` (PostgreSQL 16,
+under the heavy lock) 85 files passed + 1 skipped / 679 tests passed + 1 skipped. No e2e run: no `apps/web` behaviour
+changed here (only optional fields in `apps/web/src/api/types.ts`).
+
 ## For the web stream
 
 - `TaskCard.ready_at` is now served: `fieldModel.ts` (D-04) can read `card.ready_at ?? card.claim_code?.issued_at ??
