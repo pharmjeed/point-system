@@ -17,6 +17,7 @@ import { homeRegistry, loadHomeSnapshot, updateHome } from '@/features/driver/us
 import { d09 } from '@/i18n/ar';
 import { audioRunning, playSound, stopSound } from '@/lib/audio';
 import { recordServerTime } from '@/lib/serverClock';
+import { APP_VERSION, track } from '@/lib/telemetry';
 import { useFieldStore, type NoticeKind } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -44,7 +45,7 @@ import { createSocketTransport } from './transport';
  * reserved next task (`next_due` + the dialog), a direct assignment or a repark (`next_due`), a withdrawal
  * (`reminder`), a cancel (no sound), an early request during parking (`reminder`).
  */
-export const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0';
+export { APP_VERSION };
 
 const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
 
@@ -357,6 +358,24 @@ export function driverHooks(options: AcquireOptions): EngineHooks {
     // the server closed the socket or refused it: `GET /v1/me` tells whether the session ended (RootLayout →
     // D-15 ج, which stops the engine); if it did not, the engine connects again after its backoff
     checkSession: () => void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true }),
+    // 15 §9.4: the socket is down — the round on screen goes in a telemetry batch, sent at once (the reminder
+    // push targets recipients whose `seen_at` is still empty)
+    httpOfferSeen: (offerId, receiveLatencyMs) => {
+      const offer = qc.getQueryData<DriverHome>(queryKeys.home)?.offer;
+      const same = offer?.offer_id === offerId ? offer : null;
+      track(
+        'offer_card_seen',
+        {
+          offer_id: offerId,
+          via: 'sync',
+          mode: same?.mode,
+          eligible_as: same?.eligible_as,
+          receive_latency_ms: receiveLatencyMs,
+        },
+        { task_id: same?.task_id ?? null },
+        { flush: true },
+      );
+    },
   };
 }
 

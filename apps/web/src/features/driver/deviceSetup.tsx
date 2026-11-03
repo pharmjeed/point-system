@@ -5,6 +5,7 @@ import type { AudioTestResult, DriverHome, Me } from '@/api/types';
 import { Dialog } from '@/components';
 import { d03 } from '@/i18n/ar';
 import { runAudioTest } from '@/lib/audio';
+import { track } from '@/lib/telemetry';
 import { usePushRelink as useDevicePushRelink, useNotificationSetup } from '@/features/session/pushSetup';
 import type { NotificationCheck } from '@/lib/deviceChecks';
 import { pushSupported, vapidPublicKey } from '@/lib/push';
@@ -18,7 +19,11 @@ import { useFieldStore, type AudioCheck } from '@/stores/field';
  * Results are recorded on the session's device (`Me.session.device_id`): `POST /v1/me/audio-test` and
  * `PUT /v1/me/devices/{deviceId}` with the permission, the display mode and the Web Push subscription.
  */
-export function useAudioCheck(me: Me): {
+export function useAudioCheck(
+  me: Me,
+  /** 15 §8 `audio_test_completed.context`: D-03 (and D-04's untested line) or D-14. */
+  context: 'duty_start' | 'account' = 'duty_start',
+): {
   audio: AudioCheck;
   testedAt: string | null;
   test: () => void;
@@ -31,6 +36,7 @@ export function useAudioCheck(me: Me): {
   const deviceId = me.session.device_id ?? null;
 
   const record = (result: AudioTestResult) => {
+    track('audio_test_completed', { result, audio_api: 'web_audio', context });
     if (deviceId)
       void recordAudioTest({ device_id: deviceId, result }, newIdempotencyKey()).catch(() => undefined);
   };

@@ -10,6 +10,7 @@ import { RequireDriver } from '@/app/guards';
 import { hasOpenDuty, paths } from '@/app/paths';
 import { AppShell, Banner, BottomNav, EmptyState, ToastViewport, TopBar, type NavItem } from '@/components';
 import { useBrand } from '@/hooks/useMe';
+import { usePageHiddenTelemetry, useTelemetry } from '@/hooks/useTelemetry';
 import { useThemeArea } from '@/hooks/useThemeArea';
 import { buttons, d07, d08, d15, live, nav } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
@@ -272,12 +273,14 @@ export function DriverFrame({ me, withNav, children }: { me: Me; withNav: boolea
   const brand = useBrand();
   const connection = useConnection();
   useRealtime('driver', me);
+  useTelemetry(me); // 15 §8 measurements of this session (decisions:F5)
   const home = useDriverHome().data;
   const wakeLockPref = usePrefs((s) => s.wakeLock);
   const serviceDown = useSyncStore((s) => s.serviceDown);
   const onHome = !!useMatch({ path: paths.driverHome, end: true });
   const onDuty = hasOpenDuty(me);
   useScreenWakeLock(onDuty && wakeLockPref);
+  usePageHiddenTelemetry(onDuty, home);
   useOfferAlerts(onDuty ? home?.offer : null);
   useReportBlockedAudio(me);
   useLocalIntake(me, home);

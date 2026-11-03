@@ -106,7 +106,14 @@ test('G1 through the real API: DRV1 takes in and parks on paper; DRV2 accepts, r
   // one audit row per command: every successful command of both browsers, by its request id and actor
   const commands = (calls: readonly LoggedCall[]) =>
     calls.filter(
-      (c) => c.method !== 'GET' && !c.path.startsWith('/v1/auth/') && c.status >= 200 && c.status < 300,
+      (c) =>
+        c.method !== 'GET' &&
+        !c.path.startsWith('/v1/auth/') &&
+        // not commands: no audit row (canon §9, DEC-149)
+        c.path !== '/v1/me/heartbeat' &&
+        c.path !== '/v1/telemetry' &&
+        c.status >= 200 &&
+        c.status < 300,
     );
   const sent = [
     ...commands(drv1.log.calls).map((c) => ({ ...c, actor: U.DRV1 })),

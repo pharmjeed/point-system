@@ -121,7 +121,7 @@ function StartShift({ me }: { me: Me }) {
   const signOut = useLogout('driver');
   const home = useDriverHome({ poll: false });
   const { audio, test: onTestAudio, dialog: heardDialog } = useAudioCheck(me);
-  const notificationSetup = useNotificationSetup(me);
+  const notificationSetup = useNotificationSetup(me, 'duty_start');
   const notifications = notificationSetup.check;
   const [untestedOpen, setUntestedOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);

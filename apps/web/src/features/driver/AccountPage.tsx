@@ -62,8 +62,8 @@ export function AccountPage() {
   const wakeLock = usePrefs((s) => s.wakeLock);
   const setWakeLock = usePrefs((s) => s.setWakeLock);
   const signOut = useLogout('driver');
-  const audioCheck = useAudioCheck(me);
-  const notifications = useNotificationSetup(me);
+  const audioCheck = useAudioCheck(me, 'account');
+  const notifications = useNotificationSetup(me, 'account');
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [blocked, setBlocked] = useState<CustodyItem[] | null>(null);

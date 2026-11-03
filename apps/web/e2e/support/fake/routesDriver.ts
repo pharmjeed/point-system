@@ -857,6 +857,17 @@ export function registerDriverRoutes(s: FakeServer): void {
     return ok({ server_time: now(), connection_state: 'online', sync_required: false });
   });
 
+  // `POST /v1/telemetry` (15 §9): batches of client measurements, 202 without a body; not a command (DEC-149)
+  s.on('POST /v1/telemetry', (ctx) => {
+    const u = s.need(ctx, 'auth.self');
+    const body = (ctx.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.events) || !body.events.length || body.events.length > 50)
+      validation([{ field: 'events', issue: 'invalid' }]);
+    if (typeof body.app_version !== 'string') validation([{ field: 'app_version', issue: 'required' }]);
+    s.telemetry.push({ userId: u.id, body });
+    return { status: 202, body: undefined };
+  });
+
   // ---------------------------------------------------------------- intake (07 §2.2)
 
   s.on('POST /v1/tickets', (ctx) => {

@@ -80,6 +80,8 @@ export class MockApi {
       this.me = null;
       return ok(undefined, 204);
     });
+    // 15 §9 client measurements: 202 without a body (not a command, DEC-149)
+    this.on('POST', '/v1/telemetry', () => ({ status: 202, body: undefined }));
     // the HTTP fallback of client.heartbeat while no socket is connected (07 §4.4)
     this.on('POST', '/v1/me/heartbeat', () =>
       ok({ server_time: new Date().toISOString(), connection_state: 'online', sync_required: false }),

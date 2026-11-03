@@ -23,6 +23,7 @@ import { useNotificationSetup, usePushRelink } from '@/features/session/pushSetu
 import { useConnection } from '@/features/session/useConnection';
 import { useLogout } from '@/features/session/useLogout';
 import { useBrand } from '@/hooks/useMe';
+import { useTelemetry } from '@/hooks/useTelemetry';
 import { useThemeArea } from '@/hooks/useThemeArea';
 import { buttons, d03, d14, d15, nav } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
@@ -54,7 +55,7 @@ const THEME_LABEL: Record<ThemePref, string> = {
  */
 function StaffNotifications({ me }: { me: Me }) {
   const brand = useBrand();
-  const setup = useNotificationSetup(me);
+  const setup = useNotificationSetup(me, 'account');
   const check = setup.check;
   const hint =
     check === 'denied'
@@ -137,6 +138,7 @@ function StaffFrame({ me }: { me: Me }) {
   const connection = useConnection();
   // live updates of the staff screens (PNT-065): the open screens' React Query keys follow the events
   useRealtime('staff', me);
+  useTelemetry(me); // 15 §8 measurements of this session (decisions:F5)
   // a new sign-in links a new device row: the subscription this browser holds goes to it, no prompt (RT-5)
   usePushRelink(me, true);
   const stale = useSyncStore((s) => s.stale && s.lastSyncAt !== null);

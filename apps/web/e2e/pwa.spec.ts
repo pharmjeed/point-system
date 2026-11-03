@@ -263,6 +263,18 @@ test('PNT-072: a tapped notification opens its screen and resyncs; the subscript
   });
   await expect(page).toHaveURL(/\/d$/);
   await expect.poll(() => fake.callsTo('GET /v1/me/home').length).toBeGreaterThan(homeReads);
+  // 15 §8 push_notification_clicked (DEC-390) with the worker's kind and age, sent when the page is hidden
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect
+    .poll(() =>
+      fake.telemetry
+        .flatMap((b) => b.body.events as Array<{ name: string; properties?: object }>)
+        .find((e) => e.name === 'push_notification_clicked'),
+    )
+    .toMatchObject({ properties: { kind: 'offer', age_ms: 900 } });
   await context.close();
 });
 

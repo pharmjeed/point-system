@@ -404,7 +404,7 @@ describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
     park.ticket.status = 'parking';
     park.ticket.version = 3;
     qc.setQueryData(queryKeys.home, home({ current_task: park }));
-    let pending: string | null = '2026-10-29T18:00:00.000Z';
+    const pending: string | null = '2026-10-29T18:00:00.000Z';
     const reads: string[] = [];
     vi.stubGlobal(
       'fetch',

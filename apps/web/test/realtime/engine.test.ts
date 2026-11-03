@@ -252,6 +252,37 @@ describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
     ]);
   });
 
+  it('while the socket is down, a round on screen goes through the HTTP telemetry fallback; never twice (15 §9.4, contract:F5)', async () => {
+    const httpOfferSeen = vi.fn();
+    engine.stop();
+    engine = new RealtimeEngine(transport, { ...hooks, httpOfferSeen }, env);
+    engine.start(); // the card rendered from the HTTP snapshot before the handshake
+    engine.offerSeen(IDS.offerA, 812.6);
+    engine.offerSeen(IDS.offerA, 900);
+    expect(httpOfferSeen.mock.calls).toEqual([[IDS.offerA, 813]]);
+    transport.up();
+    engine.offerSeen(IDS.offerA, 950); // the same round once connected: already reported
+    await flush();
+    expect(transport.acks.filter((a) => a.event === 'client.offer_seen')).toEqual([]);
+    engine.offerSeen(IDS.offerB, 100); // a new round with the socket up: the WebSocket path
+    await flush();
+    expect(transport.acks.filter((a) => a.event === 'client.offer_seen')).toHaveLength(1);
+    expect(httpOfferSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('a completed resync is measured as sync_completed (15 §8)', async () => {
+    const telemetry = await import('@/lib/telemetry');
+    telemetry.resetTelemetry();
+    telemetry.startTelemetry({ userId: 'u-engine', deviceId: null });
+    engine.start();
+    env.t += 1200;
+    await finishResync();
+    const synced = telemetry.telemetryQueue().filter((e) => e.name === 'sync_completed');
+    expect(synced).toHaveLength(1);
+    expect(synced[0]?.properties).toMatchObject({ sync_reason: 'startup', duration_ms: 1200 });
+    telemetry.resetTelemetry();
+  });
+
   it('a refused handshake (AUTH_*) is handed to the app to check the session, then tried again', async () => {
     const checkSession = vi.fn();
     engine.stop();

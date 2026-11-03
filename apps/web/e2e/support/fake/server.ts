@@ -92,6 +92,7 @@ const NOT_REQUIRED = [
   /^\/v1\/me\/devices/,
   /^\/v1\/me\/audio-test$/,
   /^\/v1\/me\/heartbeat$/,
+  /^\/v1\/telemetry$/, // not a command (DEC-149)
 ];
 
 export const STORAGE_PREFIX = '/__e2e_storage/';
@@ -111,6 +112,8 @@ export class FakeServer {
   /** Uploaded objects by media id (the fake private object storage). */
   readonly storage = new Map<string, { bytes: Buffer; contentType: string }>();
   readonly devices = new Map<string, FDevice>();
+  /** Every batch of `POST /v1/telemetry` (15 §9), with the session's user. */
+  readonly telemetry: Array<{ userId: string | null; body: Record<string, unknown> }> = [];
   /** `POST /v1/incidents` from the driver screens (D-10 «إبلاغ عن مشكلة», D-11, D-13 «إبلاغ عن واقعة»). */
   readonly incidents: Array<Record<string, unknown>> = [];
   /** The WhatsApp side (link codes, provider answers, the customer's actions): set by the driver routes. */

@@ -11,7 +11,8 @@ import {
   requestNotifications,
   type NotificationCheck,
 } from '@/lib/deviceChecks';
-import { existingSubscription, subscribePush } from '@/lib/push';
+import { existingSubscription, pushSupported, subscribePush, vapidPublicKey } from '@/lib/push';
+import { track } from '@/lib/telemetry';
 
 /**
  * The device's notification permission and Web Push subscription, shared by the driver shell (D-03, D-14,
@@ -50,7 +51,11 @@ export function usePushRelink(me: Me, missing: boolean): void {
   }, [deviceId, missing, qc]);
 }
 
-export function useNotificationSetup(me: Me): {
+export function useNotificationSetup(
+  me: Me,
+  /** 15 §8 `notification_permission_changed.context`: D-03, D-14 / the staff menu, or a banner. */
+  context: 'duty_start' | 'account' | 'banner' = 'account',
+): {
   check: NotificationCheck;
   pending: boolean;
   enable: () => void;
@@ -66,12 +71,21 @@ export function useNotificationSetup(me: Me): {
   // from the tap only: requestPermission() runs before the first await (05 §15.3, PNT-070 acceptance 2)
   const enable = () => {
     setPending(true);
+    const before = permissionForServer(notificationCheck());
     void requestNotifications()
       .then(async (next) => {
         setCheck(next);
+        const after = permissionForServer(next);
+        if (after !== before) track('notification_permission_changed', { from: before, to: after, context });
         let subscription: PushSubscriptionBody | null = null;
         if (next === 'on') subscription = await subscribePush();
         setSubscribed(next === 'on' ? !!subscription : null);
+        // 15 §8 push_subscription_changed: only where this build can push at all (a key, a worker, the API)
+        if (next === 'on' && vapidPublicKey() && pushSupported())
+          track(
+            'push_subscription_changed',
+            subscription ? { status: 'subscribed' } : { status: 'failed', error_name: 'unknown' },
+          );
         if (!deviceId) return;
         await updateDevice(
           deviceId,
