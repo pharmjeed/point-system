@@ -10538,7 +10538,7 @@ components:
         pending_retrieval_at:
           type: [string, 'null']
           format: date-time
-          description: طلب مبكر ينتظر انتهاء الصف (received/parking/reparking، DEC-13)؛ يقرؤه السائق من الحالة أيًا كان cause المدمج في ticket.updated (DEC-265، 14 §5.1). في TicketSummary يُرسل فقط حين يكون مضبوطًا (غيابه = لا طلب مبكر)، فلا يرفض إطار ticket.updated عميلٌ بُني قبل الحقل؛ وTicketDetail يحمله دائمًا
+          description: طلب مبكر ينتظر انتهاء الصف (received/parking/reparking، DEC-13)؛ يقرؤه السائق من الحالة أيًا كان cause المدمج في ticket.updated (DEC-265، DEC-450، 14 §5.1). في TicketSummary يُرسل فقط حين يكون مضبوطًا (غيابه = لا طلب مبكر)، فلا يرفض إطار ticket.updated عميلٌ بُني قبل الحقل؛ وTicketDetail يحمله دائمًا
         created_at:
           type: string
           format: date-time
@@ -10884,7 +10884,7 @@ components:
         ready_at:
           type: [string, 'null']
           format: date-time
-          description: وقت جاهزية دورة الإحضار (retrieval_cycles.ready_at)، وnull قبلها أو لمهمة صف (D-04، DEC-348)
+          description: وقت جاهزية دورة الإحضار (retrieval_cycles.ready_at)، وnull قبلها أو لمهمة صف (D-04، DEC-348، DEC-448)
         waiting_seconds:
           type: [integer, 'null']
         payment_due:
