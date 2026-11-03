@@ -1005,7 +1005,7 @@
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
   "date": "2026-10-29",
-  "note": "web part done: SW push handler (payload v1, tags, quiet replacement), subscription via PUT /v1/me/devices, in-page alert mode when refused (AC-22); real-device checks remain (PNT-099)"
+  "note": "web part done (SW push, subscription for drivers and staff, in-page alert mode, AC-22 e2e); real-device checks remain (PNT-099)"
  },
  {
   "ticket": "PNT-073",
@@ -1018,8 +1018,8 @@
   "weight": 2,
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
-  "date": "2026-10-29",
-  "note": "G3: race suite and AC-04/14/15/17/21/22 automated; the first AC-08 recordings on real iOS/Android devices are the owner's (PNT-099)"
+  "date": "2026-11-03",
+  "note": "G3: automated part passed — AC-04/14/15/17/21/22 green incl. TC-042 (broadcast claimed, the other three cards gone within 3 s, p95 ≈ 70 ms) and the race suite (docs/progress/G3.md); the first AC-08 recordings on real iOS/Android devices are the owner's (PNT-099)"
  },
  {
   "ticket": "PNT-074",
@@ -1438,7 +1438,7 @@
   "weight": 1,
   "status": "in_progress",
   "status_ar": "قيد التنفيذ",
-  "date": "2026-10-29",
-  "note": "G5 go-live checklist ready (AC evidence, owner actions); readiness gaps GAP-1…GAP-9 being closed; sign-off pending"
+  "date": "2026-11-03",
+  "note": "G5 checklist current: GAP-1…GAP-9 closed, AC evidence mapped (docs/runbooks/go-live-checklist.md); waits for the owner items (domain, hosting, Meta, devices, human rehearsal, sign-off)"
  }
 ]
