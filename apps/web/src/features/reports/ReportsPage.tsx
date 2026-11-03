@@ -65,6 +65,10 @@ function Reports({ me }: { me: Me }) {
   const [to, setTo] = useState(initial.to);
   const [exporting, setExporting] = useState(false);
   const period = periodToUtc(from, to);
+  // contract:F6: GET /v1/reports/payments requires from and to (07); a chosen event is reported over its
+  // Riyadh day — the server keeps the events whose day overlaps the period (DEC-288) —, otherwise the period
+  const chosen = eventId ? events.data?.items.find((e) => e.id === eventId) : undefined;
+  const paymentsPeriod = (chosen && periodToUtc(chosen.event_date, chosen.event_date)) || period;
   const filters: PeriodFilters = {
     venue_id: effectiveVenue || undefined,
     event_id: eventId || undefined,
@@ -131,7 +135,10 @@ function Reports({ me }: { me: Me }) {
       ) : null}
       <EventSummaryCard eventId={eventId || null} />
       <DriversCard filters={filters} enabled={!!period} />
-      <PaymentsCard filters={filters} enabled={!!period || !!eventId} />
+      <PaymentsCard
+        filters={{ ...filters, from: paymentsPeriod?.from, to: paymentsPeriod?.to }}
+        enabled={!!paymentsPeriod}
+      />
       <MessagesCard filters={filters} enabled={!!period} />
       {exporting ? <ExportDialog me={me} filters={filters} onClose={() => setExporting(false)} /> : null}
     </div>
