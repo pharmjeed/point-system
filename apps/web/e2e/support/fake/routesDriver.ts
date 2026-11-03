@@ -1546,6 +1546,9 @@ export function registerDriverRoutes(s: FakeServer): void {
     if (q && !digits) return page([]);
     const limit = Math.min(200, Math.max(1, Number(ctx.query.get('limit') ?? 50) || 50));
     const scope = venueId ? [venueId] : s.venueIdsInScope(u);
+    // ties on created_at (same millisecond) go to the later insert: the server's UUIDv7 ids sort by time, the fake's
+    // random ids do not
+    const inserted = new Map(w().tickets.map((t, i) => [t.id, i]));
     const rows = w()
       .tickets.filter((t) => scope.includes(t.venue_id))
       .filter((t) => !eventId || t.event_id === eventId)
@@ -1554,7 +1557,7 @@ export function registerDriverRoutes(s: FakeServer): void {
       .filter(
         (t) => !digits || (t.plate_digits ?? '').includes(digits) || String(t.display_number) === digits,
       )
-      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || inserted.get(b.id)! - inserted.get(a.id)!);
     const cursor = ctx.query.get('cursor');
     let start = 0;
     if (cursor) {
