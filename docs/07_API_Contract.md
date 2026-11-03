@@ -258,6 +258,7 @@ mfa_token غير معروف أو منتهٍ (5 دقائق) أو مستخدم ←
 
 - الصلاحية: `duty.self` · مفتاح التكرار: — · نجاح: `200`
 - الشروط: دور driver أو supervisor مع can_drive
+- الرد `DriverHome`؛ ومعه `shift {id, status, opened_at}` للوردية المفتوحة لمجموعة التوزيع أو `null` (D-03، DEC-347) و`settings` لقطة إعدادات الموقع الفعلية التي تحتاجها شاشات السائق ولا يقرؤها: `inspection.required_photos` و`inspection.max_extra_photos` (D-06) و`parking.mode` و`keys.require_slot` (D-08) و`dispatch.single_offer_ttl_s` (حلقة D-09)، بافتراضيات Canon §12 مكمّلة، أو `null` بلا موقع (DEC-346)
 - أخطاء خاصة: `ASSIGNMENT_REQUIRED`
 
 #### `POST /v1/me/devices` — تسجيل جهاز المستخدم

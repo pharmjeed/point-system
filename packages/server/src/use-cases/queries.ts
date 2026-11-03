@@ -22,6 +22,7 @@ import {
   findDefaultDispatchPool,
   findOpenShiftForPool,
   listVenueEventsByStatus,
+  venueSettingsFor,
 } from '../modules/venues-events/index.js';
 import { loadTaskCard } from './views.js';
 
@@ -179,7 +180,9 @@ export class TicketQueries {
     const poolId =
       dutyRow?.dispatch_pool_id ??
       (venueId ? ((await findDefaultDispatchPool(this.db, venueId))?.id ?? null) : null);
-    const shiftOpen = poolId ? !!(await findOpenShiftForPool(this.db, poolId)) : false;
+    const shift = poolId ? await findOpenShiftForPool(this.db, poolId) : null;
+    // DEC-346: the venue rules a driver screen needs but cannot read (no `venue.read`), canon §12 defaults completed
+    const vs = venue ? await venueSettingsFor(this.db, venue.id) : null;
     const state = await driverStateOf(this.db, actor.userId);
     const current = state?.active_task_id
       ? await loadTaskCard(this.db, state.active_task_id, viewer, now)
@@ -240,7 +243,20 @@ export class TicketQueries {
             transfer_id: assignment.transfer_id,
           }
         : null,
-      shift_open: shiftOpen,
+      shift_open: !!shift,
+      // DEC-347: D-03 «الوردية: مفتوحة منذ {وقت}»
+      shift: shift ? { id: shift.id, status: shift.status, opened_at: iso(shift.opened_at) } : null,
+      settings: vs
+        ? {
+            inspection: {
+              required_photos: vs.inspection.required_photos,
+              max_extra_photos: vs.inspection.max_extra_photos,
+            },
+            parking: { mode: vs.parking.mode },
+            keys: { require_slot: vs.keys.require_slot },
+            dispatch: { single_offer_ttl_s: vs.dispatch.single_offer_ttl_s },
+          }
+        : null,
       duty_session: dutyRow ? dutySessionView(dutyRow) : null,
       driver_state: state?.driver_state ?? 'off_duty',
       connection_state: dutyRow?.connection_state ?? null,

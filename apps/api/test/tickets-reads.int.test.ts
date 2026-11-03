@@ -88,6 +88,50 @@ describe('GET /v1/me/home — DriverHome (full sync snapshot)', () => {
     expect(h3).toMatchObject({ draft_ticket_id: draft.ticketId, driver_state: 'intake_parking' });
     expect(h3.current_task.task.type).toBe('park');
   });
+
+  it('the venue rules a driver screen needs (DEC-346) and the open shift with its open time (DEC-347)', async () => {
+    const defaults = ok(await t.get('/v1/me/home', 'DRV1'));
+    // canon §12 defaults when the venue stores nothing for these keys
+    expect(defaults.settings).toEqual({
+      inspection: {
+        required_photos: ['photo_front', 'photo_rear', 'photo_left', 'photo_right'],
+        max_extra_photos: 8,
+      },
+      parking: { mode: 'mixed' },
+      keys: { require_slot: true },
+      dispatch: { single_offer_ttl_s: 30 },
+    });
+    const prev = (await t.db.query(`SELECT settings FROM venues WHERE id = $1`, [RMS])).rows[0].settings;
+    await t.db.query(`UPDATE venues SET settings = $2 WHERE id = $1`, [
+      RMS,
+      JSON.stringify({
+        ...prev,
+        keys: { require_slot: false },
+        parking: { mode: 'assigned_spots' },
+        inspection: { required_photos: ['photo_front', 'photo_rear'], max_extra_photos: 2 },
+        dispatch: { single_offer_ttl_s: 45 },
+      }),
+    ]);
+    const h = ok(await t.get('/v1/me/home', 'DRV1'));
+    expect(h.settings).toEqual({
+      inspection: { required_photos: ['photo_front', 'photo_rear'], max_extra_photos: 2 },
+      parking: { mode: 'assigned_spots' },
+      keys: { require_slot: false },
+      dispatch: { single_offer_ttl_s: 45 },
+    });
+    const shift = (
+      await t.db.query<{ id: string; opened_at: Date }>(
+        `SELECT id, opened_at FROM shifts WHERE venue_id = $1 AND status = 'open'`,
+        [RMS],
+      )
+    ).rows[0]!;
+    expect(h.shift_open).toBe(true);
+    expect(h.shift).toEqual({ id: shift.id, status: 'open', opened_at: shift.opened_at.toISOString() });
+    // no open shift for the pool → shift null (and shift_open false)
+    await t.db.query(`UPDATE shifts SET status = 'closed', closed_at = now() WHERE id = $1`, [shift.id]);
+    const closed = ok(await t.get('/v1/me/home', 'DRV1'));
+    expect(closed).toMatchObject({ shift_open: false, shift: null });
+  });
 });
 
 describe('GET /v1/tickets and GET /v1/tickets/{ticketId}', () => {

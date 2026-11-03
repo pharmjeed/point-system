@@ -11907,6 +11907,49 @@ components:
         shift_open:
           type: boolean
           description: توجد وردية مفتوحة لمجموعة التوزيع
+        shift:
+          type: [object, 'null']
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              $ref: '#/components/schemas/ShiftStatus'
+            opened_at:
+              type: [string, 'null']
+              format: date-time
+          required: [id, status]
+          description: الوردية المفتوحة لمجموعة التوزيع (D-03 «الوردية مفتوحة منذ {وقت}»)، وnull بلا وردية مفتوحة (DEC-347)
+        settings:
+          type: [object, 'null']
+          properties:
+            inspection:
+              type: object
+              properties:
+                required_photos:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MediaKind'
+                max_extra_photos:
+                  type: integer
+                  minimum: 0
+            parking:
+              type: object
+              properties:
+                mode:
+                  $ref: '#/components/schemas/ParkingMode'
+            keys:
+              type: object
+              properties:
+                require_slot:
+                  type: boolean
+            dispatch:
+              type: object
+              properties:
+                single_offer_ttl_s:
+                  type: integer
+                  minimum: 10
+          description: إعدادات الموقع الفعلية (افتراضيات Canon §12 مكمّلة) التي تحتاجها شاشات السائق ولا يقرؤها (لا venue.read): D-06 وD-08 وحلقة D-09؛ null بلا موقع (DEC-346)
         duty_session:
           anyOf:
           - $ref: '#/components/schemas/DutySession'
