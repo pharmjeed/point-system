@@ -1,4 +1,5 @@
 import { recordServerTime } from '@/lib/serverClock';
+import { track } from '@/lib/telemetry';
 import {
   parseHeartbeatAck,
   parseServerEvent,
@@ -26,7 +27,8 @@ import {
  *   never overlap, a trigger during one runs another right after; only the server's state counts as a sync
  *   (a 5xx or a rate limit keeps the data stale and is tried again);
  * - frames are delivered at most once and in best-effort order: a duplicate `id` is dropped, and so is an
- *   update whose `aggregate.version` is not newer than the last one applied for that aggregate;
+ *   update whose `aggregate.version` is not newer than the last one applied for that aggregate (a
+ *   `ticket.updated` only when strictly older: the same version may carry a message or code state);
  * - `client.heartbeat` every `heartbeat.interval_s` with `{visible, audio_unlocked, last_event_id,
  *   app_version}`; without a socket the HTTP fallback `POST /v1/me/heartbeat` (drivers) with
  *   `ws_connected: false`; the ack's `server_time` corrects the countdown clock;
@@ -71,6 +73,12 @@ export interface EngineHooks {
    * (`GET /v1/me` → D-15 ج when it ended). `code` is the refusal's code (AUTH_* …) or `closed`.
    */
   checkSession?: (code: string) => void;
+  /**
+   * 15 §9.4: a round shown while the socket is down is reported in a `POST /v1/telemetry` batch
+   * (`offer_card_seen`, `via: sync`); the server fills `offer_recipients.seen_at` only while it is empty, so
+   * the two paths never count it twice (drivers only).
+   */
+  httpOfferSeen?: (offerId: string, receiveLatencyMs?: number) => void;
 }
 
 export interface EngineEnv {
@@ -108,6 +116,19 @@ const ACK_TIMEOUT_MS = 10_000;
 const MAX_SEEN = 500;
 /** A failed resync is tried again after this delay while nothing else triggers one. */
 export const RESYNC_RETRY_MS = 5000;
+
+/** The engine's resync triggers as the 15 §8 `sync_completed.sync_reason`. */
+const SYNC_REASON: Record<StaleReason, 'startup' | 'reconnect' | 'visibility' | 'sync_required' | 'manual'> =
+  {
+    start: 'startup',
+    reconnect: 'reconnect',
+    online: 'reconnect',
+    heartbeat_gap: 'reconnect',
+    foreground: 'visibility',
+    sync_required: 'sync_required',
+    invalid_event: 'sync_required',
+    manual: 'manual',
+  };
 /** A refused AUTH_* handshake is tried again after this delay (when the session is still valid). */
 export const AUTH_RETRY_MS = 15_000;
 /** Backoff of a reconnection Socket.IO will not make by itself: 1 s doubling to 15 s, ±50 % jitter. */
@@ -119,6 +140,8 @@ export class RealtimeEngine {
   private readonly seen = new Set<string>();
   private readonly versions = new Map<string, number>();
   private readonly offersSeen = new Set<string>();
+  /** Client time the data became stale (the first trigger since the last completed sync). */
+  private staleSince: number | null = null;
   private heartbeatTimer: unknown = null;
   private heartbeatEvery = 0;
   private retryTimer: unknown = null;
@@ -192,6 +215,7 @@ export class RealtimeEngine {
   /** Marks the data stale and reads the snapshot again (runs one resync at a time). */
   requestResync(reason: StaleReason): void {
     if (this.stopped) return;
+    this.staleSince ??= this.env.now();
     markStale(reason);
     if (this.resyncRunning) {
       this.resyncAgain = reason;
@@ -210,6 +234,8 @@ export class RealtimeEngine {
       while (reason && !this.stopped) {
         this.resyncAgain = null;
         const generation = beginSnapshot();
+        const startedAt = this.env.now();
+        const current = reason;
         let result: { ok: boolean; serverTime?: string | null };
         try {
           result = await this.hooks.resync(reason, signal);
@@ -218,7 +244,18 @@ export class RealtimeEngine {
         }
         // stopped while reading (sign-out, session end, another user): the answer belongs to nobody
         if (this.stopped || signal.aborted) return;
-        if (result.ok) completeSnapshot(generation, result.serverTime ?? null, this.env.now());
+        if (result.ok) {
+          const now = this.env.now();
+          if (completeSnapshot(generation, result.serverTime ?? null, now)) {
+            // 15 §8 sync_completed: the reason, how long the read took and how long the data was stale
+            track('sync_completed', {
+              sync_reason: SYNC_REASON[current],
+              duration_ms: Math.max(0, now - startedAt),
+              stale_ms: this.staleSince !== null ? Math.max(0, now - this.staleSince) : null,
+            });
+            this.staleSince = null;
+          }
+        }
         failed = !result.ok;
         reason = this.resyncAgain;
       }
@@ -296,7 +333,14 @@ export class RealtimeEngine {
     if (aggregate && aggregate.version !== null) {
       const key = `${aggregate.type}:${aggregate.id}`;
       const known = this.versions.get(key);
-      if (known !== undefined && aggregate.version <= known) return; // 07 §4.5
+      // 07 §4.5: an update not newer than the last one applied is dropped — except a `ticket.updated` at the
+      // version already applied: its causes (a W-01/W-05 delivery state, a wrong code, a resend, a lock, an
+      // incident) never write the tickets row, so it carries the same version with new message / code state;
+      // applying the same summary again is idempotent, and a repeated frame is already dropped by its id
+      // (DEC-PROPOSED-1 of int-web)
+      const sameAllowed = event.type === 'ticket.updated';
+      if (known !== undefined && (aggregate.version < known || (aggregate.version === known && !sameAllowed)))
+        return;
       this.versions.set(key, aggregate.version);
       if (this.versions.size > MAX_SEEN) {
         const first = this.versions.keys().next().value;
@@ -351,11 +395,19 @@ export class RealtimeEngine {
 
   /** `client.offer_seen` once per round actually shown (15 §9.4); best effort. */
   offerSeen(offerId: string, receiveLatencyMs?: number): void {
-    if (this.stopped || this.offersSeen.has(offerId) || !this.transport.connected) return;
+    if (this.stopped || this.offersSeen.has(offerId)) return;
+    const latency = receiveLatencyMs !== undefined ? Math.round(receiveLatencyMs) : undefined;
+    if (!this.transport.connected) {
+      // the socket is down (or not up yet): the telemetry batch carries it, and retries it (contract:F5)
+      if (!this.hooks.httpOfferSeen) return;
+      this.offersSeen.add(offerId);
+      this.hooks.httpOfferSeen(offerId, latency);
+      return;
+    }
     this.offersSeen.add(offerId);
     const payload =
-      receiveLatencyMs !== undefined && receiveLatencyMs >= 0
-        ? { offer_id: offerId, receive_latency_ms: Math.round(receiveLatencyMs) }
+      latency !== undefined && latency >= 0
+        ? { offer_id: offerId, receive_latency_ms: latency }
         : { offer_id: offerId };
     void this.transport.ack('client.offer_seen', payload, ACK_TIMEOUT_MS).catch(() => {
       this.offersSeen.delete(offerId); // try again when the card is shown next time

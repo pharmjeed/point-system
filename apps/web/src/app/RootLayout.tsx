@@ -1,7 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router';
-import { onApiError, onApiSuccess } from '@/api/client';
+import { freshServerTime, onApiError, onApiSuccess } from '@/api/client';
+import { stopTelemetry, track } from '@/lib/telemetry';
 import { queryKeys } from '@/api/queryClient';
 import type { Me } from '@/api/types';
 import { currentOwner, detachDrafts, forgetUserDrafts } from '@/features/driver/intakePersistence';
@@ -45,7 +46,8 @@ export function RootLayout() {
   useEffect(
     () =>
       onApiSuccess(({ meta }) => {
-        markSynced(meta.server_time);
+        const fresh = freshServerTime(meta); // a replayed answer is not a sync time (realtime:RT-4)
+        if (fresh) markSynced(fresh);
         noteContact(); // any reply confirms the connection (02 §1.3 indicator)
       }),
     [markSynced],
@@ -63,6 +65,7 @@ export function RootLayout() {
           const userId = qc.getQueryData<Me>(queryKeys.me)?.user.id ?? currentOwner();
           endSession(end);
           stopRealtime(); // 02 D-15 ج: the realtime connection closes, the local snapshots are dropped
+          stopTelemetry();
           resetHomeRegistry();
           qc.clear();
           if (end.reason === 'transfer' || end.reason === 'disabled')
@@ -93,7 +96,13 @@ export function RootLayout() {
   // notification itself is never trusted
   useEffect(() => {
     const onClick = (event: Event) => {
-      const url = (event as CustomEvent<{ url?: string }>).detail?.url;
+      const detail = (event as CustomEvent<{ url?: string; kind?: unknown; age_ms?: unknown }>).detail;
+      const url = detail?.url;
+      // 15 §8 push_notification_clicked (DEC-390): the worker's `kind` and `age_ms`, checked by the catalog
+      track('push_notification_clicked', {
+        kind: typeof detail?.kind === 'string' ? detail.kind : null,
+        age_ms: typeof detail?.age_ms === 'number' ? Math.max(0, Math.round(detail.age_ms)) : null,
+      });
       if (url && url.startsWith('/') && url !== window.location.pathname) navigate(url);
       requestResync('foreground');
     };

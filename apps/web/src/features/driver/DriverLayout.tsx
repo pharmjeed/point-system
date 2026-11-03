@@ -10,6 +10,7 @@ import { RequireDriver } from '@/app/guards';
 import { hasOpenDuty, paths } from '@/app/paths';
 import { AppShell, Banner, BottomNav, EmptyState, ToastViewport, TopBar, type NavItem } from '@/components';
 import { useBrand } from '@/hooks/useMe';
+import { usePageHiddenTelemetry, useTelemetry } from '@/hooks/useTelemetry';
 import { useThemeArea } from '@/hooks/useThemeArea';
 import { buttons, d07, d08, d15, live, nav } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
@@ -197,8 +198,9 @@ function DriverNotices({ home }: { home: DriverHome | undefined }) {
 
 /**
  * 02 D-15 ح — «النظام غير متاح مؤقتًا. اتبع الإجراء الورقي حتى عودة الخدمة.» with «إعادة المحاولة», the
- * full screen while the snapshot answers SERVICE_UNAVAILABLE; the next read that succeeds (the retry, the
- * resync retries, the polling) brings the screens back with their drafts.
+ * full screen once the snapshot keeps answering SERVICE_UNAVAILABLE (SERVICE_DOWN_AFTER_MS); the screen under
+ * it stays mounted, so the next read that succeeds (the retry, the resync retries, the polling) brings it back
+ * with what was typed.
  */
 function ServiceUnavailable() {
   const qc = useQueryClient();
@@ -271,12 +273,14 @@ export function DriverFrame({ me, withNav, children }: { me: Me; withNav: boolea
   const brand = useBrand();
   const connection = useConnection();
   useRealtime('driver', me);
+  useTelemetry(me); // 15 §8 measurements of this session (decisions:F5)
   const home = useDriverHome().data;
   const wakeLockPref = usePrefs((s) => s.wakeLock);
   const serviceDown = useSyncStore((s) => s.serviceDown);
   const onHome = !!useMatch({ path: paths.driverHome, end: true });
   const onDuty = hasOpenDuty(me);
   useScreenWakeLock(onDuty && wakeLockPref);
+  usePageHiddenTelemetry(onDuty, home);
   useOfferAlerts(onDuty ? home?.offer : null);
   useReportBlockedAudio(me);
   useLocalIntake(me, home);
@@ -306,7 +310,15 @@ export function DriverFrame({ me, withNav, children }: { me: Me; withNav: boolea
       toast={<ToastViewport aboveNav={withNav && !serviceDown} />}
       bottomNav={withNav && !serviceDown ? <BottomNav items={driverNav(onDuty ? home : undefined)} /> : null}
     >
-      {serviceDown ? <ServiceUnavailable /> : children}
+      {serviceDown ? <ServiceUnavailable /> : null}
+      {/* the screen under D-15 ح stays mounted (hidden, inert): D-08 / D-11 keep what was typed */}
+      <div
+        style={{ display: serviceDown ? 'none' : 'contents' }}
+        aria-hidden={serviceDown || undefined}
+        inert={serviceDown || undefined}
+      >
+        {children}
+      </div>
       {serviceDown ? null : <FramePromotion />}
       <ConnectionSheet
         open={sheetOpen}

@@ -88,15 +88,20 @@ function ticketEventLine(e: TicketEvent, labels: Map<string, string>): string {
     case 'ticket.wa_link_changed': {
       const status = str(data.wa_link_status) ?? str(data.to);
       const label = status ? (waLinkStatus as Record<string, string>)[status] : null;
-      return label ? fmt(ticketEventText['ticket.wa_link_changed'], { status: label }) : e.type;
+      return label
+        ? fmt(ticketEventText['ticket.wa_link_changed'], { status: label })
+        : ticketEventText['ticket.wa_link_changed'].replace(/:\s*\{status\}/, '');
     }
     case 'ticket.photo_uploaded': {
       const kind = str(data.kind);
       const label = kind ? (mediaKind as Record<string, string>)[kind] : null;
-      return label ? fmt(ticketEventText['ticket.photo_uploaded'], { kind: label }) : e.type;
+      return label
+        ? fmt(ticketEventText['ticket.photo_uploaded'], { kind: label })
+        : ticketEventText['ticket.photo_uploaded'].replace(/\s*\{kind\}/, '');
     }
     default:
-      return (ticketEventText as Record<string, string>)[e.type] ?? e.type;
+      // never the raw key on the Arabic screen (decisions:F4)
+      return (ticketEventText as Record<string, string>)[e.type] ?? ticketEventText.other;
   }
 }
 
@@ -142,6 +147,9 @@ export function layoutLabels(detail?: TicketDetail | null): Map<string, string> 
   return labels;
 }
 
+/** ticket_events rows shown from their own lists (the custody chain, the WhatsApp messages). */
+const DUPLICATED_TYPES: ReadonlySet<string> = new Set(['custody.changed', 'wa.message_status_changed']);
+
 /** Merged timeline for the `Timeline` component, newest first. */
 export function buildTimeline(
   timeline: TicketTimeline,
@@ -150,7 +158,10 @@ export function buildTimeline(
 ): TimelineEvent[] {
   const people = peopleIndex(detail, timeline);
   const out: Stamped[] = [];
-  for (const e of timeline.events)
+  for (const e of timeline.events) {
+    // the custody chain and the messages are their own lines below (timeline.custody / .messages): their
+    // ticket_events rows would repeat them (decisions:F4)
+    if (DUPLICATED_TYPES.has(e.type)) continue;
     out.push({
       at: Date.parse(e.occurred_at),
       item: {
@@ -160,6 +171,7 @@ export function buildTimeline(
         time: formatTime(e.occurred_at),
       },
     });
+  }
   for (const c of timeline.custody)
     out.push({
       at: Date.parse(c.occurred_at),

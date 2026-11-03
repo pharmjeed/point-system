@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HANDOVER_EVENT_TYPES, TASK_EVENT_TYPES, TICKET_EVENT_TYPES } from '@shared/canon/events';
 import type { TicketTimeline } from '@/api/types';
 import { stripBidiMarks } from '@/lib/format';
 import {
@@ -160,5 +161,87 @@ describe('S-03 timeline', () => {
       ['s-1', 'B-07'],
       ['k-1', '31'],
     ]);
+  });
+});
+
+describe('S-03 timeline texts for every ticket_events.type (decisions:F4, 02 §8.6, DEC-323)', () => {
+  const timeline = (events: Array<{ type: string; data?: Record<string, unknown> }>, extra = {}) =>
+    ({
+      ticket: ticketSummary(),
+      events: events.map((e, i) => ({
+        id: i + 1,
+        type: e.type,
+        actor_type: 'user',
+        actor_id: null,
+        ticket_version: 1,
+        data: e.data ?? {},
+        occurred_at: new Date(Date.parse('2026-10-29T17:00:00Z') + i * 1000).toISOString(),
+      })),
+      custody: [],
+      cycles: [],
+      tasks: [],
+      messages: [],
+      payments: [],
+      incidents: [],
+      ...extra,
+    }) as TicketTimeline;
+
+  const latin = /[a-z]/i;
+
+  it('task.*, handover.*, payment.* and incident.* rows are Arabic lines, never the raw type', () => {
+    const types = [
+      ...TASK_EVENT_TYPES,
+      ...HANDOVER_EVENT_TYPES,
+      'payment.recorded',
+      'payment.reversed',
+      'payment.waived',
+      'incident.opened',
+      'incident.updated',
+      'incident.resolved',
+      ...TICKET_EVENT_TYPES,
+    ];
+    const items = buildTimeline(timeline(types.map((type) => ({ type }))));
+    expect(items).toHaveLength(types.length);
+    for (const item of items) {
+      expect(types).not.toContain(item.text);
+      expect(item.text, item.text).not.toMatch(latin);
+    }
+  });
+
+  it('an unknown type, or data a template cannot fill, gets a generic Arabic line', () => {
+    const items = buildTimeline(
+      timeline([
+        { type: 'ticket.something_new' },
+        { type: 'ticket.wa_link_changed' },
+        { type: 'ticket.photo_uploaded' },
+      ]),
+    );
+    expect(items).toHaveLength(3);
+    for (const item of items) expect(item.text).not.toMatch(latin);
+  });
+
+  it('custody.changed and wa.message_status_changed rows are not repeated: the custody and message lines carry them', () => {
+    const items = buildTimeline(
+      timeline(
+        [{ type: 'custody.changed' }, { type: 'wa.message_status_changed' }, { type: 'ticket.parked' }],
+        {
+          custody: [
+            {
+              id: 'c-1',
+              ticket_id: 't-1',
+              subject: 'vehicle',
+              from_holder_type: 'driver',
+              from_holder_id: 'd-1',
+              to_holder_type: 'spot',
+              to_holder_id: 'spot-3',
+              reason: 'parked',
+              actor: { id: 'd-1', full_name: 'خالد' },
+              occurred_at: '2026-10-29T17:00:00Z',
+            },
+          ],
+        },
+      ),
+    );
+    expect(items.map((i) => i.kind).sort()).toEqual(['custody', 'ticket']);
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+  apiError,
   EVENT_ID,
   eventFixture,
   KHALID,
@@ -18,9 +19,13 @@ import { runOnlyAt390 } from './support/checks';
  */
 runOnlyAt390();
 
+/** The query of every `GET /v1/reports/payments` of the last `mockReports`. */
+let paymentQueries: URLSearchParams[] = [];
+
 /** Registers the report reads; returns the query of every `GET /v1/reports/drivers`. */
 function mockReports(api: MockApi): URLSearchParams[] {
   const driverQueries: URLSearchParams[] = [];
+  paymentQueries = [];
   const drivers = ok([
     {
       driver: KHALID,
@@ -51,16 +56,22 @@ function mockReports(api: MockApi): URLSearchParams[] {
       `/v1/venues/${VENUE_ID}/events`,
       ok([eventFixture(), eventFixture({ id: 'e-old', name_ar: 'حفل آل ناصر', status: 'closed' })]),
     )
-    .on(
-      'GET',
-      '/v1/reports/payments',
-      ok({
-        from: '',
-        to: '',
+    .on('GET', '/v1/reports/payments', (req) => {
+      const query = new URL(req.url()).searchParams;
+      paymentQueries.push(query);
+      // the server's strict query (07 getPaymentsReport): from and to are required (contract:F6)
+      const missing = ['from', 'to'].filter((k) => !query.get(k));
+      if (missing.length)
+        return apiError('VALIDATION_FAILED', 422, {
+          details: { fields: missing.map((field) => ({ field, issue: 'invalid_type' })) },
+        });
+      return ok({
+        from: query.get('from'),
+        to: query.get('to'),
         totals: { cash_halalas: 50000, pos_halalas: 40000, waived: 1, reversed: 0, outstanding: 1 },
         rows: [],
-      }),
-    )
+      });
+    })
     .on(
       'GET',
       '/v1/reports/messages',
@@ -150,6 +161,21 @@ test('cards follow the filters; the period goes as Riyadh days in UTC', async ({
   await expect(summary).toContainText('40');
   await expect(summary).toContainText('الدورات الملغاة (منفصلة)');
   await expect(summary).toContainText('p90 0:55');
+  // contract:F6: with the period invalid, the chosen event's Riyadh day is the payments period (DEC-288)
+  const payments = page.getByRole('region', { name: 'التحصيل' });
+  await expect.poll(() => paymentQueries.at(-1)?.get('event_id')).toBe(EVENT_ID);
+  const day = eventFixture().event_date;
+  const pq = paymentQueries.at(-1);
+  expect(pq?.get('from')).toBe(new Date(Date.parse(`${day}T00:00:00+03:00`)).toISOString());
+  expect(pq?.get('to')).toBe(new Date(Date.parse(`${day}T00:00:00+03:00`) + 86_400_000).toISOString());
+  await expect(payments).toContainText('500.00');
+  await expect(payments).not.toContainText('تحقّق من الحقول المحددة.');
+  // no event and an invalid period: the card waits for a valid period, nothing is asked
+  await page.locator('#reports-event').selectOption('');
+  const asked = paymentQueries.length;
+  await expect(payments).not.toContainText('تحقّق من الحقول المحددة.');
+  expect(paymentQueries.slice(asked).every((q) => q.get('from') && q.get('to'))).toBe(true);
+  expect(paymentQueries.every((q) => q.get('from') && q.get('to'))).toBe(true);
 });
 
 test('«تصدير CSV» posts the export, then polls until the download link is ready', async ({ page }) => {

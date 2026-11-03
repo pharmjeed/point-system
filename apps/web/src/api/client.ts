@@ -55,6 +55,14 @@ export function onApiError(listener: ErrorListener): () => void {
 }
 
 /** Every successful reply (used for "last sync" and the connection indicator). */
+/**
+ * The reply's server time when it is fresh, null for a replayed answer (07 §1.4 `meta.replayed`): its
+ * `server_time` is the first attempt's, so it never moves the clock nor «آخر مزامنة» (realtime:RT-4).
+ */
+export function freshServerTime(meta: Meta): string | null {
+  return meta.replayed === true ? null : meta.server_time;
+}
+
 export function onApiSuccess(listener: SuccessListener): () => void {
   successListeners.add(listener);
   return () => successListeners.delete(listener);
@@ -196,12 +204,16 @@ export async function apiFetch<T>(
   }
 
   const envelope = (parsed ?? {}) as Partial<Envelope<T>>;
+  const replayed = envelope.meta?.replayed === true || response.headers.get('Idempotent-Replayed') === 'true';
   const meta: Meta = {
     request_id: envelope.meta?.request_id ?? requestIdHeader ?? '',
     server_time: envelope.meta?.server_time ?? new Date().toISOString(),
     ...envelope.meta,
+    ...(replayed ? { replayed: true } : {}),
   };
-  recordServerTime(envelope.meta?.server_time);
+  // 07 §1.4: a replay carries the first attempt's stored server_time (up to the key's retention old), so it
+  // never corrects the countdown clock (02 §1.7); a replay still confirms the connection
+  if (!replayed) recordServerTime(envelope.meta?.server_time);
   emitSuccess({ ...event, meta });
   return { data: envelope.data as T, meta, status: response.status };
 }

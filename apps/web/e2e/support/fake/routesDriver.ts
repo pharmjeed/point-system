@@ -857,6 +857,17 @@ export function registerDriverRoutes(s: FakeServer): void {
     return ok({ server_time: now(), connection_state: 'online', sync_required: false });
   });
 
+  // `POST /v1/telemetry` (15 §9): batches of client measurements, 202 without a body; not a command (DEC-149)
+  s.on('POST /v1/telemetry', (ctx) => {
+    const u = s.need(ctx, 'auth.self');
+    const body = (ctx.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.events) || !body.events.length || body.events.length > 50)
+      validation([{ field: 'events', issue: 'invalid' }]);
+    if (typeof body.app_version !== 'string') validation([{ field: 'app_version', issue: 'required' }]);
+    s.telemetry.push({ userId: u.id, body });
+    return { status: 202, body: undefined };
+  });
+
   // ---------------------------------------------------------------- intake (07 §2.2)
 
   s.on('POST /v1/tickets', (ctx) => {
@@ -1710,7 +1721,11 @@ export function registerDriverRoutes(s: FakeServer): void {
     state(task.status, ['accepted']);
     s.checkVersion('task', task, ctx.body?.expected_version);
     if (task.key_picked_up_at) fail('INVALID_STATE_TRANSITION', { current_status: 'key_picked_up' });
-    if (!ctx.body?.key_slot_id || ctx.body.key_slot_id !== t.key_slot_id) fail('CUSTODY_HOLDER_MISMATCH');
+    // the server's strict body: key_slot_id is a uuid (a "" or a missing id is VALIDATION_FAILED, not custody)
+    const slotId: unknown = ctx.body?.key_slot_id;
+    if (typeof slotId !== 'string' || !/^[0-9a-f-]{36}$/i.test(slotId))
+      validation([{ field: 'key_slot_id', issue: slotId === undefined ? 'required' : 'invalid_format' }]);
+    if (slotId !== t.key_slot_id) fail('CUSTODY_HOLDER_MISMATCH');
     const slot = w().slots.find((x) => x.id === t.key_slot_id);
     custody(t, 'key', { type: 'driver', id: u.id }, 'key_pickup', u, task);
     if (slot) slot.ticket_id = null;

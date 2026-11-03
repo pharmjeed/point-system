@@ -13,6 +13,7 @@ import { closeShownNotifications } from '@/pwa/register';
 import { stopRealtime } from '@/realtime/manager';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
+import { flushTelemetry, stopTelemetry } from '@/lib/telemetry';
 
 /**
  * POST /v1/auth/logout, then clear every in-memory cache and go to D-01 / S-01 (02 D-14). A 401 means the
@@ -27,6 +28,8 @@ export function useLogout(area: 'driver' | 'staff') {
   const { guard, pending } = useSubmitGuard();
   const run = () =>
     guard(async () => {
+      // the session's measurements leave while it is still valid (bounded: never holds the sign-out up)
+      await Promise.race([flushTelemetry(), new Promise((r) => setTimeout(r, 1500))]);
       try {
         await logout();
       } catch (error) {
@@ -36,6 +39,7 @@ export function useLogout(area: 'driver' | 'staff') {
         }
       }
       stopRealtime();
+      stopTelemetry();
       resetHomeRegistry();
       // sign-out takes the local intake drafts of this user with it (03 §4.3, 05 §14; PNT-071)
       await forgetUserDrafts(qc.getQueryData<Me>(queryKeys.me)?.user.id);

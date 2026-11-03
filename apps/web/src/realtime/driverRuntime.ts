@@ -1,5 +1,6 @@
 import { api } from '@/api/client';
 import { isDefinitiveError } from '@/api/errors';
+import { getTicket } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type {
   DriverHome,
@@ -16,6 +17,7 @@ import { homeRegistry, loadHomeSnapshot, updateHome } from '@/features/driver/us
 import { d09 } from '@/i18n/ar';
 import { audioRunning, playSound, stopSound } from '@/lib/audio';
 import { recordServerTime } from '@/lib/serverClock';
+import { APP_VERSION, track } from '@/lib/telemetry';
 import { useFieldStore, type NoticeKind } from '@/stores/field';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -43,7 +45,7 @@ import { createSocketTransport } from './transport';
  * reserved next task (`next_due` + the dialog), a direct assignment or a repark (`next_due`), a withdrawal
  * (`reminder`), a cancel (no sound), an early request during parking (`reminder`).
  */
-export const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0';
+export { APP_VERSION };
 
 const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
 
@@ -104,6 +106,34 @@ export function driverEvents(options: AcquireOptions) {
     useUiStore.getState().pushToast({ message, tone });
   /** The newest ticket version seen per ticket: an older `ticket.updated` arriving late raises no notice. */
   const ticketVersions = new Map<string, number>();
+
+  /** Parking tasks whose early-request notice was raised (once per task, whichever path saw it first). */
+  const earlyNoticed = new Set<string>();
+  const earlyNotice = (parking: TaskCard) => {
+    if (earlyNoticed.has(parking.task.id)) return;
+    earlyNoticed.add(parking.task.id);
+    notice('early', parking);
+    void playSound('reminder', { key: `task:${parking.task.id}` });
+  };
+  /** Reads the parking ticket (joining a refetch in flight) and raises the notice if a request waits. */
+  const checkEarly = async (parking: TaskCard, version: number) => {
+    const before = qc.getQueryData<TicketDetail>(queryKeys.ticket(parking.ticket.id));
+    if (before && before.version >= version) {
+      if (before.pending_retrieval_at) earlyNotice(parking);
+      return;
+    }
+    try {
+      const detail = await qc.fetchQuery({
+        queryKey: queryKeys.ticket(parking.ticket.id),
+        queryFn: ({ signal }) => getTicket(parking.ticket.id, signal),
+        staleTime: 0,
+      });
+      const still = home()?.current_task?.task.id === parking.task.id;
+      if (still && detail.pending_retrieval_at) earlyNotice(parking);
+    } catch {
+      // the ticket screen and the next snapshot still show it (02 D-08 banner)
+    }
+  };
 
   /** `task.updated` with this driver's TaskCard (07 §4.3): its slot, then what 14 §3.1–§3.2 announce. */
   const onTaskCard = (payload: TaskCard & { cause?: string }, now: number) => {
@@ -210,16 +240,21 @@ export function driverEvents(options: AcquireOptions) {
           wa_link_pending?: WaLinkPending | null;
           message?: MessageState;
         };
-        // 14 §3.1 ticket.retrieval_requested_early: the parking driver's banner and `reminder`
-        const parking = home()?.current_task;
-        if (
-          cause === 'ticket.retrieval_requested_early' &&
-          parking &&
-          parking.ticket.id === summary.id &&
-          (parking.task.type === 'park' || parking.task.type === 'repark')
-        ) {
-          notice('early', parking);
-          void playSound('reminder', { key: `task:${parking.task.id}` });
+        // 14 §3.1 ticket.retrieval_requested_early: the parking driver's banner and `reminder`. DEC-265 merges a
+        // transaction's updates under its first ticket.* cause, so an early request after a resumed link comes
+        // as `ticket.wa_link_changed`: a newer version of the parking ticket is checked on the ticket itself
+        // (`pending_retrieval_at`), once per parking task (decisions:F6)
+        const current = home()?.current_task;
+        const parking =
+          current &&
+          current.ticket.id === summary.id &&
+          (current.task.type === 'park' || current.task.type === 'repark')
+            ? current
+            : null;
+        if (parking && cause === 'ticket.retrieval_requested_early') earlyNotice(parking);
+        else if (parking && !earlyNoticed.has(parking.task.id)) {
+          const known = Math.max(ticketVersions.get(summary.id) ?? 0, parking.ticket.version);
+          if (summary.version > known) void checkEarly(parking, summary.version);
         }
         updateHome(qc, (h) => applyTicketSummary(h, summary as TicketSummary, homeRegistry, now));
         const fresh = summary.version >= (ticketVersions.get(summary.id) ?? 0);
@@ -323,6 +358,24 @@ export function driverHooks(options: AcquireOptions): EngineHooks {
     // the server closed the socket or refused it: `GET /v1/me` tells whether the session ended (RootLayout →
     // D-15 ج, which stops the engine); if it did not, the engine connects again after its backoff
     checkSession: () => void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true }),
+    // 15 §9.4: the socket is down — the round on screen goes in a telemetry batch, sent at once (the reminder
+    // push targets recipients whose `seen_at` is still empty)
+    httpOfferSeen: (offerId, receiveLatencyMs) => {
+      const offer = qc.getQueryData<DriverHome>(queryKeys.home)?.offer;
+      const same = offer?.offer_id === offerId ? offer : null;
+      track(
+        'offer_card_seen',
+        {
+          offer_id: offerId,
+          via: 'sync',
+          mode: same?.mode,
+          eligible_as: same?.eligible_as,
+          receive_latency_ms: receiveLatencyMs,
+        },
+        { task_id: same?.task_id ?? null },
+        { flush: true },
+      );
+    },
   };
 }
 

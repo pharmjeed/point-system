@@ -1,20 +1,14 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { newIdempotencyKey } from '@/api/command';
-import { recordAudioTest, updateDevice, type PushSubscriptionBody } from '@/api/field';
-import { queryKeys } from '@/api/queryClient';
+import { recordAudioTest } from '@/api/field';
 import type { AudioTestResult, DriverHome, Me } from '@/api/types';
 import { Dialog } from '@/components';
 import { d03 } from '@/i18n/ar';
 import { runAudioTest } from '@/lib/audio';
-import {
-  displayMode,
-  notificationCheck,
-  permissionForServer,
-  requestNotifications,
-  type NotificationCheck,
-} from '@/lib/deviceChecks';
-import { existingSubscription, pushSupported, subscribePush, vapidPublicKey } from '@/lib/push';
+import { track } from '@/lib/telemetry';
+import { usePushRelink as useDevicePushRelink, useNotificationSetup } from '@/features/session/pushSetup';
+import type { NotificationCheck } from '@/lib/deviceChecks';
+import { pushSupported, vapidPublicKey } from '@/lib/push';
 import { heartbeatNow } from '@/realtime/manager';
 import { useFieldStore, type AudioCheck } from '@/stores/field';
 
@@ -25,7 +19,11 @@ import { useFieldStore, type AudioCheck } from '@/stores/field';
  * Results are recorded on the session's device (`Me.session.device_id`): `POST /v1/me/audio-test` and
  * `PUT /v1/me/devices/{deviceId}` with the permission, the display mode and the Web Push subscription.
  */
-export function useAudioCheck(me: Me): {
+export function useAudioCheck(
+  me: Me,
+  /** 15 §8 `audio_test_completed.context`: D-03 (and D-04's untested line) or D-14. */
+  context: 'duty_start' | 'account' = 'duty_start',
+): {
   audio: AudioCheck;
   testedAt: string | null;
   test: () => void;
@@ -38,6 +36,7 @@ export function useAudioCheck(me: Me): {
   const deviceId = me.session.device_id ?? null;
 
   const record = (result: AudioTestResult) => {
+    track('audio_test_completed', { result, audio_api: 'web_audio', context });
     if (deviceId)
       void recordAudioTest({ device_id: deviceId, result }, newIdempotencyKey()).catch(() => undefined);
   };
@@ -95,70 +94,12 @@ export function pushNotReaching(
   );
 }
 
-/** Devices whose existing subscription was sent again in this app session. */
-const relinked = new Set<string>();
-
 /**
- * PNT-072: every sign-in links a new `devices` row with no push endpoint, so a driver who granted the
- * permission once would stop receiving Web Push from his second shift on. The frame sends the subscription
- * this browser already holds to the session's device — no permission prompt and no new subscription (14
- * §6.4.1: those come from a tap only) — when the snapshot says the server has none.
+ * PNT-072: the frame re-links the subscription this browser already holds when the snapshot says the server
+ * has none for the session's device (the shared hook, also used by the staff frame).
  */
 export function usePushRelink(me: Me, home: DriverHome | undefined): void {
-  const qc = useQueryClient();
-  const deviceId = me.session.device_id ?? null;
-  const missing = home?.checks.push_enabled === false;
-  useEffect(() => {
-    if (!deviceId || !missing || relinked.has(deviceId) || notificationCheck() !== 'on') return;
-    relinked.add(deviceId);
-    void (async () => {
-      const subscription = await existingSubscription();
-      if (!subscription) return; // none yet: D-03 / D-14 offer «إعداد»
-      await updateDevice(
-        deviceId,
-        { notification_permission: 'granted', display_mode: displayMode(), push_subscription: subscription },
-        newIdempotencyKey(),
-      );
-      void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true }); // checks.push_enabled
-    })().catch(() => relinked.delete(deviceId)); // offline: the next snapshot tries again
-  }, [deviceId, missing, qc]);
+  useDevicePushRelink(me, home?.checks.push_enabled === false);
 }
 
-export function useNotificationSetup(me: Me): {
-  check: NotificationCheck;
-  pending: boolean;
-  enable: () => void;
-  /** Whether the last setup sent a subscription (PNT-072). */
-  subscribed: boolean | null;
-} {
-  const qc = useQueryClient();
-  const [check, setCheck] = useState<NotificationCheck>(() => notificationCheck());
-  const [pending, setPending] = useState(false);
-  const [subscribed, setSubscribed] = useState<boolean | null>(null);
-  const deviceId = me.session.device_id ?? null;
-
-  // from the tap only: requestPermission() runs before the first await (05 §15.3, PNT-070 acceptance 2)
-  const enable = () => {
-    setPending(true);
-    void requestNotifications()
-      .then(async (next) => {
-        setCheck(next);
-        let subscription: PushSubscriptionBody | null = null;
-        if (next === 'on') subscription = await subscribePush();
-        setSubscribed(next === 'on' ? !!subscription : null);
-        if (!deviceId) return;
-        await updateDevice(
-          deviceId,
-          {
-            notification_permission: permissionForServer(next),
-            display_mode: displayMode(),
-            ...(subscription ? { push_subscription: subscription } : {}),
-          },
-          newIdempotencyKey(),
-        ).catch(() => undefined);
-        void qc.invalidateQueries({ queryKey: queryKeys.home, exact: true }); // checks.push_enabled
-      })
-      .finally(() => setPending(false));
-  };
-  return { check, pending, enable, subscribed };
-}
+export { useNotificationSetup };

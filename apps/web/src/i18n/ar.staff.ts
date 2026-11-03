@@ -332,6 +332,34 @@ export const ticketEventText = {
   'ticket.inspection_exception_approved': 'اعتماد استثناء الفحص',
   'ticket.manually_reconciled': 'مطابقة يدوية',
   'ticket.photo_uploaded': 'رفع صورة {kind}',
+  // the other ticket-scoped rows of ticket_events (11 §1.6, DEC-186, DEC-210 TT-19): 02 §8.6 has no text for
+  // them — DEC-PROPOSED-2 of docs/progress/notes/int-web.md (decisions:F4)
+  'task.created': 'إنشاء مهمة',
+  'task.offered': 'عرض الطلب على سائق',
+  'task.broadcast_opened': 'فتح البث لكل السائقين',
+  'task.broadcast_extended': 'تمديد البث',
+  'task.claimed': 'قبول المهمة',
+  'task.promoted': 'بدء المهمة المحجوزة',
+  'task.key_picked_up': 'استلام المفتاح من الخانة',
+  'task.started': 'بدء المهمة',
+  'task.completed': 'إتمام المهمة',
+  'task.canceled': 'إلغاء المهمة',
+  'task.withdrawn': 'سحب المهمة من السائق',
+  'task.reassigned': 'إعادة إسناد المهمة',
+  'task.escalated': 'تصعيد للمشرف: لم يُقبل الطلب',
+  'handover.code_issued': 'إصدار رمز التسليم',
+  'handover.code_attempt_failed': 'محاولة رمز تسليم خاطئة',
+  'handover.code_locked': 'قفل رمز التسليم بعد المحاولات',
+  'handover.completed': 'إتمام التسليم',
+  'handover.exception_approved': 'اعتماد تسليم استثنائي',
+  'payment.recorded': 'تسجيل التحصيل',
+  'payment.reversed': 'عكس التحصيل',
+  'payment.waived': 'إعفاء من الرسوم',
+  'incident.opened': 'فتح بلاغ',
+  'incident.updated': 'تحديث بلاغ',
+  'incident.resolved': 'حل بلاغ',
+  /** A type the client does not know yet (never the raw key on the Arabic screen). */
+  other: 'تحديث على التذكرة',
 } as const;
 
 /** S-02 — لوحة التشغيل */

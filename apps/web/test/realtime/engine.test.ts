@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_RETRY_MS, RealtimeEngine, type EngineHooks } from '@/realtime/engine';
+import { parseServerEvent } from '@/realtime/protocol';
 import { noteContact, resetSync, useSyncStore } from '@/realtime/syncStore';
 import { clockOffsetMs, recordServerTime } from '@/lib/serverClock';
 import { envelope, FakeEnv, FakeTransport, flush } from './engineFakes';
@@ -118,6 +119,55 @@ describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
     expect(events).toHaveLength(4);
   });
 
+  it('ticket.updated at the version already applied is delivered (message / code state); older ones drop', async () => {
+    // contract:F4, decisions:F3, realtime:RT-1: a W-01/W-05 delivery state, a wrong code, a resend or an
+    // incident never write the tickets row, so their ticket.updated carries the version already applied
+    engine.start();
+    await finishResync();
+    const ticket = (version: number, extra: Record<string, unknown> = {}) =>
+      envelope(
+        'ticket.updated',
+        {
+          id: IDS.ticketA,
+          display_number: 12,
+          event_id: IDS.event,
+          venue_id: IDS.venue,
+          status: 'ready',
+          channel: 'whatsapp',
+          plate: {
+            country: 'SA',
+            digits: '1234',
+            letters_ar: 'ب ح د',
+            letters_en: 'B J D',
+            display: '1234 ب ح د',
+          },
+          wa_link_status: 'linked',
+          payment_status: 'not_required',
+          version,
+          cause: 'ticket.ready',
+          ...extra,
+        },
+        { aggregate: { type: 'ticket', id: IDS.ticketA, version } },
+      );
+    transport.emit('ticket.updated', ticket(5));
+    const delivered = ticket(5, {
+      cause: 'wa.message_status_changed',
+      message: { id: IDS.offerA, purpose: 'W-05', status: 'delivered', status_rank: 2 },
+    });
+    expect(parseServerEvent('ticket.updated', delivered).ok).toBe(true);
+    transport.emit('ticket.updated', delivered);
+    transport.emit('ticket.updated', delivered); // the same frame again: dropped by id
+    transport.emit('ticket.updated', ticket(5, { cause: 'handover.code_issued' }));
+    transport.emit('ticket.updated', ticket(4, { cause: 'ticket.retrieval_requested' })); // strictly older
+    expect(events.map((e) => (e as unknown as { payload: { cause: string } }).payload.cause)).toEqual([
+      'ticket.ready',
+      'wa.message_status_changed',
+      'handover.code_issued',
+    ]);
+    transport.emit('ticket.updated', ticket(6, { cause: 'ticket.retrieval_requested' }));
+    expect(events).toHaveLength(4);
+  });
+
   it('a frame that fails its schema is never applied: a full resync instead', async () => {
     engine.start();
     await finishResync();
@@ -200,6 +250,37 @@ describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
     expect(seen).toEqual([
       { event: 'client.offer_seen', payload: { offer_id: IDS.offerA, receive_latency_ms: 420 } },
     ]);
+  });
+
+  it('while the socket is down, a round on screen goes through the HTTP telemetry fallback; never twice (15 §9.4, contract:F5)', async () => {
+    const httpOfferSeen = vi.fn();
+    engine.stop();
+    engine = new RealtimeEngine(transport, { ...hooks, httpOfferSeen }, env);
+    engine.start(); // the card rendered from the HTTP snapshot before the handshake
+    engine.offerSeen(IDS.offerA, 812.6);
+    engine.offerSeen(IDS.offerA, 900);
+    expect(httpOfferSeen.mock.calls).toEqual([[IDS.offerA, 813]]);
+    transport.up();
+    engine.offerSeen(IDS.offerA, 950); // the same round once connected: already reported
+    await flush();
+    expect(transport.acks.filter((a) => a.event === 'client.offer_seen')).toEqual([]);
+    engine.offerSeen(IDS.offerB, 100); // a new round with the socket up: the WebSocket path
+    await flush();
+    expect(transport.acks.filter((a) => a.event === 'client.offer_seen')).toHaveLength(1);
+    expect(httpOfferSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('a completed resync is measured as sync_completed (15 §8)', async () => {
+    const telemetry = await import('@/lib/telemetry');
+    telemetry.resetTelemetry();
+    telemetry.startTelemetry({ userId: 'u-engine', deviceId: null });
+    engine.start();
+    env.t += 1200;
+    await finishResync();
+    const synced = telemetry.telemetryQueue().filter((e) => e.name === 'sync_completed');
+    expect(synced).toHaveLength(1);
+    expect(synced[0]?.properties).toMatchObject({ sync_reason: 'startup', duration_ms: 1200 });
+    telemetry.resetTelemetry();
   });
 
   it('a refused handshake (AUTH_*) is handed to the app to check the session, then tried again', async () => {

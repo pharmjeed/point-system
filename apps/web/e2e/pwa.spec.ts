@@ -263,6 +263,18 @@ test('PNT-072: a tapped notification opens its screen and resyncs; the subscript
   });
   await expect(page).toHaveURL(/\/d$/);
   await expect.poll(() => fake.callsTo('GET /v1/me/home').length).toBeGreaterThan(homeReads);
+  // 15 §8 push_notification_clicked (DEC-390) with the worker's kind and age, sent when the page is hidden
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect
+    .poll(() =>
+      fake.telemetry
+        .flatMap((b) => b.body.events as Array<{ name: string; properties?: object }>)
+        .find((e) => e.name === 'push_notification_clicked'),
+    )
+    .toMatchObject({ properties: { kind: 'offer', age_ms: 900 } });
   await context.close();
 });
 
@@ -404,8 +416,17 @@ async function stubWaitingWorker(page: Page): Promise<void> {
   });
 }
 
-const swLog = (page: Page) =>
-  page.evaluate(() => JSON.parse(sessionStorage.getItem('__e2e_sw') ?? '{}') as Record<string, number>);
+/** The worker log in sessionStorage; read again once the reload in flight settles (no destroyed context). */
+async function swLog(page: Page): Promise<Record<string, number>> {
+  const read = () =>
+    page.evaluate(() => JSON.parse(sessionStorage.getItem('__e2e_sw') ?? '{}') as Record<string, number>);
+  try {
+    return await read();
+  } catch {
+    await page.waitForLoadState('load');
+    return read();
+  }
+}
 
 test('02 D-15 و: the update is not offered during a task; «تحديث الآن» posts SKIP_WAITING and reloads once', async ({
   browser,
@@ -438,4 +459,75 @@ test('02 D-15 و: the update is not offered during a task; «تحديث الآن
   await page.waitForTimeout(500);
   expect(await swLog(page)).toEqual({ loads: 2, skips: 1 }); // one reload
   await expect(update).toHaveCount(0); // the new version runs: nothing waits any more
+});
+
+/** A stand-in push service: `subscribe` answers `endpoint`, `getSubscription` the one held (or none). */
+async function stubPushManager(page: Page, held: string | null, created: string): Promise<void> {
+  await page.addInitScript(
+    ({ held, created }) => {
+      const sub = (endpoint: string) => ({
+        endpoint,
+        toJSON: () => ({ endpoint, keys: { p256dh: 'BStaff', auth: 'c3RhZmY' } }),
+      });
+      const calls = { subscribe: 0, request: 0 };
+      (window as unknown as { __push: typeof calls }).__push = calls;
+      PushManager.prototype.getSubscription = () =>
+        Promise.resolve((held ? sub(held) : null) as unknown as PushSubscription | null);
+      PushManager.prototype.subscribe = () => {
+        calls.subscribe += 1;
+        return Promise.resolve(sub(created) as unknown as PushSubscription);
+      };
+      const request = Notification.requestPermission.bind(Notification);
+      Notification.requestPermission = (callback?: NotificationPermissionCallback) => {
+        calls.request += 1;
+        return request(callback);
+      };
+    },
+    { held, created },
+  );
+}
+const pushCalls = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __push: { subscribe: number; request: number } }).__push);
+
+test('realtime:RT-5: staff (ADM1) subscribe from a tap in the menu; the next sign-in re-links the held subscription with no prompt', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const fake = createFake();
+  const endpointOf = (deviceId: string | null) =>
+    (deviceId && fake.devices.get(deviceId)?.push_subscription?.endpoint) || null;
+
+  // first device: nothing held yet; nothing asked on load; the tap asks and subscribes
+  const context = await pwaContext(browser);
+  await context.grantPermissions(['notifications']);
+  const page = await context.newPage();
+  const session = await fake.attach(page, 'ADM1', { context: true });
+  await stubPushManager(page, null, 'https://push.example.test/send/staff');
+  await page.goto('/venues');
+  await controlled(page);
+  await expect(page.getByRole('heading', { name: /المواقع والحفلات/ })).toBeVisible();
+  expect((await pushCalls(page)).request).toBe(0);
+  await page.getByRole('button', { name: 'القائمة' }).click();
+  const menu = page.getByRole('dialog', { name: 'القائمة' });
+  await expect(menu.locator('[data-row="notifications"]')).toContainText('إشعارات الجهاز');
+  await menu.getByRole('button', { name: /تفعيل الإشعارات|إعداد/ }).click();
+  await expect.poll(() => endpointOf(session.deviceId)).toBe('https://push.example.test/send/staff');
+  const put = fake.callsTo('PUT /v1/me/devices/:deviceId').at(-1);
+  expect(put?.path).toBe(`/v1/me/devices/${session.deviceId}`);
+  expect(put?.body).toMatchObject({ notification_permission: 'granted' });
+  expect(await pushCalls(page)).toEqual({ subscribe: 1, request: 1 });
+  await context.close();
+
+  // the next sign-in (a new devices row): the frame sends the subscription the browser holds, no prompt
+  const next = await pwaContext(browser);
+  await next.grantPermissions(['notifications']);
+  const again = await next.newPage();
+  const second = await fake.attach(again, 'ADM1', { context: true });
+  await stubPushManager(again, 'https://push.example.test/send/staff', 'https://push.example.test/send/new');
+  await again.goto('/venues');
+  await controlled(again);
+  expect(second.deviceId).not.toBe(session.deviceId);
+  await expect.poll(() => endpointOf(second.deviceId)).toBe('https://push.example.test/send/staff');
+  expect(await pushCalls(again)).toEqual({ subscribe: 0, request: 0 });
+  await next.close();
 });
