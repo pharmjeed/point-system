@@ -30,8 +30,8 @@ New layout checks at 360/390/430 (`e2e/staff-gaps-layout.spec.ts`): the S-03 rec
 
 ### Not done (deferred)
 
-- S-05 «على الشاشات الكبيرة: جدول» (02 S-05): the rows stay the 02 mobile list at every width; two of the seven columns have no
-  data yet («المهمة» numbers, «الجهاز», API gaps 1–2 below).
+- S-05 «على الشاشات الكبيرة: جدول» (02 S-05): **closed in the final round** (`docs/progress/notes/audit-close.md`, A-S05-2):
+  the table from 1024 px with «—» in «المهمة» and «الجهاز» until API gaps 1–2 below are filled.
 - S-06 «نتيجة اختبار الصوت، إذن الإشعارات» and the history's «المعتمد»: no data (API gaps 2–3).
 - S-10 open-ticket rows «A-12 │ خانة 33» and «جاهزة» منذ 22:10, and the holder of a key («خالد │ مفتاح #141»): no data (API gap 4).
 

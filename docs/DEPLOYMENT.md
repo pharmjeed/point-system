@@ -315,13 +315,13 @@ WA_PHONE_NUMBER_ID=100000000000001
 WA_APP_SECRET=<openssl rand -hex 24>   WA_VERIFY_TOKEN=<openssl rand -hex 24>   WA_ACCESS_TOKEN=<openssl rand -hex 24>
 ```
 
-وأضف `-f infra/compose/docker-compose.simulator.yml`. ينشئ المالك صف القناة بوضع `simulator` من `PUT /v1/admin/whatsapp/channel` بالمراجع `env://WA_*`. الإنتاج يرفض الإقلاع على المحاكي، والمحاكي يرفض العمل في الإنتاج.
+وأضف `-f infra/compose/docker-compose.simulator.yml`. ينشئ المالك صف القناة بوضع `simulator` من S-13 «قناة واتساب» (نموذج الإنشاء تحت «لم تُضبط القناة بعد.») أو `PUT /v1/admin/whatsapp/channel` بالمراجع `env://WA_*`. الإنتاج يرفض الإقلاع على المحاكي، والمحاكي يرفض العمل في الإنتاج.
 
 **الإطلاق الحي:** متطلبات 12 §3.7 (L-01…L-07) وPNT-100: توثيق النشاط لدى Meta، وسيلة الدفع، اعتماد اسم العرض «مصاف»، تسجيل الرقم الواحد، اعتماد القوالب W-01…W-08، رمز التحقق بخطوتين للرقم. ثم:
 
 1. `APP_ENV=production`، `WA_MODE=live`، `WA_GRAPH_BASE_URL=https://graph.facebook.com`، `WA_API_VERSION` المثبت، المعرّفات، و`WA_ACCESS_TOKEN` (رمز مستخدم نظام) و`WA_APP_SECRET` و`WA_VERIFY_TOKEN`. أزل ملف المحاكي.
 2. اشتراك Webhook في تطبيق Meta على `https://app.<domain>/webhooks/whatsapp` بالحقل `messages` (والحقول الاختيارية في 12 §3.6) ورمز التحقق نفسه؛ التحقق يمر عبر `GET` ويُقارن بزمن ثابت.
-3. صف القناة بوضع `live` (`PUT /v1/admin/whatsapp/channel`)، ثم مزامنة القوالب (`POST /v1/admin/whatsapp/templates/sync`)، ثم إرسال تجريبي لأرقام داخلية.
+3. صف القناة بوضع `live` (S-13 «قناة واتساب» أو `PUT /v1/admin/whatsapp/channel`)، ثم مزامنة القوالب (`POST /v1/admin/whatsapp/templates/sync`)، ثم إرسال تجريبي لأرقام داخلية.
 4. تدوير سر التطبيق: ضع الجديد في `WA_APP_SECRET` والقديم في متغير آخر يشير إليه `WA_APP_SECRET_PREVIOUS_REF` لمدة 24 ساعة ثم احذفه.
 
 ---
