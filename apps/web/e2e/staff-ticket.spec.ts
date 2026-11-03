@@ -76,14 +76,22 @@ test('the server refusal text is shown when a command is refused, and /v1/me hid
   await expect(sheet.getByRole('button', { name: 'إلغاء طلب الإحضار' })).toHaveCount(0);
 });
 
-test('the action panel follows the role: admin sees only «فتح واقعة», owner no panel', async ({ page }) => {
+test('the action panel follows the role: admin sees only its canon §10 actions, owner no panel', async ({
+  page,
+}) => {
   const api = new MockApi(page, roleMe('admin'));
   mockStaffApi(api);
   await api.install();
   await page.goto('/ops/tickets/t-47');
   await page.getByRole('button', { name: 'الإجراءات' }).click();
   const sheet = page.getByRole('dialog', { name: 'الإجراءات' });
-  await expect(sheet.locator('.pt-sheet__body').getByRole('button')).toHaveText(['فتح واقعة']);
+  // `ticket.change_phone` and `ticket.manual_reconcile` are the administration's too (canon §10; GAP-2), no
+  // operational action of the supervisor (09)
+  await expect(sheet.locator('.pt-sheet__body').getByRole('button')).toHaveText([
+    'تغيير الجوال',
+    'مطابقة يدوية بعد انقطاع',
+    'فتح واقعة',
+  ]);
   await page.keyboard.press('Escape');
 
   api.me = roleMe('owner');

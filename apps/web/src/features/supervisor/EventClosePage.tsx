@@ -2,7 +2,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banknote, Check, FileExclamationPoint, X } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import type { Me, Reconciliation, Settlement, UserRef, VenueEvent } from '@/api/types';
+import type {
+  IncidentType,
+  Me,
+  Reconciliation,
+  Settlement,
+  TicketSummary,
+  UserRef,
+  VenueEvent,
+} from '@/api/types';
 import { paths } from '@/app/paths';
 import {
   Banner,
@@ -79,7 +87,9 @@ export function EventClosePage() {
         <ReadError error={event.error} onRetry={() => void event.refetch()} backTo={paths.venues} />
       </div>
     );
-  return <CloseFlow me={me} event={event.data} onBack={back} />;
+  // back to the venue page the event card led here from (S-08, GAP-4)
+  const venuePage = `${paths.venues}/${encodeURIComponent(event.data.venue_id)}`;
+  return <CloseFlow me={me} event={event.data} onBack={() => navigate(venuePage)} />;
 }
 
 function CloseFlow({ me, event, onBack }: { me: Me; event: VenueEvent; onBack: () => void }) {
@@ -228,7 +238,10 @@ function Reconcile({
 }) {
   const navigate = useNavigate();
   const [cashFor, setCashFor] = useState<{ driver: UserRef; expected: number } | null>(null);
-  const [incidentFor, setIncidentFor] = useState<string | null>(null);
+  const [incidentFor, setIncidentFor] = useState<{
+    type: IncidentType;
+    ticket?: Pick<TicketSummary, 'id' | 'display_number' | 'venue_id' | 'event_id'>;
+  } | null>(null);
   const b = rec.blockers;
   const outstanding = cashOutstandingHalalas(b);
   const flag = (bad: boolean) => cx(flagged && bad && 'pt-card st-flagged');
@@ -317,24 +330,36 @@ function Reconcile({
 
       {b.keys_not_in_slots.length ? (
         <Section title={s10.custodyHeading} className={flag(true)}>
+          {/* 02 S-10 «مفتاح #141 │ [نقل عهدة] [فتح]», and «فتح واقعة» (key_missing) for a key not found */}
           <ul className="pt-list">
             {b.keys_not_in_slots.map((t) => (
-              <li key={t.id}>
-                <ListItem
-                  title={fmt(s10.keyOf, { n: t.display_number })}
-                  trailing={
-                    can(me, 'ticket.custody_transfer') ? (
-                      <Button
-                        variant="ghost"
-                        compact
-                        disabled={!online}
-                        onClick={() => navigate(staffPaths.ticket(t.id, 'custodyTransfer'))}
-                      >
-                        {s10.transferCustody}
-                      </Button>
-                    ) : undefined
-                  }
-                />
+              <li key={t.id} className="flex flex-col gap-2 p-3">
+                <span className="font-semibold">{fmt(s10.keyOf, { n: t.display_number })}</span>
+                <div className="st-row-actions">
+                  {can(me, 'ticket.custody_transfer') ? (
+                    <Button
+                      variant="secondary"
+                      compact
+                      disabled={!online}
+                      onClick={() => navigate(staffPaths.ticket(t.id, 'custodyTransfer'))}
+                    >
+                      {s10.transferCustody}
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" compact onClick={() => navigate(staffPaths.ticket(t.id))}>
+                    {buttons.open}
+                  </Button>
+                  {can(me, 'incident.create') ? (
+                    <Button
+                      variant="ghost"
+                      compact
+                      disabled={!online}
+                      onClick={() => setIncidentFor({ type: 'key_missing', ticket: t })}
+                    >
+                      {s10.openIncident}
+                    </Button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -392,7 +417,12 @@ function Reconcile({
         </Section>
       ) : null}
 
-      <Discrepancies me={me} rec={rec} settlement={settlement} onIncident={(type) => setIncidentFor(type)} />
+      <Discrepancies
+        me={me}
+        rec={rec}
+        settlement={settlement}
+        onIncident={(type) => setIncidentFor({ type })}
+      />
 
       {cashFor ? (
         <CashHandoverSheet
@@ -404,9 +434,10 @@ function Reconcile({
       ) : null}
       {incidentFor ? (
         <IncidentDialog
+          ticket={incidentFor.ticket}
           venueId={event.venue_id}
           eventId={event.id}
-          presetType={incidentFor as 'payment_discrepancy'}
+          presetType={incidentFor.type}
           onClose={() => setIncidentFor(null)}
         />
       ) : null}

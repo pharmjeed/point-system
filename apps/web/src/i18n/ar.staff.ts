@@ -74,6 +74,11 @@ export const s06 = {
   resetSecret: 'إعادة تعيين الرقم السري',
   resetConfirm:
     'إعادة تعيين الرقم السري لـ{name}؟ ستنتهي جلساته الحالية، ويظهر رقم مؤقت مرة واحدة يغيّره عند أول دخول.',
+  transfer: 'نقل إلى موقع آخر',
+  forceEnd: 'إنهاء المناوبة قسرًا',
+  /** the DEC-32 confirmation of «تعطيل الحساب» and «إنهاء المناوبة قسرًا»: what happens automatically */
+  autoRelease:
+    'المهمة التالية المحجوزة {next} ومهمة الإحضار المقبولة قبل استلام المفتاح ستعودان للطابور بأولويتهما، وتُسحب عروضه الفردية.',
   // not in 02 (docs/progress/notes/pnt-023.md)
   venue: 'الموقع',
   assignReason: 'السبب (اختياري)',
@@ -119,6 +124,13 @@ export const s08 = {
   openEvents: 'الحفلات المفتوحة: {n}',
   shiftLine: 'الوردية: {status}',
   setup: 'إعداد الموقع',
+  // the way to S-10 / S-11 (GAP-4)
+  startClosing: 'بدء الإغلاق',
+  closeEvent: 'إغلاق الحفل والمطابقة',
+  viewReport: 'عرض التقرير',
+  // not in 02 (docs/progress/notes/staff-gaps.md): the reopen of a closing event (07 `openEvent`, 11 §6.4)
+  reopen: 'إعادة فتح الحفل',
+  reopenBody: 'يعود الحفل «مفتوحًا» ويُسمح بتسجيل مركبات جديدة فيه. ابدأ الإغلاق من جديد بعد الانتهاء.',
   // not in 02 (docs/progress/notes/pnt-023.md)
   editVenue: 'تعديل الموقع',
   venueCode: 'رمز الموقع',
@@ -418,9 +430,12 @@ export const s03 = {
     resendCode: 'إعادة إرسال رمز التسليم',
     custodyTransfer: 'نقل عهدة رسمي',
     revealPhone: 'إظهار الجوال',
+    changePhone: 'تغيير الجوال',
+    relinkWhatsApp: 'إعادة الربط بواتساب',
     onBehalf: 'طلب نيابة عن العميل',
     voidTicket: 'إلغاء التذكرة',
     inspectionException: 'اعتماد استثناء الفحص',
+    manualReconcile: 'مطابقة يدوية بعد انقطاع',
     waiver: 'إعفاء من الرسوم',
     reverse: 'عكس تحصيل',
     openIncident: 'فتح واقعة',
@@ -491,6 +506,43 @@ export const s03 = {
   incident: {
     title: 'فتح واقعة',
   },
+  /**
+   * «إعادة الربط بواتساب» (02 S-03 → the D-07 texts, modes A and B). The QR panel itself is the customer-brand
+   * surface (`QrPanel`, canon §1 rule 2); nothing else here names a brand.
+   */
+  relink: {
+    hint: 'تأكد مع العميل من الرقم، أو اطلب منه مسح رمز QR.',
+    direct: 'إعادة الإرسال',
+    qr: 'الربط عبر QR',
+    waiting: 'بانتظار رسالتك…',
+    newCode: 'رمز جديد',
+    expired: 'انتهت صلاحية الرمز.',
+    arrived: 'وصلت رسالة الربط من رقم ينتهي بـ {last3}.',
+    question: 'هل هو جوال العميل الذي أمامك؟',
+    yes: 'نعم، اربط التذكرة',
+    no: 'لا، ليس هو',
+    linked: 'تم الربط — وصلت التذكرة للعميل.',
+    // not in 02: the state line of the direct send (`wa_link_status` names of 02 §8.1)
+    status: 'حالة الربط: «{status}»',
+  },
+  /** «مطابقة يدوية بعد انقطاع» (02 S-03: «الحالة الفعلية + الدليل + السبب»; 07 `manualReconcile`). */
+  reconcile: {
+    target: 'الحالة الفعلية',
+    note: 'لا تُشغّل أوامر مؤجلة ولا تُرسل رسائل عميل قديمة.',
+    // not in 02 (the paper-log fields of docs/runbooks/paper-fallback.md §5.4)
+    paperRef: 'مرجع السجل الورقي',
+    paperRefHint: 'مرجع آخر سطر للمركبة، مثل P02-R07',
+    evidenceNote: 'ملاحظة الدليل (اختياري)',
+    evidenceNoteHint: 'كل أسطر المركبة وطريقة التحقق',
+    spot: 'الموقف',
+    spotNote: 'وصف المكان',
+    slot: 'خانة المفتاح',
+    unknownHolder: 'دونهما يبقى الحائز «غير معروف».',
+    collectorHint: 'المحصِّل من السجل الورقي',
+    incident: 'الواقعة المرتبطة (اختياري)',
+    paperOnlyVoid: 'تذكرة ورقية بلا رقم كعب: «ملغاة» فقط.',
+    paymentRecorded: 'عليها تحصيل مسجّل: لا تُلغى (اعكس التحصيل أولًا).',
+  },
 } as const;
 
 /** S-04 — مركز التنبيهات */
@@ -523,7 +575,7 @@ export const s07 = {
   acceptedNote: '(يُعاد للطابور إن وُجد)',
   nextTask: 'مهمة تالية محجوزة: {v}',
   nextNote: 'ستُعاد لطابور {venue}',
-  offers: 'عروض فردية حية',
+  offers: 'عروض فردية حية: {n}',
   offersNote: 'ستُسحب',
   mustRelease: '#{n} — يجب إعادته أو نقله رسميًا',
   after: 'بعد النقل: تُنهى جلسته الحالية، وتنقطع صلاحياته في {venue}، ويحتفظ السجل التاريخي بموقعه الأصلي.',
@@ -735,5 +787,42 @@ export const s13 = {
     heartbeatRule: 'الفاصل أقل من حد «غير مؤكد»، وحد «غير مؤكد» أقل من حد «منقطع».',
     notice: 'تغيير إعدادات الأمان يسري على الجلسات الجديدة، وإعدادات النبض تصل للأجهزة فورًا.',
   },
+  /**
+   * «الموظفون» (02 S-13: «قائمة المشرفين والإدارة، إضافة (الاسم، الجوال، الدور، يسمح بالقيادة، النطاقات)، كلمة
+   * مرور مؤقتة تظهر مرة واحدة»). Strings 02 does not quote are listed in docs/progress/notes/staff-gaps.md.
+   */
+  staff: {
+    add: 'إضافة موظف',
+    role: 'الدور',
+    canDrive: 'يسمح بالقيادة',
+    scopes: 'النطاقات',
+    allVenues: 'كل المواقع',
+    noScope: 'بلا نطاق',
+    mfa: 'التحقق الثنائي',
+    mfaOn: 'مفعّل',
+    mfaOff: 'غير مفعّل',
+    lastLogin: 'آخر دخول',
+    never: 'لم يدخل بعد',
+    empty: 'لا يوجد موظفون مطابقون.',
+    search: 'ابحث بالاسم أو الرقم الوظيفي',
+    all: 'الكل',
+    tempSecret:
+      'كلمة المرور المؤقتة: {secret}. أعطها للموظف؛ سيُطلب منه تغييرها وإعداد التحقق الثنائي عند أول دخول. لن تظهر مرة أخرى.',
+    resetMfa: 'إعادة ضبط التحقق الثنائي',
+    resetMfaConfirm:
+      'إعادة ضبط التحقق الثنائي لـ{name}؟ تنتهي جلساته الحالية، ويُطلب منه إعداد التحقق الثنائي عند دخوله التالي.',
+    orgScopeHint: 'حساب الإدارة يعمل على كل المواقع؛ سحب النطاق يوقف وصوله دون تعطيل الحساب.',
+    venuesHint: 'المشرف يرى المواقع المختارة فقط، والسحب يسري فورًا.',
+    canDriveHint: 'يبدأ مناوبة ويدخل التوزيع كسائق داخل نطاقه.',
+    enableReason: 'سبب التفعيل',
+  },
   notBuilt: 'يُبنى هذا القسم في تذكرة لاحقة.',
+} as const;
+
+/** `users.role` of the staff accounts (canon §4, §10 legend «O مالك · A إدارة · S مشرف · D سائق»). */
+export const staffRole = {
+  owner: 'المالك',
+  admin: 'الإدارة',
+  supervisor: 'مشرف',
+  driver: 'سائق',
 } as const;

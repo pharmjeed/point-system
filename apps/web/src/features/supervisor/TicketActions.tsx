@@ -9,6 +9,7 @@ import type {
   Payment,
   PaymentMethod,
   TicketDetail,
+  TicketTimeline,
 } from '@/api/types';
 import {
   Banner,
@@ -35,6 +36,7 @@ import { onlyDigits } from '@/lib/digits';
 import { formatHalalas } from '@/lib/format';
 import { custodyTransferHolders, type TicketAction } from './permissions';
 import { commands, fetchDrivers, fetchKeyBoards, fetchParkingSpots, staffKeys } from './staffApi';
+import { ChangePhoneSheet, ManualReconcileSheet, RelinkWhatsAppSheet } from './TicketRecoveryActions';
 import { REASON_MIN, ReasonDialog, reasonOk } from './ui';
 import { useStaffCommand } from './useStaffCommand';
 
@@ -46,6 +48,8 @@ import { useStaffCommand } from './useStaffCommand';
 export interface ActionProps {
   me: Me;
   ticket: TicketDetail;
+  /** The S-03 timeline, when loaded (the reconcile offers the ticket's incidents from it). */
+  timeline?: TicketTimeline | null;
   onClose: () => void;
 }
 
@@ -86,12 +90,26 @@ export function TicketActionDialog({ action, ...props }: ActionProps & { action:
       return <IncidentDialog {...props} />;
     case 'recordPayment':
       return <RecordPaymentDialog {...props} />;
+    case 'changePhone':
+      return <ChangePhoneSheet {...recoveryProps(props)} />;
+    case 'relinkWhatsApp':
+      return <RelinkWhatsAppSheet {...recoveryProps(props)} />;
+    case 'manualReconcile':
+      return <ManualReconcileSheet {...recoveryProps(props)} />;
     case 'revealPhone':
       return null; // handled by RevealPhone next to the masked number
     default:
       return null;
   }
 }
+
+const recoveryProps = ({ me, ticket, timeline, onClose }: ActionProps) => ({
+  ticket,
+  timeline,
+  onClose,
+  meId: me.user.id,
+  meName: me.user.full_name,
+});
 
 // ---------------------------------------------------------------- reason-only commands
 
@@ -824,7 +842,8 @@ export function IncidentDialog({
   presetType,
   onCreated,
 }: {
-  ticket?: TicketDetail | null;
+  /** the ticket of S-03, or a row of S-10 (02 S-10 «فتح واقعة» on a key not in its slot) */
+  ticket?: Pick<TicketDetail, 'id' | 'display_number' | 'venue_id' | 'event_id'> | null;
   onClose: () => void;
   venueId?: string;
   eventId?: string | null;

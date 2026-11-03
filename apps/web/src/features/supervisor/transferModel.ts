@@ -1,70 +1,141 @@
 import type { CustodyBlockItem, DriverLive, OperationsBoard, TaskCard } from '@/api/types';
 
 /**
+ * One ticket on a checklist row: «#125» with «فتح» to transfer it officially first (02 S-06, S-07). A row is
+ * keyed by the ticket, never by its number: display numbers are unique within an event only
+ * (`UNIQUE (event_id, display_number)`) and the snapshot merges the boards of every live event of the venue.
+ */
+export interface ChecklistTicket {
+  /** 0 for a park/repark seen through `driver_state` alone (no ticket known) */
+  display_number: number;
+  ticket_id: string | null;
+  /** the event's name when the boards cover more than one live event, so two #7 can be told apart */
+  event_name: string | null;
+}
+
+/**
  * S-07 custody checklist (02 S-07, DEC-32) from the snapshot: what blocks an immediate transfer (vehicle or key
  * held, a movement `in_progress`, an active park/repark) and what goes back to the old venue's queue (the
- * reserved next task, a retrieval accepted before the key pickup). The server stays the judge: a refusal's
- * `details.items` (TRANSFER_BLOCKED_CUSTODY) replaces this view (`fromBlockItems`).
+ * reserved next task, a retrieval accepted before the key pickup, the live single offers that are withdrawn).
+ * The server stays the judge: a refusal's `details.items` (TRANSFER_BLOCKED_CUSTODY) replaces this view
+ * (`fromBlockItems`).
  */
 export interface TransferChecklist {
-  vehicles: number[];
-  keys: number[];
-  movement: number[];
-  acceptedBeforeKey: number[];
-  nextTask: number[];
+  vehicles: ChecklistTicket[];
+  keys: ChecklistTicket[];
+  movement: ChecklistTicket[];
+  acceptedBeforeKey: ChecklistTicket[];
+  nextTask: ChecklistTicket[];
+  /** live single offers to this driver (02 S-07 «عروض فردية حية: 1 │ ستُسحب») */
+  singleOffers: number;
   /** Any ✗ (blocks an immediate transfer). */
   blocked: boolean;
+}
+
+/** A row's tickets, one per ticket (the first sighting keeps its place). */
+class Row {
+  private readonly items = new Map<string, ChecklistTicket>();
+  add(t: ChecklistTicket): void {
+    const key = t.ticket_id ?? `#${t.display_number}`;
+    if (!this.items.has(key)) this.items.set(key, t);
+  }
+  get list(): ChecklistTicket[] {
+    return [...this.items.values()];
+  }
 }
 
 export function checklistFrom(
   driverId: string,
   live: DriverLive | null | undefined,
-  boards: readonly Pick<OperationsBoard, 'active_tasks' | 'next_tasks' | 'custody_issues'>[],
+  boards: readonly Pick<
+    OperationsBoard,
+    'event' | 'queue' | 'active_tasks' | 'next_tasks' | 'custody_issues'
+  >[],
 ): TransferChecklist {
+  const several = new Set(boards.map((b) => b.event.id)).size > 1;
   const mine = (c: TaskCard) => c.task.assignee?.id === driverId;
-  const active = boards.flatMap((b) => b.active_tasks).filter(mine);
-  const next = boards.flatMap((b) => b.next_tasks).filter(mine);
-  const vehicles = new Set<number>();
-  const keys = new Set<number>();
-  const movement = new Set<number>();
-  const acceptedBeforeKey = new Set<number>();
-  for (const c of active) {
-    const n = c.ticket.display_number;
-    if (c.task.status === 'in_progress') {
-      movement.add(n);
-      vehicles.add(n);
-      keys.add(n);
-    } else if (c.task.status === 'accepted') {
-      if (c.task.key_picked_up_at) keys.add(n);
-      else acceptedBeforeKey.add(n);
+  const vehicles = new Row();
+  const keys = new Row();
+  const movement = new Row();
+  const acceptedBeforeKey = new Row();
+  const nextTask = new Row();
+  let singleOffers = 0;
+  for (const b of boards) {
+    const at = (ticket: { id: string; display_number: number }): ChecklistTicket => ({
+      display_number: ticket.display_number,
+      ticket_id: ticket.id,
+      event_name: several ? b.event.name_ar : null,
+    });
+    for (const c of b.active_tasks.filter(mine)) {
+      const t = at(c.ticket);
+      if (c.task.status === 'in_progress') {
+        movement.add(t);
+        vehicles.add(t);
+        keys.add(t);
+      } else if (c.task.status === 'accepted' && c.task.type !== 'retrieve') {
+        // an accepted park/repark is an active park/repark (DEC-32), as the server counts it
+        movement.add(t);
+      } else if (c.task.status === 'accepted') {
+        if (c.task.key_picked_up_at) keys.add(t);
+        else acceptedBeforeKey.add(t);
+      }
     }
-  }
-  for (const b of boards)
+    for (const c of b.next_tasks.filter(mine)) nextTask.add(at(c.ticket));
     for (const issue of b.custody_issues)
       if (issue.holder.type === 'driver' && issue.holder.id === driverId)
-        (issue.subject === 'vehicle' ? vehicles : keys).add(issue.ticket.display_number);
+        (issue.subject === 'vehicle' ? vehicles : keys).add(at(issue.ticket));
+    singleOffers += b.queue.filter(
+      (q) => q.status === 'offered' && q.offer?.mode === 'single' && q.offer.recipient?.id === driverId,
+    ).length;
+  }
   // a park/repark of an event the boards do not cover still shows as a movement through driver_state
-  if (live?.driver_state === 'intake_parking' && !movement.size) movement.add(0);
+  if (live?.driver_state === 'intake_parking' && !movement.list.length)
+    movement.add({ display_number: 0, ticket_id: null, event_name: null });
   const out = {
-    vehicles: [...vehicles],
-    keys: [...keys],
-    movement: [...movement],
-    acceptedBeforeKey: [...acceptedBeforeKey],
-    nextTask: next.map((c) => c.ticket.display_number),
+    vehicles: vehicles.list,
+    keys: keys.list,
+    movement: movement.list,
+    acceptedBeforeKey: acceptedBeforeKey.list,
+    nextTask: nextTask.list,
+    singleOffers,
   };
   return { ...out, blocked: !!(out.vehicles.length || out.keys.length || out.movement.length) };
 }
 
-/** The checklist from the server's `details.items` of TRANSFER_BLOCKED_CUSTODY (08 §4.11). */
+/**
+ * The checklist from the server's `details.items` (08 §4.11): TRANSFER_BLOCKED_CUSTODY (S-07), and the same
+ * list of DUTY_END_BLOCKED_CUSTODY / CUSTODY_OPEN (S-06, 02 S-06). An item keeps the event name the snapshot
+ * knew for the same ticket.
+ */
 export function fromBlockItems(
   items: readonly CustodyBlockItem[],
   previous: TransferChecklist,
 ): TransferChecklist {
-  const n = (i: CustodyBlockItem) => i.display_number ?? 0;
-  const vehicles = items.filter((i) => i.type === 'vehicle').map(n);
-  const keys = items.filter((i) => i.type === 'key').map(n);
-  const movement = items.filter((i) => i.type === 'task' || i.type === 'draft').map(n);
-  return { ...previous, vehicles, keys, movement, blocked: true };
+  const known = [
+    ...previous.vehicles,
+    ...previous.keys,
+    ...previous.movement,
+    ...previous.acceptedBeforeKey,
+    ...previous.nextTask,
+  ];
+  const row = (types: readonly string[]) => {
+    const out = new Row();
+    for (const i of items)
+      if (types.includes(i.type))
+        out.add({
+          display_number: i.display_number ?? 0,
+          ticket_id: i.ticket_id ?? null,
+          event_name: known.find((k) => k.ticket_id && k.ticket_id === i.ticket_id)?.event_name ?? null,
+        });
+    return out.list;
+  };
+  return {
+    ...previous,
+    vehicles: row(['vehicle']),
+    keys: row(['key']),
+    movement: row(['task', 'draft']),
+    blocked: true,
+  };
 }
 
 /**

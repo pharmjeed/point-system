@@ -1,7 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Info, TriangleAlert } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { listDrivers } from '@/api/drivers';
+import { queryKeys } from '@/api/queryClient';
 import type { Alert, Me } from '@/api/types';
 import { AlertItem, EmptyState, Icon, TextArea } from '@/components';
 import { alertSeverity, alertStatus, alertType, buttons } from '@/i18n/ar';
@@ -34,13 +36,19 @@ export function AlertList({
   renderExtra?: (alert: Alert) => ReactNode;
 }) {
   const [resolving, setResolving] = useState<Alert | null>(null);
+  const drivers = useDriverIds(me, alerts);
   if (!alerts.length) return <EmptyState title={emptyTitle} />;
   return (
     <>
       <ul className="st-stack" aria-live="polite">
         {alerts.map((alert) => (
           <li key={alert.id} data-alert-id={alert.id}>
-            <AlertRow me={me} alert={alert} onResolve={() => setResolving(alert)} />
+            <AlertRow
+              me={me}
+              alert={alert}
+              aboutDriver={!!alert.user_id && !!drivers?.has(alert.user_id)}
+              onResolve={() => setResolving(alert)}
+            />
             {renderExtra?.(alert)}
           </li>
         ))}
@@ -50,7 +58,34 @@ export function AlertList({
   );
 }
 
-function AlertRow({ me, alert, onResolve }: { me: Me; alert: Alert; onResolve: () => void }) {
+/**
+ * The drivers of the caller's venues (`GET /v1/drivers` lists the `driver` role only), read when an alert has a
+ * user and no ticket. S-06 opens a driver alone, while the same alerts are raised for a supervisor who drives
+ * (canon §10 D*: `driver_connection_lost_with_custody`, `push_failed_repeatedly`), so only a known driver gets
+ * the S-06 link; until the list is read, none does.
+ */
+function useDriverIds(me: Me, alerts: readonly Alert[]): Set<string> | null {
+  const wanted = can(me, 'driver.read') && alerts.some((a) => !a.ticket_id && !!a.user_id);
+  const list = useQuery({
+    queryKey: queryKeys.driverList(null),
+    queryFn: ({ signal }) => listDrivers({}, signal),
+    enabled: wanted,
+  });
+  return useMemo(() => (list.data ? new Set(list.data.map((d) => d.user.id)) : null), [list.data]);
+}
+
+function AlertRow({
+  me,
+  alert,
+  aboutDriver,
+  onResolve,
+}: {
+  me: Me;
+  alert: Alert;
+  /** `user_id` is a driver of the caller's venues (S-06 opens drivers only) */
+  aboutDriver: boolean;
+  onResolve: () => void;
+}) {
   const qc = useQueryClient();
   const online = useOnline();
   const ack = useStaffCommand(
@@ -83,9 +118,16 @@ function AlertRow({ me, alert, onResolve }: { me: Me; alert: Alert; onResolve: (
       ) : (
         <ReadOnlyAlert alert={alert} title={title} context={alertContext(alert)} time={time} />
       )}
+      {/* 02 S-04 «رابط التذكرة أو السائق»: the ticket, else the driver the alert is about (S-06) */}
       {alert.ticket_id ? (
         <div className="st-row-actions">
           <Link className="pt-link" to={staffPaths.ticket(alert.ticket_id)}>
+            {buttons.open}
+          </Link>
+        </div>
+      ) : alert.user_id && aboutDriver && can(me, 'driver.read') ? (
+        <div className="st-row-actions">
+          <Link className="pt-link" to={staffPaths.driver(alert.user_id)}>
             {buttons.open}
           </Link>
         </div>

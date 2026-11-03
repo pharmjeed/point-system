@@ -47,7 +47,13 @@ export function staffEvents(options: AcquireOptions) {
         return;
       }
       case 'driver.state_changed':
-        invalidate(staffKeys.boards(), ['staff', 'drivers'], staffKeys.driver(event.payload.driver.id));
+        // S-05 / S-06 read `queryKeys.drivers` (02 S-05 «التحديث الحي عبر driver.state_changed»)
+        invalidate(
+          staffKeys.boards(),
+          ['staff', 'drivers'],
+          staffKeys.driver(event.payload.driver.id),
+          queryKeys.drivers,
+        );
         return;
       case 'alert.raised':
         invalidate(staffKeys.alerts(), staffKeys.boards());
@@ -93,6 +99,7 @@ export function staffHooks(options: AcquireOptions): EngineHooks {
         await qc.invalidateQueries({ queryKey: staffKeys.all }, { throwOnError: true });
         if (signal.aborted) return { ok: false };
         void qc.invalidateQueries({ queryKey: queryKeys.me, exact: true });
+        void qc.invalidateQueries({ queryKey: queryKeys.drivers }); // S-05 / S-06 (not under ['staff'])
         return { ok: true, serverTime: new Date(serverNow()).toISOString() };
       } catch (error) {
         // a board that could not be read (5xx, 429, no reply) is not a sync: «قديم» stays and it is tried again

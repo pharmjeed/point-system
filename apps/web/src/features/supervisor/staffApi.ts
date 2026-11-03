@@ -37,18 +37,27 @@ import type {
   Reconciliation,
   RetentionPolicy,
   RetrievalCycle,
+  RoleScope,
   Settlement,
   SignedUrl,
   Task,
   TicketDetail,
   TicketSummary,
   TicketTimeline,
+  User,
   Venue,
   VenueEvent,
   VenueSettings,
   WhatsAppChannel,
   WhatsAppTemplate,
 } from '@/api/types';
+import type {
+  CreatedStaff,
+  ForcedDutySession,
+  ManualReconcileBody,
+  StaffMember,
+  WaLinkResult,
+} from '@/api/types.staff';
 
 /**
  * Data layer of the supervisor/admin/owner screens (07 §2.2–§2.7). Reads are React Query queries keyed by
@@ -103,6 +112,8 @@ export const staffKeys = {
   waTemplates: () => ['staff', 'admin', 'wa-templates'] as const,
   retention: () => ['staff', 'admin', 'retention'] as const,
   orgSettings: () => ['staff', 'admin', 'org-settings'] as const,
+  /** `GET /v1/staff` (S-13 «الموظفون») — every page, filtered in the UI. */
+  staffMembers: () => ['staff', 'admin', 'staff-members'] as const,
 };
 
 // ---------------------------------------------------------------- query strings
@@ -305,6 +316,25 @@ export const fetchRetention = (signal?: AbortSignal) =>
 
 export const fetchOrgSettings = (signal?: AbortSignal) => get<OrgSettings>('/v1/admin/org-settings', signal);
 
+/**
+ * `GET /v1/staff` read to the end (an organization has tens of staff accounts; 07 §1.7 cursor pages). The server
+ * already narrows it: the owner sees admins and supervisors, an admin sees supervisors only (09 §4.6).
+ */
+export async function fetchStaffMembers(signal?: AbortSignal): Promise<StaffMember[]> {
+  const out: StaffMember[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 20; page += 1) {
+    const r: Page<StaffMember> = await getPage<StaffMember>(
+      withQuery('/v1/staff', { limit: 200, cursor }),
+      signal,
+    );
+    out.push(...r.items);
+    cursor = r.nextCursor;
+    if (!cursor) break;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- commands (Idempotency-Key from useCommand)
 
 const post = async <T>(path: string, body: unknown, key: string): Promise<T> =>
@@ -422,6 +452,24 @@ export const commands = {
   waivePayment: (ticketId: string, body: { reason: string }, key: string) =>
     post<TicketDetail>(`${t(ticketId)}/payment-waiver`, body, key),
 
+  // S-03 (GAP-2): manual reconcile after an outage, customer phone change, WhatsApp re-link (07 §2.2, §2.3)
+  manualReconcile: (ticketId: string, body: ManualReconcileBody, key: string) =>
+    post<TicketDetail>(`${t(ticketId)}/manual-reconcile`, body, key),
+  changeCustomerPhone: (
+    ticketId: string,
+    body: {
+      expected_version: number;
+      customer_phone: string;
+      consent: { method: 'verbal_staff_confirmed'; confirmed: true };
+      reason: string;
+    },
+    key: string,
+  ) => patch<TicketDetail>(`${t(ticketId)}/customer-phone`, body, key),
+  linkWhatsApp: (ticketId: string, body: { method: 'direct' | 'qr' }, key: string) =>
+    post<WaLinkResult>(`${t(ticketId)}/whatsapp-link`, body, key),
+  confirmWhatsAppLink: (ticketId: string, body: { link_code_id: string; matches: boolean }, key: string) =>
+    post<TicketDetail>(`${t(ticketId)}/whatsapp-link/confirm`, body, key),
+
   createIncident: (
     body: {
       venue_id: string;
@@ -453,6 +501,9 @@ export const commands = {
   ) => post<DriverTransfer>(`/v1/drivers/${encodeURIComponent(driverId)}/transfers`, body, key),
   cancelTransfer: (transferId: string, body: { reason: string }, key: string) =>
     post<DriverTransfer>(`/v1/transfers/${encodeURIComponent(transferId)}/cancel`, body, key),
+  /** S-06 «إنهاء المناوبة قسرًا» (GAP-6): `duty.force_end` is the supervisor's alone (canon §10). */
+  forceEndDuty: (sessionId: string, body: { reason: string }, key: string) =>
+    post<ForcedDutySession>(`/v1/duty-sessions/${encodeURIComponent(sessionId)}/force-end`, body, key),
 
   startClosing: (eventId: string, body: { expected_version?: number }, key: string) =>
     post<VenueEvent>(`/v1/events/${encodeURIComponent(eventId)}/start-closing`, body, key),
@@ -492,4 +543,35 @@ export const commands = {
   putRetention: (body: Omit<RetentionPolicy, 'approved_by_owner' | 'updated_at'>, key: string) =>
     put<RetentionPolicy>('/v1/admin/retention-policy', body, key),
   putOrgSettings: (body: OrgSettings, key: string) => put<OrgSettings>('/v1/admin/org-settings', body, key),
+
+  // S-13 «الموظفون» (GAP-3; 07 §2.6, canon §10 `staff.manage`)
+  createStaff: (
+    body: {
+      full_name: string;
+      phone: string;
+      role: 'admin' | 'supervisor';
+      can_drive?: boolean;
+      venue_ids?: string[];
+    },
+    key: string,
+  ) => post<CreatedStaff>('/v1/staff', body, key),
+  patchStaff: (
+    userId: string,
+    body: {
+      expected_version: number;
+      full_name?: string;
+      phone?: string;
+      can_drive?: boolean;
+      status?: 'active' | 'disabled';
+      reason?: string;
+    },
+    key: string,
+  ) => patch<User>(`/v1/staff/${encodeURIComponent(userId)}`, body, key),
+  updateStaffScopes: (
+    userId: string,
+    body: { grant_venue_ids?: string[]; revoke_venue_ids?: string[]; org_scope?: boolean },
+    key: string,
+  ) => post<RoleScope[]>(`/v1/staff/${encodeURIComponent(userId)}/scopes`, body, key),
+  resetStaffMfa: (userId: string, body: { reason: string }, key: string) =>
+    post<User>(`/v1/staff/${encodeURIComponent(userId)}/reset-mfa`, body, key),
 };

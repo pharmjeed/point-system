@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import { createDriver, listDrivers, type DriverInput } from '@/api/drivers';
 import { queryKeys } from '@/api/queryClient';
 import { listVenues } from '@/api/setup';
-import type { CreatedDriver, Venue } from '@/api/types';
+import type { CreatedDriver, DriverListItem, Venue } from '@/api/types';
 import { can } from '@/app/permissions';
 import {
   Button,
+  ConnectionIndicator,
   DriverStateChip,
   EmptyState,
   FilterChips,
@@ -23,9 +24,12 @@ import { QueryView } from '@/features/common/QueryView';
 import { UserStatusChip } from '@/features/common/StateChip';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import { useCommand } from '@/hooks/useCommand';
+import { useServerNow } from '@/hooks/useNow';
 import { nav, ui } from '@/i18n/ar';
-import { s05 } from '@/i18n/ar.staff';
+import { s05, staff } from '@/i18n/ar.staff';
 import { errorMessagesAr } from '@/i18n/errors';
+import { fmt } from '@/i18n/fmt';
+import { formatClock } from '@/lib/format';
 import { normalizeSaudiMobile } from '@/lib/phone';
 import { matchesFilter, matchesSearch, stateOf, type DriverFilter } from './driverModel';
 import { TempSecretDialog } from './TempSecretDialog';
@@ -33,8 +37,9 @@ import { TempSecretDialog } from './TempSecretDialog';
 const FILTERS: DriverFilter[] = ['all', 'available', 'busy', 'on_break', 'off_duty', 'disabled'];
 
 /**
- * S-05 — drivers of the caller's venues with their state (02 S-05; live updates in PNT-084). «إضافة سائق»
- * for `driver.manage` only.
+ * S-05 — drivers of the caller's venues with their state (02 S-05): each row «الاسم · الرمز │ الحالة» with the
+ * venue, «منذ 4:10» for an available driver and the connection of an open duty; live through
+ * `driver.state_changed` (staffRuntime). «إضافة سائق» for `driver.manage` only.
  */
 export function DriversPage() {
   const me = useStaffMe();
@@ -47,6 +52,7 @@ export function DriversPage() {
   const [filter, setFilter] = useState<DriverFilter>('all');
   const [adding, setAdding] = useState(false);
   const [created, setCreated] = useState<CreatedDriver | null>(null);
+  const now = useServerNow(1000);
   const drivers = useQuery({
     queryKey: queryKeys.driverList(venueId || null),
     queryFn: ({ signal }) => listDrivers(venueId ? { venue_id: venueId } : {}, signal),
@@ -108,7 +114,7 @@ export function DriversPage() {
                         </bdi>
                       </>
                     }
-                    meta={d.active_assignment?.venue_name_ar ?? s05.none}
+                    meta={<RowMeta driver={d} now={now} />}
                     trailing={
                       d.user.status === 'disabled' ? (
                         <UserStatusChip status="disabled" />
@@ -236,5 +242,25 @@ function AddDriverSheet({
         onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))}
       />
     </FormSheet>
+  );
+}
+
+/** The venue, «منذ 4:10» while available (`available_since`), and the connection of an open duty (02 S-05). */
+function RowMeta({ driver, now }: { driver: DriverListItem; now: number }) {
+  const live = driver.user.status === 'disabled' ? null : driver.live;
+  const onDuty = !!live && live.driver_state !== 'off_duty';
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span>{driver.active_assignment?.venue_name_ar ?? s05.none}</span>
+      {onDuty && live.driver_state === 'available' && live.available_since ? (
+        <span>
+          {fmt(staff.since, { time: '' })}
+          <bdi dir="ltr" className="pt-num">
+            {formatClock((now - Date.parse(live.available_since)) / 1000)}
+          </bdi>
+        </span>
+      ) : null}
+      {onDuty ? <ConnectionIndicator state={live.connection_state ?? 'offline'} /> : null}
+    </span>
   );
 }

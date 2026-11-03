@@ -1125,6 +1125,8 @@ export interface DriverLive {
   active_task_id?: string | null;
   next_task_id?: string | null;
   duty_started_at?: string | null;
+  /** The open duty session, the path id of `POST /v1/duty-sessions/{sessionId}/force-end` (DEC-217). */
+  duty_session_id?: string | null;
 }
 
 export interface Alert {

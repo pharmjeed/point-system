@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { paths } from '@/app/paths';
 import { Header, ListItem } from '@/components';
 import { useStaffMe } from '@/features/ops/StaffLayout';
-import { adminSectionsFor, can, type AdminSection } from '@/features/supervisor/permissions';
+import { adminSectionsFor, type AdminSection } from '@/features/supervisor/permissions';
 import { staffPaths } from '@/features/supervisor/staffPaths';
 import { ForbiddenPage, ForbiddenState, NotFoundState } from '@/features/supervisor/ui';
 import { s13 } from '@/i18n/ar.staff';
@@ -11,10 +11,12 @@ import { AuditLogSection } from './AuditLogSection';
 import { OrgSettingsSection } from './OrgSettingsSection';
 import { OutboxSection } from './OutboxSection';
 import { RetentionSection } from './RetentionSection';
+import { StaffSection } from './StaffSection';
 import { ChannelSection, TemplatesSection } from './WhatsAppSections';
 import '@/features/supervisor/staff.css';
 
 const ICONS: Record<AdminSection, typeof History> = {
+  staff: Users,
   channel: MessageCircle,
   templates: ScrollText,
   outbox: Archive,
@@ -24,25 +26,20 @@ const ICONS: Record<AdminSection, typeof History> = {
 };
 
 /**
- * S-13 — الإدارة (02 §4 S-13, PNT-091/092): the sections this account may open (02 §2.2 table, 09 §3),
- * each at `/admin/:section`. «الموظفون» (`staff.manage`) belongs to another ticket and is listed as not built.
+ * S-13 — الإدارة (02 §4 S-13, PNT-017/091/092): the sections this account may open (02 §2.2 table, 09 §3), each
+ * at `/admin/:section` — «الموظفون» (`staff.manage`, GAP-3), the WhatsApp channel and templates, the outbox, the
+ * audit log, retention and the organization settings.
  */
 export function AdminPage() {
   const me = useStaffMe();
   const sections = adminSectionsFor(me);
-  const staffManage = can(me, 'staff.manage');
-  if (!sections.length && !staffManage) return <ForbiddenPage title={s13.title} />;
+  if (!sections.length) return <ForbiddenPage title={s13.title} />;
   return (
     <section className="st-page" aria-labelledby="admin-title">
       <h1 className="pt-page-title" id="admin-title">
         {s13.title}
       </h1>
       <ul className="pt-list">
-        {staffManage ? (
-          <li>
-            <ListItem icon={Users} title={s13.sections.staff} meta={s13.notBuilt} />
-          </li>
-        ) : null}
         {sections.map((id) => (
           <li key={id}>
             <ListItem icon={ICONS[id]} title={s13.sections[id]} to={staffPaths.adminSection(id)} />
@@ -73,6 +70,8 @@ export function AdminSectionPage() {
       <Header title={s13.sections[id]} onBack={back} />
       {!allowed.includes(id) ? (
         <ForbiddenState backTo={paths.admin} />
+      ) : id === 'staff' ? (
+        <StaffSection me={me} />
       ) : id === 'audit' ? (
         <AuditLogSection />
       ) : id === 'outbox' ? (
