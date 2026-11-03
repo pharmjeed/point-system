@@ -159,7 +159,7 @@ describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
     transport.emit('ticket.updated', delivered); // the same frame again: dropped by id
     transport.emit('ticket.updated', ticket(5, { cause: 'handover.code_issued' }));
     transport.emit('ticket.updated', ticket(4, { cause: 'ticket.retrieval_requested' })); // strictly older
-    expect(events.map((e) => (e as { payload: { cause: string } }).payload.cause)).toEqual([
+    expect(events.map((e) => (e as unknown as { payload: { cause: string } }).payload.cause)).toEqual([
       'ticket.ready',
       'wa.message_status_changed',
       'handover.code_issued',

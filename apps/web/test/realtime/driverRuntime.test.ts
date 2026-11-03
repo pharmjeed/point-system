@@ -356,6 +356,79 @@ describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
     expect(playSound).not.toHaveBeenCalled();
   });
 
+  it('an early request merged under another cause (decisions:F6): the notice follows the ticket state', async () => {
+    const park = taskCard(IDS.taskA, 'in_progress', 2);
+    park.task.type = 'park';
+    park.ticket.status = 'parking';
+    park.ticket.version = 3;
+    qc.setQueryData(queryKeys.home, home({ current_task: park }));
+    let pending: string | null = '2026-10-29T18:00:00.000Z';
+    const reads: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        reads.push(String(url));
+        return reply(200, {
+          data: { id: IDS.ticketA, status: 'parking', version: 5, pending_retrieval_at: pending },
+          meta: { request_id: 'r', server_time: new Date().toISOString() },
+        });
+      }),
+    );
+    const summary = {
+      id: IDS.ticketA,
+      display_number: 125,
+      status: 'parking',
+      wa_link_status: 'linked',
+      version: 5,
+      plate: { country: 'SA', display: '1234' },
+      vehicle: {},
+    };
+    // DEC-265: the opted-out customer's press resumes the link first, so the merged cause is wa_link_changed
+    onEvent(event('ticket.updated', { cause: 'ticket.wa_link_changed', ...summary }));
+    await vi.waitFor(() =>
+      expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'early', taskId: IDS.taskA }]),
+    );
+    expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
+    expect(reads.some((u) => u.endsWith(`/v1/tickets/${IDS.ticketA}`))).toBe(true);
+    // once per parking task: a later update of the same ticket raises nothing again
+    vi.mocked(playSound).mockClear();
+    onEvent(event('ticket.updated', { cause: 'ticket.photo_uploaded', ...summary, version: 6 }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(playSound).not.toHaveBeenCalled();
+    expect(useFieldStore.getState().notices).toHaveLength(1);
+  });
+
+  it('a newer version of the parking ticket without an early request raises nothing', async () => {
+    const park = taskCard(IDS.taskA, 'in_progress', 2);
+    park.task.type = 'park';
+    park.ticket.status = 'parking';
+    park.ticket.version = 3;
+    qc.setQueryData(queryKeys.home, home({ current_task: park }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reply(200, {
+          data: { id: IDS.ticketA, status: 'parking', version: 4, pending_retrieval_at: null },
+          meta: { request_id: 'r', server_time: new Date().toISOString() },
+        }),
+      ),
+    );
+    onEvent(
+      event('ticket.updated', {
+        cause: 'ticket.photo_uploaded',
+        id: IDS.ticketA,
+        display_number: 125,
+        status: 'parking',
+        version: 4,
+        plate: { country: 'SA', display: '1234' },
+        vehicle: {},
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(useFieldStore.getState().notices).toEqual([]);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
   it('«قبل الطلب سائق آخر» only when the card is on screen (02 D-09)', () => {
     const offer = offerCard(IDS.offerA, IDS.taskA, '2026-10-29T17:58:00.000Z', { mode: 'broadcast' });
     const claimed = () =>
