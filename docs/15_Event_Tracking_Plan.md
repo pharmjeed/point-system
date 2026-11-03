@@ -617,7 +617,7 @@ SELECT a.type, a.severity,
 | الهدف | التعريف | مصدر القياس |
 |---|---|---|
 | حفظ الطلب p95 أقل من ثانيتين | من استلام الـWebhook (`whatsapp_inbound_events.received_at`) حتى التزام دورة الاسترجاع؛ وطلب الموظف من طلب API حتى رده | المرجع `point_retrieval_request_ingest_seconds` يرصده العامل بعد التزام الوارد للضغطة التي فتحت دورة (05 §12.2)، والخاصية `ingest_latency_ms` في `ticket_retrieval_requested` المدى نفسه حتى كتابة الدورة قبل الالتزام؛ وطلب الموظف `point_http_request_duration_seconds` لـ`POST /v1/tickets/{ticketId}/retrievals` (DEC-367) |
-| نشر حدث الإسناد p95 أقل من 3 ثوانٍ | من التزام القبول حتى بث `task.claimed` و`task.updated` | مقياس نظام في ناشر WebSocket |
+| نشر حدث الإسناد p95 أقل من 3 ثوانٍ | من لحظة المعاملة المنتجة (`occurred_at`) حتى بث `task.offered` أو `task.broadcast` أو `task.claimed` أو `task.updated` الناتج عن قبول أو إعادة إسناد، حدًا أعلى في كل نسخة API | `point_dispatch_publish_seconds` يرصده ناشر WebSocket (05 §12.2، DEC-416) |
 
 زمن مزود واتساب (`since_queued_ms` في `wa_message_status_changed`) وزمن وصول العرض للجهاز (`receive_latency_ms` في `offer_card_seen`) يُعرضان منفصلين ولا يدخلان في هذين الهدفين.
 
