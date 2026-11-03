@@ -18,6 +18,17 @@ numbers the proposals below into `docs/DECISIONS.md`.
 | realtime:RT-5 | The staff shell gets the drivers' tap-driven path: «إشعارات الجهاز» in the staff menu (state from D-03, «تفعيل الإشعارات» / «إعداد», the D-03 denied hint and the D-14 iPhone note) asks the permission inside the tap and sends `PUT /v1/me/devices/{deviceId}` with the subscription; the staff frame re-links the subscription the browser already holds to a new sign-in's device, once per device and app session, with no prompt. The hooks moved to `features/session/pushSetup.ts`, shared with D-03 / D-14 / the driver frame. | `e2e/pwa.spec.ts` «realtime:RT-5: staff (ADM1) subscribe from a tap in the menu …» (no prompt on load; one request and one subscribe from the tap; the next sign-in relinks with none) and the existing driver PNT-072 cases |
 | contract:F5, decisions:F5 | A client telemetry module (`src/lib/telemetry.ts`): 15 §8 measurements queued only after sign-in, each checked with the shared `parseTelemetryEvent` before it enters a batch (the catalog is a lazy chunk), batches of ≤ 50 events / < 64 KB to `POST /v1/telemetry` every 30 s, at 20 events, on `visibilitychange`→hidden / `pagehide` / `online`, with `fetch` `keepalive`, the CSRF header, `device_id`, `client_session_id` and `seq`, no Idempotency-Key; offline kept in memory up to 200 (oldest dropped), 429 waits `retry_after_s`, a refused batch is dropped; sign-out flushes first (bounded) and closes the queue, the session end closes it. Emitted: `app_started`, `pwa_installed` (first standalone run), `audio_test_completed` (D-03 / D-04 `duty_start`, D-14 `account`), `audio_blocked_detected`, `notification_permission_changed` and `push_subscription_changed` (D-03, D-14, staff menu), `push_notification_clicked` (the worker's `kind`/`age_ms`), `connection_changed`, `sync_completed` (engine, with reason/duration/stale), `page_hidden_during_duty`, `wake_lock_changed`, and the 15 §9.4 `offer_card_seen` fallback: while the socket is down the engine hands a round on screen to the HTTP batch (`via: sync`, `mode`/`eligible_as` from the snapshot, sent at once) and never reports it again over the socket. The e2e fake and the MockApi answer 202; the command-contract checks skip the route. | `test/telemetry.test.ts` (8), `test/realtime/engine.test.ts` «while the socket is down … HTTP telemetry fallback», «… sync_completed»; `e2e/driver-telemetry.spec.ts` (the batch on the wire with every event inside the catalog; `offer_card_seen` with the socket down, once); `e2e/pwa.spec.ts` (`push_notification_clicked` after a `push.click`) |
 
+contract:F1 (the server now sends `home.settings` / `home.shift`): no web change; D-06, D-08 and D-09 keep reading
+`home.settings` with the canon §12 defaults when it is absent, as before.
+
+## Checks (on 00bebc7 + this note)
+
+- `pnpm lint`, `pnpm typecheck`: clean.
+- `pnpm test` (unit + web-unit): 93 files, 1441 tests passed.
+- `pnpm test:int` (PostgreSQL 16, under the lock): 84 files passed, 1 skipped; 669 tests passed, 1 skipped.
+- Playwright, full run (`--workers=2`, under the lock): 586 passed, 446 skipped (the 390-only specs at 360/430),
+  0 failed.
+
 ## Proposed decisions
 
 **DEC-PROPOSED-1 — a `ticket.updated` at the version already applied is applied** — context: 07 §4.5 / 11 §9.2 say
