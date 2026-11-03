@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_RETRY_MS, RealtimeEngine, type EngineHooks } from '@/realtime/engine';
+import { parseServerEvent } from '@/realtime/protocol';
 import { noteContact, resetSync, useSyncStore } from '@/realtime/syncStore';
 import { clockOffsetMs, recordServerTime } from '@/lib/serverClock';
 import { envelope, FakeEnv, FakeTransport, flush } from './engineFakes';
@@ -115,6 +116,55 @@ describe('RealtimeEngine (07 §4.5, 11 §9.4, PNT-065)', () => {
       'offer.reminder',
       envelope('offer.reminder', { offer_id: IDS.offerA, task_id: IDS.taskA }),
     );
+    expect(events).toHaveLength(4);
+  });
+
+  it('ticket.updated at the version already applied is delivered (message / code state); older ones drop', async () => {
+    // contract:F4, decisions:F3, realtime:RT-1: a W-01/W-05 delivery state, a wrong code, a resend or an
+    // incident never write the tickets row, so their ticket.updated carries the version already applied
+    engine.start();
+    await finishResync();
+    const ticket = (version: number, extra: Record<string, unknown> = {}) =>
+      envelope(
+        'ticket.updated',
+        {
+          id: IDS.ticketA,
+          display_number: 12,
+          event_id: IDS.event,
+          venue_id: IDS.venue,
+          status: 'ready',
+          channel: 'whatsapp',
+          plate: {
+            country: 'SA',
+            digits: '1234',
+            letters_ar: 'ب ح د',
+            letters_en: 'B J D',
+            display: '1234 ب ح د',
+          },
+          wa_link_status: 'linked',
+          payment_status: 'not_required',
+          version,
+          cause: 'ticket.ready',
+          ...extra,
+        },
+        { aggregate: { type: 'ticket', id: IDS.ticketA, version } },
+      );
+    transport.emit('ticket.updated', ticket(5));
+    const delivered = ticket(5, {
+      cause: 'wa.message_status_changed',
+      message: { id: IDS.offerA, purpose: 'W-05', status: 'delivered', status_rank: 2 },
+    });
+    expect(parseServerEvent('ticket.updated', delivered).ok).toBe(true);
+    transport.emit('ticket.updated', delivered);
+    transport.emit('ticket.updated', delivered); // the same frame again: dropped by id
+    transport.emit('ticket.updated', ticket(5, { cause: 'handover.code_issued' }));
+    transport.emit('ticket.updated', ticket(4, { cause: 'ticket.retrieval_requested' })); // strictly older
+    expect(events.map((e) => (e as { payload: { cause: string } }).payload.cause)).toEqual([
+      'ticket.ready',
+      'wa.message_status_changed',
+      'handover.code_issued',
+    ]);
+    transport.emit('ticket.updated', ticket(6, { cause: 'ticket.retrieval_requested' }));
     expect(events).toHaveLength(4);
   });
 

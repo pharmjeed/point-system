@@ -26,7 +26,8 @@ import {
  *   never overlap, a trigger during one runs another right after; only the server's state counts as a sync
  *   (a 5xx or a rate limit keeps the data stale and is tried again);
  * - frames are delivered at most once and in best-effort order: a duplicate `id` is dropped, and so is an
- *   update whose `aggregate.version` is not newer than the last one applied for that aggregate;
+ *   update whose `aggregate.version` is not newer than the last one applied for that aggregate (a
+ *   `ticket.updated` only when strictly older: the same version may carry a message or code state);
  * - `client.heartbeat` every `heartbeat.interval_s` with `{visible, audio_unlocked, last_event_id,
  *   app_version}`; without a socket the HTTP fallback `POST /v1/me/heartbeat` (drivers) with
  *   `ws_connected: false`; the ack's `server_time` corrects the countdown clock;
@@ -296,7 +297,14 @@ export class RealtimeEngine {
     if (aggregate && aggregate.version !== null) {
       const key = `${aggregate.type}:${aggregate.id}`;
       const known = this.versions.get(key);
-      if (known !== undefined && aggregate.version <= known) return; // 07 §4.5
+      // 07 §4.5: an update not newer than the last one applied is dropped — except a `ticket.updated` at the
+      // version already applied: its causes (a W-01/W-05 delivery state, a wrong code, a resend, a lock, an
+      // incident) never write the tickets row, so it carries the same version with new message / code state;
+      // applying the same summary again is idempotent, and a repeated frame is already dropped by its id
+      // (DEC-PROPOSED-1 of int-web)
+      const sameAllowed = event.type === 'ticket.updated';
+      if (known !== undefined && (aggregate.version < known || (aggregate.version === known && !sameAllowed)))
+        return;
       this.versions.set(key, aggregate.version);
       if (this.versions.size > MAX_SEEN) {
         const first = this.versions.keys().next().value;
