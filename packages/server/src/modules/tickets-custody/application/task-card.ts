@@ -119,7 +119,8 @@ export type TaskCard = NonNullable<Awaited<ReturnType<typeof loadTaskCard>>>;
 /**
  * realtime:RT-2 (07 §4.3, §4.5): the TaskCard shows ticket-derived fields (`parking`, `key_slot`, `payment_due`).
  * A command that changes one of them for the assignee of an open task without a task event (an official spot /
- * slot transfer, a fee waiver or reversal) bumps the task version here, so the TaskCard the dispatch planner
+ * slot transfer, a fee waiver or reversal) bumps the task version here (the key leaving the assignee of an accepted
+ * retrieval resets `key_picked_up_at` and bumps it in the custody transfer itself), so the TaskCard the dispatch planner
  * republishes on `custody.changed` / `payment.*` is newer than the one the driver holds (a same-version card is
  * ignored) and a command sent with the old `expected_version` is VERSION_CONFLICT. The caller holds L4 on the task.
  */
