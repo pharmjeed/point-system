@@ -145,3 +145,66 @@ describe('realtime gateway /ws', () => {
     expect(seen.data.ok).toBe(true);
   });
 });
+
+// realtime:RT-6 (07 §4.1 polling fallback): browsers send no Origin on a same-origin GET (Fetch standard), which
+// is what the Engine.IO polling handshake is; the server takes Sec-Fetch-Site: same-origin plus a valid session
+// instead. A WebSocket upgrade keeps the strict Origin check.
+describe('realtime gateway /ws — long-polling handshake without Origin (WS_TRANSPORTS=websocket,polling)', () => {
+  let t: TestApp;
+  let base: string;
+
+  beforeAll(async () => {
+    t = await createTestApp({ env: { WS_TRANSPORTS: 'websocket,polling' } });
+    await t.app.listen(0);
+    const addr = t.app.getHttpServer().address();
+    base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  });
+  afterAll(async () => t.close());
+
+  const handshake = async (headers: Record<string, string>) => {
+    const r = await fetch(`${base}/ws/?EIO=4&transport=polling`, { headers });
+    return { status: r.status, body: await r.text() };
+  };
+
+  it('same-origin fetch metadata + a valid session → 200 with the open packet', async () => {
+    const cookie = await t.sessionFor('DRV1');
+    const r = await handshake({ cookie, 'sec-fetch-site': 'same-origin' });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatch(/^0\{"sid":/);
+    // the matching Origin keeps working
+    expect((await handshake({ cookie, origin: ORIGIN })).status).toBe(200);
+  });
+
+  it('no Origin is refused when the request is cross-site, has no fetch metadata, or has no valid session', async () => {
+    const cookie = await t.sessionFor('DRV1');
+    expect((await handshake({ cookie, 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+    expect((await handshake({ cookie, 'sec-fetch-site': 'same-site' })).status).toBe(403);
+    expect((await handshake({ cookie })).status).toBe(403);
+    expect((await handshake({ 'sec-fetch-site': 'same-origin' })).status).toBe(403);
+    const forged = cookie.replace(/=.*$/, '=not-a-session');
+    expect((await handshake({ cookie: forged, 'sec-fetch-site': 'same-origin' })).status).toBe(403);
+  });
+
+  it('a mismatching Origin is refused even with same-origin fetch metadata; a WebSocket without Origin is refused', async () => {
+    const cookie = await t.sessionFor('DRV1');
+    expect(
+      (await handshake({ cookie, origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' })).status,
+    ).toBe(403);
+    const s = io(base, {
+      path: '/ws',
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { cookie, 'sec-fetch-site': 'same-origin' },
+    });
+    try {
+      await expect(
+        new Promise<void>((resolve, reject) => {
+          s.once('connect', () => resolve());
+          s.once('connect_error', (e: unknown) => reject(e));
+        }),
+      ).rejects.toBeTruthy();
+    } finally {
+      s.close();
+    }
+  });
+});

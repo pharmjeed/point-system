@@ -1,4 +1,4 @@
-import type { Server as HttpServer } from 'node:http';
+import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import pg from 'pg';
 import { Server, type Socket } from 'socket.io';
 import { rooms as roomNames } from '@point/shared';
@@ -111,7 +111,11 @@ export class RealtimeServer {
       transports,
       serveClient: false,
       cors: { origin: this.origin, credentials: true },
-      allowRequest: (req, cb) => cb(null, req.headers.origin === this.origin),
+      allowRequest: (req, cb) =>
+        void this.allowHandshake(req).then(
+          (ok) => cb(null, ok),
+          () => cb(null, false),
+        ),
     });
     this.io = io;
     io.use(async (socket, next) => {
@@ -134,6 +138,24 @@ export class RealtimeServer {
     await this.listen();
     this.timer = setInterval(() => void this.revalidateAll(), this.deps.revalidateEveryMs ?? 60_000);
     this.timer.unref();
+  }
+
+  /**
+   * The Engine.IO handshake check (09 §7 rule 2, 07 §4.1). A request with an Origin must carry APP_BASE_URL's.
+   * Browsers omit Origin on a same-origin GET (Fetch standard), which is what the long-polling handshake is, so
+   * a request without Origin is taken only when the browser marks it `Sec-Fetch-Site: same-origin` (a page cannot
+   * forge fetch metadata; a cross-site request always carries Origin) and its session cookie is valid. A
+   * WebSocket upgrade always carries Origin in a browser, so one without it is refused.
+   */
+  private async allowHandshake(req: IncomingMessage): Promise<boolean> {
+    const origin = req.headers.origin;
+    if (origin !== undefined) return origin === this.origin;
+    if ((req.headers.upgrade ?? '').toLowerCase() === 'websocket') return false;
+    if (req.headers['sec-fetch-site'] !== 'same-origin') return false;
+    const token = parseCookies(req.headers.cookie)[this.deps.env.SESSION_COOKIE_NAME];
+    if (!token) return false;
+    await loadActor(this.deps.db, token, this.deps.clock.now()); // throws on a session that is not valid
+    return true;
   }
 
   async close(): Promise<void> {
