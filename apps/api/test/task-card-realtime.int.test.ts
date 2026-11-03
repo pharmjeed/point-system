@@ -79,6 +79,54 @@ describe('TaskCard republished when the assignee card changes without a task eve
     }
   });
 
+  it('the picked-up key handed to a supervisor: the pickup is reset, a newer TaskCard with key_picked_up_at null to the assignee', async () => {
+    const a = await assignedRetrieval(t, { parker: 'DRV2', driver: 'DRV1' });
+    ok(await keyPickup(t, 'DRV1', a.retrieveTaskId, a.slotId));
+    const before = await taskVersion(a.retrieveTaskId);
+    const rt = await captureRealtime(t);
+    try {
+      ok(
+        await transfer(a.ticketId, { subject: 'key', to_holder_type: 'supervisor', to_holder_id: U['SUP-R'] }),
+        201,
+      );
+      await rt.settle();
+      expect(await taskVersion(a.retrieveTaskId)).toBe(before + 1);
+      const cards = rt
+        .of('task.updated', rooms.user(U.DRV1))
+        .filter((m) => m.message.data.task?.id === a.retrieveTaskId);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]!.message.aggregate).toEqual({ type: 'task', id: a.retrieveTaskId, version: before + 1 });
+      expect(cards[0]!.message.data).toMatchObject({
+        cause: 'custody.changed',
+        task: { id: a.retrieveTaskId, version: before + 1, status: 'accepted', key_picked_up_at: null },
+      });
+      const views = rt
+        .of('task.updated', rooms.venueSupervisors(RMS))
+        .filter((m) => m.message.data.id === a.retrieveTaskId);
+      expect(views.map((m) => m.message.data.version)).toEqual([before + 1]);
+      const home = ok(await t.get('/v1/me/home', 'DRV1'));
+      expect(home.current_task).toMatchObject({ task: { version: before + 1, key_picked_up_at: null } });
+    } finally {
+      await rt.stop();
+    }
+  });
+
+  it('a key moved between two supervisors (no driver, no slot): no TaskCard is republished', async () => {
+    const a = await assignedRetrieval(t, { parker: 'DRV2', driver: 'DRV1' });
+    ok(await transfer(a.ticketId, { subject: 'key', to_holder_type: 'supervisor', to_holder_id: U['SUP-R'] }), 201);
+    const rt = await captureRealtime(t);
+    try {
+      ok(await transfer(a.ticketId, { subject: 'key', to_holder_type: 'unknown' }), 201);
+      await rt.settle();
+      const cards = rt
+        .of('task.updated', rooms.user(U.DRV1))
+        .filter((m) => m.message.data.task?.id === a.retrieveTaskId);
+      expect(cards).toHaveLength(0);
+    } finally {
+      await rt.stop();
+    }
+  });
+
   it('spot → spot of the vehicle of an accepted retrieval: the TaskCard carries the new spot', async () => {
     const a = await assignedRetrieval(t, { parker: 'DRV2', driver: 'DRV1' });
     const before = await taskVersion(a.retrieveTaskId);

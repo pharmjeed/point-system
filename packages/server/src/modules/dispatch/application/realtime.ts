@@ -296,9 +296,13 @@ class Plan {
           p.reason === 'official_transfer' &&
           taskId &&
           (p.subject === 'key' || p.subject === 'vehicle') &&
-          custodyTouchesTaskCard(p.subject, p.from?.type, p.to?.type)
+          (custodyTouchesTaskCard(p.subject, p.from?.type, p.to?.type) ||
+            (p.subject === 'key' && (p.from?.type === 'driver' || p.to?.type === 'driver')))
         ) {
-          // an official spot / slot transfer: the task (bumped) stays with its driver, his card shows the new place
+          // an official spot / slot transfer: the task (bumped) stays with its driver, his card shows the new place;
+          // the key leaving or reaching a driver may set or reset the assignee's pickup (`key_picked_up_at`, bumped
+          // without a task event when reset). A card the transaction already plans (key pickup, reassignment) is
+          // not repeated (resolveAssigneeCards); one that did not change is the same version and ignored (07 §4.5).
           const ticketId = str(p.ticket_id);
           if (ticketId) this.add(`assignee:${taskId}`, { kind: 'assignee_card', taskId, ticketId, env: ev });
         }
