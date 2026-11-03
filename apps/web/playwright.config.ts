@@ -87,7 +87,10 @@ export default defineConfig({
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    // a production build: CI sets NODE_ENV=test for its jobs, and Vite then builds with import.meta.env.PROD
+    // false, so the Service Worker is never registered and the production-only paths never run
     env: {
+      NODE_ENV: 'production',
       VITE_ENABLE_GALLERY: 'true',
       API_PORT: String(API_PORT),
       VITE_VAPID_PUBLIC_KEY: process.env.VITE_VAPID_PUBLIC_KEY ?? throwawayVapidPublicKey(),
