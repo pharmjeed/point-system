@@ -517,6 +517,10 @@ describe('WhatsApp sender (job.wa_send)', () => {
   it('channel down, then back: sending stops, wa_channel_down per venue, only current-state messages afterwards', async () => {
     const t = await createTicket(w, { status: 'requested' });
     const cycle = await createCycle(w, t);
+    await w.db.query(
+      `UPDATE whatsapp_channel SET quality_rating = NULL, messaging_limit_tier = NULL WHERE org_id = $1 AND is_active`,
+      [ORG],
+    );
     await w.sim.client.setChannel({ state: 'down', code: 190 });
     await emit(w, 'ticket.retrieval_requested', t, { cycle_id: cycle, cycle_no: 1, requested_early: false });
     await w.drain();
@@ -553,6 +557,12 @@ describe('WhatsApp sender (job.wa_send)', () => {
       `SELECT payload->'payload'->>'to' AS to FROM outbox_events WHERE type = 'wa.channel_health_changed' ORDER BY seq`,
     );
     expect(transitions.rows.map((r) => r.to)).toEqual(['down', 'healthy']);
+    // the probe that brought it back also stored the number's quality and messaging limit (12 §3.1; GAP-9)
+    const ch = await w.db.query(
+      `SELECT quality_rating, messaging_limit_tier FROM whatsapp_channel WHERE org_id = $1 AND is_active`,
+      [ORG],
+    );
+    expect(ch.rows[0]).toEqual({ quality_rating: 'GREEN', messaging_limit_tier: 'TIER_2K' });
   });
 
   it('temporary errors are retried 1, 4, 16, 64 s and the notification fails after wa.send_max_attempts', async () => {

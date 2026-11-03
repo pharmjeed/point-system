@@ -550,7 +550,22 @@ function accept(
   scheduleAutoStatuses(state, msg);
 }
 
-/** GET /{version}/{phone_number_id} — phone-number status for the channel health check (docs/12 §5.14). */
+/**
+ * The fields a plain `GET /{phone_number_id}` returns. As on the Graph API, every other field of the node — the
+ * messaging limit and `health_status` among them (docs/12 [R19]) — is returned only when `fields` names it, and a
+ * field the node does not have is refused with #100.
+ */
+export const PHONE_NUMBER_DEFAULT_FIELDS = [
+  'verified_name',
+  'code_verification_status',
+  'display_phone_number',
+  'quality_rating',
+  'platform_type',
+  'throughput',
+  'id',
+];
+
+/** GET /{version}/{phone_number_id}[?fields=…] — phone-number status for the channel health check (docs/12 §5.14). */
 export async function handlePhoneNumber(ctx: GraphContext, params: Params): Promise<void> {
   if (!(await preflight(ctx, null, params.version as string))) return;
   const { state } = ctx;
@@ -560,7 +575,7 @@ export async function handlePhoneNumber(ctx: GraphContext, params: Params): Prom
     if (err instanceof GraphReject) return reply(ctx, null, err);
     throw err;
   }
-  sendJson(ctx.res, 200, {
+  const node: Record<string, unknown> = {
     verified_name: brand().customerNameAr,
     code_verification_status: 'VERIFIED',
     display_phone_number: state.config.displayPhoneE164,
@@ -569,9 +584,32 @@ export async function handlePhoneNumber(ctx: GraphContext, params: Params): Prom
     throughput: { level: 'STANDARD' },
     name_status: 'APPROVED',
     whatsapp_business_manager_messaging_limit: 'TIER_2K',
+    messaging_limit_tier: 'TIER_2K', // deprecated by Meta, still readable
     health_status: { can_send_message: 'AVAILABLE', entities: [] },
     id: params.id,
-  });
+  };
+  const asked = ctx.url.searchParams.get('fields');
+  const fields = asked
+    ? [
+        ...new Set([
+          ...asked
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean),
+          'id',
+        ]),
+      ]
+    : PHONE_NUMBER_DEFAULT_FIELDS;
+  const unknown = fields.find((f) => !(f in node));
+  if (unknown)
+    return reply(
+      ctx,
+      null,
+      new GraphReject(100, undefined, {
+        message: `(#100) Tried accessing nonexisting field (${unknown}) on node type (WhatsAppBusinessPhoneNumber)`,
+      }),
+    );
+  sendJson(ctx.res, 200, Object.fromEntries(fields.map((f) => [f, node[f]])));
 }
 
 /** GET /{version}/{waba_id}/message_templates */

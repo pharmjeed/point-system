@@ -1,0 +1,224 @@
+# Prometheus alerting rules of the platform for the operator: the «مراقبة» routing of 15 §12, the suggested
+# thresholds of 12 §13, the timer lag of 10 §12.2 and the backup failure of 05 §12.3 (initial values, tuned after the
+# pilot). The supervisors' alerts stay in the application (14 §8); these watch the system around it.
+#
+# - Metric names only from the 05 §12.2 catalog (15 §12, DEC-159). The api (:METRICS_PORT) and the worker
+#   (:METRICS_PORT+1) both export the gauges the SystemMonitor reads from the database, hence max()/min() over the
+#   instances; the backup gauge is node_exporter's textfile written by infra/backup/backup.sh (DEC-303).
+# - Load it next to the scrape configuration of DEPLOYMENT §11.2:  rule_files: [prometheus-rules.yml]
+#   and validate it with  promtool check rules infra/monitoring/prometheus-rules.yml
+# - packages/server/test/monitoring-rules.test.ts checks every name against the catalog, every quantile threshold
+#   against the histogram's buckets (a threshold past the last bucket could never fire) and the 15 §12 coverage.
+# - Not here: «اختبار الاستعادة» (15 §12, last documented restore test older than 90 days) has no metric — it is a
+#   date in the restore runbook's record, checked by hand.
+groups:
+  - name: point-outbox-and-timers
+    rules:
+      - alert: PointOutboxLag
+        expr: max(point_outbox_oldest_pending_seconds) > 30
+        for: 1m
+        labels:
+          severity: critical
+          spec: '15 §12 ارتفاع عمر Outbox'
+        annotations:
+          summary: 'أقدم صف Outbox مستحق أقدم من 30 ثانية (ops.outbox_lag_alert_s الافتراضي)؛ العامل متوقف أو متأخر'
+          runbook: 'docs/04_Architecture_Flow.md §6.7، docs/DEPLOYMENT.md §11'
+      - alert: PointOutboxDead
+        expr: max by (type) (point_outbox_dead) > 0
+        labels:
+          severity: critical
+          spec: '15 §12 مهام ميتة'
+        annotations:
+          summary: 'صفوف Outbox ميتة من النوع {{ $labels.type }}: تُعالج من S-13 (outbox.manage، DEC-150)'
+          runbook: 'docs/07_API_Contract.md POST /v1/admin/outbox/{outboxId}/retry'
+      - alert: PointTimerLag
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_timer_lag_seconds_bucket[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+          spec: '10 §12.2 point_timer_lag_seconds'
+        annotations:
+          summary: 'p95 تأخر المؤقتات عن موعدها أكثر من ثانيتين'
+
+  - name: point-dispatch
+    rules:
+      - alert: PointNoDriverBeforeRequests
+        expr: min by (venue) (point_drivers_on_duty) == 0
+        for: 5m
+        labels:
+          severity: warning
+          spec: '15 §12 غياب السائقين قبل الطلبات'
+        annotations:
+          summary: 'حفل ووردية مفتوحان في الموقع {{ $labels.venue }} دون أي سائق مناوب منذ 5 دقائق'
+      - alert: PointRequestWaitLong
+        expr: max by (pool) (point_dispatch_oldest_open_request_seconds) > 600
+        labels:
+          severity: warning
+          spec: '15 §12 تجاوز زمن الانتظار الكلي'
+        annotations:
+          summary: 'أقدم طلب إحضار مفتوح في المجموعة {{ $labels.pool }} لم يبلغ الجاهزية منذ أكثر من 10 دقائق'
+      - alert: PointRequestWaitCritical
+        expr: max by (pool) (point_dispatch_oldest_open_request_seconds) > 1200
+        labels:
+          severity: critical
+          spec: '15 §12 تجاوز زمن الانتظار الكلي'
+        annotations:
+          summary: 'أقدم طلب إحضار مفتوح في المجموعة {{ $labels.pool }} لم يبلغ الجاهزية منذ أكثر من 20 دقيقة'
+      - alert: PointTasksStuckCritical
+        expr: max by (type) (point_tasks_stuck_critical) > 0
+        labels:
+          severity: critical
+          spec: '15 §12 مهام معلقة'
+        annotations:
+          summary: 'مهام {{ $labels.type }} تجاوزت ضعف حد task_stuck (التنبيه في التطبيق عند الحد نفسه)'
+      - alert: PointAssignmentPublishSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_dispatch_publish_seconds_bucket[15m]))) > 3
+        labels:
+          severity: warning
+          spec: '15 §12 أداء نشر الإسناد'
+        annotations:
+          summary: 'p95 نشر الإسناد خلال 15 دقيقة أكثر من 3 ثوانٍ (NFR-PERF-02)'
+      - alert: PointAssignmentPublishCritical
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_dispatch_publish_seconds_bucket[15m]))) > 6
+        labels:
+          severity: critical
+          spec: '15 §12 أداء نشر الإسناد'
+        annotations:
+          summary: 'p95 نشر الإسناد خلال 15 دقيقة أكثر من 6 ثوانٍ'
+
+  - name: point-requests
+    rules:
+      - alert: PointRequestSaveSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_retrieval_request_ingest_seconds_bucket[15m]))) > 2
+        labels:
+          severity: warning
+          spec: '15 §12 أداء حفظ الطلب'
+        annotations:
+          summary: 'p95 من زر «طلب السيارة» إلى التزام الدورة خلال 15 دقيقة أكثر من ثانيتين (NFR-PERF-01)'
+      - alert: PointRequestSaveCritical
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_retrieval_request_ingest_seconds_bucket[15m]))) > 5
+        labels:
+          severity: critical
+          spec: '15 §12 أداء حفظ الطلب'
+        annotations:
+          summary: 'p95 حفظ طلب الإحضار عبر واتساب خلال 15 دقيقة أكثر من 5 ثوانٍ'
+      - alert: PointApiRequestSaveSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_http_request_duration_seconds_bucket{route="POST /v1/tickets/{ticketId}/retrievals"}[15m]))) > 2
+        labels:
+          severity: warning
+          spec: '15 §12 أداء حفظ الطلب (طلب API)'
+        annotations:
+          summary: 'p95 طلب الإحضار عن العميل عبر الـAPI خلال 15 دقيقة أكثر من ثانيتين'
+      - alert: PointApiRequestSaveCritical
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_http_request_duration_seconds_bucket{route="POST /v1/tickets/{ticketId}/retrievals"}[15m]))) > 5
+        labels:
+          severity: critical
+          spec: '15 §12 أداء حفظ الطلب (طلب API)'
+        annotations:
+          summary: 'p95 طلب الإحضار عن العميل عبر الـAPI خلال 15 دقيقة أكثر من 5 ثوانٍ'
+
+  - name: point-whatsapp
+    rules:
+      - alert: PointWebhooksSilent
+        # 10 minutes without a webhook while sends were accepted 10 to 30 minutes ago (DEC-146's rule, approximated)
+        expr: (time() - max(point_wa_webhook_last_received_timestamp_seconds)) > 600 and on() sum(increase(point_wa_send_total{outcome="success"}[20m] offset 10m)) > 0
+        labels:
+          severity: critical
+          spec: '15 §12 توقف الـWebhooks'
+        annotations:
+          summary: 'لا Webhook من Meta منذ 10 دقائق مع رسائل قُبلت قبلها (wa_webhook_silent في التطبيق)'
+          runbook: 'docs/12_WhatsApp_Integration_Spec.md §14'
+      - alert: PointWaSendErrorRatio
+        expr: (sum(increase(point_wa_send_total{outcome!="success"}[15m])) / sum(increase(point_wa_send_total[15m]))) >= 0.05 and on() sum(increase(point_wa_send_total[15m])) >= 20
+        labels:
+          severity: warning
+          spec: '15 §12 نسبة أخطاء الإرسال'
+        annotations:
+          summary: '5% فأكثر من محاولات إرسال واتساب خلال 15 دقيقة فشلت (20 محاولة على الأقل)'
+      - alert: PointWaSendErrorRatioCritical
+        expr: (sum(increase(point_wa_send_total{outcome!="success"}[15m])) / sum(increase(point_wa_send_total[15m]))) >= 0.2 and on() sum(increase(point_wa_send_total[15m])) >= 20
+        labels:
+          severity: critical
+          spec: '15 §12 نسبة أخطاء الإرسال'
+        annotations:
+          summary: '20% فأكثر من محاولات إرسال واتساب خلال 15 دقيقة فشلت؛ صحة القناة وفق 12 §5.14'
+      - alert: PointWaSendSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(point_wa_send_duration_seconds_bucket[5m]))) > 5
+        for: 5m
+        labels:
+          severity: warning
+          spec: '12 §13 point_wa_send_duration_seconds'
+        annotations:
+          summary: 'p95 من إنشاء الإشعار إلى قبول Meta أكثر من 5 ثوانٍ لمدة 5 دقائق'
+      - alert: PointWaWebhookSlow
+        expr: histogram_quantile(0.5, sum by (le) (rate(point_wa_webhook_duration_seconds_bucket[5m]))) > 0.25
+        for: 5m
+        labels:
+          severity: warning
+          spec: '12 §13 point_wa_webhook_duration_seconds (F-09)'
+        annotations:
+          summary: 'p50 زمن رد معالج POST /webhooks/whatsapp أكثر من 250ms'
+      - alert: PointWaInboundBacklog
+        expr: max(point_wa_inbound_backlog) > 100 or max(point_wa_inbound_processing_lag_seconds) > 30
+        for: 1m
+        labels:
+          severity: warning
+          spec: '12 §13 point_wa_inbound_backlog'
+        annotations:
+          summary: 'أكثر من 100 حدث وارد معلّق أو أقدمها أقدم من 30 ثانية'
+      - alert: PointWaStatusOrphans
+        expr: sum(increase(point_wa_status_orphan_total[1h])) / sum(increase(point_wa_webhook_received_total[1h])) > 0.01
+        labels:
+          severity: warning
+          spec: '12 §13 point_wa_status_orphan_total'
+        annotations:
+          summary: 'أكثر من 1% من حالات واتساب الواردة بلا رسالة مطابقة خلال ساعة'
+      - alert: PointWaChannelDegraded
+        expr: max(point_wa_channel_health) == 1
+        labels:
+          severity: warning
+          spec: '12 §13 point_wa_channel_health'
+        annotations:
+          summary: 'قناة واتساب العملاء degraded (12 §5.14)'
+      - alert: PointWaChannelDown
+        expr: max(point_wa_channel_health) == 2
+        labels:
+          severity: critical
+          spec: '12 §13 point_wa_channel_health'
+        annotations:
+          summary: 'قناة واتساب العملاء down (wa_channel_down في التطبيق، 12 §5.14)'
+          runbook: 'docs/12_WhatsApp_Integration_Spec.md §14'
+      - alert: PointWaServiceMessagesMonth
+        expr: max(point_wa_service_messages_month) >= 800
+        labels:
+          severity: warning
+          spec: '12 §13 point_wa_service_messages_month (F-03)'
+        annotations:
+          summary: '800 من 1,000 رسالة خدمة مجانية هذا الشهر (التنبيه في التطبيق wa_send_failed؛ حد 80% من حد المراسلة يقرره SystemMonitor لأنه يقرأ فئة القناة)'
+
+  - name: point-backup
+    rules:
+      - alert: PointBackupStale
+        expr: (time() - max(point_backup_last_success_timestamp_seconds)) > 93600
+        labels:
+          severity: warning
+          spec: '15 §12 فشل النسخ الاحتياطي'
+        annotations:
+          summary: 'آخر نسخة احتياطية ناجحة أقدم من 26 ساعة'
+          runbook: 'docs/DEPLOYMENT.md §12'
+      - alert: PointBackupFailed
+        expr: (time() - max(point_backup_last_success_timestamp_seconds)) > 172800
+        labels:
+          severity: critical
+          spec: '15 §12 فشل النسخ الاحتياطي، 05 §12.3'
+        annotations:
+          summary: 'آخر نسخة احتياطية ناجحة أقدم من 48 ساعة: تنبيه حرج للمالك والإدارة'
+          runbook: 'docs/DEPLOYMENT.md §12'
+      - alert: PointBackupMetricAbsent
+        expr: absent(point_backup_last_success_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: warning
+          spec: '05 §12.2 point_backup_last_success_timestamp_seconds (DEC-303)'
+        annotations:
+          summary: 'لا يصل مقياس النسخ الاحتياطي (ملف node_exporter النصي لسكربت النسخ)'

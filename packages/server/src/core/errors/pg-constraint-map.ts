@@ -20,6 +20,11 @@ type Rule =
 export interface PgMapContext {
   /** 'POST /v1/tickets/{ticketId}/retrievals' style operation of the current command, when known. */
   operation?: string;
+  /**
+   * The request's input (path parameters, query, body): 08 §5.4 maps a foreign-key violation to
+   * RESOURCE_NOT_FOUND only when the missing key came from it.
+   */
+  input?: unknown;
 }
 
 const UNIQUE_RULES: Record<string, Rule> = {
@@ -171,9 +176,13 @@ export function mapPgError(e: PgErrorLike, ctx: PgMapContext = {}): MappedPgErro
       return rule ? { error: apply(rule, ctx, constraint), unexpected: false } : internal(constraint);
     }
     case '23503': {
-      const m = /is not present in table "([a-z_]+)"/.exec(e.detail ?? '');
+      // 08 §5.4: the request named something that does not exist → RESOURCE_NOT_FOUND; a key the server filled
+      // itself → a programming error (INTERNAL_ERROR, logged at error level with the constraint)
+      const m = /^Key \((.+)\)=\((.*)\) is not present in table "([a-z_]+)"/.exec(e.detail ?? '');
+      const values = m?.[2]?.split(', ') ?? [];
+      if (!m || !values.length || !values.every((v) => inputHas(ctx.input, v))) return internal(constraint);
       return {
-        error: new AppError('RESOURCE_NOT_FOUND', { resource: m?.[1] ?? 'unknown' }),
+        error: new AppError('RESOURCE_NOT_FOUND', { resource: m[3] ?? 'unknown' }),
         unexpected: false,
       };
     }
@@ -205,6 +214,22 @@ export function mapPgError(e: PgErrorLike, ctx: PgMapContext = {}): MappedPgErro
       }
       return internal(constraint || e.code || 'unknown');
   }
+}
+
+/** Does the request input (path parameters, query, body) carry this value somewhere (uuids case-insensitively)? */
+function inputHas(input: unknown, value: string): boolean {
+  if (input === undefined) return false;
+  const want = value.toLowerCase();
+  let budget = 10_000; // bodies are at most 1 MB; never walk without end
+  const walk = (v: unknown, depth: number): boolean => {
+    if (budget-- <= 0 || depth > 8) return false;
+    if (typeof v === 'string') return v.toLowerCase() === want;
+    if (typeof v === 'number' || typeof v === 'bigint') return String(v) === value;
+    if (Array.isArray(v)) return v.some((x) => walk(x, depth + 1));
+    if (v && typeof v === 'object') return Object.values(v).some((x) => walk(x, depth + 1));
+    return false;
+  };
+  return walk(input, 0);
 }
 
 function internal(constraint: string): MappedPgError {

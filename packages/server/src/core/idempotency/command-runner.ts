@@ -3,7 +3,7 @@ import type { Database } from '../db/database.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, InvariantViolation, asAppError } from '../errors/app-error.js';
 import { errorEnvelope, successEnvelope } from '../errors/envelope.js';
-import { dbUnavailableError, isPgError, mapPgError } from '../errors/pg-constraint-map.js';
+import { dbUnavailableError, isPgError, mapPgError, type PgMapContext } from '../errors/pg-constraint-map.js';
 
 export interface CommandContext {
   userId: string;
@@ -58,7 +58,7 @@ export async function runCommand<T>(
   db: Database,
   ctx: CommandContext,
   fn: (tx: Tx) => Promise<CommandSuccess<T>>,
-  opts: { assertAudit?: boolean; pgContext?: { operation?: string } } = {},
+  opts: { assertAudit?: boolean; pgContext?: PgMapContext } = {},
 ): Promise<CommandResponse> {
   try {
     return await db.transaction(async (tx) => {
@@ -122,7 +122,7 @@ export async function runInTransaction<T>(
   db: Database,
   requestId: string,
   fn: (tx: Tx) => Promise<CommandSuccess<T>>,
-  opts: { pgContext?: { operation?: string } } = {},
+  opts: { pgContext?: PgMapContext } = {},
 ): Promise<CommandResponse> {
   try {
     return await db.transaction(async (tx) => {
@@ -210,7 +210,7 @@ async function claimKey(tx: Tx, ctx: CommandContext): Promise<Claim> {
   return { kind: 'replay', response: { status: prev.response_status, body, replayed: true } };
 }
 
-export function toAppError(e: unknown, pgContext: { operation?: string }): AppError | null {
+export function toAppError(e: unknown, pgContext: PgMapContext): AppError | null {
   const app = asAppError(e);
   if (app) return app;
   // before isPgError: a socket errno such as EPIPE has the shape of a SQLSTATE

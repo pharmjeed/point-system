@@ -135,7 +135,7 @@ describe('PNT-089 — POST /v1/exports and GET /v1/exports/{exportId}', () => {
         t.db,
         `SELECT type, dedupe_key, status FROM outbox_events WHERE type = 'job.export_generate'`,
       ),
-    ).toEqual({ type: 'job.export_generate', dedupe_key: `export_generate:${x.id}`, status: 'pending' });
+    ).toEqual({ type: 'job.export_generate', dedupe_key: `export:${x.id}`, status: 'pending' });
     const audit = await one(
       t.db,
       `SELECT actor_id, metadata FROM audit_log WHERE action = 'export.create' AND entity_id = $1`,

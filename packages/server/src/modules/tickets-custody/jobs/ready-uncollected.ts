@@ -2,7 +2,7 @@ import { raiseAlert } from '../../../core/alerts/alerts.js';
 import { audit } from '../../../core/audit/audit-writer.js';
 import { lockCycles, lockTickets } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
-import type { JobHandler } from '../../../core/outbox/dispatcher.js';
+import { STALE_TIMER, type JobHandler } from '../../../core/outbox/dispatcher.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import { venueSettings } from '../../../core/settings/settings-service.js';
 import type { CycleRow, TicketRow } from '../infra/rows.js';
@@ -49,12 +49,13 @@ export const readyUncollectedHandler: JobHandler = {
       `SELECT status, active_cycle_id FROM tickets WHERE id = $1`,
       [p.ticket_id],
     );
-    if (!pre || pre.status !== 'ready' || pre.active_cycle_id !== p.cycle_id) return; // delivered, reparked, canceled
+    if (!pre || pre.status !== 'ready' || pre.active_cycle_id !== p.cycle_id) return STALE_TIMER; // delivered, reparked, canceled
     const [t] = (await lockTickets(tx, [p.ticket_id])) as TicketRow[]; // L5
     const [c] = (await lockCycles(tx, [p.cycle_id])) as CycleRow[]; // L6
-    if (!t || !c || t.status !== 'ready' || t.active_cycle_id !== c.id || c.closed_at || !c.ready_at) return;
+    if (!t || !c || t.status !== 'ready' || t.active_cycle_id !== c.id || c.closed_at || !c.ready_at)
+      return STALE_TIMER;
     const readyAt = new Date(c.ready_at);
-    if (p.ready_at && readyAt.getTime() !== new Date(p.ready_at).getTime()) return; // another readiness mark
+    if (p.ready_at && readyAt.getTime() !== new Date(p.ready_at).getTime()) return STALE_TIMER; // another readiness mark
     const s = await venueSettings(tx, t.venue_id);
     const due = dueAt(readyAt, s.ready.uncollected_alert_min);
     if (due.getTime() > tx.now.getTime()) {

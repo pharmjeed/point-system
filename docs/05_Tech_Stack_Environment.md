@@ -330,8 +330,6 @@ WORKER_CONCURRENCY=8
 WORKER_BATCH_SIZE=20
 WORKER_POLL_INTERVAL_MS=500
 WORKER_LEASE_SECONDS=30
-DISPATCH_SWEEP_INTERVAL_S=5
-HEARTBEAT_SWEEP_INTERVAL_S=15
 RETENTION_PURGE_CRON_UTC=0 2 * * *   # 05:00 Asia/Riyadh
 MONITOR_INTERVAL_S=10                # SystemMonitor (outbox_lag, task_stuck, gauges) in worker + api; 0 = off
 
@@ -525,13 +523,16 @@ volumes:
 | `point_dispatch_accept_rejections_total{code}` | Counter | رفض القبول حسب رمز الخطأ |
 | `point_dispatch_escalations_total` | Counter | التصعيد للمشرف |
 | `point_dispatch_open_tasks{pool}` · `point_dispatch_broadcast_open{pool}` | Gauge | الطلبات المفتوحة وجولات البث القائمة لكل مجموعة |
+| `point_dispatch_oldest_open_request_seconds{pool}` | Gauge | عمر أقدم طلب إحضار مفتوح لم يبلغ الجاهزية (`now() - priority_at`) لكل مجموعة نشطة، وصفر بلا طلب (15 §12 «تجاوز زمن الانتظار الكلي»؛ مقترح في `docs/progress/notes/server-gaps.md`) |
 | `point_timer_lag_seconds{job}` | Histogram | تأخر تنفيذ المؤقت عن `available_at` (تنبيه إذا p95 أكبر من ثانيتين) |
+| `point_timer_stale_total{job}` | Counter | مؤقتات وجدت كيانها تغيّر أو علامة حلقتها تقدمت فانتهت `done` بلا أثر («مهام قديمة»، 11 §8.11؛ مقترح في `docs/progress/notes/server-gaps.md`) |
 | `point_outbox_due{type}` | Gauge | صفوف Outbox المستحقة غير المعالجة |
 | `point_outbox_oldest_pending_seconds{type}` | Gauge | عمر أقدم صف مستحق |
 | `point_outbox_events_total{type,status}` | Counter | نتائج المعالجة (`done`، `failed`، `dead`، `canceled`) |
 | `point_outbox_dead{type}` | Gauge | صفوف `dead` الحالية لكل نوع (DEC-159) |
 | `point_dispatch_eligible_drivers{pool}` | Gauge | المناوبون غير المستريحين لكل مجموعة نشطة (DEC-159) |
 | `point_tasks_stuck{type}` | Gauge | المهام التي تجاوزت حد `task_stuck` (DEC-159، DEC-160) |
+| `point_tasks_stuck_critical{type}` | Gauge | المهام التي تجاوزت ضعف حد `task_stuck` (15 §12 «مهام معلقة»: الحرج للمراقبة فقط؛ مقترح في `docs/progress/notes/server-gaps.md`) |
 | `point_analytics_rejected_total{source,reason}` | Counter | صفوف تحليلية مرفوضة أو أحداث قياس مُسقطة بسببها (DEC-148، DEC-159) |
 | `point_retention_rows_total{step}` · `point_retention_duration_seconds` | Counter · Histogram | صفوف كل خطوة احتفاظ وزمن التشغيل (DEC-159) |
 | `point_wa_send_duration_seconds` | Histogram | من إنشاء الإشعار حتى قبول المزود |
@@ -547,7 +548,7 @@ volumes:
 | `point_push_send_total{outcome}` | Counter | Web Push ونتائجه |
 | `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري |
 | `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات |
-| `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159) |
+| `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159)؛ وصفر صريح لموقع فيه حفل ووردية مفتوحان بلا مناوبة (15 §12 «غياب السائقين قبل الطلبات») |
 | `point_backup_last_success_timestamp_seconds` | Gauge | آخر نسخة احتياطية ناجحة؛ من ملف نصي لـnode_exporter يكتبه سكربت النسخ، لا عملية دائمة (DEC-303) |
 
 ### 12.3 تنبيهات النظام (من المعمارية §15، قيم أولية تُضبط بعد التجربة)

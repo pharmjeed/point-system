@@ -110,6 +110,8 @@ export class WhatsappWebhookIntake {
         await enqueue(tx, {
           type: 'job.wa_process_inbound',
           orgId: channel.org_id,
+          // 04 §6.6: one job per stored delivery (the admin retry checks for a pending twin by this key)
+          dedupeKey: `inbound:${r.id}`,
           payload: { inbound_event_id: r.id },
         });
       }

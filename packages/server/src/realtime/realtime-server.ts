@@ -14,6 +14,18 @@ import type { Logger } from '../core/logging/logger.js';
 import { metrics } from '../core/metrics/metrics.js';
 import { REALTIME_NOTIFY_CHANNEL, type RealtimeMessage } from '../core/realtime/realtime-publisher.js';
 
+/** Socket events that publish an offer or an assignment (07 §4.3), timed into point_dispatch_publish_seconds. */
+const DISPATCH_PUBLISH_EVENTS: ReadonlySet<string> = new Set([
+  'task.offered',
+  'task.broadcast',
+  'task.claimed',
+]);
+/** `task.updated` causes that are an assignment: the winner's copy of a claim (DEC-220) and a reassignment. */
+const ASSIGNMENT_CAUSES: ReadonlySet<string> = new Set(['task.claimed', 'task.reassigned']);
+/** A session's new socket within this long of losing its previous one is a reconnection. */
+export const RECONNECT_WINDOW_MS = 10 * 60_000;
+const RECONNECT_TRACKED_SESSIONS = 10_000;
+
 export interface HeartbeatPayload {
   visible: boolean;
   audio_unlocked: boolean;
@@ -83,6 +95,8 @@ export class RealtimeServer {
   private timer: NodeJS.Timeout | null = null;
   private closed = false;
   private readonly origin: string;
+  /** session id → when its last socket disconnected (point_ws_reconnects_total) */
+  private readonly disconnectedAt = new Map<string, number>();
 
   constructor(private readonly deps: RealtimeDeps) {
     this.origin = new URL(deps.env.APP_BASE_URL).origin;
@@ -113,7 +127,10 @@ export class RealtimeServer {
         next(authError(asAppError(e)?.code ?? dbUnavailableError(e)?.code ?? 'AUTH_UNAUTHENTICATED'));
       }
     });
-    io.on('connection', (socket) => this.onConnection(socket));
+    io.on('connection', (socket) => {
+      this.countReconnect(socket);
+      this.onConnection(socket);
+    });
     await this.listen();
     this.timer = setInterval(() => void this.revalidateAll(), this.deps.revalidateEveryMs ?? 60_000);
     this.timer.unref();
@@ -128,11 +145,35 @@ export class RealtimeServer {
     this.io = null;
   }
 
+  /**
+   * `point_ws_reconnects_total` (05 §12.2): a session that opens a socket again within RECONNECT_WINDOW_MS of losing
+   * its previous one on this process (Socket.IO's automatic reconnection, the PWA back from the background). A
+   * reconnection that lands on another api instance is that instance's first connection, not counted.
+   */
+  private countReconnect(socket: Socket): void {
+    const data = socket.data as SocketData;
+    const now = this.deps.clock.now().getTime();
+    const left = this.disconnectedAt.get(data.actor.sessionId);
+    if (left !== undefined && now - left <= RECONNECT_WINDOW_MS) metrics.wsReconnects.inc();
+    this.disconnectedAt.delete(data.actor.sessionId);
+    socket.on('disconnect', () => {
+      const at = this.deps.clock.now().getTime();
+      if (this.disconnectedAt.size >= RECONNECT_TRACKED_SESSIONS)
+        for (const [sid, t] of this.disconnectedAt)
+          if (at - t > RECONNECT_WINDOW_MS || this.disconnectedAt.size >= RECONNECT_TRACKED_SESSIONS)
+            this.disconnectedAt.delete(sid);
+      this.disconnectedAt.set(data.actor.sessionId, at);
+    });
+  }
+
   private onConnection(socket: Socket) {
     const data = socket.data as SocketData;
     this.applyRooms(socket, roomsFor(data.actor));
-    metrics.wsConnections.inc({ venue: data.actor.venueId ?? 'none' });
-    socket.on('disconnect', () => metrics.wsConnections.dec({ venue: data.actor.venueId ?? 'none' }));
+    // the label of the connection, kept: revalidate() replaces data.actor (assignment, scope) while it lives, and the
+    // decrement must hit the series the increment did, or the gauge drifts (+1 on one venue, −1 on another)
+    const venue = data.actor.venueId ?? 'none';
+    metrics.wsConnections.inc({ venue });
+    socket.on('disconnect', () => metrics.wsConnections.dec({ venue }));
 
     socket.on('client.heartbeat', async (payload: HeartbeatPayload, ack?: (r: unknown) => void) => {
       try {
@@ -282,6 +323,23 @@ export class RealtimeServer {
     await connect();
   }
 
+  /**
+   * `point_dispatch_publish_seconds` (05 §12.2; the second technical target of 15 §10, p95 < 3 s): from the producing
+   * transaction to the socket emit of an offer (`task.offered`, `task.broadcast`) or an assignment (`task.claimed`, and
+   * `task.updated` caused by a claim or a reassignment). The start is the transaction's clock instant (`occurred_at`),
+   * so the transaction itself is included: an upper bound of «commit → publish».
+   */
+  private observeDispatchPublish(message: RealtimeMessage): void {
+    const cause = typeof message.data?.cause === 'string' ? message.data.cause : null;
+    const dispatch =
+      DISPATCH_PUBLISH_EVENTS.has(message.event) ||
+      (message.event === 'task.updated' && cause !== null && ASSIGNMENT_CAUSES.has(cause));
+    if (!dispatch || !message.occurred_at) return;
+    const at = Date.parse(message.occurred_at);
+    if (Number.isNaN(at)) return;
+    metrics.dispatchPublish.observe(Math.max(0, this.deps.clock.now().getTime() - at) / 1000);
+  }
+
   /** Relays one committed publication to the local sockets of its rooms. */
   async relay(raw: string): Promise<void> {
     if (!this.io) return;
@@ -304,6 +362,7 @@ export class RealtimeServer {
       return;
     }
     this.io.to(rooms).emit(message.event, this.envelope(parsed.org_id, message));
+    this.observeDispatchPublish(message);
     // membership may have changed (duty start/end, scope change): re-evaluate the users concerned
     if (message.event === 'sync.required' || message.event === 'driver.state_changed') {
       for (const r of userRooms)

@@ -22,6 +22,7 @@ import {
 import { requestHash } from '../core/idempotency/request-hash.js';
 import type { Logger } from '../core/logging/logger.js';
 import { COMMAND_KEY, RawBody, WithStatus, type CommandMeta } from './decorators.js';
+import { requestLogFields, type PipelineRequest } from './middleware.js';
 import { CLOCK, DATABASE, LOGGER } from './tokens.js';
 
 const ACCEPT_OPERATION = 'POST /v1/task-offers/{offerId}/accept';
@@ -87,6 +88,11 @@ export class CommandInterceptor implements NestInterceptor {
         req.tx = undefined;
       }
     };
+    // 08 §5.4: a foreign key the request named maps to RESOURCE_NOT_FOUND, one the server filled to INTERNAL_ERROR
+    const pgContext = {
+      operation: meta.operation,
+      input: { params: req.params, query: req.query, body: req.body ?? null },
+    };
     let run: Promise<CommandResponse>;
     // keys are scoped per user (idempotency_keys.user_id): public commands (login, MFA verify) run without one
     if ((meta.idempotent || header) && (req.actor?.userId || meta.idempotent)) {
@@ -102,11 +108,10 @@ export class CommandInterceptor implements NestInterceptor {
           requestId: req.requestId,
         },
         handlerFn as any,
+        { pgContext },
       );
     } else {
-      run = runInTransaction(this.db, req.requestId, handlerFn as any, {
-        pgContext: { operation: meta.operation },
-      });
+      run = runInTransaction(this.db, req.requestId, handlerFn as any, { pgContext });
     }
     return from(run).pipe(
       map((r) => {
@@ -120,12 +125,11 @@ export class CommandInterceptor implements NestInterceptor {
           if (r.status === 429 || r.status === 503 || r.error.code === 'IDEMPOTENCY_IN_PROGRESS') {
             res.setHeader('Retry-After', String(r.error.options.retryAfterS ?? 1));
           }
+          // 05 §7.6 fields; `route` is the canon operation of the command
           const fields = {
-            request_id: req.requestId,
-            code: r.error.code,
-            http: r.status,
-            user_id: req.actor?.userId,
+            ...requestLogFields(req as PipelineRequest, r.status),
             route: meta.operation,
+            code: r.error.code,
           };
           if (r.status >= 500)
             this.logger.error({ ...fields, cause: String(r.error.options.cause ?? '') }, 'command failed');
@@ -133,11 +137,9 @@ export class CommandInterceptor implements NestInterceptor {
         } else {
           this.logger.info(
             {
-              request_id: req.requestId,
+              ...requestLogFields(req as PipelineRequest, r.status),
               route: meta.operation,
-              http: r.status,
               replayed: r.replayed,
-              user_id: req.actor?.userId,
             },
             'command',
           );

@@ -3,6 +3,7 @@ import { newId } from '../../../core/crypto/ids.js';
 import { lockOffers, lockOpenDutyByUsers, lockTasks } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { InvariantViolation } from '../../../core/errors/app-error.js';
+import { metrics } from '../../../core/metrics/metrics.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import type { EventActor } from '../../tickets-custody/index.js';
 import type { OfferRow, PoolDriverRow, PoolRow, QueueTask } from '../infra/rows.js';
@@ -31,7 +32,10 @@ export async function ensureDispatchSweep(tx: Tx, orgId: string): Promise<void> 
   });
 }
 
-/** A pass for a pool whose lock this transaction does not hold (10 §3: `dispatch_pass:<pool_id>`). */
+/**
+ * A pass for a pool whose lock this transaction does not hold (10 §3, 11 §8.11: `dispatch_pass:<pool_id>`, payload
+ * `{dispatch_pool_id, reason}`). No V1 command needs it: each holds the L1 lock of the pools it changes.
+ */
 export async function requestDispatchPass(
   tx: Tx,
   pool: { id: string; org_id: string; venue_id: string },
@@ -42,7 +46,7 @@ export async function requestDispatchPass(
     venueId: pool.venue_id,
     dedupeKey: `dispatch_pass:${pool.id}`,
     aggregate: { type: 'dispatch_pool', id: pool.id, version: null },
-    payload: { pool_id: pool.id, reason },
+    payload: { dispatch_pool_id: pool.id, reason },
   });
 }
 
@@ -246,6 +250,7 @@ export async function revokeRound(
     [offerId, tx.now, reason],
   );
   if (!offer) return null;
+  metrics.dispatchOffers.inc({ mode: offer.mode, outcome: 'revoked' }); // 05 §12.2 (`accepted`, `expired`, `revoked`…)
   const recipients = await tx.rows<{ user_id: string }>(
     `SELECT user_id FROM offer_recipients WHERE offer_id = $1 ORDER BY user_id`,
     [offerId],
@@ -302,7 +307,9 @@ export async function revokeDriverSingleOffers(
 /**
  * 10 §8.3: the round expires (once `expires_at + grace` has passed), its task goes back to `queued` and the
  * silent recipient is rotated to the back of the idle order (DEC-26). Caller holds L1, L4 (task), L7 (offer).
- * `jobVersion` = the aggregate version stored with the timer (stale timers are no-ops).
+ * `jobVersion` = the aggregate version stored with the timer (stale timers are no-ops). Every expiry is counted
+ * here (`point_dispatch_offers_total{mode="single",outcome="expired"}`, 05 §12.2), whether job.offer_expire or the
+ * defensive step A of a dispatch pass closes the round.
  */
 export async function expireSingleRound(
   tx: Tx,
@@ -344,6 +351,7 @@ export async function expireSingleRound(
     task_id: expired.task_id,
     recipient_id: recipient?.user_id ?? null,
   });
+  metrics.dispatchOffers.inc({ mode: 'single', outcome: 'expired' });
   return true;
 }
 

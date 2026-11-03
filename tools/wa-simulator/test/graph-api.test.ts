@@ -201,16 +201,32 @@ describe('POST /{version}/{phone_number_id}/messages', () => {
 });
 
 describe('other Graph routes', () => {
-  it('GET /{version}/{phone_number_id} reports the number for the health check', async () => {
-    const res = await fetch(`${sim.url}/v26.0/123456789012345`, {
-      headers: { authorization: `Bearer ${TOKEN}` },
-    });
+  it('GET /{version}/{phone_number_id} reports the number for the health check: default fields unless asked', async () => {
+    const get = (query = '') =>
+      fetch(`${sim.url}/v26.0/123456789012345${query}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    let res = await get();
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({
-      id: '123456789012345',
-      verified_name: 'مصاف',
+    const plain = (await res.json()) as Record<string, unknown>;
+    expect(plain).toMatchObject({ id: '123456789012345', verified_name: 'مصاف', quality_rating: 'GREEN' });
+    // as on the Graph API, the messaging limit and the health status come only when `fields` names them
+    expect(plain).not.toHaveProperty('health_status');
+    expect(plain).not.toHaveProperty('whatsapp_business_manager_messaging_limit');
+
+    res = await get('?fields=quality_rating,health_status,whatsapp_business_manager_messaging_limit');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
       quality_rating: 'GREEN',
-      health_status: { can_send_message: 'AVAILABLE' },
+      health_status: { can_send_message: 'AVAILABLE', entities: [] },
+      whatsapp_business_manager_messaging_limit: 'TIER_2K',
+      id: '123456789012345',
+    });
+
+    res = await get('?fields=quality_rating,no_such_field');
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toMatchObject({
+      code: 100,
+      message:
+        '(#100) Tried accessing nonexisting field (no_such_field) on node type (WhatsAppBusinessPhoneNumber)',
     });
   });
 

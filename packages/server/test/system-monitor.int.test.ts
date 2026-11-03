@@ -5,6 +5,7 @@ import { OutboxDispatcher } from '../src/core/outbox/dispatcher.js';
 import { emitEvent, enqueue } from '../src/core/outbox/outbox-writer.js';
 import { createAnalyticsProjector } from '../src/modules/audit-monitoring/application/analytics-projector.js';
 import { SystemMonitor } from '../src/modules/audit-monitoring/jobs/system-monitor.js';
+import { setChannelHealth } from '../src/modules/whatsapp/application/channel-health.js';
 import {
   LYL,
   ORG,
@@ -229,6 +230,96 @@ describe('SystemMonitor', () => {
     }
   });
 
+  it('the 15 §12 monitoring-only sources: no driver before the requests, the oldest open request, tasks past twice the threshold', async () => {
+    const event = SEED_IDS.events['EVT-R1'];
+    const val = async (
+      g: { get(): Promise<{ values: { labels: Record<string, unknown>; value: number }[] }> },
+      label: string,
+      v: string,
+    ) => (await g.get()).values.find((x) => x.labels[label] === v)?.value;
+    const d1 = await insertDuty(t.db, { userId: U.DRV1 });
+    // a request 12 minutes old, not ready (15 §12 «تجاوز زمن الانتظار الكلي»: warning 10, critical 20)
+    const waiting = await insertTicket(t.db, { eventId: event, status: 'requested', submittedAt: T0 });
+    const queued = await insertRetrieveTask(t.db, {
+      ticketId: waiting,
+      eventId: event,
+      status: 'queued',
+      requestedAt: '2026-10-27T15:48:00Z',
+    });
+    // an accepted retrieval not started for 21 minutes: past twice its 10-minute threshold
+    const late = await insertTicket(t.db, { eventId: event, status: 'assigned', submittedAt: T0 });
+    const stuck = await insertRetrieveTask(t.db, {
+      ticketId: late,
+      eventId: event,
+      status: 'accepted',
+      assigneeId: U.DRV3,
+      acceptedAt: '2026-10-27T15:39:00Z',
+    });
+    try {
+      await monitor.tick();
+      // LYL has its event and its shift open and nobody on duty: an explicit 0 (RMS has DRV1)
+      expect(await val(metrics.driversOnDuty, 'venue', LYL)).toBe(0);
+      expect(await val(metrics.driversOnDuty, 'venue', RMS)).toBe(1);
+      expect(await val(metrics.dispatchOldestOpenRequest, 'pool', POOL_R)).toBe(30 * 60); // requested at 15:30
+      expect(await val(metrics.tasksStuckCritical, 'type', 'retrieve')).toBe(1);
+      expect(await val(metrics.tasksStuck, 'type', 'retrieve')).toBe(1);
+      // readiness takes a request out of the wait; the queued one remains
+      await t.db.query(`UPDATE retrieval_cycles SET ready_at = $2 WHERE id = $1`, [stuck.cycleId, T0]);
+      await t.db.query(`UPDATE tasks SET status = 'in_progress', started_at = $2 WHERE id = $1`, [
+        stuck.taskId,
+        T0,
+      ]);
+      await monitor.tick();
+      expect(await val(metrics.dispatchOldestOpenRequest, 'pool', POOL_R)).toBe(12 * 60);
+      expect(await val(metrics.tasksStuckCritical, 'type', 'retrieve')).toBeUndefined();
+      // the shift closes: LYL is no longer «open event and shift», its series goes
+      await t.db.query(`UPDATE shifts SET status = 'closed', closed_at = $2 WHERE venue_id = $1`, [LYL, T0]);
+      await monitor.refreshGauges();
+      expect(await val(metrics.driversOnDuty, 'venue', LYL)).toBeUndefined();
+    } finally {
+      await t.db.query(`UPDATE shifts SET status = 'open', closed_at = NULL WHERE venue_id = $1`, [LYL]);
+      await t.db.query(`DELETE FROM alerts WHERE task_id = ANY($1)`, [[queued.taskId, stuck.taskId]]);
+      await t.db.query(`DELETE FROM tasks WHERE id = ANY($1)`, [[queued.taskId, stuck.taskId]]);
+      await t.db.query(`DELETE FROM retrieval_cycles WHERE id = ANY($1)`, [[queued.cycleId, stuck.cycleId]]);
+      await t.db.query(`DELETE FROM tickets WHERE id = ANY($1)`, [[waiting, late]]);
+      await t.db.query(`DELETE FROM duty_sessions WHERE id = $1`, [d1]);
+    }
+  });
+
+  it('gauges read from the database in every process: WhatsApp channel health and the last webhook (05 §12.2)', async () => {
+    const value = async (g: typeof metrics.waChannelHealth) => (await g.get()).values[0]?.value;
+    const health = (h: string) =>
+      t.db.query(`UPDATE whatsapp_channel SET health_status = $2 WHERE id = $1`, [
+        SEED_IDS.whatsappChannel,
+        h,
+      ]);
+    try {
+      // a process that never saw the transition (the api, a restarted worker) still reports it
+      await health('down');
+      await monitor.refreshGauges();
+      expect(await value(metrics.waChannelHealth)).toBe(2);
+      await health('degraded');
+      await monitor.refreshGauges();
+      expect(await value(metrics.waChannelHealth)).toBe(1);
+      await health('healthy');
+      await monitor.refreshGauges();
+      expect(await value(metrics.waChannelHealth)).toBe(0);
+
+      // the worker never receives a webhook: it reports the last one the api stored
+      const at = new Date('2026-10-27T15:58:20.000Z');
+      await t.db.query(
+        `INSERT INTO whatsapp_inbound_events (org_id, received_at, signature_verified_at, body_sha256, raw_body, status)
+         VALUES ($1, $2, $2, $3, '{}', 'processed')`,
+        [ORG, at, `sha-${at.getTime()}`],
+      );
+      await monitor.refreshGauges();
+      expect(await value(metrics.waWebhookLastReceived)).toBe(at.getTime() / 1000);
+    } finally {
+      await health('healthy');
+      await t.db.query(`DELETE FROM whatsapp_inbound_events`);
+    }
+  });
+
   it('task_stuck (StuckDetector, 14 §8): raised past the threshold, resolved on progress, raised again per phase', async () => {
     const event = SEED_IDS.events['EVT-R1'];
     const ticket = await insertTicket(t.db, { eventId: event, status: 'assigned', submittedAt: T0 });
@@ -338,5 +429,64 @@ describe('SystemMonitor', () => {
     expect(rows.rows).toHaveLength(1);
     expect(rows.rows[0]!.dedupe_key).toBe('retention:2026-10-28');
     expect(new Date(rows.rows[0]!.available_at).toISOString()).toBe('2026-10-28T02:00:00.000Z');
+  });
+
+  it('A-alerts-1: a venue whose event opens while the channel is down gets its wa_channel_down row (14 §8, DEC-46)', async () => {
+    const CH = SEED_IDS.whatsappChannel;
+    const KEY = `wa_channel_down:${CH}`;
+    const rows = async () =>
+      (
+        await t.db.query<{ venue_id: string; status: string; severity: string; details: any }>(
+          `SELECT venue_id, status, severity, details FROM alerts WHERE dedupe_key = $1 ORDER BY raised_at, venue_id`,
+          [KEY],
+        )
+      ).rows;
+    // 15:00: the channel goes down while no event is open — nobody to alert yet
+    await t.db.query(`UPDATE events SET status = 'closed', closed_at = $1`, [t.clock.now()]);
+    await t.db.transaction((tx) => setChannelHealth(tx, CH, 'down', 'token_expired', 'job.wa_send'));
+    try {
+      expect(await rows()).toEqual([]);
+      expect((await monitor.tick()).channelDown).toEqual([]);
+
+      // 18:00: RMS opens its event — its supervisors get the critical alert (and its escalation Push)
+      t.clock.advanceSeconds(3 * 3600);
+      await t.db.query(`UPDATE events SET status = 'open', closed_at = NULL WHERE venue_id = $1`, [RMS]);
+      let r = await monitor.tick();
+      expect(r.channelDown).toEqual([RMS]);
+      expect(await rows()).toEqual([
+        {
+          venue_id: RMS,
+          status: 'open',
+          severity: 'critical',
+          details: { channel_id: CH, reason: 'token_expired' }, // the transition's reason (its audit row)
+        },
+      ]);
+      const raised = await t.db.query(
+        `SELECT payload->'payload' AS p FROM outbox_events WHERE type = 'alert.raised' AND payload->'payload'->>'type' = 'wa_channel_down'`,
+      );
+      expect(raised.rows.map((x) => x.p.severity)).toEqual(['critical']);
+      expect((await monitor.tick()).channelDown).toEqual([]); // once
+
+      // a supervisor resolves it at RMS; LYL opens: LYL is raised, RMS's resolution holds for this outage
+      await t.db.query(
+        `UPDATE alerts SET status = 'resolved', resolved_at = $2, resolved_by = $3 WHERE dedupe_key = $1`,
+        [KEY, t.clock.now(), U['SUP-R']],
+      );
+      t.clock.advanceSeconds(60);
+      await t.db.query(`UPDATE events SET status = 'open', closed_at = NULL WHERE venue_id = $1`, [LYL]);
+      r = await monitor.tick();
+      expect(r.channelDown).toEqual([LYL]);
+      expect((await rows()).map((a) => [a.venue_id, a.status])).toEqual([
+        [RMS, 'resolved'],
+        [LYL, 'open'],
+      ]);
+
+      // healthy again: resolved by the transition, and nothing raised by the monitor any more
+      await t.db.transaction((tx) => setChannelHealth(tx, CH, 'healthy', 'probe_and_send_ok', 'job.wa_send'));
+      expect((await monitor.tick()).channelDown).toEqual([]);
+      expect((await rows()).map((a) => a.status)).toEqual(['resolved', 'resolved']);
+    } finally {
+      await t.db.query(`UPDATE whatsapp_channel SET health_status = 'healthy' WHERE id = $1`, [CH]);
+    }
   });
 });

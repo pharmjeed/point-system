@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { compareCatalogs, snapshotCatalog } from '../src/catalog.js';
-import { migrate } from '../src/migrate.js';
+import { listMigrations, migrate, refuseInvalidIndexes } from '../src/migrate.js';
 import { SCHEMA_SQL } from '../src/paths.js';
 import { createTestDatabase, type TestDatabase } from '../src/testing.js';
 import { runInvariants, runSqlScript } from '../src/tools.js';
@@ -89,6 +89,62 @@ describe('migrations', () => {
 
   it('re-running migrate is a no-op', async () => {
     expect(await migrate(db.url)).toEqual([]);
+  });
+
+  it('later indexes are built CONCURRENTLY, one statement alone in its file, and end valid (06 ERD §9.2 rule 5)', async () => {
+    const later = listMigrations().filter(
+      (m) => m.name >= '0005' && /CREATE\s+(UNIQUE\s+)?INDEX/i.test(m.sql),
+    );
+    expect(later.map((m) => m.name)).toEqual([
+      '0005_wa_quota_index.sql',
+      '0006_wa_inbound_received_index.sql',
+      '0007_alerts_manual_resolved_index.sql',
+    ]);
+    for (const m of later) {
+      const statements = m.sql
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('--'))
+        .join('\n')
+        .split(';')
+        .filter((s) => s.trim());
+      expect(statements, m.name).toHaveLength(1);
+      expect(statements[0], m.name).toMatch(/^\s*CREATE INDEX CONCURRENTLY IF NOT EXISTS /);
+    }
+    const r = await client.query<{ name: string; valid: boolean }>(
+      `SELECT c.relname AS name, i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = ANY($1) ORDER BY c.relname`,
+      [['ix_alerts_manual_resolved', 'ix_whatsapp_inbound_org_received', 'ix_whatsapp_messages_accepted']],
+    );
+    expect(r.rows).toEqual([
+      { name: 'ix_alerts_manual_resolved', valid: true },
+      { name: 'ix_whatsapp_inbound_org_received', valid: true },
+      { name: 'ix_whatsapp_messages_accepted', valid: true },
+    ]);
+  });
+
+  it('an interrupted concurrent build leaves an INVALID index, and no migration is recorded over it', async () => {
+    const broken = await createTestDatabase();
+    const c = new pg.Client({ connectionString: broken.url });
+    await c.connect();
+    try {
+      await expect(refuseInvalidIndexes(c, '0005_wa_quota_index.sql')).resolves.toBeUndefined();
+      // a unique build over duplicates fails half way and keeps its catalog entry, marked invalid
+      await c.query(`CREATE TABLE scratch_dupes (v int)`);
+      await c.query(`INSERT INTO scratch_dupes VALUES (1), (1)`);
+      await expect(
+        c.query(`CREATE UNIQUE INDEX CONCURRENTLY ix_scratch_dupes ON scratch_dupes (v)`),
+      ).rejects.toMatchObject({
+        code: '23505',
+      });
+      // IF NOT EXISTS now skips it: only the check stops the run
+      await c.query(`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS ix_scratch_dupes ON scratch_dupes (v)`);
+      await expect(refuseInvalidIndexes(c, '0009_x.sql')).rejects.toThrow(
+        /Migration 0009_x\.sql left invalid indexes \(ix_scratch_dupes\)/,
+      );
+    } finally {
+      await c.end();
+      await broken.drop();
+    }
   });
 
   it.each([

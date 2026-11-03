@@ -1,5 +1,5 @@
 import { SEED_IDS } from '@point/db/seed';
-import { createLogger, dispatchJobs, OutboxDispatcher, requestDispatchPass } from '@point/server';
+import { createLogger, dispatchJobs, metrics, OutboxDispatcher, requestDispatchPass } from '@point/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestApp } from './harness.js';
 import {
@@ -228,9 +228,15 @@ describe('PNT-032 — POST /v1/task-offers/{offerId}/accept', () => {
   });
 
   it('OFFER_REVOKED for a round closed by a break; OFFER_EXPIRED after expires_at + grace (EC-05/EC-06)', async () => {
+    const revoked = async () =>
+      (await metrics.dispatchOffers.get()).values.find(
+        (v) => v.labels.mode === 'single' && v.labels.outcome === 'revoked',
+      )?.value ?? 0;
     const r = await requested(t);
     const first = (await liveOffer(t.db, U.DRV3))!;
+    const before = await revoked();
     ok(await brk(t, 'DRV3', true));
+    expect(await revoked()).toBe(before + 1); // point_dispatch_offers_total{mode,outcome} (05 §12.2)
     ok(await brk(t, 'DRV3', false));
     expect(err(await accept(t, 'DRV3', first.id), 'OFFER_REVOKED', 410)).toEqual({
       offer_id: first.id,
@@ -404,10 +410,16 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     for (const h of dispatchJobs()) worker.register(h);
   });
   afterEach(async () => t.close());
+  /** point_dispatch_offers_total{mode="single",outcome="expired"} (05 §12.2) */
+  const expiredCount = async () =>
+    (await metrics.dispatchOffers.get()).values.find(
+      (v) => v.labels.mode === 'single' && v.labels.outcome === 'expired',
+    )?.value ?? 0;
 
   it('expiry: the round expires after expires_at + grace, the silent driver rotates, the next idle driver gets the task', async () => {
     await threeDrivers(t);
     const r = await requested(t);
+    const expiredBefore = await expiredCount();
     const first = (await liveOffer(t.db, U.DRV3))!;
     await worker.drain(); // nothing due yet (the timer is at +31.5 s)
     expect((await one(t.db, `SELECT status FROM task_offers WHERE id = $1`, [first.id])).status).toBe(
@@ -437,13 +449,18 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
       { offer_id: first.id, task_id: r.retrieveTaskId, recipient_id: U.DRV3 },
     ]);
     expect((await rows(t.db, `SELECT 1 FROM audit_log WHERE action = 'job.offer_expire'`)).length).toBe(1);
+    expect(await expiredCount()).toBe(expiredBefore + 1);
     await expectConsistent(t.db);
   });
 
   it('a stale timer is a no-op after the accept; an early timer reschedules itself', async () => {
+    /** point_timer_stale_total{job} (05 §12.2; 11 §8.11 «مهام قديمة») */
+    const staleCount = async (job: string) =>
+      (await metrics.timerStale.get()).values.find((v) => v.labels.job === job)?.value ?? 0;
     await threeDrivers(t);
     await requested(t);
     const offer = (await liveOffer(t.db, U.DRV3))!;
+    const staleBefore = await staleCount('job.offer_expire');
     ok(await accept(t, 'DRV3', offer.id));
     t.clock.advanceSeconds(32);
     await worker.drain();
@@ -451,6 +468,11 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
       'accepted',
     );
     expect((await outboxEvents(t.db, 'offer.expired')).length).toBe(0);
+    // the timer ended done with no effect and is counted as stale (one row: the accepted round's expiry)
+    expect(
+      await one(t.db, `SELECT status FROM outbox_events WHERE dedupe_key = $1`, [`offer_expire:${offer.id}`]),
+    ).toEqual({ status: 'done' });
+    expect(await staleCount('job.offer_expire')).toBe(staleBefore + 1);
 
     const r2 = await requested(t);
     const o2 = (await liveOffer(t.db, U.DRV2))!;
@@ -472,6 +494,8 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     t.clock.advanceSeconds(1);
     await worker.drain();
     expect((await one(t.db, `SELECT status FROM task_offers WHERE id = $1`, [o2.id])).status).toBe('expired');
+    // neither the early timer (rescheduled) nor the one that expired the round is stale
+    expect(await staleCount('job.offer_expire')).toBe(staleBefore + 1);
     await expectConsistent(t.db);
   });
 
@@ -479,11 +503,16 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     await threeDrivers(t);
     await requested(t);
     const first = (await liveOffer(t.db, U.DRV3))!;
+    const expiredBefore = await expiredCount();
     t.clock.advanceSeconds(40);
     ok(await startDuty(t, 'DRV4'), 201); // any pass of the pool
     expect((await one(t.db, `SELECT status FROM task_offers WHERE id = $1`, [first.id])).status).toBe(
       'expired',
     );
+    // counted by the pass that closed it; the late job.offer_expire finds it closed and counts nothing
+    expect(await expiredCount()).toBe(expiredBefore + 1);
+    await worker.drain();
+    expect(await expiredCount()).toBe(expiredBefore + 1);
     await expectConsistent(t.db);
   });
 
@@ -506,6 +535,16 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     await t.db.transaction((tx) =>
       requestDispatchPass(tx, { id: POOL_R, org_id: SEED_IDS.org, venue_id: RMS }, 'requeued'),
     );
+    // 11 §8.11: payload {dispatch_pool_id, reason}, dedupe dispatch_pass:<pool_id>
+    expect(
+      await one(
+        t.db,
+        `SELECT payload, dedupe_key FROM outbox_events WHERE type = 'job.dispatch_pass' AND status = 'pending'`,
+      ),
+    ).toEqual({
+      payload: { dispatch_pool_id: POOL_R, reason: 'requeued' },
+      dedupe_key: `dispatch_pass:${POOL_R}`,
+    });
     await worker.drain();
     expect((await liveOffer(t.db, U.DRV2))?.task_id).toBe(r.task.id);
     // the sweep: pending, done after its interval, followed by a new pending one
@@ -523,5 +562,61 @@ describe('PNT-032 — worker timers (job.offer_expire, job.dispatch_pass, job.di
     expect(after.filter((x) => x.status === 'done').length).toBeGreaterThanOrEqual(1);
     expect(after.filter((x) => x.status === 'pending').length).toBe(1);
     await expectConsistent(t.db);
+  });
+
+  it('11 §3.3 claimed_elsewhere: the sweep closes a live round whose task can no longer be offered (offer.revoked)', async () => {
+    await threeDrivers(t);
+    const r = await requested(t);
+    const offer = (await liveOffer(t.db, U.DRV3))!;
+    expect(offer.task_id).toBe(r.retrieveTaskId);
+    // an inconsistent state no command leaves: the task closed while its round stayed active
+    await t.db.query(
+      `UPDATE tasks SET status = 'canceled', canceled_at = $2, cancel_reason = 'supervisor_cancel' WHERE id = $1`,
+      [r.retrieveTaskId, t.clock.now()],
+    );
+    const revoked = async () =>
+      (await metrics.dispatchOffers.get()).values.find(
+        (v) => v.labels.mode === 'single' && v.labels.outcome === 'revoked',
+      )?.value ?? 0;
+    const before = await revoked();
+    // a worker whose log lines are kept (05 §7.6 / 10 §12.3 fields of the sweep's pass)
+    const lines: Record<string, unknown>[] = [];
+    const logged = new OutboxDispatcher(
+      t.db,
+      t.clock,
+      createLogger({ level: 'info', destination: { write: (l: string) => void lines.push(JSON.parse(l)) } }),
+      { workerId: 'test-worker-logged' },
+    );
+    for (const h of dispatchJobs()) logged.register(h);
+    t.clock.advanceSeconds(6); // the next job.dispatch_sweep (its offer_expire timer is not due yet)
+    await logged.drain();
+    expect(
+      lines.find((l) => l.msg === 'dispatch sweep closed a live round whose task can no longer be offered'),
+    ).toMatchObject({ level: 'error', pool_id: POOL_R, offer_id: offer.id, outcome: 'claimed_elsewhere' });
+    // the sweep's pass that repaired something is an info line with the 10 §12.3 fields
+    const pass = lines.find(
+      (l) => l.msg === 'dispatch pass' && l.pass_reason === 'sweep' && l.pool_id === POOL_R,
+    );
+    expect(pass).toMatchObject({ level: 'info', orphans_closed: 1, offers_created: 0 });
+    expect(typeof pass?.lock_wait_ms).toBe('number');
+    expect(typeof pass?.duration_ms).toBe('number');
+    expect(await one(t.db, `SELECT status, close_reason FROM task_offers WHERE id = $1`, [offer.id])).toEqual(
+      {
+        status: 'revoked',
+        close_reason: 'claimed_elsewhere',
+      },
+    );
+    expect(
+      (await outboxEvents(t.db, 'offer.revoked'))
+        .map((e) => e.payload.payload)
+        .filter((p) => p.offer_id === offer.id),
+    ).toEqual([
+      expect.objectContaining({
+        offer_id: offer.id,
+        task_id: r.retrieveTaskId,
+        close_reason: 'claimed_elsewhere',
+      }),
+    ]);
+    expect(await revoked()).toBe(before + 1);
   });
 });

@@ -103,8 +103,8 @@ export const envSchema = z.object({
   WORKER_BATCH_SIZE: int(20),
   WORKER_POLL_INTERVAL_MS: int(500),
   WORKER_LEASE_SECONDS: int(30),
-  DISPATCH_SWEEP_INTERVAL_S: int(5),
-  HEARTBEAT_SWEEP_INTERVAL_S: int(15),
+  // no sweep intervals here: job.dispatch_sweep runs every 10 §3 SWEEP_INTERVAL (5 s, a constant) and
+  // job.heartbeat_sweep every heartbeat.interval_s (canon §12, an organization setting) — server-gaps DEC-PROPOSED-11
   RETENTION_PURGE_CRON_UTC: z.string().default('0 2 * * *'),
   // SystemMonitor loop (outbox_lag, task_stuck, gauges) in the worker and the api; 0 disables it
   MONITOR_INTERVAL_S: int(10),

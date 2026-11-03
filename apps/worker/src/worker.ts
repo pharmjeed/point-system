@@ -8,6 +8,7 @@ import {
   type Env,
   type JobHandler,
   type EventProjector,
+  type OutboxRow,
 } from '@point/server';
 
 export interface WorkerDeps {
@@ -16,6 +17,21 @@ export interface WorkerDeps {
   database?: Database;
   handlers?: JobHandler[];
   projectors?: EventProjector[];
+}
+
+/**
+ * The dispatcher's outcome hook (05 §12.2). `point_outbox_events_total{type,status}` counts results — `done`,
+ * `failed`, `dead` (and `canceled`, by the admin retry): a retry puts the row back to `pending` (a deferral by pacing,
+ * the ordering gate or a channel down is no failure), so a row is counted once, by the result it finally ends with.
+ * Every leased timer reports its lag from `available_at`.
+ */
+export function countOutboxOutcome(
+  row: Pick<OutboxRow, 'type'>,
+  outcome: 'done' | 'failed' | 'dead' | 'retry',
+  lagMs: number,
+): void {
+  if (outcome !== 'retry') metrics.outboxEvents.inc({ type: row.type, status: outcome });
+  if (row.type.startsWith('job.')) metrics.timerLag.observe({ job: row.type }, lagMs / 1000);
 }
 
 /**
@@ -52,12 +68,7 @@ export function createWorker(deps: WorkerDeps) {
       leaseSeconds: deps.env.WORKER_LEASE_SECONDS,
       pollIntervalMs: deps.env.WORKER_POLL_INTERVAL_MS,
     },
-    {
-      onOutcome: (row, outcome, lagMs) => {
-        metrics.outboxEvents.inc({ type: row.type, status: outcome === 'retry' ? 'failed' : outcome });
-        if (row.type.startsWith('job.')) metrics.timerLag.observe({ job: row.type }, lagMs / 1000);
-      },
-    },
+    { onOutcome: countOutboxOutcome },
   );
   for (const h of deps.handlers ?? []) dispatcher.register(h);
   for (const p of deps.projectors ?? []) dispatcher.registerProjector(p);

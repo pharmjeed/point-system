@@ -16,6 +16,12 @@ const g = (name: string, help: string, labelNames: string[] = []) =>
   new client.Gauge({ name, help, labelNames, registers: [registry] });
 
 const FAST = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5];
+/**
+ * The latencies with 15 §10 targets and 15 §12 thresholds — request save (warning 2 s, critical 5 s) and assignment
+ * publish (warning 3 s, critical 6 s): every threshold is a bucket bound, and buckets go past the critical ones
+ * (`histogram_quantile` never returns more than the highest finite bound).
+ */
+const TARGET = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 6, 10, 30];
 const HUMAN = [1, 5, 10, 15, 30, 45, 60, 90, 120, 180, 300, 600];
 
 export const metrics = {
@@ -23,19 +29,19 @@ export const metrics = {
     'point_http_request_duration_seconds',
     'HTTP commands and queries',
     ['route', 'status'],
-    FAST,
+    TARGET,
   ),
   retrievalIngest: h(
     'point_retrieval_request_ingest_seconds',
     'Webhook button press to committed retrieval cycle',
     [],
-    FAST,
+    TARGET,
   ),
   dispatchPublish: h(
     'point_dispatch_publish_seconds',
     'Commit of assignment/offer to WebSocket publish',
     [],
-    FAST,
+    TARGET,
   ),
   dispatchTimeToClaim: h(
     'point_dispatch_time_to_claim_seconds',
@@ -60,7 +66,17 @@ export const metrics = {
   dispatchEscalations: c('point_dispatch_escalations_total', 'Escalations to the supervisor'),
   dispatchOpenTasks: g('point_dispatch_open_tasks', 'Open retrieval tasks per pool', ['pool']),
   dispatchBroadcastOpen: g('point_dispatch_broadcast_open', 'Open broadcast rounds per pool', ['pool']),
+  dispatchOldestOpenRequest: g(
+    'point_dispatch_oldest_open_request_seconds',
+    'Age of the oldest open retrieval request not ready yet, per active pool (15 §12)',
+    ['pool'],
+  ),
   timerLag: h('point_timer_lag_seconds', 'Timer execution lag behind available_at', ['job'], FAST),
+  timerStale: c(
+    'point_timer_stale_total',
+    'Timers that found their aggregate changed or their episode mark moved on, done with no effect (11 §8.11)',
+    ['job'],
+  ),
   outboxDue: g('point_outbox_due', 'Due unprocessed outbox rows', ['type']),
   outboxOldestPending: g('point_outbox_oldest_pending_seconds', 'Age of the oldest due row', ['type']),
   outboxEvents: c('point_outbox_events_total', 'Outbox processing results', ['type', 'status']),
@@ -99,13 +115,20 @@ export const metrics = {
   driversConnectionUncertain: g('point_drivers_connection_uncertain', 'Drivers with uncertain connection', [
     'venue',
   ]),
-  backupLastSuccess: g('point_backup_last_success_timestamp_seconds', 'Last successful backup'),
+  // point_backup_last_success_timestamp_seconds is not a process metric: infra/backup/backup.sh writes it to a
+  // node_exporter textfile (05 §12.2, DEC-303). Registered here it would read 0 on every api and worker scrape and
+  // trip the 26 h backup rule (15 §12) for good.
   // PNT-090/091/094 additions (proposed for 05 §12.2, docs/progress/notes/audit-monitoring.md)
   outboxDead: g('point_outbox_dead', 'Outbox rows in status dead', ['type']),
   dispatchEligibleDrivers: g('point_dispatch_eligible_drivers', 'Drivers on duty and not on break per pool', [
     'pool',
   ]),
   tasksStuck: g('point_tasks_stuck', 'Tasks past their task_stuck threshold (14 §8)', ['type']),
+  tasksStuckCritical: g(
+    'point_tasks_stuck_critical',
+    'Tasks past twice their task_stuck threshold (15 §12, monitoring only)',
+    ['type'],
+  ),
   analyticsRejected: c(
     'point_analytics_rejected_total',
     'Analytics events dropped by the allow-list (15 §9.2, §13.1)',

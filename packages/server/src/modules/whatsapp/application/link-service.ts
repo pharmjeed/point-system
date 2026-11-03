@@ -2,7 +2,7 @@ import { waTemplateById, type WaMessageId } from '@point/shared';
 import { lockTickets } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
-import type { JobHandler } from '../../../core/outbox/dispatcher.js';
+import { STALE_TIMER, type JobHandler } from '../../../core/outbox/dispatcher.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import { isClosedTicket, type EventActor, type TicketRow } from '../../tickets-custody/index.js';
 import { venueSettingsFor } from '../../venues-events/index.js';
@@ -132,7 +132,7 @@ export async function issueQrLinkCode(
   await schedule(tx, 'job.link_code_expire', new Date(row.expires_at), {
     orgId: t.org_id,
     venueId: t.venue_id,
-    dedupeKey: `link_code_expire:${row.id}`,
+    dedupeKey: `link_expire:${row.id}`,
     aggregate: { type: 'link_code', id: row.id, version: null },
     payload: { link_code_id: row.id },
   });
@@ -315,16 +315,16 @@ export const linkCodeExpireHandler: JobHandler = {
       `SELECT ticket_id, status FROM link_codes WHERE id = $1`,
       [id],
     );
-    if (!peek || (peek.status !== 'active' && peek.status !== 'pending_confirmation')) return;
+    if (!peek || (peek.status !== 'active' && peek.status !== 'pending_confirmation')) return STALE_TIMER;
     const [locked] = await lockTickets(tx, [peek.ticket_id]);
     const t = locked as TicketRow;
     const lc = await tx.one<LinkCodeRow>(`SELECT * FROM link_codes WHERE id = $1 FOR NO KEY UPDATE`, [id]);
-    if (lc.status !== 'active' && lc.status !== 'pending_confirmation') return;
+    if (lc.status !== 'active' && lc.status !== 'pending_confirmation') return STALE_TIMER;
     if (new Date(lc.expires_at).getTime() > tx.now.getTime()) {
       await schedule(tx, 'job.link_code_expire', new Date(lc.expires_at), {
         orgId: lc.org_id,
         venueId: t.venue_id,
-        dedupeKey: `link_code_expire:${lc.id}`,
+        dedupeKey: `link_expire:${lc.id}`,
         aggregate: { type: 'link_code', id: lc.id, version: null },
         payload: { link_code_id: lc.id },
       });

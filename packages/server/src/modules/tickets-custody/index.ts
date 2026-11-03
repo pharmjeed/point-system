@@ -72,3 +72,7 @@ export {
   type ClaimCodeSecrets,
   type ClaimCodeState,
 } from './application/claim-codes.js';
+export {
+  registerCustodyTicketUpdatePublisher,
+  type CustodyTicketUpdatePublisher,
+} from './application/ticket-update-seam.js';

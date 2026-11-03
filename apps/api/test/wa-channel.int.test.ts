@@ -158,6 +158,49 @@ describe('WhatsApp channel and templates (canon §9.7)', () => {
       expect(audits.rowCount).toBe(2);
     });
 
+    it('the sync also keeps the number quality rating and messaging limit (12 §3.1, F-18; GAP-9)', async () => {
+      await w.db.query(
+        `UPDATE whatsapp_channel SET quality_rating = NULL, messaging_limit_tier = NULL WHERE org_id = $1 AND is_active`,
+        [ORG],
+      );
+      const r = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });
+      expect(r.status).toBe(200);
+      const ch = await w.get('/v1/admin/whatsapp/channel', 'ADM1');
+      // the simulator's GET /{phone_number_id}: GREEN, whatsapp_business_manager_messaging_limit TIER_2K
+      expect(ch.body.data).toMatchObject({ quality_rating: 'GREEN', messaging_limit_tier: 'TIER_2K' });
+      const a = await w.db.query(
+        `SELECT metadata FROM audit_log WHERE action = 'wa.templates_manage' ORDER BY id DESC LIMIT 1`,
+      );
+      expect(a.rows[0].metadata.number_status).toEqual({
+        quality_rating: 'GREEN',
+        messaging_limit_tier: 'TIER_2K',
+        updated: true,
+      });
+      // GET /{phone_number_id} refused (an id the simulator does not know): the sync still succeeds and keeps the
+      // stored values
+      await w.db.query(
+        `UPDATE whatsapp_channel SET phone_number_id = 'SIM-UNKNOWN' WHERE org_id = $1 AND is_active`,
+        [ORG],
+      );
+      try {
+        const again = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });
+        expect(again.status).toBe(200);
+        const last = await w.db.query(
+          `SELECT metadata FROM audit_log WHERE action = 'wa.templates_manage' ORDER BY id DESC LIMIT 1`,
+        );
+        expect(last.rows[0].metadata.number_status).toBeNull();
+      } finally {
+        await w.db.query(
+          `UPDATE whatsapp_channel SET phone_number_id = 'SIM-PHONE' WHERE org_id = $1 AND is_active`,
+          [ORG],
+        );
+      }
+      expect((await w.get('/v1/admin/whatsapp/channel', 'ADM1')).body.data).toMatchObject({
+        quality_rating: 'GREEN',
+        messaging_limit_tier: 'TIER_2K',
+      });
+    });
+
     it('a template paused at Meta becomes paused here and degrades the channel (12 §6.9)', async () => {
       await w.sim.client.setTemplateStatus('masaf_request_reserved_v1', 'PAUSED', { emitWebhook: false });
       const r = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });

@@ -6,8 +6,8 @@ import { createApp } from '../src/bootstrap.js';
 import { testEnv } from './test-env.js';
 
 /**
- * PNT-013 / 16 §3.2: every implemented route matches canon §9 (path, permission, ✓ idempotency). Routes of the
- * canon that are not implemented yet are listed (ROUTES_COMPLETE=1 turns that list into a failure, for G5).
+ * PNT-013 / 16 §3.2: every implemented route matches canon §9 (path, permission, ✓ idempotency), and every canon
+ * route is served (the server sweep made the former ROUTES_COMPLETE=1 check the default once all 131 were built).
  */
 describe('routes contract (canon §9)', () => {
   let app: Awaited<ReturnType<typeof createApp>>;
@@ -50,12 +50,14 @@ describe('routes contract (canon §9)', () => {
     expect(problems).toEqual([]);
   });
 
-  it('reports canon routes not implemented yet', () => {
+  it('serves every canon route (G5: /metrics is the internal metrics server of startMetricsServer)', () => {
     const implemented = new Set(declared.map((r) => key(r.method, r.path)));
     const missing = ROUTES.filter(
       (r) => r.permission !== 'internal' && !implemented.has(key(r.method, r.path)),
     ).map((r) => key(r.method, r.path));
-    if (process.env.ROUTES_COMPLETE === '1') expect(missing).toEqual([]);
-    else console.info(`[routes] ${ROUTES.length - missing.length}/${ROUTES.length} canon routes implemented`);
+    expect(missing).toEqual([]);
+    expect(ROUTES.filter((r) => r.permission === 'internal').map((r) => key(r.method, r.path))).toEqual([
+      'GET /metrics',
+    ]);
   });
 });

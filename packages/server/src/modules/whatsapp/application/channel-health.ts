@@ -1,5 +1,9 @@
 import type { WaHealthStatus } from '@point/shared';
-import { autoResolveAlerts, raiseAlertForAffectedVenues } from '../../../core/alerts/alerts.js';
+import {
+  autoResolveAlerts,
+  channelDownDedupeKey,
+  raiseAlertForAffectedVenues,
+} from '../../../core/alerts/alerts.js';
 import { audit } from '../../../core/audit/audit-writer.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { metrics } from '../../../core/metrics/metrics.js';
@@ -7,14 +11,15 @@ import { emitEvent } from '../../../core/outbox/outbox-writer.js';
 
 const GAUGE: Record<WaHealthStatus, number> = { healthy: 0, degraded: 1, down: 2 };
 
-export const channelDownDedupeKey = (channelId: string) => `wa_channel_down:${channelId}`;
+export { channelDownDedupeKey };
 
 /**
  * The only transitions of 12 §5.14: healthy → degraded, healthy/degraded → down, down/degraded → healthy.
  * A degradation never lifts a `down` channel. Each transition writes `wa.channel_health_changed` (the
  * notifications realtime planner turns it into `channel.status` for every staff room), raises
- * `wa_channel_down` for every venue with an open or closing event when it goes down (DEC-46) and
- * auto-resolves those alerts when it is healthy again. Never another number or channel (P-02).
+ * `wa_channel_down` for every venue with an open or closing event when it goes down (DEC-46; a venue whose event
+ * opens later in the outage gets its row from the SystemMonitor) and auto-resolves those alerts when it is healthy
+ * again. Never another number or channel (P-02).
  */
 export async function setChannelHealth(
   tx: Tx,

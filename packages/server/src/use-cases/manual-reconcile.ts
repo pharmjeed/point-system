@@ -3,6 +3,7 @@ import { autoResolveAlerts } from '../core/alerts/alerts.js';
 import type { ActorContext } from '../core/actor-context/actor-context.js';
 import { audit } from '../core/audit/audit-writer.js';
 import { newId } from '../core/crypto/ids.js';
+import { metrics } from '../core/metrics/metrics.js';
 import { lockCycles, lockEvents, lockOffers, lockPools, lockTasks, lockTickets } from '../core/db/locks.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
@@ -447,12 +448,15 @@ export class ManualReconcileUseCase {
         RETURNING n.id`,
       [t.id],
     );
-    if (skipped.length)
+    if (skipped.length) {
       await tx.query(
         `UPDATE whatsapp_messages SET status = 'skipped'
           WHERE notification_id = ANY($1::uuid[]) AND direction = 'outbound' AND wa_message_id IS NULL AND status = 'queued'`,
         [skipped.map((s) => s.id)],
       );
+      // 05 §12.2: counted like the sender's own skips
+      metrics.waSkipped.inc({ reason: 'superseded' }, skipped.length);
+    }
 
     // ------------------------------------------------------------------ alerts of the ticket's former state
     const stale = await tx.rows<{ dedupe_key: string }>(

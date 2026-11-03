@@ -14,7 +14,7 @@ import {
 import type { EventEnvelope, Tx } from '../core/db/tx.js';
 import { registerTxPlanner, type TxPlanner } from '../core/db/tx-planners.js';
 import { AppError } from '../core/errors/app-error.js';
-import type { JobHandler } from '../core/outbox/dispatcher.js';
+import { STALE_TIMER, type JobHandler } from '../core/outbox/dispatcher.js';
 import { emitEvent, schedule } from '../core/outbox/outbox-writer.js';
 import { publishRealtime } from '../core/realtime/realtime-publisher.js';
 import { emitAvailability, releaseDriverWorkImpl, type DutyRow } from '../modules/dispatch/index.js';
@@ -372,7 +372,7 @@ export const transferActivateHandler: JobHandler = {
     const id = (row.payload?.transfer_id as string | undefined) ?? row.aggregate_id;
     if (!id) return;
     const pre = await tx.maybeOne<TransferRow>(`SELECT * FROM driver_transfers WHERE id = $1`, [id]);
-    if (!pre || (pre.status !== 'pending' && pre.status !== 'blocked')) return; // completed or canceled
+    if (!pre || (pre.status !== 'pending' && pre.status !== 'blocked')) return STALE_TIMER; // completed or canceled
     if (new Date(pre.scheduled_at).getTime() > tx.now.getTime()) {
       await schedule(tx, 'job.transfer_activate', new Date(pre.scheduled_at), {
         orgId: pre.org_id,
@@ -389,7 +389,7 @@ export const transferActivateHandler: JobHandler = {
     );
     await lockVenuePools(tx, [pre.from_venue_id, current?.venue_id ?? null, pre.to_venue_id]); // L1
     const [t] = (await lockTransfers(tx, [id])) as TransferRow[]; // L3.1
-    if (!t || (t.status !== 'pending' && t.status !== 'blocked')) return;
+    if (!t || (t.status !== 'pending' && t.status !== 'blocked')) return STALE_TIMER;
     if (current) await lockAssignments(tx, [current.id]); // L3.2
     const [user] = (await lockUsers(tx, [t.driver_id])) as { status: string }[]; // L3.3
     const venues = [...new Set([t.from_venue_id, t.to_venue_id].filter((v): v is string => !!v))];
