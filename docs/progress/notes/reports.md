@@ -1,0 +1,12 @@
+# Stream notes — wave7/reports (G3, S5, S8, go-live checklist 1.1, decisions batch 7)
+
+Documentation only. Base `26e9b33`.
+
+## Review responses
+
+| # | Finding | Verdict | What changed |
+|---|---|---|---|
+| R-1 | AC-14 marked ✓ although TC-042 (17: four browser contexts, card removal and sound stop under 3 s, p95 over 50 repetitions) does not exist as an automated test | **Real.** `driver-live.spec.ts` «task.claimed removes a visible card» opens one recipient page; the sound stop is a unit test (`audio.test.ts`); M2 p95 = 91 ms is the server's socket publish latency in the load run, not browser removal / sound stop. No DEC accepts that split proof | Fix (a), not (b): accepting the split proof by decision would lower 17's test to fit what exists. AC-14 is ◐ in `G3.md` (verdict row, AC-14 row, «ما بقي» row: TC-042 is development work and blocks AC-14 ✓, the automated part of G3 and G5 criterion 1), in `go-live-checklist.md` §0, §1 AC-14 and §4 row 1 and its status line, and in `S5.md` / `S8.md` (gate lines, PNT-073 row, AC table, deferred list). G3 now reads «الجزء الآلي ناجح عدا TC-042 (AC-14 ◐)، وجزء الأجهزة معلّق» |
+| R-2 | S8.md says `pnpm ops:restore-drill` passed «locally and in CI» | **Real.** No CI run is recorded (`restore/2026-10-28.md`, `notes/ops-security.md`); Actions does not start on the account (O-11) | Both places now say: passed locally (`restore/2026-10-28.md`); the CI step is configured and runs once CI is enabled (O-11). The same wording applied to «KP-1…KP-5 in CI on `main`» (DEC-374) in `S8.md` AC-06 and checklist §1 AC-06, which had the same flaw |
+| R-3 | S8.md sends DEC-419…DEC-432 to S5.md, which does not list them | **Real.** | `S8.md` «القرارات» lists DEC-419…DEC-432 (staff gaps GAP-2…GAP-6: S-03, S-06, S-08, S-10, S-13, stream staff-gaps) itself, and points only DEC-433…DEC-446 and DEC-447…DEC-456 to `S5.md` |
+| R-4 | STATUS.md not updated | **Not applied in this stream.** The workflow that assigned this stream forbids editing `docs/progress/STATUS.md` (and `state.json`, `tickets.json`); the lead updates it when it merges the wave. For that update: date 2026-11-03; gap streams and int-server/int-web merged; G3 «الجزء الآلي ناجح عدا TC-042 (AC-14 ◐)، وجزء الأجهزة معلّق»; checks at `26e9b33` unit 1446 / int 684 (+1 skipped) / e2e 587, `test:race` 50/50 + invariants; decisions up to DEC-456 (next DEC-457); next: TC-042 (development), then the owner items of `go-live-checklist.md` §4 | — |
