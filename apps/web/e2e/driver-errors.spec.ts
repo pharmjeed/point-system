@@ -299,6 +299,33 @@ test('D-10: the key is not where the system has it — CUSTODY_HOLDER_MISMATCH s
   expect(fake.world.tickets.find((t) => t.id === r.ticketId)?.key_holder.type).toBe('key_slot');
 });
 
+test('D-10: a key outside any slot (moved to the supervisor) shows the custody dialog, not a validation text', async ({
+  page,
+}) => {
+  const fake = createFake();
+  startDuty(fake, 'DRV1');
+  const r = arrangeRetrieval(fake, 'DRV1', 'accepted');
+  // contract:F3: S-03 «نقل عهدة رسمي» moved the key to the supervisor after the accept — the card has no slot
+  const t = fake.world.tickets.find((x) => x.id === r.ticketId);
+  const slot = fake.world.slots.find((x) => x.id === t?.key_slot_id);
+  if (!t || !slot) throw new Error('arranged ticket without a key slot');
+  slot.ticket_id = null;
+  t.key_slot_id = null;
+  t.key_holder = { type: 'supervisor', id: SEED_IDS.users['SUP-R'] };
+  await fake.attach(page, 'DRV1');
+  await page.goto(`/d/tasks/${r.taskId}`);
+  await page.getByRole('button', { name: 'استلمت المفتاح' }).click();
+  const dialog = page.getByRole('alertdialog', { name: TEXT.CUSTODY_HOLDER_MISMATCH });
+  await expect(dialog).toBeVisible();
+  // never a request the strict body refuses (key_slot_id "" → 422 VALIDATION_FAILED)
+  expect(fake.callsTo('POST /v1/tasks/:taskId/key-pickup').map((c) => c.status)).not.toContain(422);
+  await expect(page.getByText('تحقّق من الحقول المحددة.')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'فهمت' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'استلمت المفتاح' })).toBeEnabled();
+  expect(fake.world.tickets.find((x) => x.id === r.ticketId)?.key_holder.type).toBe('supervisor');
+});
+
 test('D-11: the collection is checked first, a wrong stub shows inline, then cash and the handover', async ({
   page,
 }) => {

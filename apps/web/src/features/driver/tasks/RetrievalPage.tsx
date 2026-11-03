@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Images } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ApiError, displayMessage } from '@/api/errors';
+import { ApiError, displayMessage, fallbackMessageAr } from '@/api/errors';
 import { getMediaUrl, keyPickup, markReady, startRetrieval } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, Media, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
@@ -84,19 +84,33 @@ function Retrieval({ card }: { card: TaskCardData }) {
     void refresh();
   };
   const command = useCommand(async (input: { step: Step; version: number; slotId?: string }, key: string) => {
-    if (input.step === 'pickup')
-      return keyPickup(
-        card.task.id,
-        { key_slot_id: input.slotId ?? '', expected_version: input.version },
-        key,
-      );
+    if (input.step === 'pickup') {
+      if (!input.slotId) throw new ApiError({ status: 409, code: 'CUSTODY_HOLDER_MISMATCH' });
+      return keyPickup(card.task.id, { key_slot_id: input.slotId, expected_version: input.version }, key);
+    }
     if (input.step === 'start') return startRetrieval(card.task.id, { expected_version: input.version }, key);
     return markReady(card.task.id, { expected_version: input.version }, key);
   });
 
+  /** 08 CUSTODY_HOLDER_MISMATCH (DEC-352): re-read the custody and stop on a dialog. */
+  const custodyMismatch = (message: string) => {
+    setCustodyIssue(message);
+    command.reset();
+    void qc.invalidateQueries({ queryKey: queryKeys.ticket(card.ticket.id) });
+    void refresh();
+  };
+
   const run = async (s: Step) => {
+    const slotId = card.key_slot?.id ?? ticket.data?.current_key_slot?.id;
+    // contract:F3: the key is in no slot (holder unknown, the supervisor, a driver) — the strict body takes a
+    // slot uuid only, so a "" would be a 422 VALIDATION_FAILED; the pickup cannot match a slot holder anyway
+    // (DEC-187 → CUSTODY_HOLDER_MISMATCH), so the custody dialog and a re-read come at once, nothing is sent
+    if (s === 'pickup' && !slotId) {
+      custodyMismatch(fallbackMessageAr('CUSTODY_HOLDER_MISMATCH'));
+      return;
+    }
     try {
-      apply(await command.run({ step: s, version: card.task.version, slotId: card.key_slot?.id }));
+      apply(await command.run({ step: s, version: card.task.version, slotId }));
     } catch (error) {
       if (!(error instanceof ApiError)) return;
       if (error.is('NOT_TASK_ASSIGNEE')) {
@@ -107,10 +121,7 @@ function Retrieval({ card }: { card: TaskCardData }) {
       }
       if (error.is('CUSTODY_HOLDER_MISMATCH')) {
         // 08: re-read the custody and stop on a dialog — the key or the car is not where the system has it
-        setCustodyIssue(error.message_ar);
-        command.reset();
-        void qc.invalidateQueries({ queryKey: queryKeys.ticket(card.ticket.id) });
-        void refresh();
+        custodyMismatch(error.message_ar);
         return;
       }
       if (error.is('VERSION_CONFLICT', 'INVALID_STATE_TRANSITION', 'TASK_NOT_STARTABLE', 'KEY_NOT_PICKED_UP'))
