@@ -6,6 +6,7 @@ import { lockEvents, lockTasks, lockTickets } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import {
+  bumpTaskCardVersion,
   emitForTicket,
   invalidTransition,
   loadTicketDetail,
@@ -275,6 +276,7 @@ export class PaymentsService {
     const reason = body.reason.trim();
     const head = await ticketHead(tx, actor, ticketId);
     await lockEvents(tx, [head.event_id], 'FOR SHARE'); // L2
+    const task = await lockAssignedOpenTask(tx, ticketId); // L4 (the assignee's TaskCard shows payment_due)
     const [locked] = (await lockTickets(tx, [ticketId])) as TicketRow[]; // L5
     const ticket = locked!;
     await recheckStaffScope(tx, actor, ticket.venue_id, { notFound: 'TICKET_NOT_FOUND' });
@@ -291,6 +293,7 @@ export class PaymentsService {
         WHERE id = $1 AND version = $2 RETURNING *`,
       [ticket.id, ticket.version, tx.now, actor.userId, reason],
     );
+    if (task) await bumpTaskCardVersion(tx, task.id); // RT-2: payment_due leaves the card
     const amount = Number(ticket.fee_halalas);
     const selfApproved = await handsOverTicket(tx, actor.userId, ticket);
     await emitForTicket(tx, after, {
@@ -334,6 +337,7 @@ export class PaymentsService {
     );
     if (!head || head.org_id !== actor.orgId || !actor.venueIds.has(head.venue_id)) throw notFound('payment');
     await lockEvents(tx, [head.event_id], 'FOR SHARE'); // L2
+    const task = await lockAssignedOpenTask(tx, head.ticket_id); // L4 (payment_due may come back on the card)
     const [locked] = (await lockTickets(tx, [head.ticket_id])) as TicketRow[]; // L5
     const ticket = locked!;
     const original = await tx.one<PaymentRow>(`SELECT * FROM payments WHERE id = $1 FOR NO KEY UPDATE`, [
@@ -372,6 +376,7 @@ export class PaymentsService {
       `UPDATE tickets SET payment_status = $3, version = version + 1 WHERE id = $1 AND version = $2 RETURNING *`,
       [ticket.id, ticket.version, nextStatus],
     );
+    if (task && nextStatus === 'due') await bumpTaskCardVersion(tx, task.id); // RT-2: payment_due is back
     const delivered = ticket.status === 'delivered';
     const afterHandover = original.cash_handover_id !== null;
     const replacementId = replacement ? newId() : null;
@@ -467,6 +472,20 @@ async function ticketHead(tx: Pick<Tx, 'maybeOne'>, actor: ActorContext, ticketI
 }
 
 /** The open retrieve task with an assignee (accepted / in_progress), read without a lock. */
+/**
+ * The ticket's open task with an assignee, locked (L4), or null: its TaskCard shows `payment_due` (RT-2). Read
+ * without a lock first, then re-checked under the lock (the task may have closed in between).
+ */
+async function lockAssignedOpenTask(tx: Tx, ticketId: string): Promise<TaskHead | null> {
+  const r = await tx.maybeOne<{ id: string }>(
+    `SELECT id FROM tasks WHERE ticket_id = $1 AND status NOT IN ('completed','canceled') AND assignee_id IS NOT NULL`,
+    [ticketId],
+  );
+  if (!r) return null;
+  const [task] = (await lockTasks(tx, [r.id])) as TaskHead[];
+  return task && task.assignee_id && task.status !== 'completed' && task.status !== 'canceled' ? task : null;
+}
+
 async function openRetrieveTaskId(tx: Pick<Tx, 'maybeOne'>, ticketId: string): Promise<string | null> {
   const r = await tx.maybeOne<{ id: string }>(
     `SELECT id FROM tasks WHERE ticket_id = $1 AND type = 'retrieve' AND status IN ('accepted','in_progress')`,

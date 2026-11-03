@@ -1,4 +1,5 @@
 import { plateView } from '../domain/plate.js';
+import type { Tx } from '../../../core/db/tx.js';
 import { loadClaimCodeState } from './claim-codes.js';
 import { iso, taskView, type Queryable, type TaskReadRow, type Viewer } from './views.js';
 
@@ -114,3 +115,24 @@ export async function loadTaskCard(q: Queryable, taskId: string, viewer: Viewer,
 }
 
 export type TaskCard = NonNullable<Awaited<ReturnType<typeof loadTaskCard>>>;
+
+/**
+ * realtime:RT-2 (07 §4.3, §4.5): the TaskCard shows ticket-derived fields (`parking`, `key_slot`, `payment_due`).
+ * A command that changes one of them for the assignee of an open task without a task event (an official spot /
+ * slot transfer, a fee waiver or reversal) bumps the task version here, so the TaskCard the dispatch planner
+ * republishes on `custody.changed` / `payment.*` is newer than the one the driver holds (a same-version card is
+ * ignored) and a command sent with the old `expected_version` is VERSION_CONFLICT. The caller holds L4 on the task.
+ */
+export async function bumpTaskCardVersion(tx: Tx, taskId: string): Promise<void> {
+  await tx.query(`UPDATE tasks SET version = version + 1 WHERE id = $1`, [taskId]);
+}
+
+/** A custody move that changes what the TaskCard shows: the key into or out of a slot, the vehicle into or out of a spot. */
+export function custodyTouchesTaskCard(
+  subject: 'vehicle' | 'key',
+  fromType: string | null | undefined,
+  toType: string | null | undefined,
+): boolean {
+  const holder = subject === 'key' ? 'key_slot' : 'spot';
+  return fromType === holder || toType === holder;
+}
