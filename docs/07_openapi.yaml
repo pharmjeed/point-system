@@ -7055,7 +7055,7 @@ paths:
                 reason:
                   type: string
                   maxLength: 500
-                  description: إلزامي عند status=disabled
+                  description: إلزامي عند أي تغيير في status (تعطيلًا أو تفعيلًا)، ودونه REASON_REQUIRED (DEC-424)
               required: [expected_version]
               additionalProperties: false
       responses:
