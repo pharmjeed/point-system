@@ -1,10 +1,12 @@
-# Build context of infra/docker/web.Dockerfile: the web app, the brand assets and the proxy config only.
+# Build context of infra/docker/web.Dockerfile: the web app, the shared canon sources, the brand assets and the proxy
+# config only.
 **
 !pnpm-workspace.yaml
 !pnpm-lock.yaml
 !package.json
 !tsconfig.base.json
 !apps/web/**
+!packages/shared/**
 !brand/**
 !infra/caddy/Caddyfile
 !infra/caddy/conf.d/00-site.caddy
