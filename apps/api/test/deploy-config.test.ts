@@ -91,8 +91,15 @@ describe('production compose (infra/compose/docker-compose.prod.yml)', () => {
   });
 
   it('only the proxy publishes ports (80, 443); metrics and the api stay internal', () => {
-    const published = [...compose.matchAll(/^\s+- '(\d+):(\d+)(\/udp)?'$/gm)].map((m) => m[0].trim());
-    expect(published).toEqual(["- '80:80'", "- '443:443'", "- '443:443/udp'"]);
+    // the host side defaults to 80/443; behind a shared gateway it is a loopback/bridge address (DEC-457)
+    const published = [...compose.matchAll(/^\s+- '([^']+)'$/gm)]
+      .map((m) => m[1])
+      .filter((p) => /:\d+(\/udp)?$/.test(p));
+    expect(published).toEqual([
+      '${POINT_HTTP_BIND:-80}:80',
+      '${POINT_HTTPS_BIND:-443}:443',
+      '${POINT_HTTPS_BIND:-443}:443/udp',
+    ]);
     expect(block('web')).toContain('ports:');
     expect(compose.match(/^\s+ports:/gm)).toHaveLength(1); // only web publishes anything
     expect(compose).not.toMatch(/^\s+expose:/m);
@@ -107,5 +114,35 @@ describe('backend image (infra/docker/Dockerfile)', () => {
     expect(cleanup?.[1]).toBeDefined();
     for (const dir of ['"$d/src"', '"$d/test"', '"$d/rehearsal"', '"$d/scripts"'])
       expect(cleanup![1]).toContain(dir);
+  });
+});
+
+describe('shared-server installation (DEC-457)', () => {
+  const caddy = read('infra/caddy/Caddyfile');
+  const install = read('infra/deploy/install.sh');
+  const behind = read('infra/compose/docker-compose.behind-proxy.yml');
+
+  it('the defaults keep Caddy terminating TLS itself; plain HTTP only when SITE_SCHEME says so', () => {
+    expect(caddy).toMatch(/^\{\$SITE_SCHEME\}\{\$DOMAIN\} \{$/m);
+    expect(caddy).toContain('trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}');
+  });
+
+  it('the installer generates every secret on the server and never takes over a port it does not own', () => {
+    for (const k of ['SESSION_SECRET', 'CODE_PEPPER', 'AUTH_SECRET_PEPPER', 'DATA_ENCRYPTION_KEY']) {
+      expect(install).toContain(`${k}=$(b64)`);
+    }
+    expect(install).toContain('chmod 600 "$ENV_FILE"');
+    expect(install).toContain('APP_ENV=staging');
+    expect(install).toContain('WA_MODE=simulator');
+    expect(install).toMatch(/ports 80\/443 are taken by something that is not a known gateway/);
+    // a site file the gateway rejects is rolled back before any reload
+    expect(install.indexOf('caddy validate')).toBeLessThan(install.indexOf('caddy reload'));
+  });
+
+  it('behind the gateway, api and worker reach the storage on DOMAIN through the host', () => {
+    expect(behind).toMatch(/api:\s+extra_hosts:\s+- '\$\{DOMAIN\}:\$\{POINT_HOST_GATEWAY:-host-gateway\}'/);
+    expect(behind).toMatch(
+      /worker:\s+extra_hosts:\s+- '\$\{DOMAIN\}:\$\{POINT_HOST_GATEWAY:-host-gateway\}'/,
+    );
   });
 });

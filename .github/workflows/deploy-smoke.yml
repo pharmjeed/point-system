@@ -1,0 +1,162 @@
+# DEC-457: the server installation (infra/deploy/install.sh) end to end on a fresh Docker host, in both modes:
+#   direct   POINT's Caddy owns 80/443 (local CA instead of Let's Encrypt)
+#   gateway  a shared Caddy gateway already owns 80/443 and imports /data/conf.d/*.caddyfile (the shape of the
+#            production server, where other projects run): the installer adds its site file and reloads it
+# and the backend image built for linux/arm64 (the production server is an Ampere A1) with its native modules.
+# Runs only when the deployment files change, or by hand (limited minutes on a private repository).
+name: Deploy smoke
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/deploy-smoke.yml'
+      - 'pnpm-lock.yaml'
+      - 'tools/wa-simulator/**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OWNER_PHONE: '0550000001'
+  OWNER_NAME: 'CI Owner'
+
+jobs:
+  install:
+    name: install.sh (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [direct, gateway]
+    env:
+      DOMAIN: app.point.test
+      SIM_DOMAIN: ${{ matrix.mode == 'gateway' && 'sim.point.test' || '' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Hosts resolve to this runner
+        run: echo "127.0.0.1 app.point.test sim.point.test other.point.test" | sudo tee -a /etc/hosts
+
+      - name: Direct mode — local CA instead of Let's Encrypt
+        if: matrix.mode == 'direct'
+        run: printf 'tls internal\n' > infra/caddy/conf.d/99-ci.caddy
+
+      - name: Gateway mode — a shared gateway with another site, like the production server
+        if: matrix.mode == 'gateway'
+        run: |
+          mkdir -p "$RUNNER_TEMP/gw"
+          printf '{\n\tlocal_certs\n}\n\nother.point.test {\n\trespond "other site"\n}\n\nimport /data/conf.d/*.caddyfile\n' > "$RUNNER_TEMP/gw/Caddyfile"
+          docker network create vm_default
+          docker volume create vm_caddydata
+          docker run --rm -v vm_caddydata:/data alpine mkdir -p /data/conf.d
+          docker run -d --name vm-caddy-1 --network vm_default -p 80:80 -p 443:443 \
+            -v "$RUNNER_TEMP/gw/Caddyfile:/etc/caddy/Caddyfile:ro" -v vm_caddydata:/data caddy:2
+          for i in $(seq 1 30); do
+            docker exec vm-caddy-1 test -f /data/caddy/pki/authorities/local/root.crt && break
+            sleep 1
+          done
+          docker exec vm-caddy-1 cat /data/caddy/pki/authorities/local/root.crt > "$RUNNER_TEMP/gw-ca.crt"
+          curl -fsS --cacert "$RUNNER_TEMP/gw-ca.crt" https://other.point.test/ | grep -q 'other site'
+
+      - name: Install
+        env:
+          POINT_YES: '1'
+          POINT_MODE: ${{ matrix.mode }}
+          ACME_EMAIL: ci@point.test
+        run: |
+          [ "$POINT_MODE" != gateway ] || export CURL_CA_BUNDLE="$RUNNER_TEMP/gw-ca.crt"
+          bash infra/deploy/install.sh 2>&1 | tee "$RUNNER_TEMP/install.log"
+          test "${PIPESTATUS[0]}" = 0
+          test "$(stat -c %a .env)" = 600
+
+      - name: The site works through the front door
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.mode }}" = gateway ]; then
+            CA="$RUNNER_TEMP/gw-ca.crt"
+          else
+            CA="$RUNNER_TEMP/point-ca.crt"
+            docker exec point-web-1 cat /data/caddy/pki/authorities/local/root.crt > "$CA"
+          fi
+          base=https://$DOMAIN
+          c() { curl -sS --cacert "$CA" "$@"; }
+          test "$(c -o /dev/null -w '%{http_code}' $base/health/ready)" = 200
+          c -D "$RUNNER_TEMP/h.txt" -o "$RUNNER_TEMP/index.html" $base/d/start
+          grep -qi '^content-security-policy: .*connect-src .self. wss://app.point.test' "$RUNNER_TEMP/h.txt"
+          grep -qi '^strict-transport-security:' "$RUNNER_TEMP/h.txt"
+          grep -q '<div id="root">' "$RUNNER_TEMP/index.html"
+          test "$(c -o /dev/null -w '%{http_code}' $base/metrics)" = 404
+          # the private bucket is on the origin and refuses an unsigned request
+          test "$(c -o /dev/null -w '%{http_code}' $base/point-media/x.jpg)" = 403
+          # the first owner signs in with the one-time password: restricted session (change it, then MFA)
+          pw=$(sed -n 's/.*temporary password (shown once): //p' "$RUNNER_TEMP/install.log" | tr -d '\r')
+          test -n "$pw"
+          body=$(jq -nc --arg p "$OWNER_PHONE" --arg s "$pw" '{phone:$p, secret:$s}')
+          r=$(c -c "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' -H 'X-Requested-With: point-web' \
+                -H "Origin: $base" -d "$body" $base/v1/auth/login)
+          echo "$r" | jq -e '.data.must_change_secret == true and .data.mfa_setup_required == true'
+          grep -q '__Host-point_sid' "$RUNNER_TEMP/jar"
+          c -b "$RUNNER_TEMP/jar" $base/v1/me | jq -e '.data.session.pending == ["secret_change","mfa_setup"]'
+          # a wrong Origin is refused (CSRF, the origin seen through every proxy hop)
+          test "$(c -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -H 'X-Requested-With: point-web' \
+                  -H 'Origin: https://evil.test' -d "$body" $base/v1/auth/login)" = 403
+          # the WhatsApp simulator runs (staging), never published on its own
+          bash infra/deploy/pc.sh exec -T wa-simulator wget -qO- http://127.0.0.1:4010/_sim/health
+
+      - name: Gateway — simulator page behind its password, the other site untouched
+        if: matrix.mode == 'gateway'
+        run: |
+          set -euo pipefail
+          CA="$RUNNER_TEMP/gw-ca.crt"
+          pw=$(sed -n 's/^POINT_SIM_PASSWORD=//p' .env)
+          test "$(curl -sS --cacert "$CA" -o /dev/null -w '%{http_code}' https://sim.point.test/)" = 401
+          test "$(curl -sS --cacert "$CA" -o /dev/null -w '%{http_code}' -u "sim:$pw" https://sim.point.test/)" = 200
+          curl -fsS --cacert "$CA" https://other.point.test/ | grep -q 'other site'
+          # nothing of POINT listens on a public interface
+          ! ss -ltnH | awk '{print $4}' | grep -E '^(0\.0\.0\.0|\[::\]|\*):(3000|4010|5432|8095|8097|9000|9464|9465)$'
+
+      - name: Re-running the installer is the update and keeps the secrets
+        env:
+          POINT_YES: '1'
+          POINT_SKIP_BUILD: '1'
+        run: |
+          [ "${{ matrix.mode }}" != gateway ] || export CURL_CA_BUNDLE="$RUNNER_TEMP/gw-ca.crt"
+          before=$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD)=' .env | sha256sum)
+          bash infra/deploy/install.sh
+          test "$before" = "$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD)=' .env | sha256sum)"
+          test "$(grep -c '^POINT_OWNER_CREATED=' .env)" = 1
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          bash infra/deploy/pc.sh ps || true
+          bash infra/deploy/pc.sh logs --tail 80 || true
+          docker logs --tail 60 vm-caddy-1 2>/dev/null || true
+
+  arm64:
+    name: backend image on linux/arm64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (emulated arm64)
+        run: docker buildx build --platform linux/arm64 -f infra/docker/Dockerfile -t point-backend:arm64 --load .
+      - name: Native modules load on arm64
+        run: |
+          docker run --rm --platform linux/arm64 --entrypoint sh point-backend:arm64 -c '
+            set -e
+            test "$(uname -m)" = aarch64
+            for m in argon2 sharp; do
+              d=$(find /app/api/node_modules/.pnpm -maxdepth 3 -type d -path "*/node_modules/$m" | head -1)
+              test -n "$d"
+              node -e "require(process.argv[1]); console.log(process.argv[1], \"ok\")" "$d"
+            done'

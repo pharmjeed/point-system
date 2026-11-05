@@ -1,6 +1,6 @@
 # حالة المشروع — بوينت · POINT
 
-آخر تحديث: 2026-11-03
+آخر تحديث: 2026-11-05
 
 > أي جلسة جديدة تبدأ من هنا (CLAUDE.md §8). القائمة الكاملة للتذاكر وحالتها في `tickets.json` (تُولَّد من `state.json` بالأمر `pnpm progress`). قواعد كتابة الكود الملزمة في `ENGINEERING.md`، وملاحظات كل مسار في `notes/`، ودليل النشر في `docs/DEPLOYMENT.md`، وحزم المالك للإطلاق في `docs/runbooks/` (ابدأ بـ`go-live-checklist.md`).
 
@@ -11,9 +11,10 @@
 | المنجز | **95 من 103 تذكرة**: كل البرمجة مكتملة — S0 حتى S8 ومعها سد فجوات الواجهة GAP-1…GAP-9 وإصلاح 18 خللًا وجدته مراجعة التكامل بين المسارات. البوابات: G1 وG4 ناجحتان؛ G2 آلية ناجحة؛ G3 جزؤها الآلي ناجح (`docs/progress/G3.md`) |
 | المتبقي (8 تذاكر) | كلها تحتاج المالك: PNT-051 (تشغيل G2 اليدوي على رقم Meta)، PNT-072 وPNT-073 وPNT-099 (الأجهزة الفعلية)، PNT-100 (تقديم أصول Meta)، PNT-101 وPNT-102 (التمرين الورقي والبروفة البشرية)، PNT-103 (توقيع G5) |
 | العوائق | لا عائق برمجي. GitHub Actions أخضر بالكامل على `eb30cff` (الخادم والتكامل والبناء وتمرين الاستعادة والواجهة بثلاثة مقاسات وG1 على الـAPI الحقيقي) |
-| بانتظار المالك | Q-01 النطاق، Q-02 الاستضافة، Q-03 رقم «مصاف» وأصول Meta (`docs/runbooks/whatsapp-production.md`)، Q-05، Q-06، Q-08، Q-09، Q-10، الأجهزة الفعلية (`docs/test-evidence/devices/PROTOCOL.md`)، البروفة البشرية، مفاتيح VAPID — وكلها مع خطواتها في `docs/runbooks/go-live-checklist.md` |
+| بانتظار المالك | تشغيل المثبّت على الخادم وسجلا DNS `app` و`sim` (Q-01 وQ-02 حُسما، DEC-457)، Q-03 رقم «مصاف» وأصول Meta (`docs/runbooks/whatsapp-production.md`)، Q-05، Q-06، Q-08، Q-09، Q-10، الأجهزة الفعلية (`docs/test-evidence/devices/PROTOCOL.md`)، البروفة البشرية، مفاتيح VAPID — وكلها مع خطواتها في `docs/runbooks/go-live-checklist.md` |
 | الفرع وطلب الدمج | `claude/stoic-hamilton-pfdo2m` — طلب الدمج المسودة #2 (DEC-60) |
-| القرارات | DEC-01…DEC-456 في `docs/DECISIONS.md` (الرقم التالي DEC-457) |
+| النشر | `app.pointsa.net` على خادم Oracle المشترك (جدة، arm64) خلف بوابة Caddy للمشاريع الأخرى، بأمر واحد `infra/deploy/install.sh` (DEC-457، `docs/DEPLOYMENT.md` §14)؛ يشغّله المالك على الخادم |
+| القرارات | DEC-01…DEC-457 في `docs/DECISIONS.md` (الرقم التالي DEC-458) |
 
 ## آخر نتائج الفحوص (محليًا، PostgreSQL 16، على `eb479f6`)
 

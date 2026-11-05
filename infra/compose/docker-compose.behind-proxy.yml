@@ -1,0 +1,19 @@
+# Optional: the server already runs its own reverse proxy (Nginx, Caddy, Traefik …) on ports 80/443 for other
+# sites (DEC-457). Add after the production file and the other optional files:
+#   … -f infra/compose/docker-compose.behind-proxy.yml
+# with, in .env (infra/deploy/install.sh writes them):
+#   SITE_SCHEME=http://                      Caddy serves DOMAIN over plain HTTP; the host proxy terminates TLS
+#   POINT_HTTP_BIND=127.0.0.1:<port>         the only port the host proxy forwards to (loopback only)
+#   POINT_HTTPS_BIND=127.0.0.1:<port>        unused, kept off the public interface
+#   TRUSTED_PROXIES=private_ranges           Caddy keeps the host proxy's X-Forwarded-For
+#   TRUST_PROXY=2                            the api counts two hops (host proxy, Caddy) for the client address
+#   WEB_NETWORK_ALIAS=point-web              DOMAIN is no longer an alias of Caddy on the internal network …
+#   POINT_HOST_GATEWAY=<address>             where the host proxy listens (default host-gateway)
+# … so api and worker reach the storage on https://DOMAIN through the host proxy (its real certificate):
+services:
+  api:
+    extra_hosts:
+      - '${DOMAIN}:${POINT_HOST_GATEWAY:-host-gateway}'
+  worker:
+    extra_hosts:
+      - '${DOMAIN}:${POINT_HOST_GATEWAY:-host-gateway}'

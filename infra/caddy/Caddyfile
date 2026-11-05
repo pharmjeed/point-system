@@ -12,10 +12,18 @@
 #                     img-src/connect-src; empty when the buckets are served here
 #   S3_BUCKET_MEDIA / S3_BUCKET_EXPORTS  bucket names (defaults point-media / point-exports)
 #   WEB_ROOT, HTTP_PORT, HTTPS_PORT  /srv, 80 and 443 in the image (other values for a local trial only)
+#   SITE_SCHEME       empty (default): Caddy terminates TLS for DOMAIN itself. `http://` only behind another
+#                     reverse proxy on the same server that already owns ports 80/443 and terminates TLS
+#                     (infra/deploy/install.sh «behind-proxy», DEC-457); that proxy must send X-Forwarded-*
+#   TRUSTED_PROXIES   addresses whose X-Forwarded-For is kept (default 127.0.0.1/32, i.e. nobody in practice);
+#                     `private_ranges` behind-proxy, where the host proxy reaches Caddy over the Docker bridge
 {
 	email {$ACME_EMAIL}
 	http_port {$HTTP_PORT:80}
 	https_port {$HTTPS_PORT:443}
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+	}
 }
 
 (api_headers) {
@@ -28,7 +36,7 @@
 	}
 }
 
-{$DOMAIN} {
+{$SITE_SCHEME}{$DOMAIN} {
 	encode zstd gzip
 	header -Server
 

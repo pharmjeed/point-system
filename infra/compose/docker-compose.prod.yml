@@ -110,10 +110,12 @@ services:
         VITE_BRAND_CUSTOMER_NAME_AR: ${VITE_BRAND_CUSTOMER_NAME_AR:-}
         VITE_APP_VERSION: ${APP_VERSION:-dev}
     restart: unless-stopped
+    # behind-proxy (DEC-457): POINT_HTTP_BIND=127.0.0.1:<port> and POINT_HTTPS_BIND=127.0.0.1:<port> leave
+    # 80/443 to the server's own reverse proxy
     ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
+      - '${POINT_HTTP_BIND:-80}:80'
+      - '${POINT_HTTPS_BIND:-443}:443'
+      - '${POINT_HTTPS_BIND:-443}:443/udp'
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN (the staff app host, Q-01) is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
@@ -122,15 +124,18 @@ services:
       STORAGE_ORIGIN: ${STORAGE_ORIGIN:-}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:-point-media}
       S3_BUCKET_EXPORTS: ${S3_BUCKET_EXPORTS:-point-exports}
+      SITE_SCHEME: ${SITE_SCHEME:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}
     volumes:
       - caddy_data:/data
       - caddy_config:/config
       - ../caddy/conf.d:/etc/caddy/conf.d:ro
     networks:
       point:
-        # api and worker reach the storage on the app origin (S3_ENDPOINT=https://DOMAIN) through Caddy
+        # api and worker reach the storage on the app origin (S3_ENDPOINT=https://DOMAIN) through Caddy;
+        # behind-proxy they reach it through the host's proxy instead (docker-compose.behind-proxy.yml)
         aliases:
-          - ${DOMAIN}
+          - ${WEB_NETWORK_ALIAS:-${DOMAIN}}
     depends_on:
       api:
         condition: service_healthy
