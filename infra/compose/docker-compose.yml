@@ -15,9 +15,13 @@ services:
       interval: 5s
       retries: 10
 
+  # MinIO publishes no images any more: built from its Go sources (infra/docker/minio.Dockerfile, DEC-458)
   minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
+    image: point-minio:latest
+    build:
+      context: ../docker
+      dockerfile: minio.Dockerfile
+    command: minio server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio-secret
@@ -32,7 +36,8 @@ services:
   # Presigned uploads land in incoming/ and expire after 1 day (DEC-97); the lifecycle rules of
   # point-media are reset first so that every run leaves exactly this one rule.
   minio-init:
-    image: minio/mc
+    image: point-minio:latest
+    pull_policy: never
     depends_on:
       minio:
         condition: service_healthy
