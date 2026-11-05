@@ -93,7 +93,7 @@ describe('production compose (infra/compose/docker-compose.prod.yml)', () => {
   it('only the proxy publishes ports (80, 443); metrics and the api stay internal', () => {
     // the host side defaults to 80/443; behind a shared gateway it is a loopback/bridge address (DEC-457)
     const published = [...compose.matchAll(/^\s+- '([^']+)'$/gm)]
-      .map((m) => m[1])
+      .map((m) => m[1] ?? '')
       .filter((p) => /:\d+(\/udp)?$/.test(p));
     expect(published).toEqual([
       '${POINT_HTTP_BIND:-80}:80',
