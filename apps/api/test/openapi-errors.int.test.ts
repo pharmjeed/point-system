@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
-import { DRIVE_PERMISSIONS, ROLE_PERMISSIONS, findRoute, type Permission, type Role } from '@point/shared';
+import {
+  DRIVE_PERMISSIONS,
+  PLATFORM_ROUTES,
+  ROLE_PERMISSIONS,
+  findRoute,
+  type Permission,
+  type Role,
+} from '@point/shared';
 import { collectRoutes, sha256Hex } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -112,8 +119,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
         check(r, 'platform owner', await call(r, { as: 'PLATFORM' }));
       }
     }
-    // the 131 operations of 07 but the internal GET /metrics, and the 7 platform operations (V2-002)
-    expect(routes).toHaveLength(130 + 7);
+    // the 131 operations of 07 but the internal GET /metrics, and the platform operations (V2-002, V2-003…)
+    expect(routes).toHaveLength(130 + PLATFORM_ROUTES.length);
     expect(seen).toContain('GET /v1/platform/me PLATFORM_AUTH_REQUIRED');
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
@@ -143,7 +150,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(96); // the 85 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2)
+    // the 90 V1 writes (79 with a requestBody, 11 without) and the platform commands
+    expect(checked).toBe(90 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length);
     expect(problems).toEqual([]);
   });
 
@@ -171,7 +179,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(89 + 6); // + the 6 V2-002 platform commands
+    expect(checked).toBe(89 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length); // + the platform commands
     expect(problems).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@ export const paths = {
   admin: '/admin', // S-13
   platform: '/platform', // P-01 (V2, docs/v2/02 §2)
   platformLogin: '/platform/login', // V2-002
+  platformOperators: '/platform/operators', // P-02 (V2-003); P-03 is /platform/operators/:orgId
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)
 } as const;
 
@@ -35,6 +36,10 @@ const STAFF_PREFIXES = [
   '/s',
   '/platform',
 ];
+
+/** P-03 — one operator of the platform console (V2-003). */
+export const platformOperatorPath = (orgId: string) =>
+  `${paths.platformOperators}/${encodeURIComponent(orgId)}`;
 
 /** The V2 platform console: its own session and cookie; never the staff session handling (DEC-462). */
 export function isPlatformArea(pathname: string): boolean {

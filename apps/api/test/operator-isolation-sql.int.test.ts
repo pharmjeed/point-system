@@ -95,6 +95,16 @@ const GLOBAL: { file: string; sql: string; why: string }[] = [
     why: 'login, before any operator: the phone identifies the account across the deployment (DEC-476)',
   },
   {
+    file: 'modules/identity-access/application/owner-bootstrap.ts',
+    sql: 'SELECT 1 FROM users WHERE phone_e164 = $1 LIMIT 1',
+    why: 'a new operator owner phone must be free at every operator: login finds it across them (DEC-476, DEC-485)',
+  },
+  {
+    file: 'modules/platform/application/operators-service.ts',
+    sql: 'SELECT (SELECT jsonb_object_agg(s.operator_status, s.n)',
+    why: 'P-01 platform overview: counts over every operator, platform accounts only (V2-003, no row leaves)',
+  },
+  {
     file: 'modules/identity-access/application/me-service.ts',
     sql: 'WHERE push_endpoint = $1 AND id <> $2',
     why: 'a browser push endpoint is globally unique (uq_devices_push_endpoint): it moves to the new device',

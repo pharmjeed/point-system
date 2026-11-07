@@ -123,8 +123,28 @@ export const routes: RouteObject[] = [
       {
         path: paths.platform,
         lazy: async () => ({
-          Component: (await import('@/features/platform/PlatformHomePage')).PlatformHomePage,
+          Component: (await import('@/features/platform/PlatformLayout')).PlatformLayout,
         }),
+        children: [
+          {
+            index: true,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOverviewPage')).PlatformOverviewPage,
+            }),
+          },
+          {
+            path: paths.platformOperators,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOperatorsPage')).PlatformOperatorsPage,
+            }),
+          },
+          {
+            path: `${paths.platformOperators}/:orgId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOperatorPage')).PlatformOperatorPage,
+            }),
+          },
+        ],
       },
       ...galleryRoutes,
       { path: '*', element: <NotFoundPage /> },

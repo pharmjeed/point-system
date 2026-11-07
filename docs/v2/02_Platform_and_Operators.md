@@ -73,7 +73,7 @@
 
 تعليق المشغل: يمنع فتح حفلات وورديات جديدة، والتذاكر الجارية تكتمل، ومواقعه تختفي من خريطة التطبيق، واشتراكات العملاء في مواقعه **تُجمَّد** (لا تُحتسب أيامها) حتى العودة أو الاسترداد النسبي.
 
-## 5. ما بُني في المرحلة V1 حتى الآن (V2-001، V2-002)
+## 5. ما بُني في المرحلة V1 حتى الآن (V2-001، V2-002، V2-003)
 
 - **الترحيل `packages/db/migrations/0008_platform.sql`** (إلحاقي، DEC-461): `platform_users`، `platform_sessions` (sha256 للرمز فقط، `kind` = `session` أو `mfa_challenge`، انتهاء وإبطال مسبَّب)، `platform_idempotency_keys`، `platform_audit_log` (إلحاقي: دور التطبيق INSERT/SELECT فقط)، حقول المشغل في `organizations` (`operator_status` افتراضيًا `active`، `is_platform_operated`، `legal_name`، `cr_number` 10 أرقام، `vat_number` 15 رقمًا 3…3)، `operator_contracts`، `venue_public_profiles`. الصفوف الحالية تبقى صالحة: كل مؤسسة قائمة مشغّل نشط. ومخطط Drizzle مطابق، واختبار الثوابت `docs/06_schema_invariants_test.sql` أُضيفت إليه فحوص الجداول الجديدة.
 - **عقد واحد لكل مشغل في أي يوم:** لا `btree_gist` في الترحيلات، فالقاعدة يفرضها الأمر بـ`assertNoContractOverlap` تحت قفل صف المؤسسة (DEC-463).
@@ -82,4 +82,5 @@
 - **رمزا خطأ جديدان** (canon §8، 08 §4.17): `PLATFORM_AUTH_REQUIRED` (401) و`OPERATOR_SUSPENDED` (409، يرفعه V2-005، DEC-466)؛ وبقية الحالات برموز `AUTH_*` القائمة.
 - **التهيئة:** `node api/dist/cli.js create-platform-owner --phone … --name …` يطبع كلمة مرور مؤقتة مرة واحدة ويرفض مالك منصة ثانيًا؛ بقية حسابات المنصة تُضاف من اللوحة لاحقًا (`platform.user_manage`، DEC-465).
 - **الويب:** `/platform/login` (الجوال وكلمة المرور ← رمز التحقق، أو تغيير كلمة المرور ← إعداد TOTP في الدخول الأول) وغلاف `/platform` فارغ (P-01 مؤقت باسم الحساب وزر الخروج). بقية الشاشات للتذاكر التالية.
-
+- **V2-003 — P-01…P-03 (DEC-485):** `GET /v1/platform/overview` (أعداد فقط: المشغلون حسب الحالة، المواقع، المناوبات المفتوحة، تذاكر يوم الرياض)؛ `GET /v1/platform/operators` و`/{orgId}` (المواقع، المالك بجوال مقنّع، العقد السارية، سجل الحالة من `platform_audit_log`) و`/{orgId}/users` (قراءة فقط، جوال مقنّع) و`/{orgId}/contracts` (السجل كاملًا). الأوامر ✓: `POST /v1/platform/operators` ينشئ المؤسسة (`trial` أو `active`، الاسم القانوني، السجل التجاري، الرقم الضريبي) ومالكها الأول بمنطق `create-owner` (`insertFirstOwner`)، وكلمة المرور المؤقتة في الرد الأول فقط ولا تُحفظ نصًا (الرد المخزَّن مع مفتاح التكرار بلا كلمة المرور)، وجوال المالك حر لدى كل المشغلين (DEC-476)؛ `POST …/{orgId}/owner/temporary-password` يعيد إصدارها قبل أول دخول للمالك فقط؛ `POST …/{orgId}/contracts` (بعد `assertNoContractOverlap`) و`POST …/{orgId}/contracts/{contractId}/end` (تقديم `ends_on` وحده، لا تعديل ولا حذف). وكل أمر في `platform_audit_log` و`audit_log` للمشغل.
+- **الويب:** `/platform` (P-01 أعداد لكل أدوار المنصة)، `/platform/operators` (P-02: القائمة ونافذة «إضافة مشغل» تعرض كلمة مرور المالك مرة واحدة مع زر نسخ، ولا تُحفظ في المتصفح)، `/platform/operators/:orgId` (P-03: الحالة وأوامرها بسبب للتعليق والإنهاء، البيانات، المالك وإعادة إصدار كلمة مروره، المواقع، العقود وسجلها، المستخدمون للقراءة، سجل الحالة). الشاشات حسب مصفوفة §2.1 (المالية والدعم يريان P-01 وحدها)، ومفحوصة على 360/390/430 (`apps/web/e2e/platform-console.spec.ts`).

@@ -10,3 +10,4 @@ export {
 } from './application/platform-sessions.js';
 export { buildPlatformMe, platformUserView, type PlatformUserRow } from './application/platform-views.js';
 export { assertNoContractOverlap, type IsoDate } from './application/operator-contracts.js';
+export { OperatorsService, OPERATOR_STATUS_ACTIONS } from './application/operators-service.js';
