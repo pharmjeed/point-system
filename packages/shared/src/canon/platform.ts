@@ -4,7 +4,7 @@
  *
  * Kept apart from the staff canon on purpose: a platform account is never a member of an operator organization,
  * no staff role holds a platform permission and no platform role holds a staff permission (V2-002). `ROUTES`
- * stays the 131 routes of canon §9; the platform routes are `PLATFORM_ROUTES` (DEC-462).
+ * stays the routes of canon §9; the platform routes are `PLATFORM_ROUTES` (DEC-462).
  */
 import { z } from 'zod';
 import type { HttpMethod, IdempotencyMode, RateLimitClass } from './routes.js';
@@ -205,6 +205,14 @@ const PLATFORM_ROWS: readonly PRow[] = [
   ['POST', '/v1/platform/auth/secret/change', 'platform.self', 'none', 'write', 'V2-002'],
   ['POST', '/v1/platform/auth/logout', 'platform.self', 'none', 'write', 'V2-002'],
   ['GET', '/v1/platform/me', 'platform.self', 'none', 'read', 'V2-002'],
+  // P-04 venue listings (V2-004, DEC-490 … DEC-494); prices are P-05's permission (V2-D05, DEC-493)
+  ['GET', '/v1/platform/venues', 'platform.venue_review', 'none', 'read', 'V2-004'],
+  ['GET', '/v1/platform/venues/{venueId}', 'platform.venue_review', 'none', 'read', 'V2-004'],
+  ['POST', '/v1/platform/venues/{venueId}/approve', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  ['POST', '/v1/platform/venues/{venueId}/send-back', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  ['POST', '/v1/platform/venues/{venueId}/hide', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  ['POST', '/v1/platform/venues/{venueId}/unhide', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  ['PUT', '/v1/platform/venues/{venueId}/pricing', 'platform.plan_manage', 'required', 'command', 'V2-004'],
 ];
 
 /** The `/v1/platform/*` routes (docs/07_openapi.yaml tag `platform`), checked by test/platform.test.ts. */
