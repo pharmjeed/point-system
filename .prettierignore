@@ -6,3 +6,6 @@ coverage/
 *.md
 apps/web/public/
 .claude/
+.expo/
+apps/customer/ios/
+apps/customer/android/
