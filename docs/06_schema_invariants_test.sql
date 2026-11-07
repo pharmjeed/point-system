@@ -1,7 +1,7 @@
 -- =====================================================================
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
--- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, and 0011 the customer accounts,
+-- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, and 0009 the customer accounts,
 -- V2-010):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
@@ -164,7 +164,7 @@ SELECT expect_fail('public profile with half a location',
  $q$INSERT INTO venue_public_profiles(venue_id,org_id,category,lat) VALUES ('00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-000000000001','hall',24.7)$q$);
 SELECT expect_fail('platform audit row of a platform user without actor_id',
  $q$INSERT INTO platform_audit_log(actor_type,action,entity_type) VALUES ('platform_user','platform.auth.login','platform_user')$q$);
--- V2 customer accounts (0011_customer_accounts.sql, V2-010, DEC-496 … DEC-498): checks are only added here
+-- V2 customer accounts (0009_customer_accounts.sql, V2-010, DEC-496 … DEC-498): checks are only added here
 INSERT INTO customer_accounts(id,phone_e164) VALUES ('00000000-0000-0000-0000-00000000ca01','+966500000951');
 SELECT expect_fail('second customer account with the same phone',
  $q$INSERT INTO customer_accounts(phone_e164) VALUES ('+966500000951')$q$);

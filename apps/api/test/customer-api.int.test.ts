@@ -216,7 +216,7 @@ describe('V2-010 — R1 journey through the customer app client (C-02 → C-06)'
     expect(home.nearby_locations[0]).toMatchObject({ pay_per_visit_halalas: 2300, open_now: true });
     const detail = await api.location(RMS);
     expect(detail.photo_urls).toHaveLength(1);
-    expect(detail.photo_urls[0]).toContain('venue-public');
+    expect(detail.photo_urls[0]).toContain(RMS); // a presigned link of the private bucket (V2-004, DEC-494)
 
     // the session survives an expired access token: the client refreshes once and retries with the same key
     w.clock.advance(16 * 60_000);

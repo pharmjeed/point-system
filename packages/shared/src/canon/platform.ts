@@ -4,7 +4,7 @@
  *
  * Kept apart from the staff canon on purpose: a platform account is never a member of an operator organization,
  * no staff role holds a platform permission and no platform role holds a staff permission (V2-002). `ROUTES`
- * stays the 131 routes of canon §9; the platform routes are `PLATFORM_ROUTES` (DEC-462).
+ * stays the routes of canon §9; the platform routes are `PLATFORM_ROUTES` (DEC-462).
  */
 import { z } from 'zod';
 import type { HttpMethod, IdempotencyMode, RateLimitClass } from './routes.js';
@@ -41,6 +41,24 @@ export const VENUE_CATEGORIES = [
   'other',
 ] as const;
 export type VenueCategory = (typeof VENUE_CATEGORIES)[number];
+
+/**
+ * The operator lifecycle commands of 02 §4 (V2-005, DEC-486): `from` → `to`. `terminated` is final (no command leaves
+ * it, nothing is deleted); `invited` is not created by the console (the owner is created with the operator).
+ */
+export const OPERATOR_TRANSITIONS = {
+  activate: { from: ['invited', 'trial'], to: 'active' },
+  suspend: { from: ['trial', 'active'], to: 'suspended' },
+  reactivate: { from: ['suspended'], to: 'active' },
+  terminate: { from: ['suspended'], to: 'terminated' },
+} as const satisfies Record<string, { from: readonly OperatorStatus[]; to: OperatorStatus }>;
+export type OperatorTransition = keyof typeof OPERATOR_TRANSITIONS;
+
+/** The statuses under which the staff app opens nothing new (events, shifts, duty, intake): OPERATOR_SUSPENDED. */
+export const OPERATOR_BLOCKED_STATUSES = [
+  'suspended',
+  'terminated',
+] as const satisfies readonly OperatorStatus[];
 
 /** `operator_contracts.saas_cycle`. */
 export const SAAS_CYCLES = ['monthly', 'yearly'] as const;
@@ -205,6 +223,85 @@ const PLATFORM_ROWS: readonly PRow[] = [
   ['POST', '/v1/platform/auth/secret/change', 'platform.self', 'none', 'write', 'V2-002'],
   ['POST', '/v1/platform/auth/logout', 'platform.self', 'none', 'write', 'V2-002'],
   ['GET', '/v1/platform/me', 'platform.self', 'none', 'read', 'V2-002'],
+  // P-04 venue listings (V2-004, DEC-490 … DEC-494); prices are P-05's permission (V2-D05, DEC-493)
+  ['GET', '/v1/platform/venues', 'platform.venue_review', 'none', 'read', 'V2-004'],
+  ['GET', '/v1/platform/venues/{venueId}', 'platform.venue_review', 'none', 'read', 'V2-004'],
+  ['POST', '/v1/platform/venues/{venueId}/approve', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  [
+    'POST',
+    '/v1/platform/venues/{venueId}/send-back',
+    'platform.venue_review',
+    'required',
+    'command',
+    'V2-004',
+  ],
+  ['POST', '/v1/platform/venues/{venueId}/hide', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  ['POST', '/v1/platform/venues/{venueId}/unhide', 'platform.venue_review', 'required', 'command', 'V2-004'],
+  ['PUT', '/v1/platform/venues/{venueId}/pricing', 'platform.plan_manage', 'required', 'command', 'V2-004'],
+  // P-01 … P-03 (V2-003): counts, operators, their contracts and staff (read-only), the operator's first owner
+  ['GET', '/v1/platform/overview', 'platform.overview_read', 'none', 'read', 'V2-003'],
+  ['GET', '/v1/platform/operators', 'platform.operator_read', 'none', 'read', 'V2-003'],
+  ['POST', '/v1/platform/operators', 'platform.operator_manage', 'required', 'write', 'V2-003'],
+  ['GET', '/v1/platform/operators/{orgId}', 'platform.operator_read', 'none', 'read', 'V2-003'],
+  ['GET', '/v1/platform/operators/{orgId}/users', 'platform.operator_read', 'none', 'read', 'V2-003'],
+  ['GET', '/v1/platform/operators/{orgId}/contracts', 'platform.operator_read', 'none', 'read', 'V2-003'],
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/contracts',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-003',
+  ],
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/contracts/{contractId}/end',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-003',
+  ],
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/owner/temporary-password',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-003',
+  ],
+  // the operator lifecycle of 02 §4 (V2-005)
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/activate',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-005',
+  ],
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/suspend',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-005',
+  ],
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/reactivate',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-005',
+  ],
+  [
+    'POST',
+    '/v1/platform/operators/{orgId}/terminate',
+    'platform.operator_manage',
+    'required',
+    'write',
+    'V2-005',
+  ],
 ];
 
 /** The `/v1/platform/*` routes (docs/07_openapi.yaml tag `platform`), checked by test/platform.test.ts. */

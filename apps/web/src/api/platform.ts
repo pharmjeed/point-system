@@ -81,3 +81,159 @@ export const PLATFORM_SIGNED_OUT_CODES: readonly string[] = [
   'AUTH_SESSION_REVOKED',
   'AUTH_ACCOUNT_DISABLED',
 ];
+
+// ------------------------------------------------------------------------- P-01 … P-03 (V2-003) and V2-005
+
+/** `organizations.operator_status` (docs/v2/02 §4). */
+export type OperatorStatus = 'invited' | 'trial' | 'active' | 'suspended' | 'terminated';
+export type OperatorCommand = 'activate' | 'suspend' | 'reactivate' | 'terminate';
+
+export interface PlatformOverview {
+  operators: { total: number; by_status: Record<OperatorStatus, number> };
+  venues: { total: number; active: number };
+  drivers_on_duty: number;
+  tickets_today: number;
+  day: string;
+  generated_at: string;
+}
+
+export interface OperatorContract {
+  id: string;
+  org_id: string;
+  saas_fee_halalas_per_venue: number;
+  saas_cycle: 'monthly' | 'yearly';
+  subscriber_visit_payout_halalas: number;
+  app_payment_commission_bp: number;
+  starts_on: string;
+  ends_on: string | null;
+  state: 'upcoming' | 'current' | 'ended';
+  created_by: { id: string; full_name?: string | null };
+  created_at: string;
+}
+
+export interface PlatformOperator {
+  id: string;
+  name_ar: string;
+  name_en?: string | null;
+  legal_name?: string | null;
+  cr_number?: string | null;
+  vat_number?: string | null;
+  operator_status: OperatorStatus;
+  is_platform_operated: boolean;
+  venues_count: number;
+  active_venues_count: number;
+  staff_count: number;
+  current_contract: OperatorContract | null;
+  created_at: string;
+}
+
+export interface PlatformOperatorDetail extends PlatformOperator {
+  venues: {
+    id: string;
+    code: string;
+    name_ar: string;
+    city?: string | null;
+    status: 'active' | 'inactive';
+  }[];
+  owner: {
+    id: string;
+    full_name: string;
+    employee_code: string;
+    phone_masked: string;
+    status: string;
+    must_change_secret?: boolean;
+    mfa_enabled?: boolean;
+    last_login_at?: string | null;
+    temporary_password_reissuable: boolean;
+  } | null;
+  status_history: {
+    action: string;
+    from_status?: OperatorStatus | null;
+    to_status?: OperatorStatus | null;
+    reason?: string | null;
+    occurred_at: string;
+    actor?: { id: string; full_name?: string | null } | null;
+  }[];
+}
+
+export interface PlatformOperatorUser {
+  id: string;
+  employee_code: string;
+  full_name: string;
+  phone_masked: string;
+  role: 'owner' | 'admin' | 'supervisor' | 'driver';
+  can_drive: boolean;
+  status: 'active' | 'disabled';
+  mfa_enabled: boolean;
+  last_login_at?: string | null;
+  created_at?: string;
+}
+
+export interface CreateOperatorInput {
+  name_ar: string;
+  name_en?: string | null;
+  legal_name: string;
+  cr_number?: string | null;
+  vat_number?: string | null;
+  operator_status: 'trial' | 'active';
+  owner: { full_name: string; phone: string };
+}
+
+export interface CreatedOperator {
+  operator: PlatformOperator;
+  owner: { id: string; full_name: string; employee_code: string; phone_masked: string };
+  /** shown once; `null` when the server replays the answer (DEC-485) */
+  temporary_password: string | null;
+}
+
+export interface CreateContractInput {
+  saas_fee_halalas_per_venue: number;
+  saas_cycle: 'monthly' | 'yearly';
+  subscriber_visit_payout_halalas: number;
+  app_payment_commission_bp: number;
+  starts_on: string;
+  ends_on?: string | null;
+}
+
+const op = (orgId: string) => `/v1/platform/operators/${encodeURIComponent(orgId)}`;
+const send = async <T>(path: string, body: unknown, key: string): Promise<T> =>
+  (await api.post<T>(path, { body, idempotencyKey: key })).data;
+
+export const platformKeys = {
+  overview: ['platform', 'overview'] as const,
+  operators: ['platform', 'operators'] as const,
+  operator: (orgId: string) => ['platform', 'operators', orgId] as const,
+  users: (orgId: string) => ['platform', 'operators', orgId, 'users'] as const,
+  contracts: (orgId: string) => ['platform', 'operators', orgId, 'contracts'] as const,
+};
+
+export const platformApi = {
+  overview: async (signal?: AbortSignal) =>
+    (await api.get<PlatformOverview>('/v1/platform/overview', { signal })).data,
+  operators: async (signal?: AbortSignal) =>
+    (await api.get<{ items: PlatformOperator[] }>('/v1/platform/operators', { signal })).data.items,
+  operator: async (orgId: string, signal?: AbortSignal) =>
+    (await api.get<PlatformOperatorDetail>(op(orgId), { signal })).data,
+  users: async (orgId: string, signal?: AbortSignal) =>
+    (await api.get<{ items: PlatformOperatorUser[] }>(`${op(orgId)}/users`, { signal })).data.items,
+  contracts: async (orgId: string, signal?: AbortSignal) =>
+    (await api.get<{ items: OperatorContract[] }>(`${op(orgId)}/contracts`, { signal })).data.items,
+  createOperator: (body: CreateOperatorInput, key: string) =>
+    send<CreatedOperator>('/v1/platform/operators', body, key),
+  reissueOwnerPassword: (orgId: string, key: string) =>
+    send<{ user_id: string; temporary_password: string | null }>(
+      `${op(orgId)}/owner/temporary-password`,
+      {},
+      key,
+    ),
+  createContract: (orgId: string, body: CreateContractInput, key: string) =>
+    send<OperatorContract>(`${op(orgId)}/contracts`, body, key),
+  endContract: (
+    orgId: string,
+    contractId: string,
+    body: { ends_on: string; reason?: string | null },
+    key: string,
+  ) => send<OperatorContract>(`${op(orgId)}/contracts/${encodeURIComponent(contractId)}/end`, body, key),
+  transition: (orgId: string, command: OperatorCommand, reason: string | null, key: string) =>
+    send<PlatformOperator>(`${op(orgId)}/${command}`, reason ? { reason } : {}, key),
+};

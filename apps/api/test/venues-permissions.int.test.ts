@@ -19,6 +19,10 @@ describe('venues-events routes: permissions, idempotency and scope', () => {
     '/v1/events/{eventId}/reconciliation',
     '/v1/events/{eventId}/close',
     '/v1/events/{eventId}/operations',
+    // V2-004: the venue public profile has its own suite (venue-profiles.int.test.ts)
+    '/v1/venues/{venueId}/public-profile',
+    '/v1/venues/{venueId}/public-profile/photos',
+    '/v1/venues/{venueId}/public-profile/submit',
   ]);
   const routes = ROUTES.filter((r) => r.section === '9.5' && !NOT_IN_SCOPE_OF_THESE_TICKETS.has(r.path));
 

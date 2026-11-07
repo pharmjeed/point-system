@@ -127,6 +127,11 @@ const ROWS: readonly Row[] = [
   ['PATCH', '/v1/venues/{venueId}', 'venue.manage', 'required', '9.5'],
   ['GET', '/v1/venues/{venueId}/settings', 'venue.read', 'none', '9.5'],
   ['PUT', '/v1/venues/{venueId}/settings', 'venue.manage', 'required', '9.5'],
+  // V2-004 (O-04, DEC-490): the venue's public profile, reviewed by the platform before the map lists it
+  ['GET', '/v1/venues/{venueId}/public-profile', 'venue.manage', 'none', '9.5'],
+  ['PUT', '/v1/venues/{venueId}/public-profile', 'venue.manage', 'required', '9.5'],
+  ['POST', '/v1/venues/{venueId}/public-profile/photos', 'venue.manage', 'required', '9.5'],
+  ['POST', '/v1/venues/{venueId}/public-profile/submit', 'venue.manage', 'required', '9.5'],
   ['GET', '/v1/venues/{venueId}/dispatch-pools', 'venue.read', 'none', '9.5'],
   ['POST', '/v1/venues/{venueId}/dispatch-pools', 'venue.manage', 'required', '9.5'],
   ['PATCH', '/v1/dispatch-pools/{poolId}', 'venue.manage', 'required', '9.5'],

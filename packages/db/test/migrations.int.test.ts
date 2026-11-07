@@ -19,7 +19,7 @@ const PLATFORM_TABLES = [
   'venue_public_profiles',
 ];
 
-/** The V2 customer tables of 0011_customer_accounts.sql (V2-010, docs/v2/03_Data_Model.md §3). */
+/** The V2 customer tables of 0009_customer_accounts.sql (V2-010, docs/v2/03_Data_Model.md §3). */
 const CUSTOMER_TABLES = [
   'customer_accounts',
   'customer_otp_challenges',
@@ -64,7 +64,7 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001) and the 7 customer tables of 0011 (V2-010)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001) and the 7 customer tables of 0009 (V2-010)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -134,7 +134,7 @@ describe('migrations', () => {
       '0005_wa_quota_index.sql',
       '0006_wa_inbound_received_index.sql',
       '0007_alerts_manual_resolved_index.sql',
-      '0011_customers_account_index.sql',
+      '0009_customers_account_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql

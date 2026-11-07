@@ -86,7 +86,12 @@ export class CommandInterceptor implements NestInterceptor {
       req.tx = tx;
       try {
         const value = await lastValueFrom(next.handle(), { defaultValue: null });
-        if (value instanceof WithStatus) return { data: value.data, status: value.status };
+        if (value instanceof WithStatus)
+          return {
+            data: value.data,
+            status: value.status,
+            ...(value.stored !== undefined ? { stored: value.stored } : {}),
+          };
         return { data: value };
       } finally {
         req.tx = undefined;

@@ -444,7 +444,7 @@
 | `SERVICE_UNAVAILABLE` | 503 | الخدمة غير متاحة مؤقتًا |
 | `DEPENDENCY_TIMEOUT` | 504 | انتهت مهلة خدمة خارجية |
 | `PLATFORM_AUTH_REQUIRED` | 401 | الإصدار الثاني: لا توجد جلسة منصة صالحة لمسار `/v1/platform/*` (لا كوكي منصة، أو كوكي موظفين فقط)؛ جلسة الموظف لا تفتح مسار المنصة ولا العكس (DEC-462) |
-| `OPERATOR_SUSPENDED` | 409 | الإصدار الثاني: المشغّل (المؤسسة) معلّق أو منتهٍ من المنصة، فلا يُفتح حفل ولا وردية جديدة (02 §4 في `docs/v2`، V2-005، DEC-466) |
+| `OPERATOR_SUSPENDED` | 409 | الإصدار الثاني: المشغّل (المؤسسة) معلّق أو منتهٍ من المنصة، فلا يُفتح حفل ولا وردية ولا مناوبة ولا استلام جديد (02 §4 في `docs/v2`، V2-005، DEC-466، DEC-486) |
 
 ---
 
@@ -530,6 +530,9 @@
 | GET / POST | `/v1/venues` | `venue.read` / `venue.manage` | ✓ (POST) |
 | GET / PATCH | `/v1/venues/{venueId}` | `venue.read` / `venue.manage` | ✓ (PATCH) |
 | GET / PUT | `/v1/venues/{venueId}/settings` | `venue.read` / `venue.manage` | ✓ (PUT) |
+| GET / PUT | `/v1/venues/{venueId}/public-profile` | `venue.manage` | ✓ (PUT) |
+| POST | `/v1/venues/{venueId}/public-profile/photos` | `venue.manage` | ✓ |
+| POST | `/v1/venues/{venueId}/public-profile/submit` | `venue.manage` | ✓ |
 | GET / POST | `/v1/venues/{venueId}/dispatch-pools` | `venue.read` / `venue.manage` | ✓ (POST) |
 | PATCH | `/v1/dispatch-pools/{poolId}` | `venue.manage` | ✓ |
 | GET / POST | `/v1/venues/{venueId}/parking-zones` | `venue.layout_read` / `venue.manage` | ✓ (POST) |
@@ -809,6 +812,8 @@
 المعاملات التي لا تحتاج قفل المجموعة (تعديل مسودة الاستلام وإرسالها، رفع الصور، رموز الربط، تغيير الجوال) تبدأ من L5، وأوامر تقدم الحركة (`key-pickup`، `start-retrieval`، `ready`) تبدأ من L4؛ ولا تطلب أي منها مستوى أصغر بعد ذلك. لا اتصال شبكي داخل أي معاملة.
 
 **استثناء واحد مسموح:** معاملة تحمل L1 يجوز لها، بعد أن أخذت أقفال أمرها، أن تقفل صفوفًا إضافية من L4–L8 **لنفس المجموعة** لتمريرة التوزيع ولتسوية السائق بعد مهمته (`settleDriverAfterTask`). هذا آمن لأن كل من يقفل صفوف الطابور والعروض والمناوبات يحمل L1 أولًا، وأوامر تقدم الحركة لا تقفل إلا صفوف حركة نشطة (`accepted`/`in_progress` وتذكرتها ودورتها) لا تقفلها التمريرة. إعادة المحاولة: المعاملة كلها تُعاد حتى 3 مرات عند `40001`/`40P01` بتأخير عشوائي 20–80 ms؛ تجاوز `lock_timeout` (`55P03`) لا يُعاد على الخادم ويرد `IDEMPOTENCY_IN_PROGRESS` إن حدث عند L0 وإلا `SERVICE_UNAVAILABLE` (`retryable: true`).
+
+**صف المؤسسة (الإصدار الثاني، DEC-487):** الأوامر التي يمنعها تعليق المشغل (فتح الحفل والوردية، بدء المناوبة، بدء الاستلام) تقرأ صف `organizations` بـ`FOR SHARE` أول قفل لها قبل L1؛ وأوامر المنصة وإعدادات المؤسسة تقفله `FOR NO KEY UPDATE` وحده دون أي صف من L1–L10.
 
 **جداول الإعداد خارج L0–L10 (DEC-121):** صفوف `venues` و`parking_zones` و`parking_spots` و`key_slots` و`shifts` ليست في الجدول؛ يُقفل كل منها `FOR NO KEY UPDATE` وحده في أمر الإعداد الخاص به، أو (صف الوردية) بعد L1 لمجموعتها مباشرة، ولا يُقفل للتعديل بعد أي مستوى من L2 إلى L10. والأوامر التي تستعمل موقفًا أو خانة تقرأ الموقف ومنطقته (أو الخانة ولوحتها) `FOR SHARE` بعد أقفالها وتشترط أن يكونا نشطين، فيتسلسل التعطيل مع التخصيص.
 

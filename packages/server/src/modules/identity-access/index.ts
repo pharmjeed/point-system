@@ -10,5 +10,11 @@ export {
   clearSessionCookie,
 } from './application/sessions.js';
 export { SecretHasher } from './infra/secret-hasher.js';
+export {
+  insertFirstOwner,
+  newOwnerTemporaryPassword,
+  type FirstOwnerInput,
+  type FirstOwnerResult,
+} from './application/owner-bootstrap.js';
 export { pinProblem, passwordProblem, assertNewSecret } from './domain/secret-policy.js';
 export { verifyTotp, newTotpSecret } from './infra/totp.js';

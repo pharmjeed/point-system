@@ -2,7 +2,7 @@ import { OPEN_TICKET_STATUSES, type TicketStatus } from '@point/shared';
 import { CUSTOMER_HOME_NEARBY_MAX, saudiPlateDisplay, type CustomerHome } from '@point/shared/customer';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
-import { nearbyLocations } from './locations.js';
+import { nearbyLocations, type LocationDeps } from './locations.js';
 
 type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
 
@@ -26,7 +26,7 @@ interface VisitRow {
  */
 export async function customerHome(
   q: Q,
-  now: Date,
+  deps: LocationDeps,
   accountId: string,
   from: { lat: number; lng: number } | null,
 ): Promise<CustomerHome> {
@@ -68,7 +68,7 @@ export async function customerHome(
         }
       : null,
     subscriptions: [],
-    nearby_locations: await nearbyLocations(q, now, from, CUSTOMER_HOME_NEARBY_MAX),
+    nearby_locations: await nearbyLocations(q, deps, from, CUSTOMER_HOME_NEARBY_MAX),
     vehicles_count: account?.vehicles ?? 0,
   };
 }

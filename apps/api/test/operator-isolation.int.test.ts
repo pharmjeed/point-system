@@ -286,6 +286,22 @@ describe('V2-007 operator isolation: nothing of operator A is visible or writabl
     'POST /v1/tickets/{ticketId}/payment-waiver': () => ({ reason: 'عزل' }),
     'PATCH /v1/venues/{venueId}': () => ({ expected_version: 1, name_ar: 'عزل' }),
     'PUT /v1/venues/{venueId}/settings': () => ({ expected_version: 1, settings: {} }),
+    // V2-004: the venue public profile (O-04)
+    'PUT /v1/venues/{venueId}/public-profile': () => ({
+      expected_version: 0,
+      category: 'mall',
+      address: 'عزل',
+      city: 'عزل',
+      lat: 24.7,
+      lng: 46.7,
+      opening_hours: { always_open: true, days: {} },
+      photo_ids: [],
+    }),
+    'POST /v1/venues/{venueId}/public-profile/photos': () => ({
+      content_type: 'image/jpeg',
+      byte_size: 1000,
+    }),
+    'POST /v1/venues/{venueId}/public-profile/submit': () => ({ expected_version: 1 }),
     'POST /v1/venues/{venueId}/dispatch-pools': () => ({ name: 'عزل' }),
     'PATCH /v1/dispatch-pools/{poolId}': () => ({ name: 'عزل' }),
     'POST /v1/venues/{venueId}/parking-zones': () => ({ name: 'ISO' }),

@@ -3,7 +3,7 @@
 -- no org_id, are read by the /v1/customer/* routes only, and an operator never sees them beyond V2-D12 (its own
 -- `customers` rows, linked by customers.customer_account_id). Append-only like every migration (DEC-129). The new
 -- tables are created empty, so their indexes are built inline (06 ERD §9.2 rule 5 targets large live tables); the
--- index on the live `customers` table is built CONCURRENTLY alone in 0011_customers_account_index.sql.
+-- index on the live `customers` table is built CONCURRENTLY alone in 0009_customers_account_index.sql.
 
 -- ---------------------------------------------------------------------
 -- 1. Accounts
@@ -22,7 +22,7 @@ CREATE TABLE customer_accounts (
   CONSTRAINT ck_customer_accounts_locale CHECK (locale IN ('ar','en')),
   CONSTRAINT ck_customer_accounts_status CHECK (status IN ('active','suspended','deleted')),
   CONSTRAINT ck_customer_accounts_deleted CHECK (status <> 'deleted' OR deleted_at IS NOT NULL),
-  CONSTRAINT ck_customer_accounts_display_name CHECK (display_name IS NULL OR char_length(display_name) BETWEEN 2 AND 60)
+  CONSTRAINT ck_customer_accounts_display_name CHECK (display_name IS NULL OR char_length(display_name) >= 2 AND char_length(display_name) <= 60)
 );
 
 -- ---------------------------------------------------------------------
@@ -55,11 +55,11 @@ CREATE TABLE customer_otp_challenges (
   sent_at              timestamptz,
   created_at           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ck_customer_otp_phone CHECK (phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
-  CONSTRAINT ck_customer_otp_device CHECK (char_length(device_id) BETWEEN 8 AND 128),
+  CONSTRAINT ck_customer_otp_device CHECK (char_length(device_id) >= 8 AND char_length(device_id) <= 128),
   CONSTRAINT ck_customer_otp_platform CHECK (platform IN ('ios','android')),
   CONSTRAINT ck_customer_otp_locale CHECK (locale IN ('ar','en')),
   CONSTRAINT ck_customer_otp_status CHECK (status IN ('open','consumed','superseded','locked')),
-  CONSTRAINT ck_customer_otp_attempts CHECK (attempts_left BETWEEN 0 AND 5),
+  CONSTRAINT ck_customer_otp_attempts CHECK (attempts_left >= 0 AND attempts_left <= 5),
   CONSTRAINT ck_customer_otp_expiry CHECK (expires_at > created_at AND resend_available_at > created_at),
   CONSTRAINT ck_customer_otp_locked CHECK ((status = 'locked') = (locked_until IS NOT NULL)),
   CONSTRAINT ck_customer_otp_consumed CHECK ((status = 'consumed') = (consumed_at IS NOT NULL)),
@@ -98,7 +98,7 @@ CREATE TABLE customer_account_sessions (
   revoked_reason      text,
   CONSTRAINT uq_customer_sessions_refresh UNIQUE (refresh_hash),
   CONSTRAINT uq_customer_sessions_access UNIQUE (access_hash),
-  CONSTRAINT ck_customer_sessions_device CHECK (char_length(device_id) BETWEEN 8 AND 128),
+  CONSTRAINT ck_customer_sessions_device CHECK (char_length(device_id) >= 8 AND char_length(device_id) <= 128),
   CONSTRAINT ck_customer_sessions_platform CHECK (platform IN ('ios','android')),
   CONSTRAINT ck_customer_sessions_expiry CHECK (access_expires_at > created_at AND refresh_expires_at > created_at),
   CONSTRAINT ck_customer_sessions_rotation CHECK (rotation_count >= 0),
@@ -123,7 +123,7 @@ CREATE TABLE customer_account_consents (
   request_id  text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ck_customer_consents_kind CHECK (kind IN ('terms','privacy','marketing','card_on_file')),
-  CONSTRAINT ck_customer_consents_version CHECK (char_length(version) BETWEEN 1 AND 40),
+  CONSTRAINT ck_customer_consents_version CHECK (char_length(version) >= 1 AND char_length(version) <= 40),
   -- withdrawing terms or privacy is deleting the account (C-20), never a «false» row
   CONSTRAINT ck_customer_consents_required_granted CHECK (kind NOT IN ('terms','privacy') OR granted)
 );
@@ -171,7 +171,7 @@ CREATE TABLE customer_idempotency_keys (
   completed_at     timestamptz,
   expires_at       timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
   CONSTRAINT pk_customer_idempotency_keys PRIMARY KEY (account_id, key),
-  CONSTRAINT ck_customer_idempotency_keys_key CHECK (length(key) BETWEEN 8 AND 128),
+  CONSTRAINT ck_customer_idempotency_keys_key CHECK (length(key) >= 8 AND length(key) <= 128),
   CONSTRAINT ck_customer_idempotency_keys_status CHECK (status IN ('in_progress','completed'))
 );
 CREATE INDEX ix_customer_idempotency_expiry ON customer_idempotency_keys(expires_at);
@@ -198,7 +198,7 @@ CREATE INDEX ix_customer_audit_account ON customer_audit_log(account_id, occurre
 CREATE INDEX ix_customer_audit_occurred ON customer_audit_log(occurred_at);
 
 -- ---------------------------------------------------------------------
--- 8. The link to the operators' customers rows (V2-D12; the unique index in 0011_customers_account_index.sql)
+-- 8. The link to the operators' customers rows (V2-D12; the unique index in 0009_customers_account_index.sql)
 -- ---------------------------------------------------------------------
 ALTER TABLE customers ADD COLUMN customer_account_id uuid REFERENCES customer_accounts(id);
 

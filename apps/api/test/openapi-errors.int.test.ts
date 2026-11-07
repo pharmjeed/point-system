@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
-import { DRIVE_PERMISSIONS, ROLE_PERMISSIONS, findRoute, type Permission, type Role } from '@point/shared';
+import {
+  DRIVE_PERMISSIONS,
+  PLATFORM_ROUTES,
+  ROLE_PERMISSIONS,
+  findRoute,
+  type Permission,
+  type Role,
+} from '@point/shared';
+import { CUSTOMER_ROUTES } from '@point/shared/customer';
 import { collectRoutes, newCustomerToken, sha256Hex } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -24,6 +32,9 @@ const holds = (a: (typeof ACTORS)[number], p: string) =>
     (DRIVE_PERMISSIONS as readonly string[]).includes(p as Permission));
 
 const DUMMY = '00000000-0000-4000-8000-0000deadbeef';
+// V2-010: the customer API (CUSTOMER_ROUTES)
+const CUSTOMER = Object.values(CUSTOMER_ROUTES);
+const CUSTOMER_WRITES = CUSTOMER.filter((r) => r.method !== 'GET').length;
 
 /**
  * Server sweep (07): every route answers only the errors its docs/07_openapi.yaml operation documents, under the
@@ -140,9 +151,9 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
           check(r, 'customer without a key', await call(r, { as: 'CUSTOMER', key: false }));
       }
     }
-    // the 131 operations of 07 but the internal GET /metrics, the 7 platform operations (V2-002) and the 12 customer
-    // operations (V2-010)
-    expect(routes).toHaveLength(130 + 7 + 12);
+    // the 131 operations of 07 but the internal GET /metrics, the platform operations (V2-002, V2-003…) and the
+    // customer operations (V2-010)
+    expect(routes).toHaveLength(134 + PLATFORM_ROUTES.length + CUSTOMER.length); // + the 4 V2-004 staff routes
     expect(seen).toContain('GET /v1/customer/me AUTH_UNAUTHENTICATED');
     expect(seen).toContain('GET /v1/customer/locations/{venueId} VENUE_NOT_LISTED');
     expect(seen).toContain('PATCH /v1/customer/me IDEMPOTENCY_KEY_REQUIRED');
@@ -175,8 +186,9 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(96 + 7); // the 85 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2,
-    // V2-010 the 7 customer writes)
+    // the 93 staff writes (82 with a requestBody, 11 without; V2-004 adds 3), the platform commands and the 7 customer
+    // writes (V2-010)
+    expect(checked).toBe(93 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
     expect(problems).toEqual([]);
   });
 
@@ -204,7 +216,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(89 + 6 + 7); // + the 6 V2-002 platform commands and the 7 V2-010 customer writes
+    // + the platform commands and the customer writes
+    expect(checked).toBe(92 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
     expect(problems).toEqual([]);
   });
 });

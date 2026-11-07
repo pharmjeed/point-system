@@ -32,7 +32,7 @@ export const s01 = {
 
 /**
  * Platform console (V2, docs/v2/02 §2): the /platform/login screen (the TOTP and password steps reuse s01) and the
- * P-01 placeholder shell. The texts 02 of V2 does not define yet are listed in docs/v2/02 §5.
+ * shell and P-01 «النظرة العامة» (V2-003). docs/v2/02 defines no screen copy: these texts are the console own.
  */
 export const p01 = {
   loginTitle: 'دخول لوحة المنصة',
@@ -43,14 +43,274 @@ export const p01 = {
   shellTitle: 'لوحة المنصة',
   overviewTitle: 'النظرة العامة',
   welcome: 'مرحبًا {name}',
-  placeholder: 'مؤشرات المنصة والمشغلين تظهر هنا في التحديثات القادمة.',
   logout: 'تسجيل الخروج',
+  nav: { overview: 'النظرة العامة', operators: 'المشغلون', venues: 'المواقع', menu: 'أقسام لوحة المنصة' },
+  operators: 'المشغلون',
+  operatorsMeta: '{active} نشط · {trial} تجريبي · {suspended} معلّق',
+  venues: 'المواقع',
+  venuesMeta: '{n} نشط',
+  driversOnDuty: 'سائقون في مناوبة',
+  ticketsToday: 'تذاكر اليوم',
+  dayMeta: 'منذ منتصف الليل ({day})',
+  countsOnly: 'أعداد فقط عبر المشغلين كلهم؛ لا بيانات عملاء.',
+  updatedAt: 'آخر تحديث {time}',
   role: {
     platform_owner: 'مالك المنصة',
     platform_admin: 'إدارة المنصة',
     platform_finance: 'مالية المنصة',
     platform_support: 'دعم المنصة',
   },
+} as const;
+
+/**
+ * The venue public profile (V2-004, DEC-490 … DEC-494): the S-13 section «ملف الموقع العام» (O-04) and the platform
+ * console's P-04. Shared labels first (status, category, days), then each side.
+ */
+export const venueProfile = {
+  status: {
+    none: 'لم يُنشأ بعد',
+    draft: 'مسودة',
+    submitted: 'بانتظار المراجعة',
+    approved: 'معتمد ومعروض',
+    hidden: 'مخفي من المنصة',
+  },
+  category: {
+    hall: 'قاعة مناسبات',
+    office: 'مكاتب',
+    mall: 'مول',
+    hospital: 'مستشفى',
+    residential: 'سكني',
+    hotel: 'فندق',
+    club: 'نادٍ',
+    other: 'أخرى',
+  },
+  days: {
+    sun: 'الأحد',
+    mon: 'الاثنين',
+    tue: 'الثلاثاء',
+    wed: 'الأربعاء',
+    thu: 'الخميس',
+    fri: 'الجمعة',
+    sat: 'السبت',
+  },
+  fields: {
+    venue: 'الموقع',
+    category: 'التصنيف',
+    address: 'العنوان',
+    city: 'المدينة',
+    lat: 'خط العرض',
+    lng: 'خط الطول',
+    coordinatesHint: 'من خرائط جوجل: اضغط مطولًا على الموقع وانسخ الرقمين.',
+    hours: 'ساعات العمل',
+    alwaysOpen: 'مفتوح 24 ساعة طوال الأسبوع',
+    open: 'يفتح',
+    close: 'يغلق',
+    closed: 'مغلق',
+    overnightHint: 'وقت إغلاق قبل وقت الفتح يعني بعد منتصف الليل.',
+    photos: 'الصور',
+    photosHint: 'حتى {n} صور للموقع والمدخل. تُزال بيانات الموقع الجغرافي من الصور تلقائيًا.',
+    pricing: 'الأسعار (تحددها المنصة)',
+    subscriptions: 'الاشتراك',
+    payPerVisit: 'سعر الزيارة لغير المشترك',
+  },
+  addInterval: 'إضافة فترة',
+  removeInterval: 'حذف الفترة',
+  addPhoto: 'إضافة صورة',
+  removePhoto: 'حذف الصورة',
+  uploading: 'جارٍ رفع الصورة…',
+  uploadFailed: 'تعذّر رفع الصورة. أعد المحاولة.',
+  enabled: 'مفعّل',
+  disabled: 'غير مفعّل',
+  noPrice: 'بلا سعر',
+  sar: '{amount} ريال',
+  issues: {
+    required: 'مطلوب للإرسال للمراجعة.',
+    number: 'أدخل رقمًا صحيحًا.',
+    pair: 'أدخل خطي العرض والطول معًا أو اتركهما.',
+    hours: 'راجع الفترات: لا تداخل ولا فترة فارغة.',
+  },
+} as const;
+
+/** S-13 «ملف الموقع العام» (O-04): the operator edits and submits; the platform reviews. */
+export const s13Listing = {
+  title: 'ملف الموقع العام',
+  intro: 'ما يظهر للعملاء على خريطة التطبيق. يُحفظ مسودة ثم يُرسل للمراجعة، ولا يظهر قبل اعتماد المنصة.',
+  pickVenue: 'اختر الموقع',
+  noVenues: 'لا توجد مواقع نشطة.',
+  saveDraft: 'حفظ المسودة',
+  submit: 'إرسال للمراجعة',
+  saved: 'حُفظت المسودة.',
+  submitted: 'أُرسل الملف للمراجعة.',
+  editApprovedWarning: 'الملف معتمد ومعروض. أي تعديل يعيده مسودة ويخفيه من الخريطة حتى تعتمده المنصة ثانية.',
+  submittedInfo: 'الملف بانتظار مراجعة المنصة. التعديل الآن يسحب الطلب ويعيده مسودة.',
+  hiddenInfo: 'أخفت المنصة هذا الملف. تواصل مع المنصة لإظهاره.',
+  sentBack: 'أعادته المنصة للتعديل: {reason}',
+  hiddenReason: 'سبب الإخفاء: {reason}',
+  unsaved: 'احفظ التعديلات قبل الإرسال.',
+} as const;
+
+/** P-04 «المواقع» of the platform console. */
+export const p04 = {
+  title: 'المواقع',
+  navLabel: 'طلبات إدراج المواقع',
+  filters: { all: 'الكل', submitted: 'بانتظار المراجعة', approved: 'معتمد', draft: 'مسودة', hidden: 'مخفي' },
+  city: 'المدينة',
+  operator: 'المشغل',
+  photoCount: '{n} صور',
+  empty: 'لا توجد ملفات بهذه الحالة.',
+  loadMore: 'المزيد',
+  updated: 'آخر تعديل {time}',
+  operatorStatus: {
+    invited: 'مدعو',
+    trial: 'تجريبي',
+    active: 'نشط',
+    suspended: 'معلّق',
+    terminated: 'منتهٍ',
+  },
+  noHours: 'لم تُحدد',
+  noPhotos: 'لا صور.',
+  noCoordinates: 'بلا إحداثيات',
+  openMap: 'فتح في الخرائط',
+  actions: {
+    approve: 'اعتماد',
+    sendBack: 'إرجاع للتعديل',
+    hide: 'إخفاء من الخريطة',
+    unhide: 'إظهار',
+    savePricing: 'حفظ الأسعار',
+  },
+  confirm: {
+    approve: 'اعتماد الملف وإظهاره على الخريطة؟',
+    approveBody: 'يظهر للعملاء متى كان المشغل والموقع نشطين.',
+    sendBack: 'إرجاع الملف للمشغل',
+    hide: 'إخفاء الموقع من الخريطة',
+    unhide: 'إظهار الموقع على الخريطة',
+    reasonHint: 'يراه المشغل في شاشة الملف.',
+  },
+  pricingHallHint: 'القاعات لا تقبل الاشتراك.',
+  done: { pricing: 'حُفظت الأسعار.' },
+  back: 'المواقع',
+} as const;
+
+/** Operator status labels (docs/v2/02 §4). */
+export const operatorStatus = {
+  invited: 'مدعو',
+  trial: 'تجريبي',
+  active: 'نشط',
+  suspended: 'معلّق',
+  terminated: 'منتهٍ',
+} as const;
+
+/** P-02 — المشغلون (V2-003) */
+export const p02 = {
+  title: 'المشغلون',
+  add: 'إضافة مشغل',
+  empty: 'لا مشغلين بعد.',
+  name: 'الاسم',
+  status: 'الحالة',
+  venues: 'المواقع',
+  staff: 'الموظفون',
+  contract: 'العقد',
+  noContract: 'بلا عقد سارٍ',
+  open: 'فتح',
+  form: {
+    nameAr: 'اسم المشغل بالعربية',
+    nameEn: 'الاسم بالإنجليزية (اختياري)',
+    legalName: 'الاسم القانوني (كما في السجل التجاري)',
+    crNumber: 'السجل التجاري (10 أرقام، اختياري)',
+    vatNumber: 'الرقم الضريبي (15 رقمًا يبدأ وينتهي بـ3، اختياري)',
+    status: 'حالة البداية',
+    statusTrial: 'تجريبي (مواقع تجريبية والمحاكي، بلا عملاء حقيقيين)',
+    statusActive: 'نشط',
+    ownerSection: 'مالك المشغل',
+    ownerName: 'اسم المالك',
+    ownerPhone: 'جوال المالك',
+    required: 'هذا الحقل مطلوب.',
+    crInvalid: 'السجل التجاري 10 أرقام.',
+    vatInvalid: 'الرقم الضريبي 15 رقمًا يبدأ وينتهي بـ3.',
+    phoneInUse: 'هذا الجوال لحساب موظف لدى مشغل آخر. اختر جوالًا آخر للمالك.',
+  },
+  created: {
+    title: 'أُنشئ المشغل {name}',
+    body: 'كلمة المرور المؤقتة للمالك {owner} ({code}). تُعرض هذه المرة فقط: سلّمها له، وسيغيّرها ثم يعدّ التحقق الثنائي في أول دخول.',
+    replayed:
+      'أُنشئ المشغل من قبل، ولا تُعرض كلمة المرور مرة ثانية. أصدر كلمة مرور جديدة من صفحة المشغل قبل أول دخول للمالك.',
+    copy: 'نسخ كلمة المرور',
+    copied: 'نُسخت كلمة المرور.',
+    copyFailed: 'تعذّر النسخ. انسخها يدويًا.',
+    openOperator: 'فتح صفحة المشغل',
+  },
+} as const;
+
+/** P-03 — المشغل (V2-003, V2-005) */
+export const p03 = {
+  back: 'المشغلون',
+  details: 'البيانات',
+  legalName: 'الاسم القانوني',
+  crNumber: 'السجل التجاري',
+  vatNumber: 'الرقم الضريبي',
+  createdAt: 'أُضيف',
+  owner: 'المالك',
+  noOwner: 'بلا مالك',
+  ownerPending: 'لم يدخل بعد',
+  ownerSignedIn: 'آخر دخول {time}',
+  reissue: 'إصدار كلمة مرور مؤقتة جديدة للمالك',
+  reissueBody: 'تُلغى كلمة المرور المؤقتة السابقة. متاح حتى أول دخول للمالك فقط.',
+  reissued: 'كلمة المرور المؤقتة الجديدة للمالك: تُعرض هذه المرة فقط.',
+  venues: 'المواقع',
+  noVenues: 'لا مواقع بعد.',
+  users: 'المستخدمون (قراءة فقط)',
+  noUsers: 'لا مستخدمين.',
+  role: 'الدور',
+  phone: 'الجوال',
+  lastLogin: 'آخر دخول',
+  never: 'لم يدخل',
+  contracts: 'العقود',
+  noContracts: 'لا عقود بعد.',
+  addContract: 'عقد جديد',
+  endContract: 'إنهاء العقد',
+  contractState: { upcoming: 'قادم', current: 'سارٍ', ended: 'منتهٍ' },
+  saasFee: 'اشتراك النظام لكل موقع',
+  cycle: { monthly: 'شهري', yearly: 'سنوي' },
+  cycleLabel: 'دورة الاشتراك',
+  payout: 'المدفوع للمشغل لكل زيارة مشترك',
+  commission: 'عمولة الدفع في التطبيق (%)',
+  startsOn: 'يبدأ في',
+  endsOn: 'ينتهي في (اليوم غير مشمول، اختياري)',
+  endsOnRequired: 'آخر يوم + 1 (اليوم غير مشمول)',
+  period: '{from} ← {to}',
+  openEnded: 'بلا نهاية',
+  amountInvalid: 'أدخل مبلغًا صحيحًا بالريال (حتى خانتين عشريتين).',
+  percentInvalid: 'أدخل نسبة بين 0 و100 (حتى خانتين عشريتين).',
+  dateInvalid: 'أدخل تاريخًا صحيحًا.',
+  endBeforeStart: 'تاريخ النهاية بعد تاريخ البداية.',
+  reasonOptional: 'السبب (اختياري)',
+  endContractBody: 'العقود لا تُعدَّل ولا تُحذف: يُقدَّم تاريخ النهاية فقط، والتمديد عقد جديد.',
+  status: 'حالة المشغل',
+  history: 'سجل الحالة',
+  noHistory: 'لا تغييرات بعد.',
+  action: {
+    activate: 'تفعيل',
+    suspend: 'تعليق',
+    reactivate: 'إعادة التفعيل',
+    terminate: 'إنهاء المشغل',
+  },
+  confirm: {
+    activate: 'تفعيل المشغل {name}؟ يصبح نشطًا ويظهر للعملاء بعد اعتماد مواقعه.',
+    suspend:
+      'تعليق {name}؟ لن يفتح موظفوه حفلًا ولا وردية ولا مناوبة ولا استلامًا جديدًا، وتكتمل التذاكر الجارية، وتختفي مواقعه من التطبيق.',
+    reactivate: 'إعادة تفعيل {name}؟ يعود موظفوه للعمل كالمعتاد.',
+    terminate:
+      'إنهاء {name} نهائيًا؟ لا رجوع عن الإنهاء: لا يُفتح شيء جديد، وتبقى السجلات لمدة الاحتفاظ ولا يُحذف شيء.',
+  },
+  historyAction: {
+    'operator.create': 'الإنشاء',
+    'operator.activate': 'التفعيل',
+    'operator.suspend': 'التعليق',
+    'operator.reactivate': 'إعادة التفعيل',
+    'operator.terminate': 'الإنهاء',
+  },
+  historyLine: '{action} · {time} · {actor}',
+  terminatedNote: 'المشغل منتهٍ: لا أوامر عليه، والسجلات محفوظة.',
 } as const;
 
 /** S-05 — السائقون */
@@ -776,6 +1036,7 @@ export const s13 = {
   title: 'الإدارة',
   sections: {
     staff: 'الموظفون',
+    listing: 'ملف الموقع العام',
     channel: 'قناة واتساب',
     templates: 'القوالب',
     outbox: 'صندوق الأحداث',

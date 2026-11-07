@@ -46,5 +46,8 @@ FEATURE_MODULES.push(SupervisorHttpModule);
 import { PlatformHttpModule } from '@point/server';
 FEATURE_MODULES.push(PlatformHttpModule);
 
+import { VenueProfilesHttpModule } from '@point/server';
+FEATURE_MODULES.push(VenueProfilesHttpModule);
+
 import { CustomerAccountsHttpModule } from '@point/server';
 FEATURE_MODULES.push(CustomerAccountsHttpModule);

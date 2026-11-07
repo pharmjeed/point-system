@@ -17,7 +17,7 @@ export interface CustomerAuditEntry {
 }
 
 /**
- * Writes `customer_audit_log` (append-only: the app role has INSERT/SELECT only, 0011; V2-010, DEC-498) in the
+ * Writes `customer_audit_log` (append-only: the app role has INSERT/SELECT only, 0009; V2-010, DEC-498) in the
  * command's transaction. Customer accounts belong to no operator, so these rows never go to an organization's
  * audit_log. Metadata is redacted like audit_log, and never carries a full phone number or a code (canon rule 8).
  */

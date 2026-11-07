@@ -24,6 +24,11 @@ export interface CommandSuccess<T> {
   data: T;
   /** HTTP status of the success response (default 200; 201 for creations). */
   status?: number;
+  /**
+   * What is kept with the key and replayed instead of `data` (V2-003, DEC-485): a response that carries a one-time
+   * secret (a temporary password) is answered once and stored without it, so the secret is never at rest.
+   */
+  stored?: unknown;
 }
 
 export interface CommandResponse {
@@ -73,6 +78,7 @@ export async function runCommand<T>(
 
       await tx.savepoint('cmd');
       let response: CommandResponse;
+      let storedBody: unknown;
       try {
         const ok = await fn(tx);
         const status = ok.status ?? 200;
@@ -82,6 +88,7 @@ export async function runCommand<T>(
           );
         }
         response = { status, body: successEnvelope(ok.data, ctx.requestId, tx.now), replayed: false };
+        if (ok.stored !== undefined) storedBody = successEnvelope(ok.stored, ctx.requestId, tx.now);
       } catch (e) {
         // deadlock / serialization failure: let Database.transaction retry the whole transaction
         if (isPgError(e) && (e.code === '40001' || e.code === '40P01')) throw e;
@@ -104,7 +111,13 @@ export async function runCommand<T>(
       await tx.query(
         `UPDATE ${k.table} SET status = 'completed', response_status = $3, response_body = $4, completed_at = $5
          WHERE ${k.owner} = $1 AND key = $2`,
-        [ctx.userId, ctx.idempotencyKey, response.status, JSON.stringify(response.body), tx.now],
+        [
+          ctx.userId,
+          ctx.idempotencyKey,
+          response.status,
+          JSON.stringify(storedBody ?? response.body),
+          tx.now,
+        ],
       );
       return response;
     });

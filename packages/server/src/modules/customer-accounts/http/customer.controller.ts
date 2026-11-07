@@ -40,7 +40,7 @@ import { patchCustomerMe, recordCustomerConsents } from '../application/account-
 import { buildCustomerMe, consentTexts, type ConsentTexts } from '../application/account-views.js';
 import { logoutCustomer, refreshCustomerSession } from '../application/customer-sessions.js';
 import { customerHome } from '../application/home.js';
-import { getLocation, listLocations } from '../application/locations.js';
+import { getLocation, listLocations, type LocationDeps } from '../application/locations.js';
 import { CustomerOtpService } from '../application/otp-service.js';
 import { pointChannel } from '../application/point-channel.js';
 import { addCustomerVehicle, listCustomerVehicles } from '../application/vehicles.js';
@@ -90,6 +90,11 @@ export class CustomerController {
   ) {
     this.otp = new CustomerOtpService(env);
     this.texts = consentTexts(env);
+  }
+
+  /** V2-004's public read model needs the photo signer and the request's clock (DEC-499). */
+  private locationDeps(): LocationDeps {
+    return { storage: this.storage, now: this.clock.now(), ttlS: this.env.MEDIA_READ_URL_TTL_S };
   }
 
   @Post('auth/otp')
@@ -197,13 +202,13 @@ export class CustomerController {
     @Query(new ZodQueryPipe(CustomerLocationListQuerySchema))
     query: Out<typeof CustomerLocationListQuerySchema>,
   ) {
-    return listLocations(this.db, this.clock.now(), query);
+    return listLocations(this.db, this.locationDeps(), query);
   }
 
   @Get('locations/:venueId')
   @RequireCustomer()
   location(@Param('venueId') venueId: string) {
-    return getLocation(this.db, this.storage, this.clock.now(), venueId, this.env.MEDIA_READ_URL_TTL_S);
+    return getLocation(this.db, this.locationDeps(), venueId);
   }
 
   @Get('home')
@@ -214,6 +219,6 @@ export class CustomerController {
   ) {
     const from =
       query.lat !== undefined && query.lng !== undefined ? { lat: query.lat, lng: query.lng } : null;
-    return customerHome(this.db, this.clock.now(), actor.accountId, from);
+    return customerHome(this.db, this.locationDeps(), actor.accountId, from);
   }
 }

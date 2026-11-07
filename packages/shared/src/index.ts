@@ -22,3 +22,4 @@ export * from './analytics.js';
 export * from './canon/push.js';
 export * from './canon/realtime.js';
 export * from './vehicle.js';
+export * from './venue-profile.js';

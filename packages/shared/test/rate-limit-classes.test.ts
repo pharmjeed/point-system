@@ -39,7 +39,7 @@ describe('rate-limit classes (07 §1.9, x-rate-limit-class)', () => {
     );
   });
 
-  it('ROUTES.rateLimitClass equals x-rate-limit-class for all 131 routes, the platform and the customer routes', () => {
+  it('ROUTES.rateLimitClass equals x-rate-limit-class for all canon routes, the platform and the customer routes', () => {
     const diff = [...ROUTES, ...PLATFORM_ROUTES, ...Object.values(CUSTOMER_ROUTES)]
       .filter((r) => fromOpenApi.get(routeKey(r.method, r.path)) !== r.rateLimitClass)
       .map(
