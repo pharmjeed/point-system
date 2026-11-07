@@ -78,7 +78,7 @@ sequenceDiagram
 
 ### 1.4 مفتاح التكرار (Idempotency-Key)
 
-إلزامي على كل مسار عليه ✓ في Canon §9 (78 مسارًا، `x-idempotency: required`) واختياري على بقية الأوامر.
+إلزامي على كل مسار عليه ✓ في Canon §9 (81 مسارًا، `x-idempotency: required`) واختياري على بقية الأوامر.
 
 - القيمة 8–128 حرفًا (UUIDv4 مفضل). العميل يولّد مفتاحًا جديدًا **لكل نية مستخدم** (كل ضغطة زر) ويعيد **نفس المفتاح** عند إعادة المحاولة الشبكية لنفس النية.
 - النطاق: لكل مستخدم `idempotency_keys (user_id, key)`، ويُخزن معه `operation` (الطريقة + قالب المسار) و`request_hash` = `sha256` لتمثيل JSON مرتب للجسم + معاملات المسار. الاحتفاظ 24 ساعة ثم حذف دوري.
@@ -645,6 +645,10 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `PATCH /v1/venues/{venueId}` | تعديل موقع | `venue.manage` | إلزامي | — | `VERSION_CONFLICT` |
 | `GET /v1/venues/{venueId}/settings` | إعدادات الموقع الفعالة | `venue.read` | — | — | `SCOPE_VENUE_DENIED` |
 | `PUT /v1/venues/{venueId}/settings` | استبدال إعدادات الموقع — يُتحقق بـzod ويُكمَّل الناقص بالافتراضي؛ التغيير يسري على العروض والمؤقتات الجديدة فقط. | `venue.manage` | إلزامي | — | `VERSION_CONFLICT` |
+| `GET /v1/venues/{venueId}/public-profile` | ملف الموقع العام (الإصدار الثاني، O-04): التصنيف والعنوان والإحداثيات والساعات والصور بروابط موقّعة قصيرة، والحالة وملاحظة المراجع، وأسعار المنصة للقراءة؛ بلا ملف بعد ← `status: null` و`version: 0` (DEC-490) | `venue.manage` | — | — | `RESOURCE_NOT_FOUND` |
+| `PUT /v1/venues/{venueId}/public-profile` | حفظ الملف مسودة باستبدال كامل؛ `expected_version` = 0 للإنشاء؛ أي تغيير يعيده `draft` (يسحب الطلب، والمعتمد يغيب عن الخريطة حتى يُعتمد ثانية)؛ العنوان والمدينة يُكتبان في `venues`؛ الصور المسماة تُنقّى قبل المعاملة (DEC-491، DEC-492، DEC-494) | `venue.manage` | إلزامي | ملف `draft` + تدقيق | `VERSION_CONFLICT`، `INVALID_STATE_TRANSITION` (`hidden_by_platform`)، `MEDIA_UPLOAD_INCOMPLETE` |
+| `POST /v1/venues/{venueId}/public-profile/photos` | رابط رفع موقّع لصورة جديدة إلى `incoming/` (DEC-494) | `venue.manage` | إلزامي | تدقيق | `MEDIA_TYPE_UNSUPPORTED`، `MEDIA_TOO_LARGE` |
+| `POST /v1/venues/{venueId}/public-profile/submit` | `draft` ← `submitted` للمراجعة؛ يلزم العنوان والمدينة والإحداثيات والساعات (DEC-491) | `venue.manage` | إلزامي | تدقيق | `VALIDATION_FAILED` (`required_to_submit`)، `INVALID_STATE_TRANSITION` |
 | `GET /v1/venues/{venueId}/dispatch-pools` | مجموعات التوزيع | `venue.read` | — | — | — |
 | `POST /v1/venues/{venueId}/dispatch-pools` | إنشاء مجموعة توزيع إضافية | `venue.manage` | إلزامي | — | — |
 | `PATCH /v1/dispatch-pools/{poolId}` | تعديل مجموعة توزيع — الشروط: لا تعطيل لمجموعة عليها مهام مفتوحة أو وردية مفتوحة | `venue.manage` | إلزامي | — | `INVALID_STATE_TRANSITION` |

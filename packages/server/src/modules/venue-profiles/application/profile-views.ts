@@ -1,4 +1,10 @@
-import type { OpeningHours, OperatorStatus, VenueCategory, VenuePublicStatus } from '@point/shared';
+import {
+  normalizeOpeningHours,
+  type OpeningHours,
+  type OperatorStatus,
+  type VenueCategory,
+  type VenuePublicStatus,
+} from '@point/shared';
 import { num, type ProfileRow, type ReviewNote } from '../infra/profile-rows.js';
 import { signProfilePhotos, type PhotoSigner, type ProfilePhotoDto } from './photo-urls.js';
 
@@ -49,7 +55,7 @@ export async function profileView(
     city: row.city,
     lat: num(row.lat),
     lng: num(row.lng),
-    opening_hours: row.opening_hours ?? {},
+    opening_hours: normalizeOpeningHours(row.opening_hours),
     photos: await signProfilePhotos(signer, row.org_id, row.venue_id, row.photo_asset_ids),
     subscriptions_enabled: row.subscriptions_enabled,
     pay_per_visit_halalas: num(row.pay_per_visit_halalas),
@@ -96,7 +102,7 @@ export function emptyProfileView(venue: {
     city: venue.city,
     lat: null,
     lng: null,
-    opening_hours: {},
+    opening_hours: { always_open: false, days: {} },
     photos: [],
     subscriptions_enabled: false,
     pay_per_visit_halalas: null,

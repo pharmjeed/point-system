@@ -1,4 +1,4 @@
-import type { OpeningHours, OperatorStatus, VenueCategory, VenuePublicStatus } from '@point/shared';
+import type { OperatorStatus, VenueCategory, VenuePublicStatus } from '@point/shared';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { ENTITY_TYPE, OPERATOR_OPERATIONS, REVIEW_ACTIONS } from '../domain/profile-policy.js';
@@ -13,7 +13,8 @@ export interface ProfileRow {
   category: VenueCategory;
   lat: string | null;
   lng: string | null;
-  opening_hours: OpeningHours;
+  /** raw jsonb: read through `normalizeOpeningHours` (the 0008 default is `{}`) */
+  opening_hours: unknown;
   photo_asset_ids: string[];
   subscriptions_enabled: boolean;
   pay_per_visit_halalas: string | null;
@@ -22,6 +23,8 @@ export interface ProfileRow {
   version: number;
   created_at: Date;
   updated_at: Date;
+  /** updated_at with its microseconds (the keyset cursor of P-04) */
+  updated_at_us: string;
   venue_code: string;
   venue_name_ar: string;
   venue_name_en: string | null;
@@ -37,6 +40,7 @@ export const PROFILE_COLUMNS = `
   p.venue_id, p.org_id, p.status, p.category, p.lat::text AS lat, p.lng::text AS lng, p.opening_hours,
   p.photo_asset_ids, p.subscriptions_enabled, p.pay_per_visit_halalas::text AS pay_per_visit_halalas,
   p.approved_by, p.approved_at, p.version, p.created_at, p.updated_at,
+  to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_us,
   v.code AS venue_code, v.name_ar AS venue_name_ar, v.name_en AS venue_name_en, v.status AS venue_status,
   v.address, v.city, o.name_ar AS org_name_ar, o.name_en AS org_name_en, o.operator_status`;
 

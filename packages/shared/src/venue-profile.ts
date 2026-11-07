@@ -5,14 +5,27 @@
  */
 import { z } from 'zod';
 import { VENUE_CATEGORIES, VENUE_PUBLIC_STATUSES } from './canon/platform.js';
+import {
+  OpeningHoursSchema as CustomerOpeningHoursSchema,
+  WEEKDAY_KEYS,
+  type OpeningHours as CustomerOpeningHours,
+  type WeekdayKey,
+} from './customer/locations.js';
 
-/** Days of `opening_hours`, in the Saudi week order (Sunday first) and the JavaScript `getUTCDay()` order. */
-export const OPENING_DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
-export type OpeningDay = (typeof OPENING_DAYS)[number];
+/**
+ * The weekly opening hours keep the shape the customer contracts chose (DEC-482, `customer/locations.ts`):
+ * `{ always_open, days: { sun…sat: [{ open, close }] } }` in the venue's local time (Asia/Riyadh), `close` earlier
+ * than `open` running past midnight into the next day, `24:00` closing at midnight, a missing or empty day closed.
+ * The operator's write is checked more strictly here (DEC-490): no unknown key, no empty interval, no overlap.
+ */
+export const OPENING_DAYS = WEEKDAY_KEYS;
+export type OpeningDay = WeekdayKey;
+export type OpeningHours = CustomerOpeningHours;
+export type OpeningInterval = { open: string; close: string };
 
-/** At most this many intervals per day (morning and evening shifts, a split for prayer times). */
-export const MAX_INTERVALS_PER_DAY = 3;
-/** At most this many photos on a public profile. */
+/** At most this many intervals per day (the customer schema's bound). */
+export const MAX_INTERVALS_PER_DAY = 4;
+/** At most this many photos on a public profile (the customer detail allows 10 URLs). */
 export const VENUE_PROFILE_MAX_PHOTOS = 6;
 /** The operator's address and city lengths (written to `venues.address` / `venues.city`, DEC-491). */
 export const VENUE_ADDRESS_MAX = 200;
@@ -30,58 +43,91 @@ export function minutesOf(hhmm: string): number {
   return Number(h) * 60 + Number(m);
 }
 
+/** The part of an interval inside its own day, `[from, to)` in minutes (an overnight interval ends at 1440). */
+function sameDaySpan(i: OpeningInterval): [number, number] {
+  const open = minutesOf(i.open);
+  const close = minutesOf(i.close);
+  return [open, close > open ? close : 1440];
+}
+
 export const OpeningIntervalSchema = z
   .strictObject({
     open: z.string().regex(HHMM, 'time_format'),
     close: z.string().refine((v) => v === '24:00' || HHMM.test(v), 'time_format'),
   })
-  .refine((i) => !HHMM.test(i.open) || minutesOf(i.close) > minutesOf(i.open), {
-    message: 'close_before_open',
+  .refine((i) => !HHMM.test(i.open) || i.open !== i.close, {
+    message: 'empty_interval',
     path: ['close'],
   });
-export type OpeningInterval = z.infer<typeof OpeningIntervalSchema>;
 
 const dayIntervals = z
   .array(OpeningIntervalSchema)
   .max(MAX_INTERVALS_PER_DAY)
   .superRefine((list, ctx) => {
-    const sorted = [...list].sort((a, b) => minutesOf(a.open) - minutesOf(b.open));
-    for (let i = 1; i < sorted.length; i++) {
-      if (minutesOf(sorted[i]!.open) < minutesOf(sorted[i - 1]!.close)) {
+    const spans = list.map(sameDaySpan).sort((a, b) => a[0] - b[0]);
+    for (let i = 1; i < spans.length; i++) {
+      if (spans[i]![0] < spans[i - 1]![1]) {
         ctx.addIssue({ code: 'custom', message: 'overlapping_intervals', path: [i] });
         return;
       }
     }
   });
 
-/**
- * The weekly opening hours (`venue_public_profiles.opening_hours`): a key per open day with up to three
- * `{open, close}` intervals in Riyadh local time (`HH:MM`, 24 h; `close` may be `24:00`). A missing day (or an
- * empty list) is closed; a venue open past midnight writes the rest on the next day (`00:00`–…). `{}` = not set
- * (the 0008 default). Intervals of a day may not overlap.
- */
-export const OpeningHoursSchema = z.strictObject(
-  Object.fromEntries(OPENING_DAYS.map((d) => [d, dayIntervals.optional()])) as Record<
-    OpeningDay,
-    z.ZodOptional<typeof dayIntervals>
-  >,
-);
-export type OpeningHours = Partial<Record<OpeningDay, OpeningInterval[]>>;
+/** The operator's write of `opening_hours` (PUT public-profile): the DEC-482 shape, strictly. */
+export const OpeningHoursInputSchema = z.strictObject({
+  always_open: z.boolean(),
+  days: z.strictObject(
+    Object.fromEntries(OPENING_DAYS.map((d) => [d, dayIntervals.optional()])) as Record<
+      OpeningDay,
+      z.ZodOptional<typeof dayIntervals>
+    >,
+  ),
+});
 
-/** At least one open interval in the week (required to submit, DEC-491). */
+/** A stored value (the 0008 default `{}` included) in the DEC-482 shape; an unreadable value counts as unknown. */
+export function normalizeOpeningHours(raw: unknown): OpeningHours {
+  const r = CustomerOpeningHoursSchema.safeParse(raw ?? {});
+  return r.success ? canonicalOpeningHours(r.data) : { always_open: false, days: {} };
+}
+
+/**
+ * The stored form (DEC-490): days in week order, each day's intervals by opening time, empty days dropped, every
+ * interval exactly `{ open, close }` — so two equal schedules compare equal whatever order they were typed in.
+ */
+export function canonicalOpeningHours(hours: OpeningHours): OpeningHours {
+  const days: OpeningHours['days'] = {};
+  for (const d of OPENING_DAYS) {
+    const list = hours.days[d];
+    if (!list?.length) continue;
+    days[d] = [...list]
+      .sort((a, b) => minutesOf(a.open) - minutesOf(b.open))
+      .map((i) => ({ open: i.open, close: i.close }));
+  }
+  return { always_open: hours.always_open, days };
+}
+
+/** At least one open interval in the week, or 24/7 (required to submit, DEC-491). */
 export function hasOpeningHours(hours: OpeningHours): boolean {
-  return OPENING_DAYS.some((d) => (hours[d]?.length ?? 0) > 0);
+  return hours.always_open || OPENING_DAYS.some((d) => (hours.days[d]?.length ?? 0) > 0);
 }
 
 /** Riyadh is UTC+03:00 all year (no daylight saving, DEC-343). */
 const RIYADH_OFFSET_MS = 3 * 3600_000;
 
-/** Whether the venue is open at `at` (C-07 «مفتوح الآن»), read in Riyadh local time. */
-export function isOpenAt(hours: OpeningHours, at: Date): boolean {
+/**
+ * Whether the venue is open at `at` (C-07 «مفتوح الآن»), in Riyadh local time; `null` when the hours are unknown
+ * (`CustomerLocationSummary.open_now`). An overnight interval of the previous day still counts after midnight.
+ */
+export function isOpenAt(hours: OpeningHours, at: Date): boolean | null {
+  if (hours.always_open) return true;
+  if (!hasOpeningHours(hours)) return null;
   const local = new Date(at.getTime() + RIYADH_OFFSET_MS);
-  const day = OPENING_DAYS[local.getUTCDay()]!;
+  const dayIndex = local.getUTCDay();
   const minute = local.getUTCHours() * 60 + local.getUTCMinutes();
-  return (hours[day] ?? []).some((i) => minute >= minutesOf(i.open) && minute < minutesOf(i.close));
+  const today = hours.days[OPENING_DAYS[dayIndex]!] ?? [];
+  const yesterday = hours.days[OPENING_DAYS[(dayIndex + 6) % 7]!] ?? [];
+  if (today.some((i) => minute >= minutesOf(i.open) && minute < sameDaySpan(i)[1])) return true;
+  return yesterday.some((i) => minutesOf(i.close) < minutesOf(i.open) && minute < minutesOf(i.close));
 }
 
 export const VenuePublicStatusSchema = z.enum(VENUE_PUBLIC_STATUSES);
@@ -109,7 +155,7 @@ export const PutVenuePublicProfileBodySchema = z
     city: optionalText(VENUE_CITY_MAX),
     lat: z.number().min(-90).max(90).nullable(),
     lng: z.number().min(-180).max(180).nullable(),
-    opening_hours: OpeningHoursSchema,
+    opening_hours: OpeningHoursInputSchema,
     photo_ids: z
       .array(z.uuid())
       .max(VENUE_PROFILE_MAX_PHOTOS)
@@ -148,7 +194,9 @@ export const VenuePricingBodySchema = z.strictObject({
 });
 
 /** Categories that never sell subscriptions: halls and events are «included» or paid per visit (V2-D07). */
-export const NON_SUBSCRIPTION_CATEGORIES = ['hall'] as const satisfies readonly (typeof VENUE_CATEGORIES)[number][];
+export const NON_SUBSCRIPTION_CATEGORIES = [
+  'hall',
+] as const satisfies readonly (typeof VENUE_CATEGORIES)[number][];
 
 export function categoryAllowsSubscriptions(category: string): boolean {
   return !(NON_SUBSCRIPTION_CATEGORIES as readonly string[]).includes(category);

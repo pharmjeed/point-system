@@ -207,6 +207,10 @@ interface ActorContext {
 | `PATCH /v1/venues/{venueId}` | `venue.manage` | `expected_version` | `VERSION_CONFLICT` |
 | `GET /v1/venues/{venueId}/settings` | `venue.read` | النطاق | `SCOPE_VENUE_DENIED` |
 | `PUT /v1/venues/{venueId}/settings` | `venue.manage` | تحقق zod لمفاتيح القاموس §12 | `VALIDATION_FAILED` |
+| `GET /v1/venues/{venueId}/public-profile` | `venue.manage` | موقع من المؤسسة (نطاق المؤسسة)؛ غيره كغير الموجود | `RESOURCE_NOT_FOUND` |
+| `PUT /v1/venues/{venueId}/public-profile` | `venue.manage` | موقع من المؤسسة، `expected_version`، ليس مخفيًا من المنصة | `VERSION_CONFLICT` |
+| `POST /v1/venues/{venueId}/public-profile/photos` | `venue.manage` | موقع من المؤسسة | `RESOURCE_NOT_FOUND` |
+| `POST /v1/venues/{venueId}/public-profile/submit` | `venue.manage` | موقع من المؤسسة، `draft` مكتمل | `INVALID_STATE_TRANSITION` |
 | `GET /v1/venues/{venueId}/dispatch-pools` | `venue.read` | النطاق | — |
 | `POST /v1/venues/{venueId}/dispatch-pools` | `venue.manage` | مجموعة افتراضية واحدة | `VALIDATION_FAILED` |
 | `PATCH /v1/dispatch-pools/{poolId}` | `venue.manage` | — | `VALIDATION_FAILED` |

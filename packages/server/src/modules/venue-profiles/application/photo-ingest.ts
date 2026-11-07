@@ -24,7 +24,8 @@ import { photoStorageKey, photoUploadKey } from '../domain/profile-policy.js';
  * transaction opens (no object-storage I/O inside a transaction, ENGINEERING §2, 04 §5.3 rule 5).
  * `verified` = the photo ids whose sanitized object is in the bucket; the command attaches nothing else.
  */
-export type PhotoIngestPlan = { kind: 'error'; error: unknown } | { kind: 'ready'; verified: ReadonlySet<string> };
+export type PhotoIngestPlan =
+  { kind: 'error'; error: unknown } | { kind: 'ready'; verified: ReadonlySet<string> };
 
 /**
  * The venue photos follow the inspection photos' pipeline (DEC-36, DEC-494): the client PUTs the original to its

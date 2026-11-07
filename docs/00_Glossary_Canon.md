@@ -528,6 +528,9 @@
 | GET / POST | `/v1/venues` | `venue.read` / `venue.manage` | ✓ (POST) |
 | GET / PATCH | `/v1/venues/{venueId}` | `venue.read` / `venue.manage` | ✓ (PATCH) |
 | GET / PUT | `/v1/venues/{venueId}/settings` | `venue.read` / `venue.manage` | ✓ (PUT) |
+| GET / PUT | `/v1/venues/{venueId}/public-profile` | `venue.manage` | ✓ (PUT) |
+| POST | `/v1/venues/{venueId}/public-profile/photos` | `venue.manage` | ✓ |
+| POST | `/v1/venues/{venueId}/public-profile/submit` | `venue.manage` | ✓ |
 | GET / POST | `/v1/venues/{venueId}/dispatch-pools` | `venue.read` / `venue.manage` | ✓ (POST) |
 | PATCH | `/v1/dispatch-pools/{poolId}` | `venue.manage` | ✓ |
 | GET / POST | `/v1/venues/{venueId}/parking-zones` | `venue.layout_read` / `venue.manage` | ✓ (POST) |

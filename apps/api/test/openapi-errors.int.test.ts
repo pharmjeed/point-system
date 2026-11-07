@@ -113,7 +113,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       }
     }
     // the 131 operations of 07 but the internal GET /metrics, and the 7 platform operations (V2-002)
-    expect(routes).toHaveLength(130 + 7);
+    expect(routes).toHaveLength(134 + 14); // + the V2-004 staff routes (4) and platform routes (7)
     expect(seen).toContain('GET /v1/platform/me PLATFORM_AUTH_REQUIRED');
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
@@ -143,7 +143,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(96); // the 85 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2)
+    expect(checked).toBe(104); // the 93 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2, V2-004 8 and 0)
     expect(problems).toEqual([]);
   });
 
@@ -171,7 +171,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(89 + 6); // + the 6 V2-002 platform commands
+    expect(checked).toBe(92 + 11); // + the 6 V2-002 and 5 V2-004 platform commands (V2-004 adds 3 staff ones)
     expect(problems).toEqual([]);
   });
 });

@@ -25,5 +25,6 @@ export * from './modules/audit-monitoring/index.js';
 export * from './modules/media/index.js';
 
 export * from './modules/platform/index.js';
+export * from './modules/venue-profiles/index.js';
 
 export * from './use-cases/index.js';
