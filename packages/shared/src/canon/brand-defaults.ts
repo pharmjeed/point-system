@@ -30,8 +30,8 @@ export const BRAND_DEFAULTS: Readonly<Record<BrandEnvVar, string>> = {
 /**
  * V2 customer app (V2-D01, DEC-480): the brand the customer sees in the app is the platform brand, so its
  * defaults are the staff brand's. Read by `apps/customer/app.config.ts` from `BRAND_CUSTOMER_APP_NAME_AR/_EN`
- * (falling back to these) and handed to the app as `extra.brand`; V1's `BRAND_CUSTOMER_NAME_*` (the WhatsApp
- * channel) is unchanged.
+ * (falling back to these) and handed to the app as `extra.brand`. With the defaults it equals the WhatsApp
+ * channel's `BRAND_CUSTOMER_NAME_*` (DEC-470): both are the platform brand.
  */
 export const CUSTOMER_APP_BRAND_ENV_VARS = [
   'BRAND_CUSTOMER_APP_NAME_AR',

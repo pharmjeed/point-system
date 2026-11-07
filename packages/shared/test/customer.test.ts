@@ -199,9 +199,14 @@ describe('normalizeSaudiPlate (07 §1.8, same table as the server)', () => {
 });
 
 describe('customer app brand (V2-D01, DEC-480)', () => {
-  it('defaults to the platform brand; the V1 WhatsApp customer brand is unchanged', () => {
+  it('defaults to the platform brand, the same customer brand as the WhatsApp channel (V2-D01, DEC-470)', () => {
     expect(CUSTOMER_APP_BRAND_DEFAULTS.BRAND_CUSTOMER_APP_NAME_AR).toBe(BRAND_DEFAULTS.BRAND_STAFF_NAME_AR);
     expect(CUSTOMER_APP_BRAND_DEFAULTS.BRAND_CUSTOMER_APP_NAME_EN).toBe(BRAND_DEFAULTS.BRAND_STAFF_NAME_EN);
-    expect(BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR).not.toBe(BRAND_DEFAULTS.BRAND_STAFF_NAME_AR);
+    expect(CUSTOMER_APP_BRAND_DEFAULTS.BRAND_CUSTOMER_APP_NAME_AR).toBe(
+      BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR,
+    );
+    expect(CUSTOMER_APP_BRAND_DEFAULTS.BRAND_CUSTOMER_APP_NAME_EN).toBe(
+      BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_EN,
+    );
   });
 });
