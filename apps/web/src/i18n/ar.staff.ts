@@ -30,6 +30,29 @@ export const s01 = {
   driverLink: 'دخول السائقين',
 } as const;
 
+/**
+ * Platform console (V2, docs/v2/02 §2): the /platform/login screen (the TOTP and password steps reuse s01) and the
+ * P-01 placeholder shell. The texts 02 of V2 does not define yet are listed in docs/v2/02 §5.
+ */
+export const p01 = {
+  loginTitle: 'دخول لوحة المنصة',
+  phoneLabel: 'رقم الجوال',
+  passwordLabel: 'كلمة المرور',
+  submit: 'دخول',
+  staffLink: 'دخول المشرفين والإدارة',
+  shellTitle: 'لوحة المنصة',
+  overviewTitle: 'النظرة العامة',
+  welcome: 'مرحبًا {name}',
+  placeholder: 'مؤشرات المنصة والمشغلين تظهر هنا في التحديثات القادمة.',
+  logout: 'تسجيل الخروج',
+  role: {
+    platform_owner: 'مالك المنصة',
+    platform_admin: 'إدارة المنصة',
+    platform_finance: 'مالية المنصة',
+    platform_support: 'دعم المنصة',
+  },
+} as const;
+
 /** S-05 — السائقون */
 export const s05 = {
   search: 'ابحث بالاسم أو الرقم الوظيفي أو الجوال',

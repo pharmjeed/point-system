@@ -18,6 +18,8 @@ export const paths = {
   reports: '/reports', // S-11
   incidents: '/incidents', // S-12
   admin: '/admin', // S-13
+  platform: '/platform', // P-01 (V2, docs/v2/02 §2)
+  platformLogin: '/platform/login', // V2-002
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)
 } as const;
 
@@ -31,7 +33,13 @@ const STAFF_PREFIXES = [
   '/incidents',
   '/admin',
   '/s',
+  '/platform',
 ];
+
+/** The V2 platform console: its own session and cookie; never the staff session handling (DEC-462). */
+export function isPlatformArea(pathname: string): boolean {
+  return pathname === paths.platform || pathname.startsWith(`${paths.platform}/`);
+}
 
 /** Which theme/shell area a path belongs to. Login, D-02 and D-15 are driver screens. */
 export function areaOf(pathname: string): 'driver' | 'staff' {

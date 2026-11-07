@@ -113,6 +113,19 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: '/s', element: <Navigate to={paths.ops} replace /> },
+      // V2 platform console (docs/v2/02 §2): its own session, one lazy chunk
+      {
+        path: paths.platformLogin,
+        lazy: async () => ({
+          Component: (await import('@/features/platform/PlatformLoginPage')).PlatformLoginPage,
+        }),
+      },
+      {
+        path: paths.platform,
+        lazy: async () => ({
+          Component: (await import('@/features/platform/PlatformHomePage')).PlatformHomePage,
+        }),
+      },
       ...galleryRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],
