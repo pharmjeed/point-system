@@ -9,6 +9,16 @@ import { runInvariants, runSqlScript } from '../src/tools.js';
 import * as tables from '../src/schema/schema.js';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 
+/** The V2 platform tables of 0008_platform.sql (V2-001, docs/v2/03_Data_Model.md §1–§2). */
+const PLATFORM_TABLES = [
+  'platform_users',
+  'platform_sessions',
+  'platform_idempotency_keys',
+  'platform_audit_log',
+  'operator_contracts',
+  'venue_public_profiles',
+];
+
 /**
  * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
  * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
@@ -43,11 +53,15 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql', async () => {
+  it('creates the 47 base tables of 06_schema.sql and the 6 platform tables of 0008 (V2-001)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
-    expect(r.rows[0].n).toBe(47);
+    expect(r.rows[0].n).toBe(47 + PLATFORM_TABLES.length);
+    const ref = await refClient.query(
+      `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
+    );
+    expect(ref.rows[0].n).toBe(47);
   });
 
   it('the first migration is docs/06_schema.sql v1.1 verbatim; later corrections ship as migrations', () => {
@@ -92,9 +106,19 @@ describe('migrations', () => {
   });
 
   it('later indexes are built CONCURRENTLY, one statement alone in its file, and end valid (06 ERD §9.2 rule 5)', async () => {
-    const later = listMigrations().filter(
-      (m) => m.name >= '0005' && /CREATE\s+(UNIQUE\s+)?INDEX/i.test(m.sql),
-    );
+    // an index on a table the same migration creates is built on an empty table (0008, V2-001): rule 5 is about
+    // the large live tables only
+    const onLiveTable = (sql: string) => {
+      const created = new Set([...sql.matchAll(/CREATE TABLE (\w+)/gi)].map((x) => x[1]));
+      return [
+        ...sql.matchAll(
+          /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF NOT EXISTS\s+)?\w+\s+ON\s+(\w+)/gi,
+        ),
+      ]
+        .map((x) => x[1])
+        .some((t) => !created.has(t));
+    };
+    const later = listMigrations().filter((m) => m.name >= '0005' && onLiveTable(m.sql));
     expect(later.map((m) => m.name)).toEqual([
       '0005_wa_quota_index.sql',
       '0006_wa_inbound_received_index.sql',
@@ -183,7 +207,7 @@ describe('migrations', () => {
       expect(new Set(cfg.columns.map((c) => c.name))).toEqual(expected);
       checked++;
     }
-    expect(checked).toBe(47);
+    expect(checked).toBe(47 + PLATFORM_TABLES.length);
   });
 
   it('runs docs/06_schema_invariants_test.sql green on the migrated schema', async () => {
@@ -196,9 +220,16 @@ describe('migrations', () => {
     await client.query('BEGIN');
     try {
       await client.query('SET LOCAL ROLE point_app');
-      for (const t of ['audit_log', 'ticket_events', 'custody_events', 'analytics_events']) {
+      for (const t of [
+        'audit_log',
+        'ticket_events',
+        'custody_events',
+        'analytics_events',
+        'platform_audit_log',
+      ]) {
         await client.query('SAVEPOINT s');
-        await expect(client.query(`UPDATE ${t} SET org_id = org_id WHERE false`)).rejects.toThrow(
+        const col = t === 'platform_audit_log' ? 'action' : 'org_id';
+        await expect(client.query(`UPDATE ${t} SET ${col} = ${col} WHERE false`)).rejects.toThrow(
           /permission denied/,
         );
         await client.query('ROLLBACK TO SAVEPOINT s');

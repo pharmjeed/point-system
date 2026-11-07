@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { verify } from 'argon2';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '../src/migrate.js';
 import {
   DEV_DATA_ENCRYPTION_KEY,
   DEV_DATA_ENCRYPTION_KEY_ID,
@@ -27,7 +28,6 @@ if (!ADMIN_URL)
   throw new Error('seed.int.test.ts needs TEST_DATABASE_URL (admin URL of a PostgreSQL 16 server)');
 
 const docs = fileURLToPath(new URL('../../../docs/', import.meta.url));
-const SCHEMA_SQL = readFileSync(`${docs}06_schema.sql`, 'utf8');
 // The invariants script is psql-flavoured: drop meta-commands such as `\set ON_ERROR_STOP 1`.
 const INVARIANTS_SQL = readFileSync(`${docs}06_schema_invariants_test.sql`, 'utf8')
   .split('\n')
@@ -87,13 +87,8 @@ async function createDb(prefix: string): Promise<TestDb> {
   url.pathname = `/${name}`;
   const db = { name, url: url.toString() };
   created.push(db);
-  const c = new pg.Client({ connectionString: db.url });
-  await c.connect();
-  try {
-    await c.query(SCHEMA_SQL); // first migration = docs/06_schema.sql verbatim
-  } finally {
-    await c.end();
-  }
+  // the migrations (the first one = docs/06_schema.sql verbatim; the invariants script also checks the V2 tables of 0008)
+  await migrate(db.url);
   return db;
 }
 

@@ -16,18 +16,35 @@ import {
   date,
   smallint,
   primaryKey,
+  numeric,
   pgView,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-export const organizations = pgTable('organizations', {
-  id: uuid().defaultRandom().primaryKey().notNull(),
-  name_ar: text().notNull(),
-  name_en: text(),
-  settings: jsonb().default({}).notNull(),
-  created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-});
+export const organizations = pgTable(
+  'organizations',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    name_ar: text().notNull(),
+    name_en: text(),
+    settings: jsonb().default({}).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    operator_status: text().default('active').notNull(),
+    is_platform_operated: boolean().default(false).notNull(),
+    legal_name: text(),
+    cr_number: text(),
+    vat_number: text(),
+  },
+  (table) => [
+    check(
+      'ck_organizations_operator_status',
+      sql`operator_status = ANY (ARRAY['invited'::text, 'trial'::text, 'active'::text, 'suspended'::text, 'terminated'::text])`,
+    ),
+    check('ck_organizations_cr_number', sql`(cr_number IS NULL) OR (cr_number ~ '^[0-9]{10}$'::text)`),
+    check('ck_organizations_vat_number', sql`(vat_number IS NULL) OR (vat_number ~ '^3[0-9]{13}3$'::text)`),
+  ],
+);
 
 export const venues = pgTable(
   'venues',
@@ -1920,6 +1937,241 @@ export const idempotency_keys = pgTable(
     check('idempotency_keys_status_check', sql`status = ANY (ARRAY['in_progress'::text, 'completed'::text])`),
   ],
 );
+
+// V2 platform layer (migration 0008_platform.sql, DEC-461)
+
+export const platform_users = pgTable(
+  'platform_users',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    phone_e164: text().notNull(),
+    full_name: text().notNull(),
+    role: text().notNull(),
+    status: text().default('active').notNull(),
+    secret_hash: text().notNull(),
+    must_change_secret: boolean().default(true).notNull(),
+    mfa_enabled: boolean().default(false).notNull(),
+    mfa_secret_enc: text(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    mfa_last_step: bigint({ mode: 'number' }),
+    failed_login_count: integer().default(0).notNull(),
+    locked_until: timestamp({ withTimezone: true, mode: 'string' }),
+    last_login_at: timestamp({ withTimezone: true, mode: 'string' }),
+    disabled_at: timestamp({ withTimezone: true, mode: 'string' }),
+    disabled_by: uuid(),
+    disabled_reason: text(),
+    created_by: uuid(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('uq_platform_users_phone').on(table.phone_e164),
+    check('ck_platform_users_failed_count', sql`failed_login_count >= 0`),
+    check('ck_platform_users_phone', sql`phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text`),
+    check(
+      'ck_platform_users_role',
+      sql`role = ANY (ARRAY['platform_owner'::text, 'platform_admin'::text, 'platform_finance'::text, 'platform_support'::text])`,
+    ),
+    check('ck_platform_users_status', sql`status = ANY (ARRAY['active'::text, 'disabled'::text])`),
+    check('ck_platform_users_disabled_at', sql`(status <> 'disabled'::text) OR (disabled_at IS NOT NULL)`),
+    check('ck_platform_users_mfa_secret', sql`(NOT mfa_enabled) OR (mfa_secret_enc IS NOT NULL)`),
+  ],
+);
+
+export const platform_sessions = pgTable(
+  'platform_sessions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    platform_user_id: uuid().notNull(),
+    kind: text().default('session').notNull(),
+    token_hash: text().notNull(),
+    mfa_verified: boolean().default(false).notNull(),
+    ip: inet(),
+    user_agent: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    last_seen_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    revoked_at: timestamp({ withTimezone: true, mode: 'string' }),
+    revoked_reason: text(),
+  },
+  (table) => [
+    index('ix_platform_sessions_user_active')
+      .using('btree', table.platform_user_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(revoked_at IS NULL)`),
+
+    unique('uq_platform_sessions_token').on(table.token_hash),
+    check('ck_platform_sessions_kind', sql`kind = ANY (ARRAY['session'::text, 'mfa_challenge'::text])`),
+    check(
+      'ck_platform_sessions_revoked_reason',
+      sql`revoked_reason = ANY (ARRAY['logout'::text, 'disabled'::text, 'secret_reset'::text, 'admin'::text, 'expired_cleanup'::text, 'consumed'::text])`,
+    ),
+    check('ck_platform_sessions_revoked', sql`(revoked_reason IS NULL) OR (revoked_at IS NOT NULL)`),
+    check('ck_platform_sessions_challenge', sql`(kind <> 'mfa_challenge'::text) OR (mfa_verified = false)`),
+    check('ck_platform_sessions_expiry', sql`expires_at > created_at`),
+  ],
+);
+
+export const platform_idempotency_keys = pgTable(
+  'platform_idempotency_keys',
+  {
+    platform_user_id: uuid().notNull(),
+    key: text().notNull(),
+    operation: text().notNull(),
+    request_hash: text().notNull(),
+    status: text().default('in_progress').notNull(),
+    response_status: integer(),
+    response_body: jsonb(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' })
+      .default(sql`(now() + '24:00:00'::interval)`)
+      .notNull(),
+  },
+  (table) => [
+    index('ix_platform_idempotency_expiry').using(
+      'btree',
+      table.expires_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    primaryKey({ columns: [table.platform_user_id, table.key], name: 'pk_platform_idempotency_keys' }),
+    check('ck_platform_idempotency_keys_key', sql`(length(key) >= 8) AND (length(key) <= 128)`),
+    check(
+      'ck_platform_idempotency_keys_status',
+      sql`status = ANY (ARRAY['in_progress'::text, 'completed'::text])`,
+    ),
+  ],
+);
+
+export const platform_audit_log = pgTable(
+  'platform_audit_log',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'platform_audit_log_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    occurred_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    actor_type: text().notNull(),
+    actor_id: uuid(),
+    actor_role: text(),
+    action: text().notNull(),
+    entity_type: text().notNull(),
+    entity_id: uuid(),
+    org_id: uuid(),
+    request_id: text(),
+    ip: inet(),
+    user_agent: text(),
+    reason: text(),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    index('ix_platform_audit_occurred').using(
+      'btree',
+      table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_platform_audit_org')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('timestamptz_ops'),
+        table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(org_id IS NOT NULL)`),
+
+    check(
+      'ck_platform_audit_actor',
+      sql`((actor_type = 'platform_user'::text) AND (actor_id IS NOT NULL)) OR ((actor_type = 'system'::text) AND (actor_id IS NULL))`,
+    ),
+  ],
+);
+
+export const operator_contracts = pgTable(
+  'operator_contracts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    saas_fee_halalas_per_venue: bigint({ mode: 'number' }).notNull(),
+    saas_cycle: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    subscriber_visit_payout_halalas: bigint({ mode: 'number' }).notNull(),
+    app_payment_commission_bp: integer().notNull(),
+    starts_on: date().notNull(),
+    ends_on: date(),
+    created_by: uuid().notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_operator_contracts_org').using(
+      'btree',
+      table.org_id.asc().nullsLast().op('date_ops'),
+      table.starts_on.asc().nullsLast().op('date_ops'),
+    ),
+
+    check('ck_operator_contracts_saas_fee', sql`saas_fee_halalas_per_venue >= 0`),
+    check('ck_operator_contracts_saas_cycle', sql`saas_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
+    check('ck_operator_contracts_payout', sql`subscriber_visit_payout_halalas >= 0`),
+    check(
+      'ck_operator_contracts_commission',
+      sql`(app_payment_commission_bp >= 0) AND (app_payment_commission_bp <= 10000)`,
+    ),
+    check('ck_operator_contracts_period', sql`(ends_on IS NULL) OR (ends_on > starts_on)`),
+  ],
+);
+
+export const venue_public_profiles = pgTable(
+  'venue_public_profiles',
+  {
+    venue_id: uuid().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    status: text().default('draft').notNull(),
+    category: text().notNull(),
+    lat: numeric({ precision: 9, scale: 6 }),
+    lng: numeric({ precision: 9, scale: 6 }),
+    opening_hours: jsonb().default({}).notNull(),
+    photo_asset_ids: uuid().array().default(['']).notNull(),
+    subscriptions_enabled: boolean().default(false).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    pay_per_visit_halalas: bigint({ mode: 'number' }),
+    approved_by: uuid(),
+    approved_at: timestamp({ withTimezone: true, mode: 'string' }),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_venue_public_profiles_listed')
+      .using('btree', table.category.asc().nullsLast().op('text_ops'))
+      .where(sql`(status = 'approved'::text)`),
+    index('ix_venue_public_profiles_org').using('btree', table.org_id.asc().nullsLast().op('uuid_ops')),
+
+    check(
+      'ck_venue_public_profiles_status',
+      sql`status = ANY (ARRAY['draft'::text, 'submitted'::text, 'approved'::text, 'hidden'::text])`,
+    ),
+    check(
+      'ck_venue_public_profiles_category',
+      sql`category = ANY (ARRAY['hall'::text, 'office'::text, 'mall'::text, 'hospital'::text, 'residential'::text, 'hotel'::text, 'club'::text, 'other'::text])`,
+    ),
+    check(
+      'ck_venue_public_profiles_location',
+      sql`(((lat IS NULL) = (lng IS NULL)) AND ((lat IS NULL) OR (((lat >= ('-90'::integer)::numeric) AND (lat <= (90)::numeric)) AND ((lng >= ('-180'::integer)::numeric) AND (lng <= (180)::numeric)))))`,
+    ),
+    check(
+      'ck_venue_public_profiles_pay_per_visit',
+      sql`(pay_per_visit_halalas IS NULL) OR (pay_per_visit_halalas > 0)`,
+    ),
+    check(
+      'ck_venue_public_profiles_approved',
+      sql`(status <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (approved_at IS NOT NULL))`,
+    ),
+  ],
+);
+
 export const v_driver_state = pgView('v_driver_state', {
   duty_session_id: uuid(),
   user_id: uuid(),

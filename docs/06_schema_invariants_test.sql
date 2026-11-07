@@ -1,7 +1,8 @@
 -- =====================================================================
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
--- Run on an EMPTY database after loading 06_schema.sql:
---   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema.sql -f 06_schema_invariants_test.sql
+-- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
+-- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001):
+--   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
 -- =====================================================================
@@ -121,4 +122,45 @@ SELECT expect_fail('duplicate pending dispatch pass job',
  $q$INSERT INTO outbox_events(org_id,type,dedupe_key) VALUES ('00000000-0000-0000-0000-000000000001','job.dispatch_pass','dispatch_pass:pool1')$q$);
 -- view check
 SELECT 'v_driver_state rows: '||count(*) FROM v_driver_state;
+-- V2 platform layer (0008_platform.sql, V2-001, DEC-461): checks are only added here, never weakened
+SELECT 'organization defaults to an active operator: '||operator_status||' platform_operated='||is_platform_operated
+  FROM organizations WHERE id='00000000-0000-0000-0000-000000000001';
+INSERT INTO platform_users(id,phone_e164,full_name,role,secret_hash) VALUES
+ ('00000000-0000-0000-0000-00000000f001','+966500000901','مالك المنصة','platform_owner','x');
+SELECT expect_fail('platform user with an unknown role',
+ $q$INSERT INTO platform_users(phone_e164,full_name,role,secret_hash) VALUES ('+966500000902','x','owner','x')$q$);
+SELECT expect_fail('second platform user with the same phone',
+ $q$INSERT INTO platform_users(phone_e164,full_name,role,secret_hash) VALUES ('+966500000901','x','platform_admin','x')$q$);
+SELECT expect_fail('platform MFA enabled without a secret',
+ $q$UPDATE platform_users SET mfa_enabled=true WHERE id='00000000-0000-0000-0000-00000000f001'$q$);
+SELECT expect_fail('disabled platform user without disabled_at',
+ $q$UPDATE platform_users SET status='disabled' WHERE id='00000000-0000-0000-0000-00000000f001'$q$);
+INSERT INTO platform_sessions(platform_user_id,token_hash,expires_at) VALUES
+ ('00000000-0000-0000-0000-00000000f001','th1',now()+interval '1 hour');
+SELECT expect_fail('platform session token stored twice',
+ $q$INSERT INTO platform_sessions(platform_user_id,token_hash,expires_at) VALUES ('00000000-0000-0000-0000-00000000f001','th1',now()+interval '1 hour')$q$);
+SELECT expect_fail('verified MFA challenge row',
+ $q$INSERT INTO platform_sessions(platform_user_id,kind,token_hash,mfa_verified,expires_at) VALUES ('00000000-0000-0000-0000-00000000f001','mfa_challenge','th2',true,now()+interval '5 minutes')$q$);
+SELECT expect_fail('platform session revoked reason without revoked_at',
+ $q$INSERT INTO platform_sessions(platform_user_id,token_hash,expires_at,revoked_reason) VALUES ('00000000-0000-0000-0000-00000000f001','th3',now()+interval '1 hour','logout')$q$);
+SELECT expect_fail('staff user cannot own a platform session',
+ $q$INSERT INTO platform_sessions(platform_user_id,token_hash,expires_at) VALUES ('00000000-0000-0000-0000-0000000000c0','th4',now()+interval '1 hour')$q$);
+SELECT expect_fail('unknown operator status',
+ $q$UPDATE organizations SET operator_status='paused' WHERE id='00000000-0000-0000-0000-000000000001'$q$);
+SELECT expect_fail('VAT number not 15 digits 3…3',
+ $q$UPDATE organizations SET vat_number='123456789012345' WHERE id='00000000-0000-0000-0000-000000000001'$q$);
+SELECT expect_fail('operator contract ending before it starts',
+ $q$INSERT INTO operator_contracts(org_id,saas_fee_halalas_per_venue,saas_cycle,subscriber_visit_payout_halalas,app_payment_commission_bp,starts_on,ends_on,created_by) VALUES ('00000000-0000-0000-0000-000000000001',0,'monthly',0,0,'2026-02-01','2026-01-01','00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('operator contract commission above 100%',
+ $q$INSERT INTO operator_contracts(org_id,saas_fee_halalas_per_venue,saas_cycle,subscriber_visit_payout_halalas,app_payment_commission_bp,starts_on,created_by) VALUES ('00000000-0000-0000-0000-000000000001',0,'monthly',0,10001,'2026-01-01','00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('operator contract created by a staff user',
+ $q$INSERT INTO operator_contracts(org_id,saas_fee_halalas_per_venue,saas_cycle,subscriber_visit_payout_halalas,app_payment_commission_bp,starts_on,created_by) VALUES ('00000000-0000-0000-0000-000000000001',0,'monthly',0,0,'2026-01-01','00000000-0000-0000-0000-0000000000c0')$q$);
+SELECT expect_fail('approved public profile without approver',
+ $q$INSERT INTO venue_public_profiles(venue_id,org_id,status,category) VALUES ('00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-000000000001','approved','hall')$q$);
+SELECT expect_fail('public profile with an unknown category',
+ $q$INSERT INTO venue_public_profiles(venue_id,org_id,category) VALUES ('00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-000000000001','stadium')$q$);
+SELECT expect_fail('public profile with half a location',
+ $q$INSERT INTO venue_public_profiles(venue_id,org_id,category,lat) VALUES ('00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-000000000001','hall',24.7)$q$);
+SELECT expect_fail('platform audit row of a platform user without actor_id',
+ $q$INSERT INTO platform_audit_log(actor_type,action,entity_type) VALUES ('platform_user','platform.auth.login','platform_user')$q$);
 SELECT 'ALL INVARIANT TESTS PASSED';
