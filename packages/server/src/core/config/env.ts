@@ -44,6 +44,9 @@ export const envSchema = z.object({
   SESSION_SECRET: secret('SESSION_SECRET', 32),
   SESSION_COOKIE_NAME: z.string().default('__Host-point_sid'),
   SESSION_COOKIE_SECURE: bool.default(true),
+  // V2 platform console (/platform, DEC-462): its own session cookie, never the staff one. Empty = derived from the
+  // staff cookie's prefix: `__Host-point_psid` next to `__Host-point_sid`, `point_psid` next to `point_sid` (local http)
+  PLATFORM_SESSION_COOKIE_NAME: z.string().default(''),
   CODE_PEPPER: secret('CODE_PEPPER', 32),
   // argon2id `secret` (pepper) for PINs and passwords, 09 §9.1 (DEC-58)
   AUTH_SECRET_PEPPER: secret('AUTH_SECRET_PEPPER', 32),
@@ -138,6 +141,14 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     throw new EnvError(r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`));
   }
   const env = r.data;
+  if (!env.PLATFORM_SESSION_COOKIE_NAME) {
+    env.PLATFORM_SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME.startsWith('__Host-')
+      ? '__Host-point_psid'
+      : 'point_psid';
+  }
+  if (env.PLATFORM_SESSION_COOKIE_NAME === env.SESSION_COOKIE_NAME) {
+    throw new EnvError(['PLATFORM_SESSION_COOKIE_NAME must differ from SESSION_COOKIE_NAME (DEC-462)']);
+  }
   if (env.APP_ENV === 'production' && env.WA_MODE !== 'live') {
     throw new EnvError(['WA_MODE must be live in production']);
   }
@@ -179,6 +190,11 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
       'SESSION_COOKIE_NAME with the __Host- prefix needs SESSION_COOKIE_SECURE=true (browsers drop it)',
     );
   }
+  if (env.PLATFORM_SESSION_COOKIE_NAME.startsWith('__Host-') && !env.SESSION_COOKIE_SECURE) {
+    out.push(
+      'PLATFORM_SESSION_COOKIE_NAME with the __Host- prefix needs SESSION_COOKIE_SECURE=true (browsers drop it)',
+    );
+  }
   if (env.WA_MODE === 'live' && new URL(env.WA_GRAPH_BASE_URL).protocol !== 'https:') {
     out.push('WA_GRAPH_BASE_URL must be https when WA_MODE=live');
   }
@@ -189,6 +205,11 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
     if (!env.SESSION_COOKIE_SECURE) out.push('SESSION_COOKIE_SECURE must be true in staging/production');
     if (!env.SESSION_COOKIE_NAME.startsWith('__Host-')) {
       out.push('SESSION_COOKIE_NAME must start with __Host- in staging/production (09 §9.3)');
+    }
+    if (!env.PLATFORM_SESSION_COOKIE_NAME.startsWith('__Host-')) {
+      out.push(
+        'PLATFORM_SESSION_COOKIE_NAME must start with __Host- in staging/production (09 §9.3, DEC-462)',
+      );
     }
     if (new URL(env.APP_BASE_URL).protocol !== 'https:') {
       out.push('APP_BASE_URL must be https in staging/production');

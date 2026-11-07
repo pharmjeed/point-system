@@ -1,8 +1,9 @@
 import { SetMetadata, createParamDecorator, type ExecutionContext } from '@nestjs/common';
-import type { Permission } from '@point/shared';
+import type { Permission, PlatformPermission } from '@point/shared';
 
 export const PUBLIC_KEY = 'point:public';
 export const PERMISSION_KEY = 'point:permission';
+export const PLATFORM_PERMISSION_KEY = 'point:platform_permission';
 export const COMMAND_KEY = 'point:command';
 export const AUTH_SELF_KEY = 'point:auth_self';
 
@@ -11,6 +12,14 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 
 /** Canon §10 permission required by the route (checked by PermissionGuard; boot fails if a route has none). */
 export const RequirePermission = (permission: Permission) => SetMetadata(PERMISSION_KEY, permission);
+
+/**
+ * V2 platform permission (docs/v2/02 §2.1) required by a `/v1/platform/*` route (DEC-462). The guard then reads the
+ * platform session cookie only — never the staff one — and checks the platform role matrix. A route carries either
+ * this or @RequirePermission, never both (the boot audit refuses it).
+ */
+export const RequirePlatformPermission = (permission: PlatformPermission) =>
+  SetMetadata(PLATFORM_PERMISSION_KEY, permission);
 
 export interface CommandMeta {
   /** ✓ in canon §9: Idempotency-Key is mandatory */
@@ -47,6 +56,11 @@ export const CurrentTx = createParamDecorator((_: unknown, ctx: ExecutionContext
 
 export const CurrentActor = createParamDecorator(
   (_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().actor ?? null,
+);
+
+/** The platform account of a @RequirePlatformPermission route (PlatformActorContext), or null. */
+export const CurrentPlatformActor = createParamDecorator(
+  (_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().platformActor ?? null,
 );
 
 export const RequestId = createParamDecorator(

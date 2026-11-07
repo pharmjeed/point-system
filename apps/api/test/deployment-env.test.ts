@@ -25,6 +25,11 @@ describe('deployment configuration guards', () => {
   it('production needs the __Host- cookie, Secure, https and one origin', () => {
     expect(problems({ SESSION_COOKIE_NAME: 'point_sid' })).toEqual([
       'SESSION_COOKIE_NAME must start with __Host- in staging/production (09 §9.3)',
+      // the platform cookie follows the staff cookie's prefix when not set (DEC-462)
+      'PLATFORM_SESSION_COOKIE_NAME must start with __Host- in staging/production (09 §9.3, DEC-462)',
+    ]);
+    expect(problems({ PLATFORM_SESSION_COOKIE_NAME: 'point_psid' })).toEqual([
+      'PLATFORM_SESSION_COOKIE_NAME must start with __Host- in staging/production (09 §9.3, DEC-462)',
     ]);
     expect(problems({ SESSION_COOKIE_SECURE: 'false' })).toContain(
       'SESSION_COOKIE_SECURE must be true in staging/production',
@@ -61,6 +66,8 @@ describe('deployment configuration guards', () => {
     };
     expect(deploymentProblems(testEnv(local), local)).toEqual([
       'SESSION_COOKIE_NAME with the __Host- prefix needs SESSION_COOKIE_SECURE=true (browsers drop it)',
+      // the derived platform cookie (__Host-point_psid) has the same need (DEC-462)
+      'PLATFORM_SESSION_COOKIE_NAME with the __Host- prefix needs SESSION_COOKIE_SECURE=true (browsers drop it)',
     ]);
     // local http keeps point_sid without Secure
     expect(deploymentProblems(testEnv({ APP_ENV: 'local' }))).toEqual([]);
@@ -87,7 +94,8 @@ describe('deployment configuration guards', () => {
       expect.unreachable();
     } catch (e) {
       expect(e).toBeInstanceOf(EnvError);
-      expect((e as EnvError).problems).toHaveLength(4); // __Host- without Secure, Secure, https, one origin
+      // __Host- without Secure (staff and platform cookies, DEC-462), Secure, https, one origin
+      expect((e as EnvError).problems).toHaveLength(5);
     }
   });
 

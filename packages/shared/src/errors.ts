@@ -107,6 +107,9 @@ export const ERROR_CODES = [
   'INTERNAL_ERROR',
   'SERVICE_UNAVAILABLE',
   'DEPENDENCY_TIMEOUT',
+  // V2 platform layer (canon §8 V2 rows, 08 §4.17; DEC-462, DEC-466)
+  'PLATFORM_AUTH_REQUIRED',
+  'OPERATOR_SUSPENDED',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
@@ -832,6 +835,21 @@ export const ERROR_CATALOG: Readonly<Record<ErrorCode, ErrorDef>> = {
     log: 'warn',
     message: 'An external service timed out.',
     message_ar: 'تأخر رد خدمة خارجية. أعد المحاولة.',
+  },
+  // 08 §4.17 المنصة والمشغلون (الإصدار الثاني)
+  PLATFORM_AUTH_REQUIRED: {
+    http: 401,
+    retryable: false,
+    log: 'info',
+    message: 'Sign in to the platform to continue.',
+    message_ar: 'سجّل الدخول إلى لوحة المنصة للمتابعة.',
+  },
+  OPERATOR_SUSPENDED: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'The operator is suspended.',
+    message_ar: 'حساب المشغّل معلّق من المنصة. لا يمكن تنفيذ هذا الإجراء الآن.',
   },
 };
 

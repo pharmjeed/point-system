@@ -57,15 +57,15 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
   const ops = openApiOperations(readDoc('07_openapi.yaml'));
 
   it('reads every operation with its responses', () => {
-    expect(ops).toHaveLength(131);
-    expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(120);
-    expect(ops.filter((o) => o.requestBody)).toHaveLength(81);
+    expect(ops).toHaveLength(131 + 7); // canon §9 + the V2 platform routes (V2-002)
+    expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(127);
+    expect(ops.filter((o) => o.requestBody)).toHaveLength(81 + 4);
   });
 
   it('every operation but a GET documents 413 PAYLOAD_TOO_LARGE and 422 VALIDATION_FAILED (08 §4.15, DEC-130)', () => {
     // the body parsers run before any route: one without a requestBody still reads a body sent to it
     const writes = ops.filter((o) => o.method !== 'GET');
-    expect(writes).toHaveLength(90);
+    expect(writes).toHaveLength(90 + 6);
     const missing = writes
       .filter(
         (o) =>

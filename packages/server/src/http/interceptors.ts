@@ -30,6 +30,8 @@ const ACCEPT_OPERATION = 'POST /v1/task-offers/{offerId}/accept';
 type Req = Request & {
   requestId: string;
   actor?: { userId: string; role?: string; venueId?: string | null };
+  /** V2: the platform account of a /v1/platform/* route (keys in platform_idempotency_keys, DEC-462) */
+  platformActor?: { userId: string };
   tx?: unknown;
 };
 
@@ -94,14 +96,17 @@ export class CommandInterceptor implements NestInterceptor {
       input: { params: req.params, query: req.query, body: req.body ?? null },
     };
     let run: Promise<CommandResponse>;
-    // keys are scoped per user (idempotency_keys.user_id): public commands (login, MFA verify) run without one
-    if ((meta.idempotent || header) && (req.actor?.userId || meta.idempotent)) {
+    // keys are scoped per user (idempotency_keys.user_id, or platform_idempotency_keys for a platform account):
+    // public commands (login, MFA verify) run without one
+    const owner = req.actor?.userId ?? req.platformActor?.userId;
+    if ((meta.idempotent || header) && (owner || meta.idempotent)) {
       const key = validateIdempotencyKey(header);
-      if (!req.actor?.userId) throw new AppError('AUTH_UNAUTHENTICATED');
+      if (!owner) throw new AppError('AUTH_UNAUTHENTICATED');
       run = runCommand(
         this.db,
         {
-          userId: req.actor.userId,
+          userId: owner,
+          keyScope: req.actor ? 'staff' : 'platform',
           idempotencyKey: key,
           operation: meta.operation,
           requestHash: requestHash(req.method, req.originalUrl.split('?')[0]!, req.body ?? null),

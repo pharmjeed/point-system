@@ -42,3 +42,6 @@ FEATURE_MODULES.push(MediaHttpModule);
 
 import { SupervisorHttpModule } from '@point/server';
 FEATURE_MODULES.push(SupervisorHttpModule);
+
+import { PlatformHttpModule } from '@point/server';
+FEATURE_MODULES.push(PlatformHttpModule);

@@ -270,6 +270,7 @@ DATABASE_SSL=false                   # true in staging/production
 SESSION_SECRET=                      # 32+ random bytes (base64); rotating logs everyone out
 SESSION_COOKIE_NAME=point_sid        # __Host-point_sid in staging/production (SESSION_COOKIE_SECURE=true)
 SESSION_COOKIE_SECURE=false          # true everywhere except local http
+PLATFORM_SESSION_COOKIE_NAME=point_psid  # V2 platform console (/platform); __Host-point_psid in staging/production
 CODE_PEPPER=                         # HMAC key for claim codes (DEC-15); rotate only between events
 AUTH_SECRET_PEPPER=                  # base64 32 bytes, argon2id pepper for PINs/passwords (09 §9.1, DEC-58); rotating it invalidates every secret
 DATA_ENCRYPTION_KEY=                 # base64 32 bytes, AES-256-GCM (TOTP secrets, claim code ciphertext)

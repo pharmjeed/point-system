@@ -7,7 +7,9 @@ import {
   HTTP_METHODS,
   IDEMPOTENT_ROUTES,
   PERMISSIONS,
+  PLATFORM_ROUTES,
   ROUTES,
+  findPlatformRoute,
   findRoute,
   fromExpressPath,
   routeKey,
@@ -131,8 +133,8 @@ describe('ROUTES vs canon §9', () => {
 describe('ROUTES vs docs/07_openapi.yaml', () => {
   const ops = openApiOps();
 
-  it('covers exactly the OpenAPI operations', () => {
-    expect(ROUTES.map((r) => routeKey(r.method, r.path)).sort()).toEqual(
+  it('covers exactly the OpenAPI operations (canon §9 + the V2 platform routes, DEC-462)', () => {
+    expect([...ROUTES, ...PLATFORM_ROUTES].map((r) => routeKey(r.method, r.path)).sort()).toEqual(
       ops.map((o) => routeKey(o.method as HttpMethod, o.path)).sort(),
     );
     expect(ROUTES).toHaveLength(131);
@@ -140,7 +142,8 @@ describe('ROUTES vs docs/07_openapi.yaml', () => {
 
   it('matches x-permission and x-idempotency of every operation', () => {
     for (const op of ops) {
-      const r = findRoute(op.method as HttpMethod, op.path);
+      const r =
+        findRoute(op.method as HttpMethod, op.path) ?? findPlatformRoute(op.method as HttpMethod, op.path);
       const ours = r && ['public', 'webhook', 'internal'].includes(r.permission) ? 'public' : r?.permission;
       expect(ours, `${op.method} ${op.path}`).toBe(op.permission);
       expect(r?.idempotency, `${op.method} ${op.path}`).toBe(op.idempotency);
@@ -150,7 +153,9 @@ describe('ROUTES vs docs/07_openapi.yaml', () => {
   it('has the 78 ✓ routes announced in 07 §1.4', () => {
     const announced = /\((\d+) مسارًا، `x-idempotency: required`\)/.exec(readDoc('07_API_Contract.md'))?.[1];
     expect(IDEMPOTENT_ROUTES).toHaveLength(Number(announced));
-    expect(ops.filter((o) => o.idempotency === 'required')).toHaveLength(IDEMPOTENT_ROUTES.length);
+    expect(ops.filter((o) => o.idempotency === 'required')).toHaveLength(
+      IDEMPOTENT_ROUTES.length + PLATFORM_ROUTES.filter((r) => r.idempotent).length,
+    );
   });
 });
 

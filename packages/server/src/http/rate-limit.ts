@@ -1,5 +1,5 @@
 import { Inject, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
-import type { RateLimitClass } from '@point/shared';
+import { isPlatformPath, type RateLimitClass } from '@point/shared';
 import type { Request, Response } from 'express';
 import type { Clock } from '../core/clock/clock.js';
 import type { Env } from '../core/config/env.js';
@@ -16,6 +16,8 @@ import { CLOCK, ENV } from './tokens.js';
 
 type Req = Request & {
   actor?: { userId: string; sessionId: string };
+  /** V2: the platform account of a /v1/platform/* route (its buckets are kept apart from the staff ones) */
+  platformActor?: { userId: string; sessionId: string };
   /** user/device rules left for UserRateLimitGuard once the session is known */
   rateLimitPending?: RateRule[];
 };
@@ -86,11 +88,13 @@ function setHeaders(res: Response, d: RateDecision): void {
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   private readonly cookieName: string;
+  private readonly platformCookieName: string;
   constructor(
     private readonly limiter: RateLimiter,
     @Inject(ENV) env: Env,
   ) {
     this.cookieName = env.SESSION_COOKIE_NAME;
+    this.platformCookieName = env.PLATFORM_SESSION_COOKIE_NAME;
   }
 
   canActivate(ctx: ExecutionContext): boolean {
@@ -98,7 +102,9 @@ export class RateLimitGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<Req>();
     const res = ctx.switchToHttp().getResponse<Response>();
     const rules = this.limiter.rulesFor(req);
-    const hasSession = typeof req.cookies?.[this.cookieName] === 'string';
+    // the session that will be read for this route: the platform cookie on /v1/platform/*, the staff one elsewhere
+    const cookie = isPlatformPath(req.path) ? this.platformCookieName : this.cookieName;
+    const hasSession = typeof req.cookies?.[cookie] === 'string';
     const now = rules.filter((r) => r.subject === 'ip' || !hasSession);
     req.rateLimitPending = hasSession ? rules.filter((r) => r.subject !== 'ip') : [];
     const ip = clientAddressKey(req.ip);
@@ -115,11 +121,12 @@ export class UserRateLimitGuard implements CanActivate {
   canActivate(ctx: ExecutionContext): boolean {
     const req = ctx.switchToHttp().getRequest<Req>();
     const pending = req.rateLimitPending ?? [];
-    if (!this.limiter.enabled || pending.length === 0 || !req.actor) return true;
-    const actor = req.actor;
+    const actor = req.actor ?? req.platformActor;
+    if (!this.limiter.enabled || pending.length === 0 || !actor) return true;
+    const ns = req.actor ? '' : 'platform-';
     this.limiter.consume(
       pending,
-      (r) => (r.subject === 'device' ? `session:${actor.sessionId}` : `user:${actor.userId}`),
+      (r) => (r.subject === 'device' ? `${ns}session:${actor.sessionId}` : `${ns}user:${actor.userId}`),
       ctx.switchToHttp().getResponse<Response>(),
     );
     return true;

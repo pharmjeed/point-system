@@ -48,6 +48,8 @@ tags:
 - name: Alerts & Incidents
 - name: Reports & Exports
 - name: Admin
+- name: Platform
+  description: الإصدار الثاني — لوحة المنصة /platform (docs/v2/02)، جلسة منفصلة __Host-point_psid
 - name: Webhooks
 - name: Health
 security:
@@ -8773,6 +8775,368 @@ paths:
       x-idempotency: none
       x-rate-limit-class: device
       x-error-codes: []
+  /v1/platform/auth/login:
+    post:
+      operationId: platformAuthLogin
+      summary: دخول لوحة المنصة
+      tags: [Platform]
+      description: |-
+        حسابات المنصة فقط (platform_users)، منفصلة تمامًا عن حسابات الموظفين: جوال + كلمة مرور، ثم TOTP دائمًا (V2-002، DEC-462).
+        الحساب المفعّل له MFA ← mfa_required=true وmfa_token (5 دقائق، استخدام واحد) دون كوكي. الدخول الأول (كلمة مرور مؤقتة من create-platform-owner) ← جلسة مقيدة بمسارات platform.self حتى تغيير كلمة المرور ثم إعداد TOTP.
+
+        الشروط: 5 محاولات فاشلة ثم قفل 15 دقيقة (PLATFORM_SECURITY)
+
+        الأثر: platform_sessions (sha256 فقط) + Set-Cookie: __Host-point_psid للجلسة المقيدة؛ platform_audit_log في المعاملة نفسها
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: 05XXXXXXXX أو +9665XXXXXXXX
+                  examples: ['0551234567']
+                secret:
+                  type: string
+                  minLength: 6
+                  maxLength: 128
+              required: [phone, secret]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformLoginResultEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_INVALID_CREDENTIALS
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '423':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_LOCKED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - csrfHeader: []
+      x-permission: public
+      x-idempotency: none
+      x-rate-limit-class: auth
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, AUTH_ACCOUNT_LOCKED, AUTH_INVALID_CREDENTIALS, PERMISSION_DENIED]
+  /v1/platform/auth/mfa/verify:
+    post:
+      operationId: platformAuthMfaVerify
+      summary: التحقق الثنائي لدخول المنصة
+      tags: [Platform]
+      description: |-
+        mfa_token غير معروف أو منتهٍ أو مستخدم ← 401 AUTH_MFA_REQUIRED: أعد إدخال كلمة المرور. الرمز الخاطئ يُحتسب ضمن حد القفل.
+
+        الأثر: يستهلك خطوة التحقق، ينشئ جلسة mfa_verified=true ويضبط الكوكي __Host-point_psid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mfa_token:
+                  type: string
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+              required: [mfa_token, code]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMeEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_INVALID | AUTH_MFA_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '423':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_LOCKED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - csrfHeader: []
+      x-permission: public
+      x-idempotency: none
+      x-rate-limit-class: auth
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, AUTH_ACCOUNT_LOCKED, AUTH_MFA_INVALID, AUTH_MFA_REQUIRED, PERMISSION_DENIED]
+  /v1/platform/auth/mfa/setup:
+    post:
+      operationId: platformAuthMfaSetup
+      summary: بدء إعداد TOTP لحساب المنصة
+      tags: [Platform]
+      description: |-
+        متاح للجلسة المقيدة (platform.self). حساب مفعّل له MFA ← 409 INVALID_STATE_TRANSITION (reason mfa_already_enabled).
+
+        الأثر: يحفظ سرًا مشفرًا (platform_users.mfa_secret_enc) حتى التأكيد
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaSetupEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | PERMISSION_DENIED
+        '409':
+          $ref: '#/components/responses/Error'
+          description: INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.self
+      x-idempotency: none
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/auth/mfa/confirm:
+    post:
+      operationId: platformAuthMfaConfirm
+      summary: تأكيد TOTP لحساب المنصة
+      tags: [Platform]
+      description: |-
+        الأثر: platform_users.mfa_enabled=true؛ الجلسة الحالية mfa_verified=true (ترتفع القيود إن غُيّرت كلمة المرور)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+              required: [code]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMeEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_INVALID | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | PERMISSION_DENIED
+        '409':
+          $ref: '#/components/responses/Error'
+          description: INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.self
+      x-idempotency: none
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, AUTH_MFA_INVALID, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/auth/secret/change:
+    post:
+      operationId: platformAuthSecretChange
+      summary: تغيير كلمة مرور حساب المنصة
+      tags: [Platform]
+      description: |-
+        الشروط: 12 حرفًا على الأقل وليست من الكلمات الشائعة (09 §9.1)، ولا تساوي الحالية
+
+        الأثر: must_change_secret=false؛ تُبطل كل جلسات الحساب (secret_reset) وتُصدر جلسة جديدة بالتحقق نفسه
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                current_secret:
+                  type: string
+                new_secret:
+                  type: string
+                  minLength: 6
+                  maxLength: 128
+              required: [current_secret, new_secret]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMeEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_INVALID_CREDENTIALS | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.self
+      x-idempotency: none
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, AUTH_INVALID_CREDENTIALS, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, VALIDATION_FAILED]
+  /v1/platform/auth/logout:
+    post:
+      operationId: platformAuthLogout
+      summary: خروج من لوحة المنصة
+      tags: [Platform]
+      description: |-
+        الأثر: يبطل الجلسة الحالية (logout) ويمسح الكوكي؛ لا يمس جلسة الموظفين في المتصفح نفسه
+      responses:
+        '204':
+          description: تم الخروج
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | PERMISSION_DENIED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.self
+      x-idempotency: none
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/me:
+    get:
+      operationId: platformMe
+      summary: حساب المنصة الحالي
+      tags: [Platform]
+      description: |-
+        الحساب والدور وصلاحيات المنصة والجلسة (pending: secret_change ثم mfa_setup للجلسة المقيدة)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMeEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.self
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PLATFORM_AUTH_REQUIRED]
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsAppWebhook
@@ -9003,6 +9367,11 @@ components:
       in: cookie
       name: __Host-point_sid
       description: رمز معتم 256-bit؛ httpOnly; Secure; SameSite=Lax; Path=/. الخادم يخزن sha256 فقط في auth_sessions.token_hash
+    platformSession:
+      type: apiKey
+      in: cookie
+      name: __Host-point_psid
+      description: الإصدار الثاني — جلسة لوحة المنصة (platform_sessions.token_hash = sha256)؛ منفصلة عن __Host-point_sid، فلا تفتح إحداهما مسارات الأخرى (DEC-462)
     csrfHeader:
       type: apiKey
       in: header
@@ -9502,8 +9871,9 @@ components:
         HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, INSPECTION_INCOMPLETE, INTAKE_INCOMPLETE,
         INTERNAL_ERROR, INVALID_STATE_TRANSITION, KEY_NOT_PICKED_UP, KEY_SLOT_OCCUPIED, KEY_TAG_IN_USE, MEDIA_TOO_LARGE, MEDIA_TYPE_UNSUPPORTED, MEDIA_UPLOAD_INCOMPLETE,
         MOVEMENT_IN_PROGRESS, NEXT_TASK_ALREADY_RESERVED, NOT_OFFER_RECIPIENT, NOT_TASK_ASSIGNEE, OFFER_EXPIRED, OFFER_NOT_FOUND, OFFER_REVOKED, OLDER_REQUEST_PENDING,
+        OPERATOR_SUSPENDED,
         PAGINATION_CURSOR_INVALID, PAPER_SERIAL_IN_USE, PAPER_STUB_MISMATCH, PARKING_SPOT_OCCUPIED, PAYLOAD_TOO_LARGE, PAYMENT_ALREADY_RECORDED, PAYMENT_ALREADY_REVERSED,
-        PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, PERMISSION_DENIED, PHONE_INVALID, PLATE_INVALID, RATE_LIMITED, REASON_REQUIRED, REASSIGN_BLOCKED_MOVEMENT,
+        PAYMENT_AMOUNT_MISMATCH, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_PENDING, PERMISSION_DENIED, PHONE_INVALID, PLATE_INVALID, PLATFORM_AUTH_REQUIRED, RATE_LIMITED, REASON_REQUIRED, REASSIGN_BLOCKED_MOVEMENT,
         RESEND_LIMIT_REACHED, RESOURCE_NOT_FOUND, RETRIEVAL_ALREADY_ACTIVE, SCOPE_VENUE_DENIED, SERVICE_UNAVAILABLE, SHIFT_ALREADY_OPEN, SHIFT_CLOSE_BLOCKED, SHIFT_NOT_OPEN,
         TASK_ALREADY_CLAIMED, TASK_NOT_STARTABLE, TICKET_CLOSED, TICKET_NOT_FOUND, TICKET_NOT_PARKED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED,
         VALIDATION_FAILED, VERSION_CONFLICT, WA_CHANNEL_UNAVAILABLE, WA_CONSENT_MISSING, WA_CUSTOMER_OPTED_OUT, WA_LINK_CODE_EXPIRED, WA_NOT_LINKED, WA_SEND_FAILED,
@@ -12727,6 +13097,131 @@ components:
                       additionalProperties: true
       required: [object, entry]
       description: بنية Meta Cloud API المختصرة؛ تُراجع من وثائق الإصدار المثبّت. التوقيع يُحسب على الجسم الخام لا على هذا التمثيل
+    PlatformRole:
+      type: string
+      enum: [platform_owner, platform_admin, platform_finance, platform_support]
+      description: platform_users.role (docs/v2/02 §1)
+    PlatformPermission:
+      type: string
+      enum: [platform.self, platform.overview_read, platform.operator_read, platform.operator_manage, platform.venue_review,
+        platform.plan_manage, platform.customer_read, platform.customer_manage, platform.subscription_read, platform.payment_read,
+        platform.refund_issue, platform.settlement_manage, platform.invoice_read, platform.settings_manage, platform.audit_read,
+        platform.user_manage]
+      description: صلاحيات المنصة (docs/v2/02 §2.1)، منفصلة عن صلاحيات الموظفين canon §10
+    OperatorStatus:
+      type: string
+      enum: [invited, trial, active, suspended, terminated]
+      description: organizations.operator_status (docs/v2/02 §4)
+    PlatformUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        phone_e164:
+          type: string
+          description: لصاحب الحساب نفسه
+        phone_masked:
+          type: string
+        role:
+          $ref: '#/components/schemas/PlatformRole'
+        status:
+          type: string
+          enum: [active, disabled]
+        mfa_enabled:
+          type: boolean
+        must_change_secret:
+          type: boolean
+        last_login_at:
+          type: [string, 'null']
+          format: date-time
+      required: [id, full_name, phone_masked, role, status, mfa_enabled, must_change_secret]
+    PlatformMe:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/PlatformUser'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformPermission'
+          description: فارغة للجلسة المقيدة إلا platform.self
+        session:
+          type: object
+          properties:
+            expires_at:
+              type: string
+              format: date-time
+            mfa_verified:
+              type: boolean
+            restricted:
+              type: boolean
+            pending:
+              type: array
+              items:
+                type: string
+                enum: [secret_change, mfa_setup]
+          required: [expires_at, mfa_verified, restricted, pending]
+        brand:
+          type: object
+          properties:
+            staff_name_ar:
+              type: string
+            staff_name_en:
+              type: string
+          required: [staff_name_ar, staff_name_en]
+      required: [user, permissions, session, brand]
+    PlatformLoginResult:
+      type: object
+      properties:
+        mfa_required:
+          type: boolean
+          description: 'true: أرسل mfa_token إلى /v1/platform/auth/mfa/verify؛ لا كوكي بعد'
+        mfa_token:
+          type: [string, 'null']
+        mfa_setup_required:
+          type: boolean
+          description: 'true: جلسة مقيدة حتى إعداد TOTP (الدخول الأول)'
+        must_change_secret:
+          type: boolean
+        me:
+          anyOf:
+          - $ref: '#/components/schemas/PlatformMe'
+          - type: 'null'
+      required: [mfa_required, mfa_setup_required, must_change_secret]
+    PlatformLoginResultEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformLoginResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformMeEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformMe'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    MfaSetupEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            otpauth_uri:
+              type: string
+            secret_base32:
+              type: string
+              description: يُعرض مرة واحدة للإدخال اليدوي
+          required: [otpauth_uri, secret_base32]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
     LoginResultEnvelope:
       type: object
       properties:

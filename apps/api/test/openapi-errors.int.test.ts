@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { DRIVE_PERMISSIONS, ROLE_PERMISSIONS, findRoute, type Permission, type Role } from '@point/shared';
-import { collectRoutes } from '@point/server';
+import { collectRoutes, sha256Hex } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   documentedCodes,
@@ -45,14 +45,33 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
   });
   afterAll(async () => t.close());
 
+  // V2-002: a platform owner session (MFA passed) for the /v1/platform/* routes; staff actors hold none of them
+  let platformCookie = '';
+  const platformSession = async () => {
+    if (platformCookie) return platformCookie;
+    const u = await t.db.query<{ id: string }>(
+      `INSERT INTO platform_users (phone_e164, full_name, role, secret_hash, must_change_secret, mfa_enabled, mfa_secret_enc)
+       VALUES ('+966551119101', 'مالك المنصة', 'platform_owner', 'x', false, true, 'x') RETURNING id`,
+    );
+    const token = 'openapi-sweep-platform-session-token-0001';
+    await t.db.query(
+      `INSERT INTO platform_sessions (platform_user_id, token_hash, mfa_verified, created_at, last_seen_at, expires_at)
+       VALUES ($1, $2, true, $3, $3, $3::timestamptz + interval '48 hours')`,
+      [u.rows[0]!.id, sha256Hex(token), t.clock.now()],
+    );
+    platformCookie = `${t.env.PLATFORM_SESSION_COOKIE_NAME}=${token}`;
+    return platformCookie;
+  };
+
   const call = async (
     r: (typeof routes)[number],
-    o: { as?: SeedUserKey; key?: boolean } = {},
+    o: { as?: SeedUserKey | 'PLATFORM'; key?: boolean } = {},
   ): Promise<{ status: number; code: string | undefined }> => {
     const path = r.path.replace(/\{[A-Za-z]+\}/g, DUMMY);
     const m = r.method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete';
     let req = t.http()[m](path);
-    if (o.as) req = req.set('Cookie', await t.sessionFor(o.as));
+    if (o.as === 'PLATFORM') req = req.set('Cookie', await platformSession());
+    else if (o.as) req = req.set('Cookie', await t.sessionFor(o.as));
     if (m !== 'get') {
       req = req.set(CSRF);
       if (o.key ?? true) req = req.set('Idempotency-Key', newKey());
@@ -87,8 +106,15 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       }
       for (const a of ACTORS.filter((x) => r.public || holds(x, r.permission ?? '')))
         check(r, a.key, await call(r, { as: a.key }));
+      if (r.platformPermission) {
+        // V2 (DEC-462): a staff session on a platform route, then the platform owner
+        check(r, 'OWN1 (staff) on a platform route', await call(r, { as: 'OWN1' }));
+        check(r, 'platform owner', await call(r, { as: 'PLATFORM' }));
+      }
     }
-    expect(routes).toHaveLength(130); // the 131 operations of 07 but the internal GET /metrics
+    // the 131 operations of 07 but the internal GET /metrics, and the 7 platform operations (V2-002)
+    expect(routes).toHaveLength(130 + 7);
+    expect(seen).toContain('GET /v1/platform/me PLATFORM_AUTH_REQUIRED');
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
     expect(seen).toContain('POST /webhooks/whatsapp WA_WEBHOOK_SIGNATURE_INVALID');
@@ -117,7 +143,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(90); // the 81 operations with a requestBody and the 9 without one
+    expect(checked).toBe(96); // the 85 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2)
     expect(problems).toEqual([]);
   });
 
@@ -145,7 +171,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(89);
+    expect(checked).toBe(89 + 6); // + the 6 V2-002 platform commands
     expect(problems).toEqual([]);
   });
 });

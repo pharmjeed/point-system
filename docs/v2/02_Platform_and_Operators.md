@@ -31,6 +31,29 @@
 | P-11 | الإعدادات | العلامة، الضريبة، مزودو SMS والبوابة والفوترة (مراجع أسرار فقط)، نصوص الشروط | owner |
 | P-12 | سجل المنصة | `platform_audit_log` | owner |
 
+### 2.1 مصفوفة صلاحيات المنصة (V2-002، DEC-465)
+
+صلاحيات المنصة منفصلة تمامًا عن صلاحيات الموظفين (canon §10): لا دور موظف يحمل صلاحية منصة ولا العكس. المصدر الآلي `PLATFORM_PERMISSION_MATRIX` في `packages/shared/src/canon/platform.ts`، ويطابق هذا الجدول باختبار (`packages/shared/test/platform.test.ts`). الجلسة المقيدة (الدخول الأول قبل تغيير كلمة المرور وإعداد TOTP) لا تحمل إلا `platform.self`.
+
+| الصلاحية | الشاشات | owner | admin | finance | support |
+|---|---|---|---|---|---|
+| `platform.self` | الدخول، التحقق الثنائي، تغيير كلمة المرور، الخروج، `GET /v1/platform/me` | ✓ | ✓ | ✓ | ✓ |
+| `platform.overview_read` | P-01 | ✓ | ✓ | ✓ | ✓ |
+| `platform.operator_read` | P-02، P-03 | ✓ | ✓ | — | — |
+| `platform.operator_manage` | P-02، P-03 (إضافة مشغل، العقد، التعليق بسبب) | ✓ | ✓ | — | — |
+| `platform.venue_review` | P-04 | ✓ | ✓ | — | — |
+| `platform.plan_manage` | P-05 | ✓ | — | ✓ | — |
+| `platform.customer_read` | P-06 | ✓ | — | ✓ | ✓ |
+| `platform.customer_manage` | P-06 (تعليق الحساب) | ✓ | — | ✓ | ✓ |
+| `platform.subscription_read` | P-07 | ✓ | — | ✓ | — |
+| `platform.payment_read` | P-08 | ✓ | — | ✓ | — |
+| `platform.refund_issue` | P-06، P-08 (الاسترداد بسبب) | ✓ | — | ✓ | — |
+| `platform.settlement_manage` | P-09 | ✓ | — | ✓ | — |
+| `platform.invoice_read` | P-10 | ✓ | — | ✓ | — |
+| `platform.settings_manage` | P-11 | ✓ | — | — | — |
+| `platform.audit_read` | P-12 | ✓ | — | — | — |
+| `platform.user_manage` | حسابات موظفي المنصة | ✓ | — | — | — |
+
 ## 3. تعديلات نظام التشغيل للمشغل (`O-##`)
 
 | # | التعديل | أين |
@@ -49,3 +72,14 @@
 `invited` (دعوة المالك) ← `trial` (مواقع تجريبية، بلا عملاء حقيقيين، المحاكي) ← `active` ← `suspended` (بسبب مسجّل: تأخر دفع اشتراك النظام، مخالفة) ← `active` أو `terminated` (لا حذف: تُغلق المواقع وتبقى السجلات لمدة الاحتفاظ).
 
 تعليق المشغل: يمنع فتح حفلات وورديات جديدة، والتذاكر الجارية تكتمل، ومواقعه تختفي من خريطة التطبيق، واشتراكات العملاء في مواقعه **تُجمَّد** (لا تُحتسب أيامها) حتى العودة أو الاسترداد النسبي.
+
+## 5. ما بُني في المرحلة V1 حتى الآن (V2-001، V2-002)
+
+- **الترحيل `packages/db/migrations/0008_platform.sql`** (إلحاقي، DEC-461): `platform_users`، `platform_sessions` (sha256 للرمز فقط، `kind` = `session` أو `mfa_challenge`، انتهاء وإبطال مسبَّب)، `platform_idempotency_keys`، `platform_audit_log` (إلحاقي: دور التطبيق INSERT/SELECT فقط)، حقول المشغل في `organizations` (`operator_status` افتراضيًا `active`، `is_platform_operated`، `legal_name`، `cr_number` 10 أرقام، `vat_number` 15 رقمًا 3…3)، `operator_contracts`، `venue_public_profiles`. الصفوف الحالية تبقى صالحة: كل مؤسسة قائمة مشغّل نشط. ومخطط Drizzle مطابق، واختبار الثوابت `docs/06_schema_invariants_test.sql` أُضيفت إليه فحوص الجداول الجديدة.
+- **عقد واحد لكل مشغل في أي يوم:** لا `btree_gist` في الترحيلات، فالقاعدة يفرضها الأمر بـ`assertNoContractOverlap` تحت قفل صف المؤسسة (DEC-463).
+- **هوية المنصة** (`packages/server/src/modules/platform`): دخول بالجوال وكلمة المرور ثم TOTP في كل دخول؛ الدخول الأول جلسة مقيدة بـ`platform.self` حتى تغيير كلمة المرور المؤقتة ثم إعداد TOTP، كمالك المؤسسة تمامًا (DEC-82). كوكي منفصل `__Host-point_psid` (`point_psid` محليًا، `PLATFORM_SESSION_COOKIE_NAME`)، وجدول جلسات منفصل، وحارس واحد (`AuthGuard`) يقرأ كوكي المنصة وحده على `@RequirePlatformPermission` وكوكي الموظفين وحده على `@RequirePermission`: **جلسة الموظف لا تفتح مسار منصة ولا العكس** (DEC-462). حدود الدخول ثابتة `PLATFORM_SECURITY` (DEC-464). كل أمر منصة يكتب `platform_audit_log` في معاملته، ويُكتب في `audit_log` للمؤسسة أيضًا إن مسّها (`platformAudit`).
+- **المسارات** (`PLATFORM_ROUTES`، سجل موازٍ لـ`ROUTES` canon §9، وفي `docs/07_openapi.yaml` بالوسم `Platform`): `POST /v1/platform/auth/login`، `POST /v1/platform/auth/mfa/verify`، `POST /v1/platform/auth/mfa/setup`، `POST /v1/platform/auth/mfa/confirm`، `POST /v1/platform/auth/secret/change`، `POST /v1/platform/auth/logout`، `GET /v1/platform/me`.
+- **رمزا خطأ جديدان** (canon §8، 08 §4.17): `PLATFORM_AUTH_REQUIRED` (401) و`OPERATOR_SUSPENDED` (409، يرفعه V2-005، DEC-466)؛ وبقية الحالات برموز `AUTH_*` القائمة.
+- **التهيئة:** `node api/dist/cli.js create-platform-owner --phone … --name …` يطبع كلمة مرور مؤقتة مرة واحدة ويرفض مالك منصة ثانيًا؛ بقية حسابات المنصة تُضاف من اللوحة لاحقًا (`platform.user_manage`، DEC-465).
+- **الويب:** `/platform/login` (الجوال وكلمة المرور ← رمز التحقق، أو تغيير كلمة المرور ← إعداد TOTP في الدخول الأول) وغلاف `/platform` فارغ (P-01 مؤقت باسم الحساب وزر الخروج). بقية الشاشات للتذاكر التالية.
+

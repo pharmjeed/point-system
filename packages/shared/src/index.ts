@@ -7,6 +7,7 @@ export * from './canon/enums.js';
 export * from './canon/events.js';
 export * from './canon/permissions.js';
 export * from './canon/routes.js';
+export * from './canon/platform.js';
 export * from './canon/wa-templates.js';
 export * from './canon/sounds.js';
 export * from './canon/screens.js';

@@ -1,4 +1,10 @@
-import { findRoute, fromExpressPath, type HttpMethod, type RateLimitClass } from '@point/shared';
+import {
+  findPlatformRoute,
+  findRoute,
+  fromExpressPath,
+  type HttpMethod,
+  type RateLimitClass,
+} from '@point/shared';
 import type { Env } from '../config/env.js';
 
 /** Who a bucket belongs to: the client address before login, the user after, or the device (session). */
@@ -43,12 +49,17 @@ export function extraRateRules(env: Env): Readonly<Record<string, RateRule>> {
 }
 
 /**
- * The class of a matched route: ROUTES (canon §9, checked against `x-rate-limit-class`); a route that is
- * not in the canon (test controllers) falls back to the default of its method.
+ * The class of a matched route: ROUTES (canon §9) or PLATFORM_ROUTES (V2), both checked against
+ * `x-rate-limit-class`; a route in neither (test controllers) falls back to the default of its method.
  */
 export function rateLimitClassOf(method: string, expressPath: string): RateLimitClass {
   const m = method.toUpperCase() as HttpMethod;
-  return findRoute(m, fromExpressPath(expressPath))?.rateLimitClass ?? (m === 'GET' ? 'read' : 'command');
+  const path = fromExpressPath(expressPath);
+  return (
+    findRoute(m, path)?.rateLimitClass ??
+    findPlatformRoute(m, path)?.rateLimitClass ??
+    (m === 'GET' ? 'read' : 'command')
+  );
 }
 
 /**

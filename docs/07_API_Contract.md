@@ -1278,3 +1278,10 @@ Content-Type: application/json
 - هذا العقد `v1`. أي تعديل يمر بالترتيب: Canon → `07_openapi.yaml` → هذا الملف → الاختبارات.
 - الحقول المهملة تُعلَّم `deprecated: true` في الـYAML لدورة إصدار واحدة على الأقل قبل الإزالة في `v2`.
 - `07_openapi.yaml` يُتحقق منه في CI بأداة `openapi-spec-validator`، ويُفحص أن كل مسار في Canon §9 موجود فيه وبنفس علامة التكرار والصلاحية.
+
+## 8. الإصدار الثاني — مسارات لوحة المنصة (`/v1/platform/*`)
+
+- السجل الآلي `PLATFORM_ROUTES` في `packages/shared/src/canon/platform.ts`، موازٍ لـ`ROUTES` (canon §9 يبقى 131 مسارًا للإصدار الأول)، وكل مسار منه في `07_openapi.yaml` بالوسم `Platform` وبالامتدادات نفسها (`x-permission` من صلاحيات المنصة، `x-idempotency`، `x-rate-limit-class`)، وتطابقه اختبارات العقد (`packages/shared/test/routes.test.ts`، `rate-limit-classes.test.ts`، `platform.test.ts`، `apps/api/test/routes-contract.test.ts`، `openapi-errors.int.test.ts`) — DEC-462.
+- الجلسة كوكي مستقل `__Host-point_psid` (`platform_sessions`)؛ ومسار المنصة لا يقرأ كوكي الموظفين أبدًا ولا العكس. غياب جلسة المنصة ← `401 PLATFORM_AUTH_REQUIRED`، وبقية حالات الجلسة والدخول برموز `AUTH_*` كما في §1.2.
+- V2-002: `POST /v1/platform/auth/login`، `POST /v1/platform/auth/mfa/verify` (عامّان، CSRF كبقية الأوامر)؛ `POST /v1/platform/auth/mfa/setup`، `POST /v1/platform/auth/mfa/confirm`، `POST /v1/platform/auth/secret/change`، `POST /v1/platform/auth/logout`، `GET /v1/platform/me` (`platform.self`). التحقق الثنائي إلزامي في كل دخول؛ والدخول الأول جلسة مقيدة بـ`platform.self` حتى تغيير كلمة المرور ثم إعداد TOTP.
+- أوامر المنصة اللاحقة المعلّمة ✓ تحفظ مفاتيح التكرار في `platform_idempotency_keys` بالبروتوكول نفسه (§1.4)، وتكتب `platform_audit_log` في معاملتها.
