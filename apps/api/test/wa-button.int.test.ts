@@ -1,11 +1,6 @@
-import {
-  REALTIME_PAYLOAD_SCHEMAS,
-  realtimeEnvelopeSchema,
-  renderWaText,
-  rooms,
-  waMessageText,
-} from '@point/shared';
+import { REALTIME_PAYLOAD_SCHEMAS, realtimeEnvelopeSchema, renderWaText, rooms } from '@point/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { customerCopy } from './test-env.js';
 import {
   createCustomerApp,
   cyclesOf,
@@ -112,7 +107,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     expect(stored.rows[0].n).toBe(10);
     const status = (await ticketRow(w, t.ticketId)).status;
     expect(await texts(w, t.phone)).toContain(
-      renderWaText(waMessageText('W-09', status), [String(t.displayNumber)]),
+      renderWaText(customerCopy.messageText('W-09', status), [String(t.displayNumber)]),
     );
   });
 
@@ -124,7 +119,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     await settle(w, stranger);
     expect(await cyclesOf(w, t.ticketId)).toHaveLength(0);
     expect(await ticketRow(w, t.ticketId)).toMatchObject({ status: 'parked', version: before.version });
-    expect(await texts(w, stranger)).toEqual([waMessageText('W-10')]);
+    expect(await texts(w, stranger)).toEqual([customerCopy.messageText('W-10')]);
     expect((await texts(w, stranger)).join(' ')).not.toContain(String(t.displayNumber));
     const audit = (
       await w.db.query(
@@ -142,7 +137,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     const tahoe = await linkedTicket({ phone });
     await w.sim.client.sendText({ from: phone, body: 'أبغى سيارتي', timestamp: w.ts() });
     await settle(w, phone);
-    expect((await texts(w, phone)).at(-1)).toBe(waMessageText('W-10'));
+    expect((await texts(w, phone)).at(-1)).toBe(customerCopy.messageText('W-10'));
     expect(await cyclesOf(w, camry.ticketId)).toHaveLength(0);
     expect(await cyclesOf(w, tahoe.ticketId)).toHaveLength(0);
 
@@ -177,7 +172,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     await press(w, t.phone, { wamid: t.w01.wamid });
     await settle(w, t.phone);
     expect((await texts(w, t.phone)).at(-1)).toBe(
-      renderWaText(waMessageText('W-09', 'pending_early'), [String(t.displayNumber)]),
+      renderWaText(customerCopy.messageText('W-09', 'pending_early'), [String(t.displayNumber)]),
     );
 
     w.clock.advance(60_000);
@@ -237,14 +232,14 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     await w.db.query(`UPDATE action_tokens SET revoked_at = now() WHERE ticket_id = $1`, [revoked.ticketId]);
     await press(w, revoked.phone, { wamid: revoked.w01.wamid });
     await settle(w, revoked.phone);
-    expect((await texts(w, revoked.phone)).at(-1)).toBe(waMessageText('W-09', 'inactive'));
+    expect((await texts(w, revoked.phone)).at(-1)).toBe(customerCopy.messageText('W-09', 'inactive'));
     expect(await cyclesOf(w, revoked.ticketId)).toHaveLength(0);
 
     const expired = await linkedTicket();
     w.clock.advance(72 * 3_600_000 + 1_000); // wa.action_token_ttl_h, no grace
     await press(w, expired.phone, { wamid: expired.w01.wamid });
     await settle(w, expired.phone);
-    expect((await texts(w, expired.phone)).at(-1)).toBe(waMessageText('W-09', 'inactive'));
+    expect((await texts(w, expired.phone)).at(-1)).toBe(customerCopy.messageText('W-09', 'inactive'));
     expect(await cyclesOf(w, expired.ticketId)).toHaveLength(0);
     const reasons = (await outboxEvents(w.db, 'wa.button_pressed'))
       .map((e) => e.payload.payload)
@@ -261,7 +256,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     await press(w, done.phone, { wamid: done.w01.wamid });
     await settle(w, done.phone);
     expect((await texts(w, done.phone)).at(-1)).toBe(
-      renderWaText(waMessageText('W-09', 'delivered'), [String(done.displayNumber)]),
+      renderWaText(customerCopy.messageText('W-09', 'delivered'), [String(done.displayNumber)]),
     );
     expect(await cyclesOf(w, done.ticketId)).toHaveLength(0);
   });
@@ -271,7 +266,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     await w.sim.client.sendStop(t.phone, { timestamp: w.ts() });
     await settle(w, t.phone);
     expect((await ticketRow(w, t.ticketId)).wa_link_status).toBe('opted_out');
-    expect((await texts(w, t.phone)).at(-1)).toBe(waMessageText('W-12'));
+    expect((await texts(w, t.phone)).at(-1)).toBe(customerCopy.messageText('W-12'));
     await press(w, t.phone, { wamid: t.w01.wamid });
     await settle(w, t.phone);
     const row = await ticketRow(w, t.ticketId);
@@ -317,7 +312,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
     await park(w, driver, t.taskId);
     await press(w, phone, { wamid: w01.wamid });
     await settle(w, phone);
-    expect((await texts(w, phone)).at(-1)).toBe(waMessageText('W-09', 'inactive'));
+    expect((await texts(w, phone)).at(-1)).toBe(customerCopy.messageText('W-09', 'inactive'));
     expect(await cyclesOf(w, t.ticketId)).toHaveLength(0);
   });
 
@@ -373,7 +368,7 @@ describe('S3 «طلب السيارة» (PNT-045), phone change (PNT-049), one nu
       expect(newW01).toHaveLength(1);
       await press(w, t.phone, { wamid: t.w01.wamid }); // the old number, the old button
       await settle(w, t.phone);
-      expect((await texts(w, t.phone)).at(-1)).toBe(waMessageText('W-09', 'inactive'));
+      expect((await texts(w, t.phone)).at(-1)).toBe(customerCopy.messageText('W-09', 'inactive'));
       expect(await cyclesOf(w, t.ticketId)).toHaveLength(0);
       await press(w, next, { wamid: newW01[0]!.wamid });
       await settle(w, next);

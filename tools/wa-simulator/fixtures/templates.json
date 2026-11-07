@@ -1,12 +1,12 @@
 {
-  "$comment": "Local template catalog of the simulator (docs/12 §8.2, docs/14 §4). Status APPROVED unless changed through the control API.",
+  "$comment": "Local template catalog of the simulator (docs/12 §8.2, docs/14 §4). Status APPROVED unless changed through the control API. {brand} = the customer brand of brand.json / BRAND_CUSTOMER_NAME_AR (DEC-470).",
   "templates": [
     {
       "purpose": "W-01",
       "name": "masaf_ticket_issued_v1",
       "language": "ar",
       "category": "UTILITY",
-      "body": "مصاف — {{1}} — تذكرة {{2}}\nتم استلام مركبتك: {{3}}.\nعند رغبتك بالخروج اضغط «طلب السيارة».",
+      "body": "{brand} — {{1}} — تذكرة {{2}}\nتم استلام مركبتك: {{3}}.\nعند رغبتك بالخروج اضغط «طلب السيارة».",
       "buttons": [{ "type": "QUICK_REPLY", "text": "طلب السيارة" }]
     },
     {
@@ -46,7 +46,7 @@
       "name": "masaf_vehicle_delivered_v1",
       "language": "ar",
       "category": "UTILITY",
-      "body": "تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك مصاف.",
+      "body": "تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك {brand}.",
       "buttons": []
     },
     {

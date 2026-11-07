@@ -111,7 +111,7 @@ export async function startDirectLink(tx: Tx, t: TicketRow, m: { actor: EventAct
 export async function issueQrLinkCode(
   tx: Tx,
   t: TicketRow,
-  m: { actorId: string; displayPhoneE164: string },
+  m: { actorId: string; displayPhoneE164: string; customerBrandAr: string },
 ): Promise<LinkCodeQr> {
   const ttl = (await venueSettingsFor(tx, t.venue_id)).link.qr_ttl_min;
   await tx.query(
@@ -136,11 +136,11 @@ export async function issueQrLinkCode(
     aggregate: { type: 'link_code', id: row.id, version: null },
     payload: { link_code_id: row.id },
   });
-  return linkCodeQr(row, m.displayPhoneE164);
+  return linkCodeQr(row, m.displayPhoneE164, m.customerBrandAr);
 }
 
-export function linkCodeQr(row: LinkCodeRow, displayPhoneE164: string): LinkCodeQr {
-  const link = waMeLink(displayPhoneE164, row.code);
+export function linkCodeQr(row: LinkCodeRow, displayPhoneE164: string, customerBrandAr: string): LinkCodeQr {
+  const link = waMeLink(displayPhoneE164, row.code, customerBrandAr);
   return {
     link_code_id: row.id,
     code: row.code,

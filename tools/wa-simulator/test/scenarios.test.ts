@@ -1,3 +1,4 @@
+import { brand } from '../src/catalog.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BUILTIN_SCENARIOS, startSimulator, type RunningSimulator } from '../src/index.js';
 import { graphSend, type Receiver, SECRET, startReceiver, TOKEN, value, w01 } from './helpers.js';
@@ -53,7 +54,7 @@ describe('built-in scenarios (docs/12 §11.4)', () => {
     await sim.client.runScenario('qr_link', { from: '+966552222222', code: 'K7Q29F' });
     const [got] = await hook.waitFor(1);
     const m = value(got!).messages[0];
-    expect(m.text.body).toBe('ربط تذكرة مصاف K7Q29F');
+    expect(m.text.body).toBe(`ربط تذكرة ${brand().customerNameAr} K7Q29F`);
     expect(m).not.toHaveProperty('from'); // …2222 = BSUID-only user (TC-WA-23)
   });
 

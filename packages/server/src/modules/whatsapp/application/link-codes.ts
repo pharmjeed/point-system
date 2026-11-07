@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { renderWaText, WA_LINK_PREFILLED_TEXT } from '@point/shared';
+import { renderWaText, waCatalog } from '@point/shared';
 import type { Tx } from '../../../core/db/tx.js';
 import { LINK_CODE_ALPHABET } from '../domain/inbound-text.js';
 
@@ -37,9 +37,16 @@ export async function lockLiveLinkCode(tx: Tx, orgId: string, code: string): Pro
   );
 }
 
-/** `https://wa.me/{digits}?text=…` (12 §7.2) — the QR on D-07; scanning it alone sends nothing. */
-export function waMeLink(displayPhoneE164: string, code: string): { url: string; prefilled_text: string } {
-  const text = renderWaText(WA_LINK_PREFILLED_TEXT, [code]);
+/**
+ * `https://wa.me/{digits}?text=…` (12 §7.2) — the QR on D-07; scanning it alone sends nothing. The text
+ * names the configured customer brand (`BRAND_CUSTOMER_NAME_AR`, DEC-470).
+ */
+export function waMeLink(
+  displayPhoneE164: string,
+  code: string,
+  customerBrandAr: string,
+): { url: string; prefilled_text: string } {
+  const text = renderWaText(waCatalog(customerBrandAr).linkPrefilledText, [code]);
   return {
     url: `https://wa.me/${displayPhoneE164.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`,
     prefilled_text: text,

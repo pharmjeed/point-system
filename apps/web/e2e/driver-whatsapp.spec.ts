@@ -209,6 +209,10 @@ test('GAP-1 D-05 → D-06 → D-07 ب: the QR mode — no number, the code issue
   await expect(panel.getByText(/^قاعة ريماس · تذكرة \d+ · صالح لمدة \d+:\d\d$/).first()).toBeVisible();
   await expect(panel.getByText('بانتظار رسالتك…')).toBeVisible();
   await expect(panel.getByRole('img', { name: 'رمز QR لربط التذكرة على واتساب' })).toBeVisible();
+  // the customer brand's logo is the POINT lockup since V2-D01 (DEC-470), named by the configured brand
+  const brandLogo = panel.getByRole('img', { name: CUSTOMER_BRAND });
+  await expect(brandLogo).toBeVisible();
+  expect(await brandLogo.getAttribute('src')).toContain('point-lockup-horizontal-rtl');
   const panelText = await panel.innerText();
   expect(panelText).not.toContain('1234'); // no plate
   expect(panelText).not.toContain('سائق'); // no staff name

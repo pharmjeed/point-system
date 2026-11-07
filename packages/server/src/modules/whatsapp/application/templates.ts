@@ -1,5 +1,4 @@
 import {
-  WA_TEMPLATE_DEFINITIONS,
   WA_TEMPLATE_NAMES,
   type WaTemplateCategory,
   type WaTemplateCreation,
@@ -167,7 +166,9 @@ export class WhatsappTemplates {
     if (!list.ok) throw syncError(list, ch);
     const remote = list.body.data ?? [];
     const templates: RemoteTemplate[] = [];
-    for (const definition of WA_TEMPLATE_DEFINITIONS) {
+    // bodies with the configured customer brand (DEC-470); matched by name, so a template already on
+    // Meta keeps its approved text: a changed brand needs new `_v2` names (DEC-471)
+    for (const definition of this.rt.catalog.definitions) {
       let found =
         remote.find((t) => t.name === definition.name && t.language === definition.language) ?? null;
       let created = false;

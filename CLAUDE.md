@@ -1,4 +1,4 @@
-# CLAUDE.md — POINT (staff valet platform) + MASAF (customer channel on WhatsApp)
+# CLAUDE.md — POINT (staff valet platform and, since V2, the customer brand on WhatsApp)
 
 You are building a production valet-parking system for wedding halls and event venues in Saudi Arabia.
 This file is your operating manual. The specification lives in `docs/` (Arabic prose, English identifiers) and the identity in `brand/`.
@@ -6,7 +6,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 ## 1. What you are building
 
 - **One responsive web app (PWA)** used only by staff — drivers, supervisors, admins, owner — branded **«بوينت · POINT»**.
-- **One central WhatsApp Business number** for customers, branded **«مصاف · MASAF»**. The customer never opens a web page; the only button in the whole conversation is **«طلب السيارة»**.
+- **One central WhatsApp Business number** for customers, branded with the customer brand **«بوينت · POINT»** since V2 (V2-D01/V2-D02, DEC-460, DEC-470: one Point number for all operators; «مصاف · MASAF» was the V1 customer brand and is now an operator using the platform). The customer never opens a web page; the only button in the whole conversation is **«طلب السيارة»**.
 - **Backend:** NestJS + TypeScript, two processes from one repo (`api`, `worker`), PostgreSQL 16+ (data, outbox, timers), S3-compatible private storage for vehicle photos, Socket.IO realtime, optional Web Push.
 - **Not in scope (V1):** native apps / store publishing, customer web pages, AI, GPS, card processing, subscriptions, per-venue or per-driver numbers, WhatsApp groups, a driver "decline" button.
 
@@ -54,7 +54,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 8. No customer data, plate, key position or code in lock-screen push payloads (DEC-23). No secrets or full phone numbers in logs or analytics.
 9. No silent deletes: cancel / void / reverse with a reason and an audit entry.
 10. Times are `timestamptz` UTC; display in `Asia/Riyadh`. Arabic-first RTL UI, Western digits `0-9`.
-11. Customer-facing text says **«مصاف»** only; staff UI says **«بوينت»**. Brand names come from `BRAND_*` env vars.
+11. Customer-facing text names only the customer brand `BRAND_CUSTOMER_NAME_*` (default **«بوينت»** since V2-D01, DEC-470; it was «مصاف» in V1); staff UI says **«بوينت»**. Brand names come from `BRAND_*` env vars, never literals in code.
 
 ## 4. How to work
 
