@@ -451,7 +451,7 @@
 | الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
 |---|---|---|---|---|
 | `PLATFORM_AUTH_REQUIRED` | أي مسار `/v1/platform/*` غير عام بلا كوكي المنصة (`PLATFORM_SESSION_COOKIE_NAME`، `__Host-point_psid`) أو برمز غير معروف أو بخطوة تحقق لم تكتمل — ومنه الطلب الذي يحمل كوكي جلسة الموظفين وحده: جلسة الموظف لا تُقرأ على مسار المنصة أبدًا، فلا يُرفع `AUTH_UNAUTHENTICATED` الذي يُخرج الموظف من تطبيقه (DEC-462). أما الجلسة المنصية المنتهية أو المبطلة أو الحساب المعطّل أو المقيد فبرموز 4.1 نفسها (`AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`، `AUTH_ACCOUNT_DISABLED`، `AUTH_SECRET_CHANGE_REQUIRED`، `AUTH_MFA_SETUP_REQUIRED` مع `allowed_paths` = مسارات `platform.self`)، ودخول المنصة بـ`AUTH_INVALID_CREDENTIALS`/`AUTH_ACCOUNT_LOCKED`/`AUTH_MFA_*` كدخول الموظفين | — | `/platform/login` (لوحة المنصة)؛ لا يمس جلسة الموظف في التبويب نفسه | info · — |
-| `OPERATOR_SUSPENDED` | فتح حفل أو وردية جديدة لمؤسسة `operator_status` فيها `suspended` أو `terminated` (V2-005؛ التذاكر الجارية تكتمل) | `operator_status` | `dialog` «تواصل مع المنصة» ثم `refetch` | info · — |
+| `OPERATOR_SUSPENDED` | لمؤسسة `operator_status` فيها `suspended` أو `terminated` (V2-005، DEC-486): فتح حفل أو إعادة فتحه (`POST /v1/events/{eventId}/open`)، فتح وردية (`POST /v1/shifts/{shiftId}/open`)، بدء مناوبة (`POST /v1/me/duty/start`)، بدء استلام تذكرة (`POST /v1/tickets`). ما بدأ قبل التعليق يكتمل، والدخول والقراءة مسموحان | `operator_status` | `dialog` «تواصل مع المنصة» ثم `refetch`؛ وشريط المشغل المعلّق من `/v1/me` (`organization.operator_status`) | info · — |
 
 ---
 

@@ -28,6 +28,7 @@ import {
   TopBar,
   type NavItem,
 } from '@/components';
+import { OperatorBanner } from '@/features/common/OperatorBanner';
 import { ConnectionSheet } from '@/features/session/ConnectionSheet';
 import { useNotificationSetup, usePushRelink } from '@/features/session/pushSetup';
 import { useConnection } from '@/features/session/useConnection';
@@ -188,16 +189,19 @@ function StaffFrame({ me }: { me: Me }) {
         />
       }
       banner={
-        connection.state === 'offline' ? (
-          <Banner
-            kind="offline"
-            message={fmt(d15.offline, { time: connection.lastSync ?? '—' })}
-            actionLabel={buttons.retry}
-            onAction={() => requestResync('manual')}
-          />
-        ) : stale ? (
-          <Banner kind="stale" />
-        ) : null
+        <>
+          <OperatorBanner me={me} />
+          {connection.state === 'offline' ? (
+            <Banner
+              kind="offline"
+              message={fmt(d15.offline, { time: connection.lastSync ?? '—' })}
+              actionLabel={buttons.retry}
+              onAction={() => requestResync('manual')}
+            />
+          ) : stale ? (
+            <Banner kind="stale" />
+          ) : null}
+        </>
       }
       bottomNav={<BottomNav items={STAFF_NAV} />}
       toast={<ToastViewport aboveNav />}

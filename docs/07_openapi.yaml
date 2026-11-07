@@ -668,6 +668,8 @@ paths:
       summary: بدء ورديتي
       tags: [Me & Duty]
       description: |-
+        المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)
+
         الشروط: تعيين نشط (السائق) أو نطاق الموقع (مشرف can_drive) · وردية open لمجموعة التوزيع · لا مناوبة مفتوحة
 
         الأثر: duty_sessions(on_duty, available_since=now) + الانضمام لغرفة pool:{poolId}:drivers + تمريرة توزيع
@@ -722,7 +724,7 @@ paths:
           description: ASSIGNMENT_REQUIRED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '409':
           $ref: '#/components/responses/Error'
-          description: DRIVER_DISABLED | DUTY_ALREADY_STARTED | IDEMPOTENCY_IN_PROGRESS | SHIFT_NOT_OPEN
+          description: DRIVER_DISABLED | DUTY_ALREADY_STARTED | IDEMPOTENCY_IN_PROGRESS | OPERATOR_SUSPENDED | SHIFT_NOT_OPEN
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -747,7 +749,7 @@ paths:
       x-permission: duty.self
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [ASSIGNMENT_REQUIRED, DRIVER_DISABLED, DUTY_ALREADY_STARTED, SCOPE_VENUE_DENIED, SHIFT_NOT_OPEN]
+      x-error-codes: [ASSIGNMENT_REQUIRED, DRIVER_DISABLED, DUTY_ALREADY_STARTED, OPERATOR_SUSPENDED, SCOPE_VENUE_DENIED, SHIFT_NOT_OPEN]
       x-domain-events: [driver.duty_started, driver.availability_changed]
       x-ws-events: [driver.state_changed]
   /v1/me/duty/break:
@@ -958,6 +960,8 @@ paths:
       summary: 'استلام مركبة: بدء التسجيل'
       tags: [Intake & Tickets]
       description: |-
+        المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)
+
         يضغط السائق «استلام مركبة» فيُنشأ في معاملة واحدة: تذكرة received برقم ظاهر من events.next_display_number + مهمة park بحالة in_progress باسمه + عهدة المركبة والمفتاح للسائق. يتنافس ذريًا مع قبول العروض (قفل مجموعة التوزيع).
 
         الشروط: مناوبة on_duty (وإلا DUTY_REQUIRED) · ليس في استراحة (DRIVER_ON_BREAK) · لا مهمة حركة نشطة accepted/in_progress بما فيها مهمة تالية رُقّيت (MOVEMENT_IN_PROGRESS) · حفل open في الموقع؛ event_id إلزامي إذا أكثر من حفل مفتوح (DEC-37)
@@ -1012,7 +1016,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '409':
           $ref: '#/components/responses/Error'
-          description: DRIVER_ON_BREAK | DUTY_REQUIRED | EVENT_NOT_OPEN | IDEMPOTENCY_IN_PROGRESS | MOVEMENT_IN_PROGRESS
+          description: DRIVER_ON_BREAK | DUTY_REQUIRED | EVENT_NOT_OPEN | IDEMPOTENCY_IN_PROGRESS | MOVEMENT_IN_PROGRESS | OPERATOR_SUSPENDED
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -1037,7 +1041,7 @@ paths:
       x-permission: ticket.intake
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [DRIVER_ON_BREAK, DUTY_REQUIRED, EVENT_NOT_OPEN, MOVEMENT_IN_PROGRESS]
+      x-error-codes: [DRIVER_ON_BREAK, DUTY_REQUIRED, EVENT_NOT_OPEN, MOVEMENT_IN_PROGRESS, OPERATOR_SUSPENDED]
       x-domain-events: [ticket.created, task.created, custody.changed, driver.availability_changed]
       x-ws-events: [driver.state_changed, ticket.updated]
     get:
@@ -5432,6 +5436,8 @@ paths:
       summary: فتح الحفل
       tags: [Events & Shifts]
       description: |-
+        المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)
+
         الشروط: status ∈ {draft, closing} (closing ← open إعادة فتح، 11 §6.4)؛ مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117)
 
         الأثر: status=open؛ يسمح بالاستلام؛ event.opened بـreopened=true عند إعادة الفتح
@@ -5468,7 +5474,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | OPERATOR_SUSPENDED | VERSION_CONFLICT
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -5493,7 +5499,7 @@ paths:
       x-permission: event.manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, VERSION_CONFLICT]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, OPERATOR_SUSPENDED, VERSION_CONFLICT]
       x-domain-events: [event.opened]
   /v1/events/{eventId}/start-closing:
     post:
@@ -5929,7 +5935,7 @@ paths:
       operationId: openShift
       summary: فتح الوردية
       tags: [Events & Shifts]
-      description: 'الشروط: status=scheduled · لا وردية مفتوحة أخرى لنفس المجموعة · مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117) · لا يقيده وقت starts_at (DEC-127)'
+      description: 'الشروط: status=scheduled · لا وردية مفتوحة أخرى لنفس المجموعة · مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117) · لا يقيده وقت starts_at (DEC-127) · المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)'
       parameters:
       - $ref: '#/components/parameters/shiftId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5963,7 +5969,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | SHIFT_ALREADY_OPEN | VERSION_CONFLICT
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | OPERATOR_SUSPENDED | SHIFT_ALREADY_OPEN | VERSION_CONFLICT
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -5988,7 +5994,7 @@ paths:
       x-permission: shift.manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, SHIFT_ALREADY_OPEN, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, OPERATOR_SUSPENDED, SHIFT_ALREADY_OPEN, VERSION_CONFLICT]
       x-domain-events: [shift.opened]
   /v1/shifts/{shiftId}/close:
     post:
@@ -11234,7 +11240,19 @@ components:
             offline_after_s:
               type: integer
               examples: [120]
-      required: [user, permissions, scopes, session, brand]
+        organization:
+          type: object
+          description: 'مؤسسة المستخدم (المشغل) وحالتها في المنصة (V2-005، DEC-486): suspended أو terminated ← شريط «المشغل معلّق» في تطبيق الموظفين، والخادم يرفض فتح حفل أو وردية أو بدء مناوبة أو استلام جديد بـOPERATOR_SUSPENDED أيًا كان ما تعرضه الواجهة'
+          properties:
+            id:
+              type: string
+              format: uuid
+            name_ar:
+              type: string
+            operator_status:
+              $ref: '#/components/schemas/OperatorStatus'
+          required: [id, name_ar, operator_status]
+      required: [user, permissions, scopes, session, brand, organization]
     LoginResult:
       type: object
       properties:

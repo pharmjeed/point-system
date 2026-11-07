@@ -6,6 +6,7 @@ import { newId } from '../../../core/crypto/ids.js';
 import { lockAssignments, lockOpenDutyByUsers, lockPools, lockUsers } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
+import { assertOperatorOperating } from '../../../core/operator-status.js';
 import { emitEvent } from '../../../core/outbox/outbox-writer.js';
 import { blockingCustody } from '../../identity-access/index.js';
 import { invalidTransition, type EventActor, type TicketQueryable } from '../../tickets-custody/index.js';
@@ -96,6 +97,8 @@ export class DutyService {
       });
     }
     if (actor.duty) throw new AppError('DUTY_ALREADY_STARTED', { duty_session_id: actor.duty.id });
+    // V2-005: a suspended or terminated operator starts no duty (its first lock, before L1)
+    await assertOperatorOperating(tx, actor.orgId);
 
     const pool = await findDefaultDispatchPool(tx, venueId);
     if (!pool || pool.status !== 'active') throw new AppError('SHIFT_NOT_OPEN', { venue_id: venueId });
