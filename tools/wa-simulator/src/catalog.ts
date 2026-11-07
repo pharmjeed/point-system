@@ -29,11 +29,18 @@ let brandCache: BrandFixture | undefined;
 
 export function brand(env: Record<string, string | undefined> = process.env): BrandFixture {
   brandCache ??= readFixture<BrandFixture>('brand.json');
+  const customerNameAr = env.BRAND_CUSTOMER_NAME_AR || brandCache.customerNameAr;
   return {
     ...brandCache,
-    customerNameAr: env.BRAND_CUSTOMER_NAME_AR || brandCache.customerNameAr,
+    customerNameAr,
     customerNameEn: env.BRAND_CUSTOMER_NAME_EN || brandCache.customerNameEn,
+    linkCodePrefix: withBrand(brandCache.linkCodePrefix, customerNameAr),
   };
+}
+
+/** `{brand}` of the fixtures = the Arabic customer name (DEC-470). */
+export function withBrand(text: string, customerNameAr: string = brand().customerNameAr): string {
+  return text.replaceAll('{brand}', customerNameAr);
 }
 
 /** Highest `{{n}}` index in a template body. */
@@ -75,7 +82,7 @@ export function defaultTemplates(): TemplateInfo[] {
     category: t.category,
     status: 'APPROVED' as TemplateStatus,
     purpose: t.purpose,
-    body: t.body,
+    body: withBrand(t.body),
     bodyParamCount: countBodyParams(t.body),
     buttons: t.buttons.map((b) => ({ ...b })),
     rejectedReason: null,

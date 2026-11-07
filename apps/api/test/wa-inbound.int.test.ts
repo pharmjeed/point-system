@@ -1,5 +1,5 @@
-import { waMessageText } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { customerCopy } from './test-env.js';
 import {
   CUS1,
   CUS2,
@@ -58,7 +58,7 @@ describe('WhatsApp inbound processing', () => {
       matched: 'none',
     });
     expect(JSON.stringify(ev)).not.toMatch(/966551234567|مرحبا/);
-    expect(await textsTo('+966551234567')).toEqual([waMessageText('W-10')]);
+    expect(await textsTo('+966551234567')).toEqual([customerCopy.messageText('W-10')]);
     const reply = (
       await w.db.query(
         `SELECT m.kind, m.purpose, m.status, m.wa_message_id, n.status AS n_status, n.dedupe_key
@@ -143,7 +143,11 @@ describe('WhatsApp inbound processing', () => {
     expect(cus.phone_e164).toBeNull(); // wa_id is only learned later from a send answer (12 §5.12)
     const out = await w.sim.client.listMessages({ to: msg.sender_user_id, type: 'text' });
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ to: null, recipient: msg.sender_user_id, text: waMessageText('W-10') });
+    expect(out[0]).toMatchObject({
+      to: null,
+      recipient: msg.sender_user_id,
+      text: customerCopy.messageText('W-10'),
+    });
   });
 
   it('statuses arriving out of order never move the rank down; read fills delivered_at (TC-WA-15)', async () => {
@@ -214,7 +218,7 @@ describe('WhatsApp inbound processing', () => {
   it('a link code answers W-11 (invalid until PNT-044 issues codes)', async () => {
     await w.sim.client.sendLinkCode('+966511110003', 'K7Q29F', { timestamp: w.ts() });
     await w.flush();
-    expect(await textsTo('+966511110003')).toEqual([waMessageText('W-11', 'invalid')]);
+    expect(await textsTo('+966511110003')).toEqual([customerCopy.messageText('W-11', 'invalid')]);
   });
 
   it('an unknown button payload gets the W-10 guidance without ticket data', async () => {
@@ -258,7 +262,7 @@ describe('WhatsApp inbound processing', () => {
       )
     ).rows[0].payload.payload;
     expect(pressed).toMatchObject({ outcome: 'rejected', reject_reason: 'unknown_token', ticket_id: null });
-    expect(await textsTo('+966511110004')).toEqual([waMessageText('W-10')]);
+    expect(await textsTo('+966511110004')).toEqual([customerCopy.messageText('W-10')]);
   });
 
   describe('PNT-048 — «إيقاف»', () => {
@@ -287,7 +291,7 @@ describe('WhatsApp inbound processing', () => {
       ).rows;
       expect(opted).toHaveLength(1);
       expect(opted[0].payload.payload).toMatchObject({ customer_id: CUS2, affected_ticket_ids: [t.id] });
-      expect(await textsTo('+966559876543')).toEqual([waMessageText('W-12')]);
+      expect(await textsTo('+966559876543')).toEqual([customerCopy.messageText('W-12')]);
       const msg = (await inboundRows(r.wamids[0]!)).rows[0];
       expect(msg.kind).toBe('inbound_text');
 

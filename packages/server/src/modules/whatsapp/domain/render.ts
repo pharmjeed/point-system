@@ -2,7 +2,7 @@ import {
   renderWaText,
   vehicleColorLabelAr,
   vehicleMakeLabelAr,
-  waTemplateById,
+  type WaCatalog,
   type WaMessageId,
 } from '@point/shared';
 
@@ -102,6 +102,8 @@ function redactRequest(
  * and `biz_opaque_callback_data` = our message id so a status can be matched before the wamid is saved.
  */
 export function buildTemplateMessage(a: {
+  /** the customer copy of the configured brand (`WhatsappRuntime.catalog`, DEC-470) */
+  catalog: WaCatalog;
   purpose: WaMessageId;
   recipient: WaRecipient;
   params: readonly string[];
@@ -110,7 +112,7 @@ export function buildTemplateMessage(a: {
   buttonPayload?: string | null;
   opaque: string;
 }): BuiltMessage {
-  const def = waTemplateById(a.purpose);
+  const def = a.catalog.byId(a.purpose);
   if (def.kind !== 'template') throw new Error(`${a.purpose} is not a template`);
   const params = a.params.map(cleanParam);
   const components: Record<string, unknown>[] = [];

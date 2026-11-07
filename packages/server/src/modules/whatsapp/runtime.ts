@@ -1,3 +1,4 @@
+import { waCatalog, type WaCatalog } from '@point/shared';
 import type { Env } from '../../core/config/env.js';
 import { loadEnv } from '../../core/config/env.js';
 import { parseEncryptionKey, type EncryptionKey } from '../../core/crypto/crypto.js';
@@ -28,6 +29,8 @@ export class WhatsappRuntime {
   readonly secretEnv: Record<string, string | undefined>;
   readonly graph: GraphClient;
   readonly channels = new ActiveChannelCache();
+  /** the customer copy with the configured customer brand (`BRAND_CUSTOMER_NAME_AR`, DEC-470) */
+  readonly catalog: WaCatalog;
   /** last phone-number probe per channel (12 §5.14: at most every 60 s) */
   readonly probes = new Map<string, ChannelProbe>();
   /** last `wa_webhook_silent` check of this process (once a minute at most) */
@@ -37,6 +40,7 @@ export class WhatsappRuntime {
 
   constructor(deps: WhatsappDeps) {
     this.env = deps.env;
+    this.catalog = waCatalog(deps.env.BRAND_CUSTOMER_NAME_AR);
     this.secretEnv = deps.secretEnv ?? process.env;
     this.secrets = deps.secrets ?? new SecretResolver(this.secretEnv);
     this.logger = deps.logger ?? createLogger({ level: deps.env.LOG_LEVEL, name: 'point-whatsapp' });

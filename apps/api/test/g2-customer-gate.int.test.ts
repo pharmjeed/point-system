@@ -1,8 +1,9 @@
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { SEED_IDS } from '@point/db/seed';
 import { collectRoutes } from '@point/server';
-import { waMessageText } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { brand as simBrand } from '../../../tools/wa-simulator/src/catalog.js';
+import { customerCopy, testEnv } from './test-env.js';
 import {
   createCustomerApp,
   cyclesOf,
@@ -115,8 +116,18 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     // AC-18 / TC-056: the only button of the whole conversation is W-01's «طلب السيارة»
     const buttons = conversation.flatMap((m) => m.buttons.map((b) => ({ purpose: m.purpose, text: b.text })));
     expect(buttons).toEqual([{ purpose: 'W-01', text: 'طلب السيارة' }]);
-    for (const m of conversation) expect(m.renderedText ?? '').not.toContain('بوينت');
-    expect(conversation[0]!.renderedText).toContain('مصاف');
+    // canon §1 (DEC-470): only the customer brand — the simulator renders its approved bodies with its own
+    // configured brand, our copy (body_redacted) carries the API's BRAND_CUSTOMER_NAME_AR
+    const staffBrand = testEnv().BRAND_STAFF_NAME_AR;
+    for (const m of conversation) expect(m.renderedText ?? '').not.toContain(staffBrand);
+    expect(conversation[0]!.renderedText).toContain(simBrand().customerNameAr);
+    const w01Copy = await w.db.query<{ body_redacted: string }>(
+      `SELECT body_redacted FROM whatsapp_messages WHERE direction = 'outbound' AND purpose = 'W-01' AND ticket_id = $1`,
+      [t.ticketId],
+    );
+    expect(w01Copy.rows.map((r) => r.body_redacted.startsWith(`${customerCopy.customerBrandAr} — `))).toEqual(
+      [true],
+    );
 
     // AC-19: each act by its actor
     const ticket = await ticketRow(w, t.ticketId);
@@ -184,7 +195,7 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     await w.sim.client.sendLinkCode(CUS2_PHONE, qr.code, { timestamp: w.ts() });
     await w.drain();
     expect((await messagesTo(w, CUS2_PHONE)).map((m) => m.renderedText)).toEqual([
-      waMessageText('W-11', 'received'),
+      customerCopy.messageText('W-11', 'received'),
     ]);
     ok(
       await w.command('post', `/v1/tickets/${d.ticketId}/whatsapp-link/confirm`, {
@@ -209,9 +220,9 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     await settle(w, CUS2_PHONE);
     expect(await ticketRow(w, d.ticketId)).toMatchObject({ wa_link_status: 'linked', status: 'requested' });
     expect((await messagesTo(w, CUS2_PHONE)).map((m) => m.purpose ?? m.renderedText)).toEqual([
-      waMessageText('W-11', 'received'),
+      customerCopy.messageText('W-11', 'received'),
       'W-01',
-      waMessageText('W-12'),
+      customerCopy.messageText('W-12'),
       'W-02',
     ]);
 

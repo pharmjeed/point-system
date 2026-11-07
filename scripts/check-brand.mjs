@@ -1,5 +1,8 @@
 // PNT-001 AC3: the brand names come from settings (canon §1). They may appear only in
-// default-config files, WhatsApp template definitions, docs and brand assets.
+// default-config files, docs and brand assets. Since V2-D01 (DEC-470) the customer brand defaults to
+// «بوينت» and «مصاف» is an operator company (a database name, never a code literal); both stay
+// forbidden in code. The WhatsApp customer copy carries the `{brand}` token (wa-templates.ts) and the
+// simulator's template fixture does too, so neither is an allowed file any more.
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -16,9 +19,7 @@ const ALLOWED = [
   /^packages\/db\/migrations\//, // docs/06_schema.sql verbatim (comments)
   /^packages\/db\/src\/schema\/schema\.ts$/, // generated from the migrated database
   /^packages\/shared\/src\/canon\/brand-defaults\.ts$/,
-  /^packages\/shared\/src\/canon\/wa-templates\.ts$/,
-  /^packages\/server\/src\/modules\/whatsapp\/templates\//,
-  /^tools\/wa-simulator\/fixtures\//,
+  /^tools\/wa-simulator\/fixtures\/brand\.json$/,
   /^apps\/web\/public\/manifest\.webmanifest$/,
   /^apps\/web\/index\.html$/,
   /\.test\.ts$/,

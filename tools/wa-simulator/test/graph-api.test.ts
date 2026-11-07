@@ -1,3 +1,4 @@
+import { brand, defaultTemplates } from '../src/catalog.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startSimulator, type RunningSimulator } from '../src/index.js';
 import { graphSend, SECRET, sessionText, TOKEN, w01, w05 } from './helpers.js';
@@ -36,7 +37,7 @@ describe('POST /{version}/{phone_number_id}/messages', () => {
       plannedFailure: null,
     });
     expect(stored.renderedText).toBe(
-      'مصاف — قاعة ريماس — تذكرة 125\nتم استلام مركبتك: تويوتا كامري بيضاء — لوحة 4821.\nعند رغبتك بالخروج اضغط «طلب السيارة».',
+      `${brand().customerNameAr} — قاعة ريماس — تذكرة 125\nتم استلام مركبتك: تويوتا كامري بيضاء — لوحة 4821.\nعند رغبتك بالخروج اضغط «طلب السيارة».`,
     );
     expect(stored.userId).toMatch(/^SA\.\d{20}$/);
     expect((await sim.client.lastMessage('966551234567'))?.wamid).toBe(stored.wamid);
@@ -207,7 +208,11 @@ describe('other Graph routes', () => {
     let res = await get();
     expect(res.status).toBe(200);
     const plain = (await res.json()) as Record<string, unknown>;
-    expect(plain).toMatchObject({ id: '123456789012345', verified_name: 'مصاف', quality_rating: 'GREEN' });
+    expect(plain).toMatchObject({
+      id: '123456789012345',
+      verified_name: brand().customerNameAr,
+      quality_rating: 'GREEN',
+    });
     // as on the Graph API, the messaging limit and the health status come only when `fields` names them
     expect(plain).not.toHaveProperty('health_status');
     expect(plain).not.toHaveProperty('whatsapp_business_manager_messaging_limit');
@@ -284,5 +289,17 @@ describe('other Graph routes', () => {
     });
     expect(res.status).toBe(200);
     expect((await sim.client.getMessage(res.json.messages[0].id)).purpose).toBe('W-05');
+  });
+});
+
+describe('customer brand from configuration (canon §1, DEC-470)', () => {
+  it('fills {brand} of the fixtures with BRAND_CUSTOMER_NAME_AR, else the brand.json default', () => {
+    expect(brand({ BRAND_CUSTOMER_NAME_AR: 'BRAND_X' })).toMatchObject({
+      customerNameAr: 'BRAND_X',
+      linkCodePrefix: 'ربط تذكرة BRAND_X',
+    });
+    const w01 = defaultTemplates().find((t) => t.purpose === 'W-01')!;
+    expect(w01.body.startsWith(`${brand().customerNameAr} — {{1}}`)).toBe(true);
+    expect(defaultTemplates().some((t) => t.body.includes('{brand}'))).toBe(false);
   });
 });

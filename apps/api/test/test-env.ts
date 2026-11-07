@@ -1,4 +1,5 @@
 import { loadEnv, type Env } from '@point/server';
+import { waCatalog, type WaCatalog } from '@point/shared';
 
 /** A valid configuration for API tests (no real secrets: random-looking fixed test values). */
 export function testEnv(overrides: Record<string, string> = {}): Env {
@@ -29,3 +30,9 @@ export function testEnv(overrides: Record<string, string> = {}): Env {
 export const ORIGIN = 'http://localhost:5173';
 /** Headers every unsafe request needs (CSRF, DEC-29). */
 export const CSRF = { 'X-Requested-With': 'point-web', Origin: ORIGIN };
+
+/**
+ * The customer copy as the API sends it with {@link testEnv}: the brand is configuration
+ * (`BRAND_CUSTOMER_NAME_AR`, canon §1, DEC-470), so tests compare with this catalog, not the default one.
+ */
+export const customerCopy: WaCatalog = waCatalog(testEnv().BRAND_CUSTOMER_NAME_AR);

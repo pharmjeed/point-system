@@ -130,7 +130,11 @@ export class WhatsappLinkCommands {
           since: channel.health_changed_at ? new Date(channel.health_changed_at).toISOString() : null,
           reason: 'display_phone_not_configured',
         });
-      qr = await issueQrLinkCode(tx, t, { actorId: actor.userId, displayPhoneE164: display });
+      qr = await issueQrLinkCode(tx, t, {
+        actorId: actor.userId,
+        displayPhoneE164: display,
+        customerBrandAr: this.env.BRAND_CUSTOMER_NAME_AR,
+      });
     }
     await audit(tx, {
       orgId: actor.orgId,
