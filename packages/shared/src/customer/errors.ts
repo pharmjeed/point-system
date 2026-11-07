@@ -1,0 +1,132 @@
+/**
+ * Error codes of the customer API `/v1/customer/*` (V2, docs/v2/05_API_Integrations.md §5). The envelope is the
+ * one of 08 §1 (`{ error: { code, message, message_ar, request_id, retryable, details } }`). The new V2 codes are
+ * catalogued here; the V1 codes the customer API reuses keep their 08 definition (`ERROR_CATALOG`).
+ *
+ * The client parses `code` as a plain string so that a code added later on the server never breaks an installed
+ * app: unknown codes fall back to `message_ar`/`message` from the server (V2-011, DEC-482).
+ */
+import { z } from 'zod';
+import { ERROR_CATALOG, type ErrorCode, type ErrorDef } from '../errors.js';
+
+/** New codes introduced by the customer API (05 §5 plus V2-011, DEC-482). */
+export const CUSTOMER_ERROR_CODES = [
+  'CUSTOMER_OTP_INVALID',
+  'CUSTOMER_OTP_EXPIRED',
+  'CUSTOMER_OTP_LOCKED',
+  'CUSTOMER_CONSENT_VERSION_STALE',
+  'CUSTOMER_VEHICLE_LIMIT',
+  'CUSTOMER_VEHICLE_DUPLICATE',
+  'VENUE_NOT_LISTED',
+  'ACCOUNT_DELETED',
+] as const;
+export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[number];
+export const CustomerErrorCodeSchema = z.enum(CUSTOMER_ERROR_CODES);
+
+/** V1 codes (08 §4) the customer API answers with, unchanged. */
+export const CUSTOMER_REUSED_ERROR_CODES = [
+  'AUTH_UNAUTHENTICATED',
+  'AUTH_SESSION_EXPIRED',
+  'AUTH_SESSION_REVOKED',
+  'VALIDATION_FAILED',
+  'PHONE_INVALID',
+  'PLATE_INVALID',
+  'RESOURCE_NOT_FOUND',
+  'IDEMPOTENCY_KEY_REQUIRED',
+  'IDEMPOTENCY_KEY_REUSED',
+  'IDEMPOTENCY_IN_PROGRESS',
+  'WA_CHANNEL_UNAVAILABLE',
+  'RATE_LIMITED',
+  'INTERNAL_ERROR',
+  'SERVICE_UNAVAILABLE',
+] as const satisfies readonly ErrorCode[];
+export type CustomerReusedErrorCode = (typeof CUSTOMER_REUSED_ERROR_CODES)[number];
+
+/** Every code the customer API documents. */
+export type CustomerApiErrorCode = CustomerErrorCode | CustomerReusedErrorCode;
+
+/**
+ * The V2 catalog, in the shape of 08 (`ErrorDef`). Arabic text is customer-facing (V2-D01). `details`:
+ * `CUSTOMER_OTP_INVALID` → `{ attempts_left }`; `CUSTOMER_OTP_LOCKED` → `{ locked_until }`;
+ * `CUSTOMER_VEHICLE_LIMIT` → `{ max }`; `RATE_LIMITED` on `POST /v1/customer/auth/otp` → `{ retry_after_s }`.
+ */
+export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<ErrorDef, 'alert'>>> = {
+  CUSTOMER_OTP_INVALID: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'The verification code is incorrect.',
+    message_ar: 'رمز التحقق غير صحيح.',
+  },
+  CUSTOMER_OTP_EXPIRED: {
+    http: 410,
+    retryable: false,
+    log: 'info',
+    message: 'The verification code has expired. Request a new one.',
+    message_ar: 'انتهت صلاحية الرمز. اطلب رمزًا جديدًا.',
+  },
+  CUSTOMER_OTP_LOCKED: {
+    http: 423,
+    retryable: false,
+    log: 'warn',
+    message: 'Too many wrong codes. Try again later.',
+    message_ar: 'محاولات كثيرة خاطئة. حاول بعد 15 دقيقة.',
+  },
+  CUSTOMER_CONSENT_VERSION_STALE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'The terms were updated. Review the new version.',
+    message_ar: 'حُدّثت الشروط. راجع النسخة الجديدة ثم وافق.',
+  },
+  CUSTOMER_VEHICLE_LIMIT: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'The vehicle limit for the account is reached.',
+    message_ar: 'وصلت إلى الحد الأقصى للسيارات في حسابك.',
+  },
+  CUSTOMER_VEHICLE_DUPLICATE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'This vehicle is already in your account.',
+    message_ar: 'هذه السيارة مضافة في حسابك.',
+  },
+  VENUE_NOT_LISTED: {
+    http: 404,
+    retryable: false,
+    log: 'info',
+    message: 'This location is not available in the app.',
+    message_ar: 'هذا الموقع غير متاح في التطبيق.',
+  },
+  ACCOUNT_DELETED: {
+    http: 410,
+    retryable: false,
+    log: 'info',
+    message: 'This account was deleted.',
+    message_ar: 'حُذف هذا الحساب.',
+  },
+};
+
+const isCustomerErrorCode = (code: string): code is CustomerErrorCode =>
+  (CUSTOMER_ERROR_CODES as readonly string[]).includes(code);
+
+/** Definition of any code the customer API answers with: the V2 catalog first, then 08's (`ERROR_CATALOG`). */
+export function customerErrorDef(code: CustomerApiErrorCode): Omit<ErrorDef, 'alert'> {
+  return isCustomerErrorCode(code) ? CUSTOMER_ERROR_CATALOG[code] : ERROR_CATALOG[code];
+}
+
+/** The error body as the app reads it: `code` is any string (forward compatible, DEC-482). */
+export const CustomerErrorBodySchema = z.object({
+  code: z.string().min(1),
+  message: z.string(),
+  message_ar: z.string(),
+  request_id: z.string(),
+  retryable: z.boolean(),
+  details: z.record(z.string(), z.unknown()).default({}),
+});
+export type CustomerErrorBody = z.infer<typeof CustomerErrorBodySchema>;
+
+export const CustomerErrorEnvelopeSchema = z.object({ error: CustomerErrorBodySchema });
+export type CustomerErrorEnvelope = z.infer<typeof CustomerErrorEnvelopeSchema>;

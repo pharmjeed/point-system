@@ -24,6 +24,21 @@ export const BRAND_DEFAULTS: Readonly<Record<BrandEnvVar, string>> = {
   BRAND_CUSTOMER_NAME_EN: 'MASAF',
 };
 
+/**
+ * V2 customer app (V2-D01, DEC-480): the brand the customer sees in the app is the platform brand, so its
+ * defaults are the staff brand's. Read by `apps/customer/app.config.ts` from `BRAND_CUSTOMER_APP_NAME_AR/_EN`
+ * (falling back to these) and handed to the app as `extra.brand`; V1's `BRAND_CUSTOMER_NAME_*` (the WhatsApp
+ * channel) is unchanged.
+ */
+export const CUSTOMER_APP_BRAND_ENV_VARS = [
+  'BRAND_CUSTOMER_APP_NAME_AR',
+  'BRAND_CUSTOMER_APP_NAME_EN',
+] as const;
+export const CUSTOMER_APP_BRAND_DEFAULTS = {
+  BRAND_CUSTOMER_APP_NAME_AR: 'بوينت',
+  BRAND_CUSTOMER_APP_NAME_EN: 'POINT',
+} as const satisfies Record<(typeof CUSTOMER_APP_BRAND_ENV_VARS)[number], string>;
+
 /** Web-app (Vite) variables: staff names only (file 05). */
 export const VITE_BRAND_ENV_VARS = ['VITE_BRAND_STAFF_NAME_AR', 'VITE_BRAND_STAFF_NAME_EN'] as const;
 export type ViteBrandEnvVar = (typeof VITE_BRAND_ENV_VARS)[number];
