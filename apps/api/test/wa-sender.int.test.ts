@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { OutboxDispatcher, WhatsappRuntime, whatsappJobs } from '@point/server';
-import { renderWaText, waMessageText } from '@point/shared';
+import { renderWaText } from '@point/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { customerCopy } from './test-env.js';
 import {
   CUS1,
   LYL,
@@ -369,7 +370,9 @@ describe('WhatsApp sender (job.wa_send)', () => {
       });
       await w.flush();
       const text = (await w.sim.client.listMessages({ to: '+966551234567', type: 'text' })).at(-1);
-      expect(text?.text).toBe(renderWaText(waMessageText('W-05'), [String(t.displayNumber), '907153']));
+      expect(text?.text).toBe(
+        renderWaText(customerCopy.messageText('W-05'), [String(t.displayNumber), '907153']),
+      );
       const row = (
         await w.db.query(
           `SELECT kind, purpose, body_redacted FROM whatsapp_messages WHERE wa_message_id = $1`,

@@ -48,7 +48,7 @@ export function Timeline({ events }: { events: TimelineEvent[] }) {
               {e.message ? (
                 <div className="pt-tl__msg">
                   <span className="pt-tl__brand">
-                    <Logo brand="masaf" variant="avatar" height={20} alt="" />
+                    <Logo brand="customer" variant="avatar" height={20} alt="" />
                     {brand.customerNameAr}
                   </span>
                   <p>{e.message}</p>

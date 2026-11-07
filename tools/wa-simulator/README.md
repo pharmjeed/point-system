@@ -48,7 +48,7 @@ The Docker base image is a build arg (`NODE_IMAGE`, default `node:24-alpine`) fo
 | `DETERMINISTIC_FAULTS` | `true` | number rules below |
 | `INCLUDE_USER_IDS` | `true` | add `user_id` / `from_user_id` (BSUID) to inbound webhooks |
 | `HANG_MS` | `30000` | how long a request is held in timeout mode |
-| `BRAND_CUSTOMER_NAME_AR` / `_EN` | from `fixtures/brand.json` | name shown by the dev page and the phone-number profile |
+| `BRAND_CUSTOMER_NAME_AR` / `_EN` | from `fixtures/brand.json` (the POINT brand since DEC-470) | name shown by the dev page and the phone-number profile; fills `{brand}` in the template bodies and the QR link prefix |
 
 ## Graph API fake
 
@@ -165,6 +165,7 @@ Also exported: `startSimulator`, `createSimulatorServer`, `signWebhookBody`, `ve
 ## Notes
 
 - The template catalog is a local copy (`fixtures/templates.json`) of docs/12 §8.2 until the shared catalog of
-  PNT-039 exists; brand names may only appear in `fixtures/` (scripts/check-brand.mjs).
+  PNT-039 exists; its bodies carry `{brand}` (the customer brand, DEC-470) like the shared source texts, and
+  brand names may only appear in `fixtures/brand.json` (scripts/check-brand.mjs).
 - Fake BSUIDs are deterministic per phone: `SA.<20 digits>`. The real format is re-verified at implementation.
 - Spec gaps and the readings chosen are in `docs/progress/notes/pnt-037.md`.

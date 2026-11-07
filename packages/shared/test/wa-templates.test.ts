@@ -3,12 +3,16 @@ import { describe, expect, it } from 'vitest';
 import {
   BRAND_DEFAULTS,
   W09_VARIANTS,
+  WA_BRAND_TOKEN,
+  WA_LINK_PREFILLED_TEXT,
   WA_TEMPLATES,
   WA_TEMPLATE_DEFINITIONS,
+  WA_TEMPLATE_SOURCES,
   WA_TEMPLATE_NAMES,
   WaSendJobPayloadSchema,
   lintWaCatalog,
   renderWaText,
+  waCatalog,
   waMessageText,
   waTemplateById,
   type WaTemplateDef,
@@ -63,7 +67,7 @@ describe('PNT-039 — W-01 … W-12 texts equal 14 §4 word for word', () => {
     ]);
   });
 
-  it('the simulator catalog carries the same approved texts', () => {
+  it('the simulator catalog carries the same approved texts (with the {brand} token, DEC-470)', () => {
     const fixture = JSON.parse(
       readFileSync(repoPath('tools/wa-simulator/fixtures/templates.json'), 'utf8'),
     ) as {
@@ -86,7 +90,7 @@ describe('PNT-039 — W-01 … W-12 texts equal 14 §4 word for word', () => {
         buttons: t.buttons,
       })),
     ).toEqual(
-      WA_TEMPLATES.filter((t) => t.kind === 'template').map((t) => ({
+      WA_TEMPLATE_SOURCES.filter((t) => t.kind === 'template').map((t) => ({
         id: t.id,
         name: t.name,
         language: 'ar',
@@ -120,11 +124,28 @@ describe('PNT-039 — catalog linter (12 §8.3, AC-18)', () => {
     ).toContainEqual(expect.stringContaining('QUICK_REPLY'));
   });
 
-  it('the staff brand, links and emojis never reach a customer text', () => {
+  it('a staff-only brand, links and emojis never reach a customer text', () => {
+    // a deployment whose customer brand differs from the staff brand keeps the V1 rule (DEC-470)
     const staff = BRAND_DEFAULTS.BRAND_STAFF_NAME_AR;
+    const distinct = { customer: ['CUSTOMER_X'], staff: [staff, BRAND_DEFAULTS.BRAND_STAFF_NAME_EN] };
+    const custom = waCatalog('CUSTOMER_X').templates.map((t) => ({ ...t }));
+    expect(lintWaCatalog(custom, distinct)).toEqual([]);
+    expect(
+      lintWaCatalog(
+        custom.map((t) =>
+          t.id === 'W-04' ? { ...t, body_ar: `${staff} — جارٍ إحضار سيارتك رقم {{1}} الآن.` } : t,
+        ),
+        distinct,
+      ),
+    ).toContainEqual(expect.stringContaining('staff brand'));
+    // V2-D01: with the defaults the customer brand is the staff brand, and naming it is the rule
+    expect(BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR).toBe(BRAND_DEFAULTS.BRAND_STAFF_NAME_AR);
     expect(
       lintWaCatalog(withChange('W-04', { body_ar: `${staff} — جارٍ إحضار سيارتك رقم {{1}} الآن.` })),
-    ).toContainEqual(expect.stringContaining('staff brand'));
+    ).toEqual([]);
+    expect(
+      lintWaCatalog(withChange('W-04', { body_ar: `${WA_BRAND_TOKEN} — جارٍ إحضار سيارتك رقم {{1}} الآن.` })),
+    ).toContainEqual(expect.stringContaining('not filled in'));
     expect(
       lintWaCatalog(withChange('W-06', { body_ar: 'تم تسليم سيارتك رقم {{1}}. https://example.com شكرًا.' })),
     ).toContainEqual(expect.stringContaining('links'));
@@ -201,5 +222,42 @@ describe('PNT-039 — creation definitions (12 §8.2) and the send job payload',
   it('renderWaText fills {{n}} and leaves unknown variables', () => {
     expect(renderWaText(waTemplateById('W-05').body_ar, ['125', '482731'])).toContain('رمز التسليم: 482731');
     expect(renderWaText('a {{1}} b {{2}}', ['x'])).toBe('a x b {{2}}');
+  });
+});
+
+describe('DEC-470 — the customer brand comes from configuration (canon §1, V2-D01)', () => {
+  it('every source text that names the business carries the token, never a literal brand', () => {
+    const texts = WA_TEMPLATE_SOURCES.flatMap((t) => [t.body_ar, ...Object.values(t.variants ?? {})]);
+    for (const t of texts) {
+      expect(t).not.toContain(BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR);
+    }
+    expect(
+      waTemplateById('W-01').body_ar.startsWith(`${BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR} — {{1}}`),
+    ).toBe(true);
+  });
+
+  it('waCatalog fills the configured brand in bodies, variants, Meta definitions and the QR text', () => {
+    const c = waCatalog('BRAND_X');
+    expect(c.customerBrandAr).toBe('BRAND_X');
+    expect(c.byId('W-01').body_ar.startsWith('BRAND_X — {{1}} — تذكرة {{2}}')).toBe(true);
+    expect(c.messageText('W-09', 'delivered')).toBe('تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك BRAND_X.');
+    expect(c.messageText('W-10')).toContain('مرحبًا بك في BRAND_X.');
+    expect(c.messageText('W-12')).toContain('تم إيقاف رسائل BRAND_X');
+    const body = c.definitions[0]!.components[0] as { text: string };
+    expect(body.text).toBe(c.byId('W-01').body_ar);
+    expect(c.linkPrefilledText).toBe('ربط تذكرة BRAND_X {{1}}');
+    expect(JSON.stringify(c.templates)).not.toContain(WA_BRAND_TOKEN);
+    expect(lintWaCatalog(c.templates, { customer: ['BRAND_X'], staff: ['STAFF_X'] })).toEqual([]);
+    // names, kinds and variables do not depend on the brand (Meta template names stay, canon §11)
+    expect(c.templates.map((t) => [t.name, t.kind, t.variables])).toEqual(
+      WA_TEMPLATES.map((t) => [t.name, t.kind, t.variables]),
+    );
+  });
+
+  it('the default exports are the catalog of the default brand; a blank brand falls back to it', () => {
+    expect(waCatalog()).toBe(waCatalog(BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR));
+    expect(waCatalog('  ')).toBe(waCatalog());
+    expect(WA_TEMPLATES).toBe(waCatalog().templates);
+    expect(WA_LINK_PREFILLED_TEXT).toBe(`ربط تذكرة ${BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR} {{1}}`);
   });
 });

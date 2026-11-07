@@ -73,6 +73,7 @@ export { WhatsappTemplates, templateStatus, templateView } from './application/t
 export {
   WhatsappWebhookIntake,
   verifyHubSignature,
+  addressedChannel,
   constantTimeEqual,
 } from './application/webhook-intake.js';
 export { WhatsappInboundProcessor, waProcessInboundHandler } from './application/inbound-processor.js';

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { REALTIME_PAYLOAD_SCHEMAS, realtimeEnvelopeSchema, rooms, waMessageText } from '@point/shared';
+import { REALTIME_PAYLOAD_SCHEMAS, realtimeEnvelopeSchema, rooms } from '@point/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { customerCopy } from './test-env.js';
 import {
   createCustomerApp,
   DISPLAY_PHONE,
@@ -274,7 +275,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       const qr = r.qr;
       expect(qr.code).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
       expect(qr.status).toBe('active');
-      expect(qr.prefilled_text).toBe(`ربط تذكرة مصاف ${qr.code}`);
+      expect(qr.prefilled_text).toBe(`ربط تذكرة ${customerCopy.customerBrandAr} ${qr.code}`); // DEC-470
       expect(qr.wa_me_url).toBe(
         `https://wa.me/${DISPLAY_PHONE.slice(1)}?text=${encodeURIComponent(qr.prefilled_text)}`,
       );
@@ -299,7 +300,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       await w.sim.client.sendLinkCode(phone, qr.code, { timestamp: w.ts() });
       await w.drain();
       expect(await ticketRow(w, d.ticketId)).toMatchObject({ wa_link_status: 'pending_confirmation' });
-      expect(await texts(w, phone)).toEqual([waMessageText('W-11', 'received')]);
+      expect(await texts(w, phone)).toEqual([customerCopy.messageText('W-11', 'received')]);
       const lc = (await w.db.query(`SELECT * FROM link_codes WHERE id = $1`, [qr.link_code_id])).rows[0];
       expect(lc).toMatchObject({
         status: 'pending_confirmation',
@@ -316,7 +317,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       const other = newPhone();
       await w.sim.client.sendLinkCode(other, qr.code, { timestamp: w.ts() });
       await w.drain();
-      expect(await texts(w, other)).toEqual([waMessageText('W-11', 'invalid')]);
+      expect(await texts(w, other)).toEqual([customerCopy.messageText('W-11', 'invalid')]);
 
       const c = ok(await confirm(w, drv, d.ticketId, qr.link_code_id, true));
       expect(c).toMatchObject({ wa_link_status: 'linked', wa_link_pending: null });
@@ -341,7 +342,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       await settle(w, phone);
       const conversation = await messagesTo(w, phone);
       expect(conversation.map((m) => m.purpose ?? m.renderedText)).toEqual([
-        waMessageText('W-11', 'received'),
+        customerCopy.messageText('W-11', 'received'),
         'W-01',
       ]);
       expect(conversation[1]!.buttons).toHaveLength(1);
@@ -364,7 +365,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       const phone = newPhone();
       await w.sim.client.sendLinkCode(phone, first.code, { timestamp: w.ts() });
       await w.drain();
-      expect(await texts(w, phone)).toEqual([waMessageText('W-11', 'invalid')]);
+      expect(await texts(w, phone)).toEqual([customerCopy.messageText('W-11', 'invalid')]);
       await w.sim.client.sendLinkCode(phone, second.code, { timestamp: w.ts() });
       await w.drain();
       // the message moved the link to pending_confirmation (version + 1): D-07 refetches before submitting
@@ -421,8 +422,8 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       await w.sim.client.sendLinkCode(phone, qr.code, { timestamp: w.ts() });
       await w.drain();
       expect(await texts(w, phone)).toEqual([
-        waMessageText('W-11', 'received'),
-        waMessageText('W-11', 'invalid'),
+        customerCopy.messageText('W-11', 'received'),
+        customerCopy.messageText('W-11', 'invalid'),
       ]);
     });
 
@@ -548,7 +549,7 @@ describe('S3 linking — direct W-01 (PNT-043) and QR (PNT-044)', () => {
       // W-12 is the only message after the stop: W-11 to his link message is skipped (opted_out) until the
       // driver's confirmation resumes the consent; then W-01 again
       expect(await purposes(w, phone)).toEqual(['W-01', null, 'W-01']);
-      expect((await messagesTo(w, phone))[1]!.renderedText).toBe(waMessageText('W-12'));
+      expect((await messagesTo(w, phone))[1]!.renderedText).toBe(customerCopy.messageText('W-12'));
       const w11 = await w.db.query(
         `SELECT status, skipped_reason FROM notifications WHERE purpose = 'W-11' AND recipient_customer_id = (SELECT customer_id FROM tickets WHERE id = $1)`,
         [t.ticketId],

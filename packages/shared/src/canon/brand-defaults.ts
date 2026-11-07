@@ -3,8 +3,11 @@
  * in code elsewhere; this file holds the documented defaults (file 05 `.env.example`). The web app
  * reads the staff names from `VITE_BRAND_STAFF_NAME_*`.
  *
- * This file and wa-templates.ts are the only shared files allowed to contain the brand names
- * (scripts/check-brand.mjs).
+ * Since V2-D01 (DEC-460, DEC-470) the customer brand defaults to the staff brand «بوينت · POINT», the
+ * company that sells to the customer; «مصاف» is an operator company using the platform and is no brand
+ * default. A deployment may still set a distinct customer brand through `BRAND_CUSTOMER_NAME_*`.
+ *
+ * This is the only shared file allowed to contain the brand names (scripts/check-brand.mjs).
  */
 import { z } from 'zod';
 
@@ -16,13 +19,28 @@ export const BRAND_ENV_VARS = [
 ] as const;
 export type BrandEnvVar = (typeof BRAND_ENV_VARS)[number];
 
-/** Defaults of canon §1 / file 05. */
+/** Defaults of canon §1 / file 05 (customer = staff brand since V2-D01, DEC-470). */
 export const BRAND_DEFAULTS: Readonly<Record<BrandEnvVar, string>> = {
   BRAND_STAFF_NAME_AR: 'بوينت',
   BRAND_STAFF_NAME_EN: 'POINT',
-  BRAND_CUSTOMER_NAME_AR: 'مصاف',
-  BRAND_CUSTOMER_NAME_EN: 'MASAF',
+  BRAND_CUSTOMER_NAME_AR: 'بوينت',
+  BRAND_CUSTOMER_NAME_EN: 'POINT',
 };
+
+/**
+ * V2 customer app (V2-D01, DEC-480): the brand the customer sees in the app is the platform brand, so its
+ * defaults are the staff brand's. Read by `apps/customer/app.config.ts` from `BRAND_CUSTOMER_APP_NAME_AR/_EN`
+ * (falling back to these) and handed to the app as `extra.brand`. With the defaults it equals the WhatsApp
+ * channel's `BRAND_CUSTOMER_NAME_*` (DEC-470): both are the platform brand.
+ */
+export const CUSTOMER_APP_BRAND_ENV_VARS = [
+  'BRAND_CUSTOMER_APP_NAME_AR',
+  'BRAND_CUSTOMER_APP_NAME_EN',
+] as const;
+export const CUSTOMER_APP_BRAND_DEFAULTS = {
+  BRAND_CUSTOMER_APP_NAME_AR: 'بوينت',
+  BRAND_CUSTOMER_APP_NAME_EN: 'POINT',
+} as const satisfies Record<(typeof CUSTOMER_APP_BRAND_ENV_VARS)[number], string>;
 
 /** Web-app (Vite) variables: staff names only (file 05). */
 export const VITE_BRAND_ENV_VARS = ['VITE_BRAND_STAFF_NAME_AR', 'VITE_BRAND_STAFF_NAME_EN'] as const;
@@ -33,7 +51,7 @@ export interface BrandNames {
   staffNameAr: string;
   /** Staff system name (Latin). */
   staffNameEn: string;
-  /** Customer channel name (Arabic) — customer-facing text only. */
+  /** Customer brand name (Arabic) — customer-facing text (WhatsApp, D-07 QR panel). */
   customerNameAr: string;
   /** Customer channel name (Latin). */
   customerNameEn: string;

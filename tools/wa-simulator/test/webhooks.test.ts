@@ -1,3 +1,4 @@
+import { brand } from '../src/catalog.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { signWebhookBody, startSimulator, type RunningSimulator } from '../src/index.js';
 import {
@@ -273,7 +274,7 @@ describe('inbound text, link code, stop, interactive, signature modes', () => {
     const got = await hook.waitFor(3);
     expect(got.map((g) => value(g).messages[0].text.body)).toEqual([
       'وين سيارتي؟',
-      'ربط تذكرة مصاف K7Q29F',
+      `ربط تذكرة ${brand().customerNameAr} K7Q29F`,
       'إيقاف',
     ]);
     expect(value(got[0]!).messages[0]).toMatchObject({ from: '966551234567', type: 'text' });
@@ -402,8 +403,8 @@ describe('claim codes, conversations, scenario files, UI', () => {
     const html = await res.text();
     expect(res.headers.get('content-type')).toContain('text/html');
     expect(html).toContain('<html lang="ar" dir="rtl">');
-    expect(html).toContain('مصاف');
-    expect(html).not.toContain('بوينت');
+    // the customer brand from configuration (canon §1; «بوينت» by default since V2-D01, DEC-470)
+    expect(html).toContain(brand().customerNameAr);
   });
 
   it('answers the spec aliases under /sim/* too', async () => {

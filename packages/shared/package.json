@@ -9,6 +9,11 @@
       "@point/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./customer": {
+      "@point/source": "./src/customer/index.ts",
+      "types": "./dist/customer/index.d.ts",
+      "default": "./dist/customer/index.js"
     }
   },
   "scripts": {

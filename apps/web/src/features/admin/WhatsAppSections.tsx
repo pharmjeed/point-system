@@ -248,7 +248,7 @@ export function TemplatesSection({ me }: { me: Me }) {
                 {templateBody(t) ? (
                   <div className="st-bubble" aria-label={s13.templates.preview}>
                     <span className="pt-tl__brand">
-                      <Logo brand="masaf" variant="avatar" height={20} alt="" />
+                      <Logo brand="customer" variant="avatar" height={20} alt="" />
                       {brand.customerNameAr}
                     </span>
                     <p>{templateBody(t)}</p>

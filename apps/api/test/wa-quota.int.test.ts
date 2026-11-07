@@ -1,6 +1,6 @@
-import { waMessageText } from '@point/shared';
 import { SystemMonitor, createLogger, metrics, type Tx } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { customerCopy } from './test-env.js';
 import {
   createCustomerApp,
   freshDriver,
@@ -76,7 +76,7 @@ describe('GAP-9 — the WhatsApp quota gauges over the real send path', () => {
     );
     await settle(w, viaQr);
     expect((await messagesTo(w, viaQr)).map((m) => m.purpose ?? m.renderedText)).toEqual([
-      waMessageText('W-11', 'received'),
+      customerCopy.messageText('W-11', 'received'),
       'W-01',
     ]);
     expect((await ticketRow(w, d.ticketId)).wa_link_status).toBe('linked');
@@ -85,7 +85,9 @@ describe('GAP-9 — the WhatsApp quota gauges over the real send path', () => {
     const stranger = newPhone();
     await w.sim.client.sendText({ from: stranger, body: 'السلام عليكم', timestamp: w.ts() });
     await settle(w, stranger);
-    expect((await messagesTo(w, stranger)).map((m) => m.renderedText)).toEqual([waMessageText('W-10')]);
+    expect((await messagesTo(w, stranger)).map((m) => m.renderedText)).toEqual([
+      customerCopy.messageText('W-10'),
+    ]);
 
     q = await quota();
     expect(q.uniqueUsers24hOutsideWindow).toBe(start.uniqueUsers24hOutsideWindow + 1); // the QR W-01 is not counted

@@ -1,8 +1,8 @@
 {
-  "$comment": "Customer-facing brand defaults used by the simulator UI and fake phone-number profile (canon §1). Overridable with BRAND_CUSTOMER_NAME_AR / BRAND_CUSTOMER_NAME_EN.",
-  "customerNameAr": "مصاف",
-  "customerNameEn": "MASAF",
-  "linkCodePrefix": "ربط تذكرة مصاف",
+  "$comment": "Customer-facing brand defaults used by the simulator UI and fake phone-number profile (canon §1; «بوينت · POINT» since V2-D01, DEC-470). Overridable with BRAND_CUSTOMER_NAME_AR / BRAND_CUSTOMER_NAME_EN. {brand} in linkCodePrefix and in the template bodies of templates.json is the Arabic customer name.",
+  "customerNameAr": "بوينت",
+  "customerNameEn": "POINT",
+  "linkCodePrefix": "ربط تذكرة {brand}",
   "stopKeyword": "إيقاف",
   "requestButtonText": "طلب السيارة"
 }

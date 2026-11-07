@@ -6,10 +6,12 @@
  *
  * This file is the single source of the customer copy (DEC-74): the template bodies registered with
  * Meta (`POST /{waba_id}/message_templates`), the session reply texts and the catalog linter
- * (12 §8.3, AC-18). The approved bodies name the customer brand literally because Meta approves a
- * fixed text.
+ * (12 §8.3, AC-18).
  *
- * This file and brand-defaults.ts are the only shared files allowed to contain the brand names.
+ * The customer brand is configuration (`BRAND_CUSTOMER_NAME_AR`, canon §1; V2-D01, DEC-470): the texts
+ * below carry the token {@link WA_BRAND_TOKEN} and {@link waCatalog} fills it in. Meta approves a fixed
+ * text, so the bodies registered with Meta name the brand configured when they are created; changing
+ * the brand afterwards needs new template versions (`_v2`) approved by Meta (DEC-471).
  */
 import { z } from 'zod';
 import { BRAND_DEFAULTS } from './brand-defaults.js';
@@ -38,6 +40,17 @@ export type WaTemplateKind = (typeof WA_TEMPLATE_KINDS)[number];
 
 /** The only button text in the customer conversation (AC-18). */
 export const REQUEST_CAR_BUTTON_TEXT = 'طلب السيارة';
+
+/**
+ * Placeholder of the customer brand name in the source texts (not a Meta variable: single braces, never
+ * sent). {@link waCatalog} replaces it with `BRAND_CUSTOMER_NAME_AR` (DEC-470).
+ */
+export const WA_BRAND_TOKEN = '{brand}';
+
+/** A source text with the customer brand filled in. */
+export function withCustomerBrand(text: string, customerBrandAr: string): string {
+  return text.replaceAll(WA_BRAND_TOKEN, customerBrandAr);
+}
 
 export interface WaQuickReplyButton {
   type: 'QUICK_REPLY';
@@ -144,7 +157,7 @@ const W09_TEXTS: Readonly<Record<W09Variant, string>> = {
   assigned_waiting: 'طلبك لسيارتك رقم {{1}} في الانتظار وتم إسناده؛ سنبلغك عند بدء الإحضار.',
   retrieving: 'جارٍ إحضار سيارتك رقم {{1}} الآن.',
   ready: 'سيارتك رقم {{1}} جاهزة عند نقطة التسليم. استخدم رمز التسليم المرسل في رسالة الجاهزية.',
-  delivered: 'تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك مصاف.',
+  delivered: 'تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك {brand}.',
   inactive: 'هذه التذكرة غير نشطة. للمساعدة تواصل مع سائق الفاليت في الموقع.',
 };
 
@@ -157,14 +170,17 @@ const W11_TEXTS: Readonly<Record<W11Variant, string>> = {
   invalid: 'رمز الربط غير صالح أو انتهت صلاحيته. اطلب من سائق الفاليت رمزًا جديدًا.',
 };
 
-/** Canon §11, row for row; texts from 14 §4. */
-export const WA_TEMPLATES: readonly WaTemplateDef[] = [
+/**
+ * Canon §11, row for row; texts from 14 §4 with the customer brand as {@link WA_BRAND_TOKEN}. Use
+ * {@link waCatalog} (configured brand) or {@link WA_TEMPLATES} (default brand) for the texts to send.
+ */
+export const WA_TEMPLATE_SOURCES: readonly WaTemplateDef[] = [
   template(
     'W-01',
     'masaf_ticket_issued_v1',
     'إصدار التذكرة',
     ['venue_name', 'display_number', 'vehicle_description'],
-    'مصاف — {{1}} — تذكرة {{2}}\nتم استلام مركبتك: {{3}}.\nعند رغبتك بالخروج اضغط «طلب السيارة».',
+    '{brand} — {{1}} — تذكرة {{2}}\nتم استلام مركبتك: {{3}}.\nعند رغبتك بالخروج اضغط «طلب السيارة».',
     ['قاعة ريماس', '125', 'تويوتا كامري بيضاء — لوحة 4821'],
     REQUEST_CAR_BUTTON,
   ),
@@ -205,7 +221,7 @@ export const WA_TEMPLATES: readonly WaTemplateDef[] = [
     'masaf_vehicle_delivered_v1',
     'تم التسليم',
     ['display_number'],
-    'تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك مصاف.',
+    'تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك {brand}.',
     ['125'],
   ),
   template(
@@ -230,14 +246,14 @@ export const WA_TEMPLATES: readonly WaTemplateDef[] = [
     'W-10',
     'reply_free_text_guidance',
     'رد على رسالة حرة',
-    'مرحبًا بك في مصاف. لطلب سيارتك اضغط زر «طلب السيارة» في رسالة تذكرتك، أو اطلبها مباشرة من سائق الفاليت في الموقع. لإيقاف رسائل مصاف أرسل كلمة: إيقاف',
+    'مرحبًا بك في {brand}. لطلب سيارتك اضغط زر «طلب السيارة» في رسالة تذكرتك، أو اطلبها مباشرة من سائق الفاليت في الموقع. لإيقاف رسائل {brand} أرسل كلمة: إيقاف',
   ),
   session('W-11', 'reply_link_received', 'استلام رسالة ربط QR', W11_TEXTS.received, W11_TEXTS),
   session(
     'W-12',
     'reply_opted_out',
     'تأكيد إيقاف الرسائل',
-    'تم إيقاف رسائل مصاف لهذا الرقم. اطلب سيارتك مباشرة من سائق الفاليت في الموقع.',
+    'تم إيقاف رسائل {brand} لهذا الرقم. اطلب سيارتك مباشرة من سائق الفاليت في الموقع.',
   ),
 ];
 
@@ -264,44 +280,16 @@ export const WA_SESSION_REPLY_NAMES = [
 ] as const;
 export type WaSessionReplyName = (typeof WA_SESSION_REPLY_NAMES)[number];
 
-const BY_ID = new Map(WA_TEMPLATES.map((t) => [t.id, t]));
-const BY_NAME = new Map(WA_TEMPLATES.map((t) => [t.name, t]));
-
-export function waTemplateById(id: WaMessageId): WaTemplateDef {
-  const def = BY_ID.get(id);
-  if (!def) throw new Error(`Unknown WhatsApp message id ${id}`);
-  return def;
-}
-
-export function waTemplateByName(name: string): WaTemplateDef | undefined {
-  return BY_NAME.get(name);
-}
-
 /**
- * Text prefilled by the QR wa.me link (12 §7.2, `prefilled_text` of 07); `{{1}}` = the link code. The
- * customer must press send for anything to happen (12 F-22).
+ * Source of the text prefilled by the QR wa.me link (12 §7.2, `prefilled_text` of 07); `{{1}}` = the link
+ * code. The customer must press send for anything to happen (12 F-22). The configured text is
+ * {@link WaCatalog.linkPrefilledText}.
  */
-export const WA_LINK_PREFILLED_TEXT = 'ربط تذكرة مصاف {{1}}';
-
-/** True for the approved templates W-01 … W-08 (`kind = template`). */
-export function isWaTemplateMessage(id: WaMessageId): boolean {
-  return waTemplateById(id).kind === 'template';
-}
+export const WA_LINK_PREFILLED_SOURCE = 'ربط تذكرة {brand} {{1}}';
 
 /** Replaces `{{n}}` with `params[n - 1]` (missing values are left as written). */
 export function renderWaText(text: string, params: readonly string[]): string {
   return text.replace(/\{\{(\d+)\}\}/g, (whole, n: string) => params[Number(n) - 1] ?? whole);
-}
-
-/** Text of a message (default or named variant) before variables are filled in. */
-export function waMessageText(id: WaMessageId, variant?: string | null): string {
-  const def = waTemplateById(id);
-  if (variant && def.variants) {
-    const text = def.variants[variant];
-    if (text === undefined) throw new Error(`Unknown variant ${variant} of ${id}`);
-    return text;
-  }
-  return def.body_ar;
 }
 
 /**
@@ -337,24 +325,127 @@ export interface WaTemplateCreation {
   )[];
 }
 
-/** The creation definitions of W-01 … W-08, generated from {@link WA_TEMPLATES}. */
-export const WA_TEMPLATE_DEFINITIONS: readonly WaTemplateCreation[] = WA_TEMPLATES.filter(
-  (t) => t.kind === 'template',
-).map((t) => ({
-  name: t.name as WaTemplateName,
-  language: 'ar',
-  category: 'UTILITY',
-  components: [
-    {
-      type: 'BODY' as const,
-      text: t.body_ar,
-      ...(t.variables > 0 ? { example: { body_text: [[...t.example]] } } : {}),
+/**
+ * The customer copy with one customer brand filled in (canon §1: `BRAND_CUSTOMER_NAME_AR`; V2-D01,
+ * DEC-470). The server builds it from its configuration; the module-level exports below are the catalog
+ * of the default brand ({@link BRAND_DEFAULTS}).
+ */
+export interface WaCatalog {
+  /** The customer brand name the texts carry. */
+  readonly customerBrandAr: string;
+  /** W-01 … W-12, canon §11 row for row. */
+  readonly templates: readonly WaTemplateDef[];
+  /** Meta creation bodies of W-01 … W-08 (12 §8.2). */
+  readonly definitions: readonly WaTemplateCreation[];
+  /** Text prefilled by the QR wa.me link; `{{1}}` = the link code. */
+  readonly linkPrefilledText: string;
+  byId(id: WaMessageId): WaTemplateDef;
+  byName(name: string): WaTemplateDef | undefined;
+  /** Text of a message (default or named variant) before `{{n}}` are filled in. */
+  messageText(id: WaMessageId, variant?: string | null): string;
+}
+
+function brandedDef(t: WaTemplateDef, brand: string): WaTemplateDef {
+  return {
+    ...t,
+    body_ar: withCustomerBrand(t.body_ar, brand),
+    variants: t.variants
+      ? Object.fromEntries(Object.entries(t.variants).map(([k, v]) => [k, withCustomerBrand(v, brand)]))
+      : null,
+  };
+}
+
+function creationOf(t: WaTemplateDef): WaTemplateCreation {
+  return {
+    name: t.name as WaTemplateName,
+    language: 'ar',
+    category: 'UTILITY',
+    components: [
+      {
+        type: 'BODY' as const,
+        text: t.body_ar,
+        ...(t.variables > 0 ? { example: { body_text: [[...t.example]] } } : {}),
+      },
+      ...(t.button
+        ? [{ type: 'BUTTONS' as const, buttons: [{ type: 'QUICK_REPLY' as const, text: t.button.text }] }]
+        : []),
+    ],
+  };
+}
+
+function buildCatalog(customerBrandAr: string): WaCatalog {
+  const templates = WA_TEMPLATE_SOURCES.map((t) => brandedDef(t, customerBrandAr));
+  const byId = new Map(templates.map((t) => [t.id, t]));
+  const byName = new Map(templates.map((t) => [t.name, t]));
+  const def = (id: WaMessageId): WaTemplateDef => {
+    const found = byId.get(id);
+    if (!found) throw new Error(`Unknown WhatsApp message id ${id}`);
+    return found;
+  };
+  return {
+    customerBrandAr,
+    templates,
+    definitions: templates.filter((t) => t.kind === 'template').map(creationOf),
+    linkPrefilledText: withCustomerBrand(WA_LINK_PREFILLED_SOURCE, customerBrandAr),
+    byId: def,
+    byName: (name) => byName.get(name),
+    messageText(id, variant) {
+      const d = def(id);
+      if (variant && d.variants) {
+        const text = d.variants[variant];
+        if (text === undefined) throw new Error(`Unknown variant ${variant} of ${id}`);
+        return text;
+      }
+      return d.body_ar;
     },
-    ...(t.button
-      ? [{ type: 'BUTTONS' as const, buttons: [{ type: 'QUICK_REPLY' as const, text: t.button.text }] }]
-      : []),
-  ],
-}));
+  };
+}
+
+const CATALOGS = new Map<string, WaCatalog>();
+
+/**
+ * The catalog of a customer brand (memoized). Blank values fall back to the default brand, as
+ * `resolveBrand` does.
+ */
+export function waCatalog(customerBrandAr: string = BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR): WaCatalog {
+  const brand = customerBrandAr.trim() || BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR;
+  let c = CATALOGS.get(brand);
+  if (!c) {
+    c = buildCatalog(brand);
+    CATALOGS.set(brand, c);
+  }
+  return c;
+}
+
+const DEFAULT_CATALOG = waCatalog();
+
+/** W-01 … W-12 with the default customer brand; the server sends {@link waCatalog} of its configuration. */
+export const WA_TEMPLATES: readonly WaTemplateDef[] = DEFAULT_CATALOG.templates;
+
+/** The creation definitions of W-01 … W-08 with the default customer brand. */
+export const WA_TEMPLATE_DEFINITIONS: readonly WaTemplateCreation[] = DEFAULT_CATALOG.definitions;
+
+/** The wa.me prefilled text with the default customer brand. */
+export const WA_LINK_PREFILLED_TEXT = DEFAULT_CATALOG.linkPrefilledText;
+
+/** A message definition (default brand; names, kinds and variables do not depend on the brand). */
+export function waTemplateById(id: WaMessageId): WaTemplateDef {
+  return DEFAULT_CATALOG.byId(id);
+}
+
+export function waTemplateByName(name: string): WaTemplateDef | undefined {
+  return DEFAULT_CATALOG.byName(name);
+}
+
+/** True for the approved templates W-01 … W-08 (`kind = template`). */
+export function isWaTemplateMessage(id: WaMessageId): boolean {
+  return waTemplateById(id).kind === 'template';
+}
+
+/** Text of a message with the default customer brand (see {@link WaCatalog.messageText}). */
+export function waMessageText(id: WaMessageId, variant?: string | null): string {
+  return DEFAULT_CATALOG.messageText(id, variant);
+}
 
 /** Highest `{{n}}` of a text and whether the variables are exactly 1…n. */
 function variablesOf(text: string): { count: number; contiguous: boolean } {
@@ -371,8 +462,11 @@ const FORBIDDEN_BUTTON_TYPES = ['URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP', 'FLOW
  * Catalog linter (12 §8.3, AC-18, PNT-039): returns the problems found (empty = valid).
  * 1. Only W-01 has buttons: exactly one QUICK_REPLY «طلب السيارة» whose payload is the action token.
  * 2. No URL / phone / copy-code / OTP buttons anywhere.
- * 3. The staff brand never appears in a customer text; the customer brand names the business (W-01 opens
- *    every conversation with it) and is the only brand used.
+ * 3. A staff brand name that is not also a customer brand name never appears in a customer text; the
+ *    customer brand names the business (W-01 opens every conversation with it) and is the only brand
+ *    used. Since V2-D01 the default customer brand is the staff brand «POINT» itself (DEC-470), so with
+ *    the defaults no staff-only name is left to forbid; a deployment with a distinct customer brand
+ *    keeps the V1 rule. No source text keeps the unfilled {@link WA_BRAND_TOKEN}.
  * 4. `{{n}}` of each body = its variables = its examples, contiguous from 1.
  * 5. No body starts or ends with a variable; length ≤ 1024; no links or emojis.
  * 6. Names match canon §11; templates are UTILITY in `ar`.
@@ -380,11 +474,13 @@ const FORBIDDEN_BUTTON_TYPES = ['URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP', 'FLOW
 export function lintWaCatalog(
   catalog: readonly WaTemplateDef[] = WA_TEMPLATES,
   brands: { customer: readonly string[]; staff: readonly string[] } = {
-    customer: [BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR],
+    customer: [BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR, BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_EN],
     staff: [BRAND_DEFAULTS.BRAND_STAFF_NAME_AR, BRAND_DEFAULTS.BRAND_STAFF_NAME_EN],
   },
 ): string[] {
   const problems: string[] = [];
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const staffOnly = brands.staff.filter((s) => !brands.customer.some((c) => same(c, s)));
   const names = catalog.filter((t) => t.kind === 'template').map((t) => t.name);
   if (JSON.stringify(names) !== JSON.stringify(WA_TEMPLATE_NAMES))
     problems.push(`template names differ from canon §11: ${names.join(', ')}`);
@@ -418,9 +514,10 @@ export function lintWaCatalog(
       problems.push(`${t.id}: session replies have no variables`);
     }
     for (const text of texts) {
-      for (const s of brands.staff)
+      for (const s of staffOnly)
         if (text.toLowerCase().includes(s.toLowerCase()))
           problems.push(`${t.id}: staff brand «${s}» in customer text`);
+      if (text.includes(WA_BRAND_TOKEN)) problems.push(`${t.id}: the customer brand is not filled in`);
       if (URL_LIKE.test(text)) problems.push(`${t.id}: links are not allowed`);
       if (EMOJI.test(text)) problems.push(`${t.id}: emojis are not allowed`);
       if (/طلب السيارة/.test(text) && !text.includes(`«${REQUEST_CAR_BUTTON_TEXT}»`))

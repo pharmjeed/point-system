@@ -1,4 +1,4 @@
-import { WA_TEMPLATE_DEFINITIONS, type WaMessageKind } from '@point/shared';
+import type { WaMessageKind } from '@point/shared';
 import { autoResolveAlerts, raiseAlert } from '../../../core/alerts/alerts.js';
 import { killPoint } from '../../../core/chaos/kill-points.js';
 import { sha256Hex } from '../../../core/crypto/crypto.js';
@@ -532,7 +532,7 @@ export class WhatsappInboundProcessor {
 
   private async accountField(channel: ChannelRow, change: Json): Promise<boolean> {
     const v: Json = change?.value ?? {};
-    const catalog = (name: unknown) => WA_TEMPLATE_DEFINITIONS.find((d) => d.name === name);
+    const catalog = (name: unknown) => this.rt.catalog.definitions.find((d) => d.name === name);
     switch (change?.field) {
       case 'message_template_status_update': {
         const def = catalog(v.message_template_name);

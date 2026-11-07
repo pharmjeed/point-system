@@ -2,8 +2,6 @@ import {
   WA_TEMPLATE_NAMES,
   WaSendJobPayloadSchema,
   renderWaText,
-  waMessageText,
-  waTemplateById,
   type ErrorCode,
   type NotificationSkippedReason,
   type OrgSettings,
@@ -327,7 +325,7 @@ export class WhatsappSender {
     if (skip) return this.skip(tx, n, skip);
 
     // template gate (12 §5.4) with the W-05 session fallback of 12 §8.4
-    const def = waTemplateById(n.purpose);
+    const def = this.rt.catalog.byId(n.purpose);
     let sendKind: 'template' | 'session' = def.kind;
     if (def.kind === 'template') {
       const status = await templateStatus(tx, n.org_id, def.name);
@@ -470,6 +468,7 @@ export class WhatsappSender {
     const built =
       content.kind === 'template'
         ? buildTemplateMessage({
+            catalog: this.rt.catalog,
             purpose: n.purpose,
             recipient,
             params: content.params,
@@ -607,7 +606,7 @@ export class WhatsappSender {
     return {
       now: tx.now,
       purpose: n.purpose,
-      kind: waTemplateById(n.purpose).kind,
+      kind: this.rt.catalog.byId(n.purpose).kind,
       customer: {
         id: c.id,
         optedOut: c.wa_opted_out_at !== null,
@@ -681,21 +680,24 @@ export class WhatsappSender {
     let text: string;
     switch (n.purpose) {
       case 'W-05': // 12 §8.4 fallback: the same content as a session text
-        text = renderWaText(waMessageText('W-05'), [display, code ?? '']);
+        text = renderWaText(this.rt.catalog.messageText('W-05'), [display, code ?? '']);
         break;
       case 'W-09': {
         const variant =
           this.payload.variant === 'inactive' || !t
             ? 'inactive'
             : (w09VariantFor({ status: t.status, pendingRetrievalAt: t.pending_retrieval_at }) ?? 'inactive');
-        text = renderWaText(waMessageText('W-09', variant), [display]);
+        text = renderWaText(this.rt.catalog.messageText('W-09', variant), [display]);
         break;
       }
       case 'W-11':
-        text = waMessageText('W-11', this.payload.variant === 'received' ? 'received' : 'invalid');
+        text = this.rt.catalog.messageText(
+          'W-11',
+          this.payload.variant === 'received' ? 'received' : 'invalid',
+        );
         break;
       default:
-        text = waMessageText(n.purpose);
+        text = this.rt.catalog.messageText(n.purpose);
     }
     const contextWamid =
       q && this.payload.inbound_message_id
@@ -716,7 +718,7 @@ export class WhatsappSender {
     t: TicketFacts | null,
     sendKind: 'template' | 'session',
   ): Promise<MessageDraft> {
-    const def = waTemplateById(n.purpose);
+    const def = this.rt.catalog.byId(n.purpose);
     const c = await this.content(null, n, sendKind, t, n.purpose === 'W-05' ? CODE_MASK : null);
     return {
       kind: c.kind === 'template' ? 'template' : 'session_text',
@@ -999,7 +1001,7 @@ export class WhatsappSender {
         return { kind: 'retry', delayMs: verdict.delayMs };
       case 'fail':
         if (c.cls === 'template' && c.templateStatus) {
-          const def = waTemplateById(n.purpose);
+          const def = this.rt.catalog.byId(n.purpose);
           await tx.query(
             `UPDATE whatsapp_templates SET status = $3, version = version + 1, last_synced_at = $4
               WHERE org_id = $1 AND name = $2 AND language = 'ar' AND status IS DISTINCT FROM $3`,
