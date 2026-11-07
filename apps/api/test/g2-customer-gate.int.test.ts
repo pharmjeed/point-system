@@ -249,11 +249,16 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
         'GET /webhooks/whatsapp',
         'POST /v1/auth/login',
         'POST /v1/auth/mfa/verify',
+        // V2-002: the platform console's own sign-in steps (staff of the platform, never a customer, DEC-462)
+        'POST /v1/platform/auth/login',
+        'POST /v1/platform/auth/mfa/verify',
         'POST /webhooks/whatsapp',
       ].filter((x) => open.includes(x)),
     );
     expect(
-      open.every((x) => /^(GET|POST) \/(health|webhooks\/whatsapp|v1\/auth\/(login|mfa\/verify))/.test(x)),
+      open.every((x) =>
+        /^(GET|POST) \/(health|webhooks\/whatsapp|v1\/(platform\/)?auth\/(login|mfa\/verify)$)/.test(x),
+      ),
     ).toBe(true);
     // the ticket and customer routes all need a staff permission
     const customerSide = routes.filter((r) => /tickets|customer|handover|whatsapp-link/.test(r.path));
