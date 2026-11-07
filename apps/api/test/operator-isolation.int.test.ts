@@ -137,9 +137,19 @@ describe('V2-007 operator isolation: nothing of operator A is visible or writabl
           WHERE c.table_schema = 'public' AND c.column_name = 'org_id' AND t.table_type = 'BASE TABLE' ORDER BY 1`,
       )
     ).map((r) => r.t);
+    // tables keyed by another row's id (e.g. venue_public_profiles by venue_id, V2-001) have no `id` of their own:
+    // their keys are already collected from the row they extend
+    const withId = new Set(
+      (
+        await rows<{ t: string }>(
+          w.db,
+          `SELECT table_name AS t FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'id'`,
+        )
+      ).map((r) => r.t),
+    );
     const idsOf = async (org: string) => {
       const out = new Set<string>([org]);
-      for (const t of orgTables) {
+      for (const t of orgTables.filter((x) => withId.has(x))) {
         for (const r of await rows<{ id: string }>(
           w.db,
           `SELECT id::text AS id FROM ${t} WHERE org_id = $1`,
