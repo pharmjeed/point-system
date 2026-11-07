@@ -2159,7 +2159,7 @@ export const venue_public_profiles = pgTable(
     ),
     check(
       'ck_venue_public_profiles_location',
-      sql`(((lat IS NULL) = (lng IS NULL)) AND ((lat IS NULL) OR (((lat >= ('-90'::integer)::numeric) AND (lat <= (90)::numeric)) AND ((lng >= ('-180'::integer)::numeric) AND (lng <= (180)::numeric)))))`,
+      sql`(((lat IS NULL) = (lng IS NULL)) AND ((lat IS NULL) OR ((lat >= ('-90'::integer)::numeric) AND (lat <= (90)::numeric) AND (lng >= ('-180'::integer)::numeric) AND (lng <= (180)::numeric))))`,
     ),
     check(
       'ck_venue_public_profiles_pay_per_visit',

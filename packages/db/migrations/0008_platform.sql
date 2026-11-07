@@ -165,7 +165,8 @@ CREATE TABLE venue_public_profiles (
   CONSTRAINT ck_venue_public_profiles_category
     CHECK (category IN ('hall','office','mall','hospital','residential','hotel','club','other')),
   CONSTRAINT ck_venue_public_profiles_location CHECK (
-    (lat IS NULL) = (lng IS NULL) AND (lat IS NULL OR (lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180))),
+    -- one flat AND (no BETWEEN): its deparsed text survives a dump/restore unchanged (restore drill, DEC-303)
+    (lat IS NULL) = (lng IS NULL) AND (lat IS NULL OR (lat >= -90 AND lat <= 90 AND lng >= -180 AND lng <= 180))),
   CONSTRAINT ck_venue_public_profiles_pay_per_visit CHECK (pay_per_visit_halalas IS NULL OR pay_per_visit_halalas > 0),
   CONSTRAINT ck_venue_public_profiles_approved CHECK (
     status <> 'approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL))
