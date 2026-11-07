@@ -126,6 +126,30 @@ jobs:
           path: chaos-report
           retention-days: 14
 
+  customer-app:
+    # V2-011 (DEC-483): the customer app (apps/customer, Expo) bundles for iOS and Android. Its lint, typecheck and
+    # unit tests (`customer-unit`) already run in `checks`; this job proves Metro resolves the workspace and assets.
+    name: customer app — expo export (iOS + Android bundles)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          # pnpm comes from corepack in the next step: no automatic package-manager cache here
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Expo config resolves (brand from config, fake API in development)
+        run: pnpm --filter @point/customer exec expo config --type public > /dev/null
+        env:
+          CI: '1'
+      - name: Expo export
+        run: pnpm --filter @point/customer run export
+        env:
+          CI: '1'
+
   e2e:
     name: e2e (Playwright 360/390/430, RTL · G1 on the real API)
     runs-on: ubuntu-latest

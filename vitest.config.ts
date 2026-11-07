@@ -45,6 +45,17 @@ export default defineConfig({
       },
       // apps/web keeps its own config (aliases, browser-free unit tests); Playwright covers the browser
       'apps/web/vitest.config.ts',
+      {
+        // V2-011: the customer app's logic (API client, fake backend, contracts, screen models) in node; screens stay
+        // thin over these modules and React Native is never imported here (DEC-483).
+        ...shared,
+        test: {
+          name: 'customer-unit',
+          server: { deps: { inline: [/@point\//, /packages\/.*\/src/] } },
+          include: ['apps/customer/{src,test}/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
   },
 });
