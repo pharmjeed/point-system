@@ -4,6 +4,7 @@ import { newId } from '../core/crypto/ids.js';
 import { lockEvents, lockOpenDutyByUsers, lockPools } from '../core/db/locks.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
+import { assertOperatorOperating } from '../core/operator-status.js';
 import {
   driverStateOf,
   emitAvailability,
@@ -41,6 +42,9 @@ const OPERATION = 'POST /v1/tickets';
 export class StartIntakeUseCase {
   async execute(tx: Tx, actor: ActorContext, body: StartIntakeBody, requestId: string) {
     const duty = requireDuty(actor);
+    // V2-005 (DEC-486): no new intake while the operator is suspended or terminated; tickets already taken in
+    // (drafts included) complete normally. The organization row FOR SHARE is the first lock, before L1.
+    await assertOperatorOperating(tx, actor.orgId);
 
     // DEC-37: the event is chosen at intake and never changes; several open events need an explicit choice
     let eventId: string;

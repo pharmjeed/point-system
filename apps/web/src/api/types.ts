@@ -156,6 +156,15 @@ export interface Me {
     uncertain_after_s?: number;
     offline_after_s?: number;
   };
+  /**
+   * The user's organization (the operator) and its platform status (V2-005, DEC-486): `suspended` / `terminated`
+   * show the operator banner; the server refuses new events, shifts, duties and intakes whatever the app shows.
+   */
+  organization?: {
+    id: string;
+    name_ar: string;
+    operator_status: 'invited' | 'trial' | 'active' | 'suspended' | 'terminated';
+  };
 }
 
 export interface LoginRequest {

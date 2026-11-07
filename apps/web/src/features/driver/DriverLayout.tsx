@@ -24,6 +24,7 @@ import { heartbeatNow, requestResync } from '@/realtime/manager';
 import { useSyncStore } from '@/realtime/syncStore';
 import { useAudioStore } from '@/stores/audio';
 import { useFieldStore, type DriverNotice } from '@/stores/field';
+import { OperatorBanner } from '@/features/common/OperatorBanner';
 import { ConnectionSheet } from '@/features/session/ConnectionSheet';
 import { useConnection } from '@/features/session/useConnection';
 import { usePushRelink } from './deviceSetup';
@@ -85,6 +86,7 @@ function DriverBanners({ me, home }: { me: Me; home: DriverHome | undefined }) {
   };
   return (
     <>
+      <OperatorBanner me={me} />
       {connection.state === 'offline' ? (
         <Banner
           kind="offline"

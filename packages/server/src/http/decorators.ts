@@ -72,9 +72,17 @@ export class WithStatus<T> {
   constructor(
     readonly status: number,
     readonly data: T,
+    /** kept with the Idempotency-Key and replayed instead of `data` (CommandSuccess.stored, DEC-485) */
+    readonly stored?: unknown,
   ) {}
 }
 export const created = <T>(data: T) => new WithStatus(201, data);
+/**
+ * A response with a one-time secret (DEC-485): `data` goes to the caller once; `stored` (the same response without
+ * the secret) is what the idempotency key keeps and a replay returns.
+ */
+export const oneTimeResponse = <T>(data: T, stored: unknown, status = 200) =>
+  new WithStatus(status, data, stored);
 export const noContent = () => new WithStatus(204, null);
 
 /** A fully built response body (already enveloped) that the envelope interceptor passes through. */

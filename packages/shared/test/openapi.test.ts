@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import * as shared from '../src/index.js';
-import { ERROR_CATALOG, type ErrorCode } from '../src/index.js';
+import { ERROR_CATALOG, PLATFORM_ROUTES, type ErrorCode } from '../src/index.js';
 import { readDoc } from './docs.js';
 import { openApiOperations } from './openapi-doc.js';
 
@@ -57,15 +57,16 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
   const ops = openApiOperations(readDoc('07_openapi.yaml'));
 
   it('reads every operation with its responses', () => {
-    expect(ops).toHaveLength(131 + 7); // canon §9 + the V2 platform routes (V2-002)
+    expect(ops).toHaveLength(131 + PLATFORM_ROUTES.length); // canon §9 + the V2 platform routes (V2-002, V2-003…)
     expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(127);
-    expect(ops.filter((o) => o.requestBody)).toHaveLength(81 + 4);
+    const v1 = ops.filter((o) => !o.path.startsWith('/v1/platform/'));
+    expect(v1.filter((o) => o.requestBody)).toHaveLength(81);
   });
 
   it('every operation but a GET documents 413 PAYLOAD_TOO_LARGE and 422 VALIDATION_FAILED (08 §4.15, DEC-130)', () => {
     // the body parsers run before any route: one without a requestBody still reads a body sent to it
     const writes = ops.filter((o) => o.method !== 'GET');
-    expect(writes).toHaveLength(90 + 6);
+    expect(writes).toHaveLength(90 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length);
     const missing = writes
       .filter(
         (o) =>
