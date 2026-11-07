@@ -70,6 +70,17 @@ export class WhatsappChannelAdmin {
       `SELECT * FROM whatsapp_channel WHERE org_id = $1 AND is_active FOR NO KEY UPDATE`,
       [actor.orgId],
     );
+    // V2-007 (DEC-475): a number belongs to one operator — the webhook routes its deliveries by it, so a second
+    // operator naming it would split (or capture) the first one's customer replies
+    const taken = await tx.maybeOne(
+      `SELECT 1 FROM whatsapp_channel WHERE is_active AND phone_number_id = $1 AND org_id <> $2 LIMIT 1`,
+      [body.phone_number_id, actor.orgId],
+    );
+    if (taken) {
+      throw new AppError('VALIDATION_FAILED', {
+        fields: [{ field: 'phone_number_id', issue: 'in_use_by_another_operator' }],
+      });
+    }
     const displayName = body.display_name ?? current?.display_name ?? this.rt.env.BRAND_CUSTOMER_NAME_AR;
     const values = [
       displayName,
