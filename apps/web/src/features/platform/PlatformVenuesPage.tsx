@@ -42,19 +42,18 @@ import { useOnline } from '@/hooks/useOnline';
 import { p04, venueProfile as copy } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
 import { formatDateTime } from '@/lib/format';
-import { PlatformShell } from './PlatformShell';
+import { usePlatformAccount } from './PlatformLayout';
 import '@/features/supervisor/staff.css';
 
 type Filter = 'all' | 'submitted' | 'approved' | 'draft' | 'hidden';
 const FILTERS: Filter[] = ['submitted', 'approved', 'draft', 'hidden', 'all'];
 
-/** P-04 «المواقع» (V2-004): the listing requests of every operator, the submitted ones first. */
+/** P-04 «المواقع» (V2-004, inside PlatformLayout): the listing requests of every operator, the submitted ones first. */
 export function PlatformVenuesPage() {
-  return <PlatformShell>{(me) => <VenueList me={me} />}</PlatformShell>;
+  return <VenueList me={usePlatformAccount()} />;
 }
 
 function VenueList({ me }: { me: PlatformMe }) {
-  const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>('submitted');
   const filters = { status: filter === 'all' ? undefined : (filter as VenuePublicStatus) };
   const q = useInfiniteQuery({
@@ -67,8 +66,7 @@ function VenueList({ me }: { me: PlatformMe }) {
   const items = q.data?.pages.flatMap((p) => p.items) ?? [];
   return (
     <section className="st-page" aria-labelledby="p04-title">
-      <Header title={p04.title} onBack={() => navigate(paths.platform)} />
-      <h1 className="pt-sr" id="p04-title">
+      <h1 className="pt-page-title" id="p04-title">
         {p04.title}
       </h1>
       <SegmentedControl
@@ -116,7 +114,7 @@ function VenueList({ me }: { me: PlatformMe }) {
 
 /** P-04 detail: the profile as the customer will see it, the operator, and the review and pricing actions. */
 export function PlatformVenuePage() {
-  return <PlatformShell>{(me) => <VenueDetail me={me} />}</PlatformShell>;
+  return <VenueDetail me={usePlatformAccount()} />;
 }
 
 function VenueDetail({ me }: { me: PlatformMe }) {

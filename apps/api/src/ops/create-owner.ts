@@ -2,9 +2,10 @@ import { parseArgs } from 'node:util';
 import {
   SecretHasher,
   audit,
+  insertFirstOwner,
   newId,
+  newOwnerTemporaryPassword,
   normalizePhone,
-  randomToken,
   type Database,
   type Env,
 } from '@point/server';
@@ -70,7 +71,7 @@ export async function createOwner(
     throw new OwnerBootstrapError('org_not_found', `--org-id is not a uuid: ${input.orgId}`);
   }
   // 16 random base64url characters, like the temporary staff passwords (DEC-78); hashed before the transaction
-  const temporaryPassword = randomToken(12);
+  const temporaryPassword = newOwnerTemporaryPassword();
   const secretHash = await new SecretHasher(env.AUTH_SECRET_PEPPER).hash(temporaryPassword);
 
   return db.transaction(async (tx) => {
@@ -100,41 +101,22 @@ export async function createOwner(
       );
       orgCreated = true;
     }
-    const owner = await tx.maybeOne<{ id: string }>(
-      `SELECT id FROM users WHERE org_id = $1 AND role = 'owner' LIMIT 1`,
-      [orgId],
-    );
-    if (owner) {
+    const r = await insertFirstOwner(tx, {
+      orgId,
+      phoneE164: phone,
+      fullName,
+      secretHash,
+      phoneScope: 'org',
+    });
+    if (!r.ok && r.reason === 'owner_exists') {
       throw new OwnerBootstrapError(
         'owner_exists',
         'this organization already has an owner; owner recovery is an audited out-of-band procedure (09 §9.1)',
       );
     }
-    const taken = await tx.maybeOne(`SELECT 1 FROM users WHERE org_id = $1 AND phone_e164 = $2`, [
-      orgId,
-      phone,
-    ]);
-    if (taken)
+    if (!r.ok)
       throw new OwnerBootstrapError('phone_in_use', 'a user of this organization already has this phone');
-
-    const n = await tx.one<{ n: number }>(
-      `SELECT COALESCE(MAX(substring(employee_code from '^O-([0-9]+)$')::int), 0) + 1 AS n
-         FROM users WHERE org_id = $1 AND employee_code ~ '^O-[0-9]+$'`,
-      [orgId],
-    );
-    const employeeCode = `O-${String(n.n).padStart(4, '0')}`;
-    const userId = newId();
-    await tx.query(
-      `INSERT INTO users (id, org_id, employee_code, full_name, phone_e164, role, can_drive, status, secret_kind,
-                          secret_hash, must_change_secret, mfa_enabled, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'owner', false, 'active', 'password', $6, true, false, $7, $7)`,
-      [userId, orgId, employeeCode, fullName, phone, secretHash, tx.now],
-    );
-    // 09 §2 rule 1: the owner reaches the organization through an active org scope row
-    await tx.query(
-      `INSERT INTO role_scopes (id, org_id, user_id, scope_type, granted_at) VALUES ($1, $2, $3, 'org', $4)`,
-      [newId(), orgId, userId, tx.now],
-    );
+    const { userId, employeeCode } = r;
     await audit(tx, {
       orgId,
       actor: { type: 'system', id: 'ops.create_owner' },

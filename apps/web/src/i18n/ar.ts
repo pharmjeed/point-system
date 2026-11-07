@@ -777,6 +777,16 @@ export const d15 = {
   serviceUnavailable: 'النظام غير متاح مؤقتًا. اتبع الإجراء الورقي حتى عودة الخدمة.',
 } as const;
 
+/**
+ * The operator banner over every staff and driver screen (V2-005, DEC-486): the organization is suspended or
+ * terminated by the platform (`/v1/me` → `organization.operator_status`). The server refuses the new work itself.
+ */
+export const operatorBanner = {
+  suspended:
+    'حساب المشغّل معلّق من المنصة: لا يُفتح حفل ولا وردية ولا مناوبة ولا استلام جديد، وتكتمل التذاكر الجارية.',
+  terminated: 'أُنهي حساب المشغّل في المنصة: لا يُفتح شيء جديد، وتبقى السجلات للاطلاع.',
+} as const;
+
 /** Setup-item status (venues, pools, zones, spots, boards, slots). */
 export const setupStatus = {
   active: 'نشط',

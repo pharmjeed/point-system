@@ -123,20 +123,41 @@ export const routes: RouteObject[] = [
       {
         path: paths.platform,
         lazy: async () => ({
-          Component: (await import('@/features/platform/PlatformHomePage')).PlatformHomePage,
+          Component: (await import('@/features/platform/PlatformLayout')).PlatformLayout,
         }),
-      },
-      {
-        path: paths.platformVenues,
-        lazy: async () => ({
-          Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuesPage,
-        }),
-      },
-      {
-        path: `${paths.platformVenues}/:venueId`,
-        lazy: async () => ({
-          Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuePage,
-        }),
+        children: [
+          {
+            index: true,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOverviewPage')).PlatformOverviewPage,
+            }),
+          },
+          {
+            path: paths.platformOperators,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOperatorsPage')).PlatformOperatorsPage,
+            }),
+          },
+          {
+            path: `${paths.platformOperators}/:orgId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOperatorPage')).PlatformOperatorPage,
+            }),
+          },
+          // P-04 (V2-004)
+          {
+            path: paths.platformVenues,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuesPage,
+            }),
+          },
+          {
+            path: `${paths.platformVenues}/:venueId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuePage,
+            }),
+          },
+        ],
       },
       ...galleryRoutes,
       { path: '*', element: <NotFoundPage /> },

@@ -3,6 +3,7 @@ import type { ActorContext } from '../../../core/actor-context/actor-context.js'
 import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
 import { lockDutySessions, lockPools } from '../../../core/db/locks.js';
+import { assertOperatorOperating } from '../../../core/operator-status.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { releaseDriverWork } from '../../../core/hooks/driver-release.js';
@@ -97,8 +98,10 @@ export class ShiftsService {
   /**
    * POST /v1/shifts/{shiftId}/open — scheduled → open on an active pool, one open shift per pool
    * (SHIFT_ALREADY_OPEN with `open_shift_id`; `uq_shifts_open_per_pool` maps to the same code). Emits `shift.opened`.
+   * A suspended or terminated operator opens none (OPERATOR_SUSPENDED, V2-005).
    */
   async open(tx: Tx, actor: ActorContext, meta: CommandMeta, shiftId: string, body: VersionOnlyBody) {
+    await assertOperatorOperating(tx, actor.orgId);
     const { shift, pool } = await this.lockShift(tx, actor, shiftId);
     assertVersion('shift', shift, body.expected_version);
     assertShiftOpenable(shift, meta.operation);

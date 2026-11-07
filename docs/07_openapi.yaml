@@ -668,6 +668,8 @@ paths:
       summary: بدء ورديتي
       tags: [Me & Duty]
       description: |-
+        المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)
+
         الشروط: تعيين نشط (السائق) أو نطاق الموقع (مشرف can_drive) · وردية open لمجموعة التوزيع · لا مناوبة مفتوحة
 
         الأثر: duty_sessions(on_duty, available_since=now) + الانضمام لغرفة pool:{poolId}:drivers + تمريرة توزيع
@@ -722,7 +724,7 @@ paths:
           description: ASSIGNMENT_REQUIRED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED | SCOPE_VENUE_DENIED
         '409':
           $ref: '#/components/responses/Error'
-          description: DRIVER_DISABLED | DUTY_ALREADY_STARTED | IDEMPOTENCY_IN_PROGRESS | SHIFT_NOT_OPEN
+          description: DRIVER_DISABLED | DUTY_ALREADY_STARTED | IDEMPOTENCY_IN_PROGRESS | OPERATOR_SUSPENDED | SHIFT_NOT_OPEN
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -747,7 +749,7 @@ paths:
       x-permission: duty.self
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [ASSIGNMENT_REQUIRED, DRIVER_DISABLED, DUTY_ALREADY_STARTED, SCOPE_VENUE_DENIED, SHIFT_NOT_OPEN]
+      x-error-codes: [ASSIGNMENT_REQUIRED, DRIVER_DISABLED, DUTY_ALREADY_STARTED, OPERATOR_SUSPENDED, SCOPE_VENUE_DENIED, SHIFT_NOT_OPEN]
       x-domain-events: [driver.duty_started, driver.availability_changed]
       x-ws-events: [driver.state_changed]
   /v1/me/duty/break:
@@ -958,6 +960,8 @@ paths:
       summary: 'استلام مركبة: بدء التسجيل'
       tags: [Intake & Tickets]
       description: |-
+        المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)
+
         يضغط السائق «استلام مركبة» فيُنشأ في معاملة واحدة: تذكرة received برقم ظاهر من events.next_display_number + مهمة park بحالة in_progress باسمه + عهدة المركبة والمفتاح للسائق. يتنافس ذريًا مع قبول العروض (قفل مجموعة التوزيع).
 
         الشروط: مناوبة on_duty (وإلا DUTY_REQUIRED) · ليس في استراحة (DRIVER_ON_BREAK) · لا مهمة حركة نشطة accepted/in_progress بما فيها مهمة تالية رُقّيت (MOVEMENT_IN_PROGRESS) · حفل open في الموقع؛ event_id إلزامي إذا أكثر من حفل مفتوح (DEC-37)
@@ -1012,7 +1016,7 @@ paths:
           description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
         '409':
           $ref: '#/components/responses/Error'
-          description: DRIVER_ON_BREAK | DUTY_REQUIRED | EVENT_NOT_OPEN | IDEMPOTENCY_IN_PROGRESS | MOVEMENT_IN_PROGRESS
+          description: DRIVER_ON_BREAK | DUTY_REQUIRED | EVENT_NOT_OPEN | IDEMPOTENCY_IN_PROGRESS | MOVEMENT_IN_PROGRESS | OPERATOR_SUSPENDED
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -1037,7 +1041,7 @@ paths:
       x-permission: ticket.intake
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [DRIVER_ON_BREAK, DUTY_REQUIRED, EVENT_NOT_OPEN, MOVEMENT_IN_PROGRESS]
+      x-error-codes: [DRIVER_ON_BREAK, DUTY_REQUIRED, EVENT_NOT_OPEN, MOVEMENT_IN_PROGRESS, OPERATOR_SUSPENDED]
       x-domain-events: [ticket.created, task.created, custody.changed, driver.availability_changed]
       x-ws-events: [driver.state_changed, ticket.updated]
     get:
@@ -5664,6 +5668,8 @@ paths:
       summary: فتح الحفل
       tags: [Events & Shifts]
       description: |-
+        المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)
+
         الشروط: status ∈ {draft, closing} (closing ← open إعادة فتح، 11 §6.4)؛ مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117)
 
         الأثر: status=open؛ يسمح بالاستلام؛ event.opened بـreopened=true عند إعادة الفتح
@@ -5700,7 +5706,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+          description: EVENT_ALREADY_CLOSED | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | OPERATOR_SUSPENDED | VERSION_CONFLICT
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -5725,7 +5731,7 @@ paths:
       x-permission: event.manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, VERSION_CONFLICT]
+      x-error-codes: [EVENT_ALREADY_CLOSED, INVALID_STATE_TRANSITION, OPERATOR_SUSPENDED, VERSION_CONFLICT]
       x-domain-events: [event.opened]
   /v1/events/{eventId}/start-closing:
     post:
@@ -6161,7 +6167,7 @@ paths:
       operationId: openShift
       summary: فتح الوردية
       tags: [Events & Shifts]
-      description: 'الشروط: status=scheduled · لا وردية مفتوحة أخرى لنفس المجموعة · مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117) · لا يقيده وقت starts_at (DEC-127)'
+      description: 'الشروط: status=scheduled · لا وردية مفتوحة أخرى لنفس المجموعة · مجموعة التوزيع نشطة، وإلا INVALID_STATE_TRANSITION بـreason=dispatch_pool_inactive (DEC-117) · لا يقيده وقت starts_at (DEC-127) · المشغل معلّق أو منتهٍ من المنصة ← 409 OPERATOR_SUSPENDED (V2-005، DEC-486)'
       parameters:
       - $ref: '#/components/parameters/shiftId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6195,7 +6201,7 @@ paths:
           description: RESOURCE_NOT_FOUND
         '409':
           $ref: '#/components/responses/Error'
-          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | SHIFT_ALREADY_OPEN | VERSION_CONFLICT
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | OPERATOR_SUSPENDED | SHIFT_ALREADY_OPEN | VERSION_CONFLICT
         '413':
           $ref: '#/components/responses/Error'
           description: PAYLOAD_TOO_LARGE
@@ -6220,7 +6226,7 @@ paths:
       x-permission: shift.manage
       x-idempotency: required
       x-rate-limit-class: command
-      x-error-codes: [INVALID_STATE_TRANSITION, SHIFT_ALREADY_OPEN, VERSION_CONFLICT]
+      x-error-codes: [INVALID_STATE_TRANSITION, OPERATOR_SUSPENDED, SHIFT_ALREADY_OPEN, VERSION_CONFLICT]
       x-domain-events: [shift.opened]
   /v1/shifts/{shiftId}/close:
     post:
@@ -9369,6 +9375,805 @@ paths:
       x-idempotency: none
       x-rate-limit-class: read
       x-error-codes: [AUTH_ACCOUNT_DISABLED, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/overview:
+    get:
+      operationId: platformOverview
+      summary: P-01 النظرة العامة
+      tags: [Platform]
+      description: |-
+        أعداد فقط عبر المشغلين كلهم (V2-003، 02 §2): المشغلون حسب الحالة، المواقع، السائقون في مناوبة مفتوحة، تذاكر اليوم (يوم الرياض).
+        لا بيانات عملاء ولا لوحات ولا موظفين.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOverviewEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.overview_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/operators:
+    get:
+      operationId: platformListOperators
+      summary: P-02 المشغلون
+      tags: [Platform]
+      description: |-
+        كل المشغلين (المؤسسات) مع أعداد المواقع والموظفين والعقد السارية اليوم، مرتبين بالاسم. status اختياري للتصفية.
+      parameters:
+      - $ref: '#/components/parameters/operatorStatusQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorListEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.operator_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED]
+    post:
+      operationId: platformCreateOperator
+      summary: P-02 إضافة مشغل
+      tags: [Platform]
+      description: |-
+        ينشئ صف organizations (operator_status = trial أو active، الاسم القانوني، السجل التجاري 10 أرقام، الرقم الضريبي 15 رقمًا 3…3) ومالكه الأول بمنطق create-owner نفسه (O-0001، نطاق org، must_change_secret، بلا TOTP: الدخول الأول يغيّر كلمة المرور ثم يعدّ MFA).
+        كلمة المرور المؤقتة في هذا الرد مرة واحدة: لا تُحفظ نصًا ولا تُسجَّل ولا تدخل بيانات التدقيق؛ وإعادة الطلب بالمفتاح نفسه تعيد الرد بـtemporary_password = null (DEC-485). لإصدارها ثانية قبل أول دخول: POST /v1/platform/operators/{orgId}/owner/temporary-password.
+
+        الشروط: جوال المالك غير مستخدم لدى أي مشغل ← وإلا VALIDATION_FAILED (owner.phone، in_use_by_another_operator؛ DEC-476، DEC-485)
+
+        الأثر: organizations + users + role_scopes؛ platform_audit_log وaudit_log للمشغل (operator.create، owner.bootstrap)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name_ar:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                name_en:
+                  type: [string, 'null']
+                  maxLength: 120
+                legal_name:
+                  type: string
+                  minLength: 2
+                  maxLength: 200
+                cr_number:
+                  type: [string, 'null']
+                  pattern: '^[0-9]{10}$'
+                vat_number:
+                  type: [string, 'null']
+                  pattern: '^3[0-9]{13}3$'
+                operator_status:
+                  type: string
+                  enum: [trial, active]
+                is_platform_operated:
+                  type: boolean
+                  default: false
+                owner:
+                  type: object
+                  properties:
+                    full_name:
+                      type: string
+                      minLength: 2
+                      maxLength: 80
+                    phone:
+                      type: string
+                      description: 05XXXXXXXX أو +9665XXXXXXXX
+                  required: [full_name, phone]
+                  additionalProperties: false
+              required: [name_ar, legal_name, operator_status, owner]
+              additionalProperties: false
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorCreatedEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | PHONE_INVALID | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PHONE_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/operators/{orgId}:
+    get:
+      operationId: platformGetOperator
+      summary: P-03 المشغل
+      tags: [Platform]
+      description: |-
+        المشغل ومواقعه ومالكه (جوال مقنّع) والعقد السارية وسجل حالاته (من platform_audit_log).
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.operator_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/users:
+    get:
+      operationId: platformListOperatorUsers
+      summary: P-03 موظفو المشغل (قراءة)
+      tags: [Platform]
+      description: |-
+        موظفو المشغل للقراءة فقط، والجوال مقنّع دائمًا. لا أمر منصة يغيّر موظفي المشغل (02 §1: المنصة لا تشغّل).
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorUserListEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.operator_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/contracts:
+    get:
+      operationId: platformListOperatorContracts
+      summary: P-03 سجل العقود
+      tags: [Platform]
+      description: |-
+        كل عقود المشغل، الأحدث بدءًا أولًا، مع حالة كل عقد اليوم (upcoming / current / ended). العقود لا تُعدَّل في مكانها ولا تُحذف.
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorContractListEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.operator_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+    post:
+      operationId: platformCreateOperatorContract
+      summary: P-03 عقد جديد
+      tags: [Platform]
+      description: |-
+        عقد واحد لكل مشغل في أي يوم (DEC-463): assertNoContractOverlap أول المعاملة تحت قفل صف المؤسسة؛ النطاق [starts_on, ends_on) وends_on الفارغ بلا نهاية.
+
+        الشروط: لا تداخل ← وإلا INVALID_STATE_TRANSITION (reason contract_overlap)؛ المشغل غير منتهٍ (reason operator_terminated)
+
+        الأثر: operator_contracts؛ platform_audit_log وaudit_log للمشغل (operator_contract.create)
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                saas_fee_halalas_per_venue:
+                  type: integer
+                  minimum: 0
+                saas_cycle:
+                  type: string
+                  enum: [monthly, yearly]
+                subscriber_visit_payout_halalas:
+                  type: integer
+                  minimum: 0
+                app_payment_commission_bp:
+                  type: integer
+                  minimum: 0
+                  maximum: 10000
+                starts_on:
+                  type: string
+                  format: date
+                ends_on:
+                  type: [string, 'null']
+                  format: date
+                  description: يوم النهاية غير المشمول، بعد starts_on
+              required: [saas_fee_halalas_per_venue, saas_cycle, subscriber_visit_payout_halalas, app_payment_commission_bp, starts_on]
+              additionalProperties: false
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorContractEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/contracts/{contractId}/end:
+    post:
+      operationId: platformEndOperatorContract
+      summary: إنهاء عقد
+      tags: [Platform]
+      description: |-
+        التغيير الوحيد المسموح على عقد: تقديم ends_on (DEC-485). اليوم أو بعده، بعد starts_on، وقبل النهاية الحالية؛ التمديد عقد جديد.
+
+        الشروط: عقد منتهٍ ← INVALID_STATE_TRANSITION (reason contract_ended)؛ تاريخ مرفوض ← VALIDATION_FAILED على ends_on (in_the_past، not_after_start، not_earlier_than_current_end)
+
+        الأثر: operator_contracts.ends_on؛ platform_audit_log وaudit_log للمشغل (operator_contract.end)
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/contractId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ends_on:
+                  type: string
+                  format: date
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+              required: [ends_on]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorContractEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/owner/temporary-password:
+    post:
+      operationId: platformReissueOwnerPassword
+      summary: إعادة إصدار كلمة مرور المالك المؤقتة
+      tags: [Platform]
+      description: |-
+        قبل أول دخول للمالك فقط (last_login_at فارغ): كلمة مرور مؤقتة جديدة تُعرض مرة واحدة ولا تُعاد عند تكرار الطلب (temporary_password = null، DEC-485). بعد أول دخول ← INVALID_STATE_TRANSITION (reason owner_signed_in)، واسترداد المالك إجراء خارج النظام (09 §9.1).
+
+        الأثر: users.secret_hash؛ platform_audit_log وaudit_log للمشغل (owner.temporary_password_reissue)
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOwnerPasswordEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/activate:
+    post:
+      operationId: platformActivateOperator
+      summary: تفعيل المشغل
+      tags: [Platform]
+      description: |-
+        invited أو trial ← active.
+
+        الشروط: الحالة الحالية من حالات البداية ← وإلا INVALID_STATE_TRANSITION (current_status، allowed_from)
+
+        الأثر: organizations.operator_status؛ platform_audit_log وaudit_log للمشغل (operator.activate، from_status/to_status)؛ sync.required (scope me) لموظفي المشغل فيعيدون قراءة /v1/me
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: ملاحظة اختيارية تُحفظ سببًا في السجلين
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/suspend:
+    post:
+      operationId: platformSuspendOperator
+      summary: تعليق المشغل
+      tags: [Platform]
+      description: |-
+        trial أو active ← suspended بسبب مسجّل. أثره (02 §4، DEC-486): لا حفل ولا وردية ولا مناوبة ولا استلام جديد لموظفيه (OPERATOR_SUSPENDED)، والجاري يكتمل، والموظفون يدخلون ويقرؤون، ومواقعه خارج القوائم العامة (isOperatorActive، DEC-487).
+
+        الشروط: الحالة الحالية من حالات البداية ← وإلا INVALID_STATE_TRANSITION (current_status، allowed_from)
+
+        الأثر: organizations.operator_status؛ platform_audit_log وaudit_log للمشغل (operator.suspend، from_status/to_status)؛ sync.required (scope me) لموظفي المشغل فيعيدون قراءة /v1/me
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/reactivate:
+    post:
+      operationId: platformReactivateOperator
+      summary: إعادة تفعيل المشغل
+      tags: [Platform]
+      description: |-
+        suspended ← active.
+
+        الشروط: الحالة الحالية من حالات البداية ← وإلا INVALID_STATE_TRANSITION (current_status، allowed_from)
+
+        الأثر: organizations.operator_status؛ platform_audit_log وaudit_log للمشغل (operator.reactivate، from_status/to_status)؛ sync.required (scope me) لموظفي المشغل فيعيدون قراءة /v1/me
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: ملاحظة اختيارية تُحفظ سببًا في السجلين
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/operators/{orgId}/terminate:
+    post:
+      operationId: platformTerminateOperator
+      summary: إنهاء المشغل
+      tags: [Platform]
+      description: |-
+        suspended ← terminated بسبب مسجّل، نهائي: لا أمر يخرج منه ولا حذف؛ آثار التعليق نفسها باقية وتبقى السجلات لمدة الاحتفاظ.
+
+        الشروط: الحالة الحالية من حالات البداية ← وإلا INVALID_STATE_TRANSITION (current_status، allowed_from)
+
+        الأثر: organizations.operator_status؛ platform_audit_log وaudit_log للمشغل (operator.terminate، from_status/to_status)؛ sync.required (scope me) لموظفي المشغل فيعيدون قراءة /v1/me
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperatorEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.operator_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [AUTH_ACCOUNT_DISABLED, INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
   /v1/platform/venues:
     get:
       operationId: platformListVenues
@@ -10081,6 +10886,29 @@ components:
       schema:
         type: string
         format: uuid
+    orgId:
+      name: orgId
+      in: path
+      required: true
+      description: معرّف المشغل (organizations.id)
+      schema:
+        type: string
+        format: uuid
+    contractId:
+      name: contractId
+      in: path
+      required: true
+      description: معرّف العقد (operator_contracts.id)
+      schema:
+        type: string
+        format: uuid
+    operatorStatusQuery:
+      name: status
+      in: query
+      required: false
+      description: تصفية بحالة المشغل
+      schema:
+        $ref: '#/components/schemas/OperatorStatus'
     eventId:
       name: eventId
       in: path
@@ -11057,7 +11885,19 @@ components:
             offline_after_s:
               type: integer
               examples: [120]
-      required: [user, permissions, scopes, session, brand]
+        organization:
+          type: object
+          description: 'مؤسسة المستخدم (المشغل) وحالتها في المنصة (V2-005، DEC-486): suspended أو terminated ← شريط «المشغل معلّق» في تطبيق الموظفين، والخادم يرفض فتح حفل أو وردية أو بدء مناوبة أو استلام جديد بـOPERATOR_SUSPENDED أيًا كان ما تعرضه الواجهة'
+          properties:
+            id:
+              type: string
+              format: uuid
+            name_ar:
+              type: string
+            operator_status:
+              $ref: '#/components/schemas/OperatorStatus'
+          required: [id, name_ar, operator_status]
+      required: [user, permissions, scopes, session, brand, organization]
     LoginResult:
       type: object
       properties:
@@ -13841,6 +14681,358 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PlatformLoginResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    OperatorContract:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        saas_fee_halalas_per_venue:
+          type: integer
+        saas_cycle:
+          type: string
+          enum: [monthly, yearly]
+        subscriber_visit_payout_halalas:
+          type: integer
+        app_payment_commission_bp:
+          type: integer
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: [string, 'null']
+          format: date
+          description: يوم النهاية غير المشمول؛ null بلا نهاية
+        state:
+          type: string
+          enum: [upcoming, current, ended]
+          description: حالة العقد اليوم (يوم الرياض)
+        created_by:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: [string, 'null']
+          required: [id]
+        created_at:
+          type: string
+          format: date-time
+      required: [id, org_id, saas_fee_halalas_per_venue, saas_cycle, subscriber_visit_payout_halalas,
+        app_payment_commission_bp, starts_on, ends_on, state, created_by, created_at]
+    PlatformOperator:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name_ar:
+          type: string
+        name_en:
+          type: [string, 'null']
+        legal_name:
+          type: [string, 'null']
+        cr_number:
+          type: [string, 'null']
+        vat_number:
+          type: [string, 'null']
+        operator_status:
+          $ref: '#/components/schemas/OperatorStatus'
+        is_platform_operated:
+          type: boolean
+        venues_count:
+          type: integer
+        active_venues_count:
+          type: integer
+        staff_count:
+          type: integer
+        current_contract:
+          anyOf:
+          - $ref: '#/components/schemas/OperatorContract'
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+      required: [id, name_ar, operator_status, is_platform_operated, venues_count, active_venues_count, staff_count,
+        current_contract, created_at]
+    PlatformOperatorDetail:
+      allOf:
+      - $ref: '#/components/schemas/PlatformOperator'
+      - type: object
+        properties:
+          venues:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                code:
+                  type: string
+                name_ar:
+                  type: string
+                city:
+                  type: [string, 'null']
+                status:
+                  type: string
+                  enum: [active, inactive]
+              required: [id, code, name_ar, status]
+          owner:
+            anyOf:
+            - type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                full_name:
+                  type: string
+                employee_code:
+                  type: string
+                phone_masked:
+                  type: string
+                status:
+                  type: string
+                must_change_secret:
+                  type: boolean
+                mfa_enabled:
+                  type: boolean
+                last_login_at:
+                  type: [string, 'null']
+                  format: date-time
+                temporary_password_reissuable:
+                  type: boolean
+                  description: لم يدخل المالك بعد، فيجوز إصدار كلمة مرور مؤقتة جديدة
+              required: [id, full_name, employee_code, phone_masked, status, temporary_password_reissuable]
+            - type: 'null'
+          status_history:
+            type: array
+            items:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum: [operator.create, operator.activate, operator.suspend, operator.reactivate, operator.terminate]
+                from_status:
+                  anyOf:
+                  - $ref: '#/components/schemas/OperatorStatus'
+                  - type: 'null'
+                to_status:
+                  anyOf:
+                  - $ref: '#/components/schemas/OperatorStatus'
+                  - type: 'null'
+                reason:
+                  type: [string, 'null']
+                occurred_at:
+                  type: string
+                  format: date-time
+                actor:
+                  anyOf:
+                  - type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      full_name:
+                        type: [string, 'null']
+                    required: [id]
+                  - type: 'null'
+              required: [action, occurred_at]
+        required: [venues, owner, status_history]
+    PlatformOperatorUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employee_code:
+          type: string
+        full_name:
+          type: string
+        phone_masked:
+          type: string
+          description: مقنّع دائمًا للمنصة
+        role:
+          $ref: '#/components/schemas/Role'
+        can_drive:
+          type: boolean
+        status:
+          type: string
+          enum: [active, disabled]
+        mfa_enabled:
+          type: boolean
+        last_login_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+      required: [id, employee_code, full_name, phone_masked, role, can_drive, status, mfa_enabled]
+    PlatformOverviewEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            operators:
+              type: object
+              properties:
+                total:
+                  type: integer
+                by_status:
+                  type: object
+                  properties:
+                    invited:
+                      type: integer
+                    trial:
+                      type: integer
+                    active:
+                      type: integer
+                    suspended:
+                      type: integer
+                    terminated:
+                      type: integer
+                  required: [invited, trial, active, suspended, terminated]
+              required: [total, by_status]
+            venues:
+              type: object
+              properties:
+                total:
+                  type: integer
+                active:
+                  type: integer
+              required: [total, active]
+            drivers_on_duty:
+              type: integer
+              description: مناوبات duty_sessions غير المنتهية عبر المشغلين
+            tickets_today:
+              type: integer
+              description: تذاكر أُنشئت منذ منتصف ليل الرياض
+            day:
+              type: string
+              format: date
+            generated_at:
+              type: string
+              format: date-time
+          required: [operators, venues, drivers_on_duty, tickets_today, day, generated_at]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformOperatorListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlatformOperator'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformOperatorEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformOperator'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformOperatorDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformOperatorDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformOperatorUserListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlatformOperatorUser'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    OperatorContractEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/OperatorContract'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    OperatorContractListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/OperatorContract'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformOperatorCreatedEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            operator:
+              $ref: '#/components/schemas/PlatformOperator'
+            owner:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                full_name:
+                  type: string
+                employee_code:
+                  type: string
+                  examples: [O-0001]
+                phone_masked:
+                  type: string
+              required: [id, full_name, employee_code, phone_masked]
+            temporary_password:
+              type: [string, 'null']
+              description: 'كلمة مرور المالك المؤقتة، في الرد الأول فقط؛ null في إعادة الطلب بالمفتاح نفسه (DEC-485)'
+          required: [operator, owner, temporary_password]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformOwnerPasswordEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user_id:
+              type: string
+              format: uuid
+            temporary_password:
+              type: [string, 'null']
+              description: 'في الرد الأول فقط؛ null في إعادة الطلب بالمفتاح نفسه (DEC-485)'
+          required: [user_id, temporary_password]
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]

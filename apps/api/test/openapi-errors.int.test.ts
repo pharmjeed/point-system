@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
-import { DRIVE_PERMISSIONS, ROLE_PERMISSIONS, findRoute, type Permission, type Role } from '@point/shared';
+import {
+  DRIVE_PERMISSIONS,
+  PLATFORM_ROUTES,
+  ROLE_PERMISSIONS,
+  findRoute,
+  type Permission,
+  type Role,
+} from '@point/shared';
 import { collectRoutes, sha256Hex } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -112,8 +119,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
         check(r, 'platform owner', await call(r, { as: 'PLATFORM' }));
       }
     }
-    // the 131 operations of 07 but the internal GET /metrics, and the 7 platform operations (V2-002)
-    expect(routes).toHaveLength(134 + 14); // + the V2-004 staff routes (4) and platform routes (7)
+    // the 131 operations of 07 but the internal GET /metrics, and the platform operations (V2-002, V2-003…)
+    expect(routes).toHaveLength(134 + PLATFORM_ROUTES.length); // + the 4 V2-004 staff routes
     expect(seen).toContain('GET /v1/platform/me PLATFORM_AUTH_REQUIRED');
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
@@ -143,7 +150,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(104); // the 93 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2, V2-004 8 and 0)
+    // the 93 staff writes (82 with a requestBody, 11 without; V2-004 adds 3) and the platform commands
+    expect(checked).toBe(93 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length);
     expect(problems).toEqual([]);
   });
 
@@ -171,7 +179,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(92 + 11); // + the 6 V2-002 and 5 V2-004 platform commands (V2-004 adds 3 staff ones)
+    expect(checked).toBe(92 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length); // + the platform commands
     expect(problems).toEqual([]);
   });
 });

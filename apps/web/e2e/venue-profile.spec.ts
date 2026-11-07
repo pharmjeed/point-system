@@ -155,8 +155,7 @@ async function platformApi(page: Page, me: ReturnType<typeof platformMe>) {
 
 test('P-04: the submissions list, the profile and «send back» with a mandatory reason', async ({ page }) => {
   const api = await platformApi(page, platformMe('platform_admin', ['platform.venue_review']));
-  await page.goto('/platform');
-  await page.getByRole('link', { name: 'طلبات إدراج المواقع' }).click();
+  await page.goto('/platform/venues');
   await expect(page.getByText('قاعة ريماس · المشغل الأول')).toBeVisible();
   expect(api.calls.find((c) => c.path === '/v1/platform/venues')).toBeTruthy();
   await expectMobileLayout(page);

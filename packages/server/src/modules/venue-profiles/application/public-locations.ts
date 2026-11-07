@@ -1,4 +1,5 @@
 import { isOpenAt, normalizeOpeningHours, type OpeningHours, type VenueCategory } from '@point/shared';
+import { isOperatorActive } from '../../../core/operator-status.js';
 import { num, PROFILE_COLUMNS, PROFILE_FROM, type ProfileRow, type Q } from '../infra/profile-rows.js';
 import { signProfilePhotos, type PhotoSigner, type ProfilePhotoDto } from './photo-urls.js';
 
@@ -52,7 +53,13 @@ export interface PublicLocationFilters {
 
 export type PublicLocationDeps = PhotoSigner;
 
-const LISTED = `p.status = 'approved' AND o.operator_status = 'active' AND v.status = 'active'`;
+/**
+ * The list's SQL form of the listing rule; the operator part is `isOperatorActive` (core/operator-status.ts,
+ * DEC-487: `operator_status = 'active'` only), applied in one query so a page never needs a read per operator.
+ */
+const OPERATOR_ACTIVE = `o.operator_status = 'active'`;
+const LISTED = `p.status = 'approved' AND ${OPERATOR_ACTIVE} AND v.status = 'active'`;
+const LISTED_BUT_OPERATOR = `p.status = 'approved' AND v.status = 'active'`;
 
 type Row = ProfileRow & { timezone: string };
 
@@ -129,9 +136,11 @@ export async function getPublicLocation(
 ): Promise<PublicLocation | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(venueId)) return null;
   const r = await db.query<Row>(
-    `SELECT ${PROFILE_COLUMNS}, v.timezone FROM ${PROFILE_FROM} WHERE p.venue_id = $1 AND ${LISTED}`,
+    `SELECT ${PROFILE_COLUMNS}, v.timezone FROM ${PROFILE_FROM} WHERE p.venue_id = $1 AND ${LISTED_BUT_OPERATOR}`,
     [venueId],
   );
   const row = r.rows[0];
-  return row ? toPublic(row, deps) : null;
+  // the operator rule of the platform (V2-005): the same isOperatorActive the rest of V2 reads
+  if (!row || !(await isOperatorActive(db, row.org_id))) return null;
+  return toPublic(row, deps);
 }
