@@ -53,6 +53,141 @@ export const p01 = {
   },
 } as const;
 
+/**
+ * The venue public profile (V2-004, DEC-490 … DEC-494): the S-13 section «ملف الموقع العام» (O-04) and the platform
+ * console's P-04. Shared labels first (status, category, days), then each side.
+ */
+export const venueProfile = {
+  status: {
+    none: 'لم يُنشأ بعد',
+    draft: 'مسودة',
+    submitted: 'بانتظار المراجعة',
+    approved: 'معتمد ومعروض',
+    hidden: 'مخفي من المنصة',
+  },
+  category: {
+    hall: 'قاعة مناسبات',
+    office: 'مكاتب',
+    mall: 'مول',
+    hospital: 'مستشفى',
+    residential: 'سكني',
+    hotel: 'فندق',
+    club: 'نادٍ',
+    other: 'أخرى',
+  },
+  days: {
+    sun: 'الأحد',
+    mon: 'الاثنين',
+    tue: 'الثلاثاء',
+    wed: 'الأربعاء',
+    thu: 'الخميس',
+    fri: 'الجمعة',
+    sat: 'السبت',
+  },
+  fields: {
+    venue: 'الموقع',
+    category: 'التصنيف',
+    address: 'العنوان',
+    city: 'المدينة',
+    lat: 'خط العرض',
+    lng: 'خط الطول',
+    coordinatesHint: 'من خرائط جوجل: اضغط مطولًا على الموقع وانسخ الرقمين.',
+    hours: 'ساعات العمل',
+    alwaysOpen: 'مفتوح 24 ساعة طوال الأسبوع',
+    open: 'يفتح',
+    close: 'يغلق',
+    closed: 'مغلق',
+    overnightHint: 'وقت إغلاق قبل وقت الفتح يعني بعد منتصف الليل.',
+    photos: 'الصور',
+    photosHint: 'حتى {n} صور للموقع والمدخل. تُزال بيانات الموقع الجغرافي من الصور تلقائيًا.',
+    pricing: 'الأسعار (تحددها المنصة)',
+    subscriptions: 'الاشتراك',
+    payPerVisit: 'سعر الزيارة لغير المشترك',
+  },
+  addInterval: 'إضافة فترة',
+  removeInterval: 'حذف الفترة',
+  addPhoto: 'إضافة صورة',
+  removePhoto: 'حذف الصورة',
+  uploading: 'جارٍ رفع الصورة…',
+  uploadFailed: 'تعذّر رفع الصورة. أعد المحاولة.',
+  enabled: 'مفعّل',
+  disabled: 'غير مفعّل',
+  noPrice: 'بلا سعر',
+  sar: '{amount} ريال',
+  issues: {
+    required: 'مطلوب للإرسال للمراجعة.',
+    number: 'أدخل رقمًا صحيحًا.',
+    pair: 'أدخل خطي العرض والطول معًا أو اتركهما.',
+    hours: 'راجع الفترات: لا تداخل ولا فترة فارغة.',
+  },
+} as const;
+
+/** S-13 «ملف الموقع العام» (O-04): the operator edits and submits; the platform reviews. */
+export const s13Listing = {
+  title: 'ملف الموقع العام',
+  intro: 'ما يظهر للعملاء على خريطة التطبيق. يُحفظ مسودة ثم يُرسل للمراجعة، ولا يظهر قبل اعتماد المنصة.',
+  pickVenue: 'اختر الموقع',
+  noVenues: 'لا توجد مواقع نشطة.',
+  saveDraft: 'حفظ المسودة',
+  submit: 'إرسال للمراجعة',
+  saved: 'حُفظت المسودة.',
+  submitted: 'أُرسل الملف للمراجعة.',
+  editApprovedWarning: 'الملف معتمد ومعروض. أي تعديل يعيده مسودة ويخفيه من الخريطة حتى تعتمده المنصة ثانية.',
+  submittedInfo: 'الملف بانتظار مراجعة المنصة. التعديل الآن يسحب الطلب ويعيده مسودة.',
+  hiddenInfo: 'أخفت المنصة هذا الملف. تواصل مع المنصة لإظهاره.',
+  sentBack: 'أعادته المنصة للتعديل: {reason}',
+  hiddenReason: 'سبب الإخفاء: {reason}',
+  unsaved: 'احفظ التعديلات قبل الإرسال.',
+} as const;
+
+/** P-04 «المواقع» of the platform console. */
+export const p04 = {
+  title: 'المواقع',
+  navLabel: 'طلبات إدراج المواقع',
+  filters: { all: 'الكل', submitted: 'بانتظار المراجعة', approved: 'معتمد', draft: 'مسودة', hidden: 'مخفي' },
+  city: 'المدينة',
+  operator: 'المشغل',
+  photoCount: '{n} صور',
+  empty: 'لا توجد ملفات بهذه الحالة.',
+  loadMore: 'المزيد',
+  updated: 'آخر تعديل {time}',
+  operatorStatus: {
+    invited: 'مدعو',
+    trial: 'تجريبي',
+    active: 'نشط',
+    suspended: 'معلّق',
+    terminated: 'منتهٍ',
+  },
+  noHours: 'لم تُحدد',
+  noPhotos: 'لا صور.',
+  noCoordinates: 'بلا إحداثيات',
+  openMap: 'فتح في الخرائط',
+  actions: {
+    approve: 'اعتماد',
+    sendBack: 'إرجاع للتعديل',
+    hide: 'إخفاء من الخريطة',
+    unhide: 'إظهار',
+    savePricing: 'حفظ الأسعار',
+  },
+  confirm: {
+    approve: 'اعتماد الملف وإظهاره على الخريطة؟',
+    approveBody: 'يظهر للعملاء متى كان المشغل والموقع نشطين.',
+    sendBack: 'إرجاع الملف للمشغل',
+    hide: 'إخفاء الموقع من الخريطة',
+    unhide: 'إظهار الموقع على الخريطة',
+    reasonHint: 'يراه المشغل في شاشة الملف.',
+  },
+  pricingHallHint: 'القاعات لا تقبل الاشتراك.',
+  done: {
+    approve: 'اعتُمد الملف.',
+    'send-back': 'أُعيد الملف للمشغل.',
+    hide: 'أُخفي الموقع.',
+    unhide: 'أُظهر الموقع.',
+    pricing: 'حُفظت الأسعار.',
+  },
+  back: 'المواقع',
+} as const;
+
 /** S-05 — السائقون */
 export const s05 = {
   search: 'ابحث بالاسم أو الرقم الوظيفي أو الجوال',
