@@ -14,7 +14,8 @@
 | بانتظار المالك | تشغيل المثبّت على الخادم وسجلا DNS `app` و`sim` (Q-01 وQ-02 حُسما، DEC-457)، Q-03 رقم «مصاف» وأصول Meta (`docs/runbooks/whatsapp-production.md`)، Q-05، Q-06، Q-08، Q-09، Q-10، الأجهزة الفعلية (`docs/test-evidence/devices/PROTOCOL.md`)، البروفة البشرية، مفاتيح VAPID — وكلها مع خطواتها في `docs/runbooks/go-live-checklist.md` |
 | الفرع وطلب الدمج | `claude/stoic-hamilton-pfdo2m` — طلب الدمج المسودة #2 (DEC-60) |
 | النشر | `app.pointsa.net` على خادم Oracle المشترك (جدة، arm64) خلف بوابة Caddy للمشاريع الأخرى، بأمر واحد `infra/deploy/install.sh` (DEC-457، `docs/DEPLOYMENT.md` §14)؛ يشغّله المالك على الخادم |
-| القرارات | DEC-01…DEC-458 في `docs/DECISIONS.md` (الرقم التالي DEC-459) |
+| الإصدار الثاني | مسودة مواصفات في `docs/v2/` (تطبيق العميل والاشتراكات والمشغلون، DEC-459) بانتظار اعتماد المالك (H0)؛ لا تنفيذ قبلها |
+| القرارات | DEC-01…DEC-459 في `docs/DECISIONS.md` (الرقم التالي DEC-460) |
 
 ## آخر نتائج الفحوص (محليًا، PostgreSQL 16، على `eb479f6`)
 
