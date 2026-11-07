@@ -257,6 +257,108 @@ export const WA_TEMPLATE_SOURCES: readonly WaTemplateDef[] = [
   ),
 ];
 
+// ---------------------------------------------------------------- V2: the customer app sign-in code (V2-010)
+
+/**
+ * The customer app's sign-in code over WhatsApp (V2-D11 as amended by DEC-460; V2-010, DEC-496): a Meta
+ * **AUTHENTICATION** template with a copy-code button, sent from the Point number. It is not one of W-01 … W-12
+ * (canon §11 keeps its twelve rows and the linter its rules: no other button there): the conversation's only
+ * button stays «طلب السيارة». Meta fixes the text of authentication templates (no custom body, no links, no
+ * brand): `body_*` below is Meta's preset text, kept here to render the message locally (simulator, redacted
+ * copies). The brand reaches the customer as the number's display name (`BRAND_CUSTOMER_NAME_*`, 12 §10).
+ */
+export const WA_CUSTOMER_OTP_TEMPLATE_NAME = 'point_customer_otp_v1';
+export const WA_CUSTOMER_OTP_LANGUAGES = ['ar', 'en'] as const;
+export type WaCustomerOtpLanguage = (typeof WA_CUSTOMER_OTP_LANGUAGES)[number];
+/** The code's lifetime shown in the footer (= `CUSTOMER_OTP_TTL_S`, 300 s). */
+export const WA_CUSTOMER_OTP_EXPIRY_MINUTES = 5;
+
+export interface WaAuthTemplateDef {
+  /** our id of the message (not a canon §11 W-##) */
+  id: 'C-OTP';
+  name: typeof WA_CUSTOMER_OTP_TEMPLATE_NAME;
+  category: 'AUTHENTICATION';
+  languages: readonly WaCustomerOtpLanguage[];
+  /** `{{1}}` = the code; Meta's preset body with the security recommendation and the expiry footer */
+  body: Readonly<Record<WaCustomerOtpLanguage, string>>;
+  /** the copy-code button (Meta: `OTP` / `COPY_CODE`) */
+  button: { type: 'OTP'; otp_type: 'COPY_CODE'; text: Readonly<Record<WaCustomerOtpLanguage, string>> };
+  code_expiration_minutes: number;
+  /** the customer brand of the catalog (the number's display name; not part of the Meta text) */
+  brand: string;
+}
+
+/** Meta creation body of an authentication template (`POST /{waba_id}/message_templates`). */
+export interface WaAuthTemplateCreation {
+  name: typeof WA_CUSTOMER_OTP_TEMPLATE_NAME;
+  language: WaCustomerOtpLanguage;
+  category: 'AUTHENTICATION';
+  /** Meta drops the message when it could not be delivered within the code's lifetime */
+  message_send_ttl_seconds: number;
+  components: (
+    | { type: 'BODY'; add_security_recommendation: true }
+    | { type: 'FOOTER'; code_expiration_minutes: number }
+    | { type: 'BUTTONS'; buttons: { type: 'OTP'; otp_type: 'COPY_CODE'; text: string }[] }
+  )[];
+}
+
+const CUSTOMER_OTP_BODY: Readonly<Record<WaCustomerOtpLanguage, string>> = {
+  ar: `{{1}} هو رمز التحقق الخاص بك. للحفاظ على أمانك، لا تشارك هذا الرمز.\nتنتهي صلاحية هذا الرمز خلال ${WA_CUSTOMER_OTP_EXPIRY_MINUTES} دقائق.`,
+  en: `{{1}} is your verification code. For your security, do not share this code.\nThis code expires in ${WA_CUSTOMER_OTP_EXPIRY_MINUTES} minutes.`,
+};
+const CUSTOMER_OTP_BUTTON: Readonly<Record<WaCustomerOtpLanguage, string>> = {
+  ar: 'نسخ الرمز',
+  en: 'Copy code',
+};
+
+function customerOtpOf(brand: string): WaAuthTemplateDef {
+  return {
+    id: 'C-OTP',
+    name: WA_CUSTOMER_OTP_TEMPLATE_NAME,
+    category: 'AUTHENTICATION',
+    languages: WA_CUSTOMER_OTP_LANGUAGES,
+    body: CUSTOMER_OTP_BODY,
+    button: { type: 'OTP', otp_type: 'COPY_CODE', text: CUSTOMER_OTP_BUTTON },
+    code_expiration_minutes: WA_CUSTOMER_OTP_EXPIRY_MINUTES,
+    brand,
+  };
+}
+
+function customerOtpCreations(t: WaAuthTemplateDef): WaAuthTemplateCreation[] {
+  return t.languages.map((language) => ({
+    name: t.name,
+    language,
+    category: 'AUTHENTICATION',
+    message_send_ttl_seconds: t.code_expiration_minutes * 60,
+    components: [
+      { type: 'BODY', add_security_recommendation: true },
+      { type: 'FOOTER', code_expiration_minutes: t.code_expiration_minutes },
+      { type: 'BUTTONS', buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: t.button.text[language] }] },
+    ],
+  }));
+}
+
+/**
+ * The Cloud API send body of a sign-in code: the code fills the body variable and the copy-code button (Meta's
+ * authentication templates take it as the `url` button parameter). Built by the worker only, never logged.
+ */
+export function customerOtpMessage(to: string, language: WaCustomerOtpLanguage, code: string) {
+  return {
+    messaging_product: 'whatsapp' as const,
+    recipient_type: 'individual' as const,
+    to,
+    type: 'template' as const,
+    template: {
+      name: WA_CUSTOMER_OTP_TEMPLATE_NAME,
+      language: { code: language },
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: code }] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+      ],
+    },
+  };
+}
+
 /** Template names (W-01 … W-08), as registered with Meta. */
 export const WA_TEMPLATE_NAMES = [
   'masaf_ticket_issued_v1',
@@ -339,6 +441,10 @@ export interface WaCatalog {
   readonly definitions: readonly WaTemplateCreation[];
   /** Text prefilled by the QR wa.me link; `{{1}}` = the link code. */
   readonly linkPrefilledText: string;
+  /** V2: the customer app's sign-in code (AUTHENTICATION template, DEC-496). */
+  readonly customerOtp: WaAuthTemplateDef;
+  /** Meta creation bodies of the sign-in template, one per language. */
+  readonly authDefinitions: readonly WaAuthTemplateCreation[];
   byId(id: WaMessageId): WaTemplateDef;
   byName(name: string): WaTemplateDef | undefined;
   /** Text of a message (default or named variant) before `{{n}}` are filled in. */
@@ -382,11 +488,14 @@ function buildCatalog(customerBrandAr: string): WaCatalog {
     if (!found) throw new Error(`Unknown WhatsApp message id ${id}`);
     return found;
   };
+  const customerOtp = customerOtpOf(customerBrandAr);
   return {
     customerBrandAr,
     templates,
     definitions: templates.filter((t) => t.kind === 'template').map(creationOf),
     linkPrefilledText: withCustomerBrand(WA_LINK_PREFILLED_SOURCE, customerBrandAr),
+    customerOtp,
+    authDefinitions: customerOtpCreations(customerOtp),
     byId: def,
     byName: (name) => byName.get(name),
     messageText(id, variant) {

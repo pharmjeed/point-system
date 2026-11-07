@@ -1,8 +1,8 @@
-import { ERROR_CATALOG, type ErrorCode } from '@point/shared';
+import { apiErrorDef, type ApiErrorCode } from './api-codes.js';
 
 export interface ErrorEnvelopeBody {
   error: {
-    code: ErrorCode;
+    code: ApiErrorCode;
     message: string;
     message_ar: string;
     request_id: string;
@@ -13,11 +13,11 @@ export interface ErrorEnvelopeBody {
 
 /** Canon §8 envelope. HTTP status always equals the catalog status of the code (08 §1.3). */
 export function errorEnvelope(
-  code: ErrorCode,
+  code: ApiErrorCode,
   details: Record<string, unknown>,
   requestId: string,
 ): ErrorEnvelopeBody {
-  const def = ERROR_CATALOG[code];
+  const def = apiErrorDef(code);
   return {
     error: {
       code,

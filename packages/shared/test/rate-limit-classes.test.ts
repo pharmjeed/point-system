@@ -3,6 +3,7 @@
  * operation in docs/07_openapi.yaml, and the classes are exactly the rows of 07 §1.9.
  */
 import { describe, expect, it } from 'vitest';
+import { CUSTOMER_ROUTES } from '../src/customer/index.js';
 import { PLATFORM_ROUTES, RATE_LIMIT_CLASSES, ROUTES, routeKey } from '../src/index.js';
 import { backticks, readDoc, section, tableRows } from './docs.js';
 
@@ -33,11 +34,13 @@ describe('rate-limit classes (07 §1.9, x-rate-limit-class)', () => {
   const fromOpenApi = openApiClasses();
 
   it('every OpenAPI operation declares a class', () => {
-    expect(fromOpenApi.size).toBe(ROUTES.length + PLATFORM_ROUTES.length);
+    expect(fromOpenApi.size).toBe(
+      ROUTES.length + PLATFORM_ROUTES.length + Object.keys(CUSTOMER_ROUTES).length,
+    );
   });
 
-  it('ROUTES.rateLimitClass equals x-rate-limit-class for all 131 routes and the platform routes', () => {
-    const diff = [...ROUTES, ...PLATFORM_ROUTES]
+  it('ROUTES.rateLimitClass equals x-rate-limit-class for all 131 routes, the platform and the customer routes', () => {
+    const diff = [...ROUTES, ...PLATFORM_ROUTES, ...Object.values(CUSTOMER_ROUTES)]
       .filter((r) => fromOpenApi.get(routeKey(r.method, r.path)) !== r.rateLimitClass)
       .map(
         (r) =>

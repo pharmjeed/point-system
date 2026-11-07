@@ -260,6 +260,10 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
         'GET /webhooks/whatsapp',
         'POST /v1/auth/login',
         'POST /v1/auth/mfa/verify',
+        // V2-010: the sign-in calls of the native customer app (V2-D10; Bearer API, no web page, DEC-497)
+        'POST /v1/customer/auth/otp',
+        'POST /v1/customer/auth/refresh',
+        'POST /v1/customer/auth/verify',
         // V2-002: the platform console's own sign-in steps (staff of the platform, never a customer, DEC-462)
         'POST /v1/platform/auth/login',
         'POST /v1/platform/auth/mfa/verify',
@@ -268,12 +272,19 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     );
     expect(
       open.every((x) =>
-        /^(GET|POST) \/(health|webhooks\/whatsapp|v1\/(platform\/)?auth\/(login|mfa\/verify)$)/.test(x),
+        /^(GET|POST) \/(health|webhooks\/whatsapp|v1\/(platform\/)?auth\/(login|mfa\/verify)$|v1\/customer\/auth\/(otp|verify|refresh)$)/.test(
+          x,
+        ),
       ),
     ).toBe(true);
-    // the ticket and customer routes all need a staff permission
-    const customerSide = routes.filter((r) => /tickets|customer|handover|whatsapp-link/.test(r.path));
+    // the ticket and customer routes of V1 all need a staff permission; the V2 app API needs its Bearer session
+    const customerSide = routes.filter(
+      (r) => /tickets|customer|handover|whatsapp-link/.test(r.path) && !r.path.startsWith('/v1/customer/'),
+    );
     expect(customerSide.length).toBeGreaterThan(10);
     expect(customerSide.every((r) => !r.public && !!r.permission)).toBe(true);
+    const app = routes.filter((r) => r.path.startsWith('/v1/customer/') && !r.public);
+    expect(app.length).toBeGreaterThan(5);
+    expect(app.every((r) => r.customer && !r.permission && !r.platformPermission)).toBe(true);
   });
 });

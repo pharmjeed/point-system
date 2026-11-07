@@ -65,5 +65,24 @@
       "body": "لم يتم استلام سيارتك رقم {{1}}، لذلك تُعاد الآن إلى الموقف. متى كنت جاهزًا اضغط «طلب السيارة» في رسالة التذكرة.",
       "buttons": []
     }
+  ],
+  "$authComment": "V2-010 (DEC-496): the customer app's sign-in code, a Meta AUTHENTICATION template with a copy-code button. Meta fixes its text; {{1}} = the code, also the button parameter.",
+  "authTemplates": [
+    {
+      "purpose": "C-OTP",
+      "name": "point_customer_otp_v1",
+      "language": "ar",
+      "category": "AUTHENTICATION",
+      "body": "{{1}} هو رمز التحقق الخاص بك. للحفاظ على أمانك، لا تشارك هذا الرمز.\nتنتهي صلاحية هذا الرمز خلال 5 دقائق.",
+      "buttons": [{ "type": "OTP", "text": "نسخ الرمز" }]
+    },
+    {
+      "purpose": "C-OTP",
+      "name": "point_customer_otp_v1",
+      "language": "en",
+      "category": "AUTHENTICATION",
+      "body": "{{1}} is your verification code. For your security, do not share this code.\nThis code expires in 5 minutes.",
+      "buttons": [{ "type": "OTP", "text": "Copy code" }]
+    }
   ]
 }

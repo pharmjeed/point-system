@@ -1,7 +1,8 @@
 -- =====================================================================
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
--- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001):
+-- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, and 0011 the customer accounts,
+-- V2-010):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -163,4 +164,41 @@ SELECT expect_fail('public profile with half a location',
  $q$INSERT INTO venue_public_profiles(venue_id,org_id,category,lat) VALUES ('00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-000000000001','hall',24.7)$q$);
 SELECT expect_fail('platform audit row of a platform user without actor_id',
  $q$INSERT INTO platform_audit_log(actor_type,action,entity_type) VALUES ('platform_user','platform.auth.login','platform_user')$q$);
+-- V2 customer accounts (0011_customer_accounts.sql, V2-010, DEC-496 … DEC-498): checks are only added here
+INSERT INTO customer_accounts(id,phone_e164) VALUES ('00000000-0000-0000-0000-00000000ca01','+966500000951');
+SELECT expect_fail('second customer account with the same phone',
+ $q$INSERT INTO customer_accounts(phone_e164) VALUES ('+966500000951')$q$);
+SELECT expect_fail('deleted customer account without deleted_at',
+ $q$UPDATE customer_accounts SET status='deleted' WHERE id='00000000-0000-0000-0000-00000000ca01'$q$);
+INSERT INTO customer_otp_challenges(phone_e164,device_id,platform,code_hash,code_ciphertext,attempts_left,expires_at,resend_available_at) VALUES
+ ('+966500000951','device-0001','ios','h1','c1',5,now()+interval '5 minutes',now()+interval '1 minute');
+SELECT expect_fail('second open sign-in code for the same number',
+ $q$INSERT INTO customer_otp_challenges(phone_e164,device_id,platform,code_hash,attempts_left,expires_at,resend_available_at) VALUES ('+966500000951','device-0002','android','h2',5,now()+interval '5 minutes',now()+interval '1 minute')$q$);
+SELECT expect_fail('closed sign-in code keeps its encrypted copy',
+ $q$UPDATE customer_otp_challenges SET status='superseded', closed_at=now() WHERE phone_e164='+966500000951'$q$);
+SELECT expect_fail('sent sign-in code keeps its encrypted copy',
+ $q$UPDATE customer_otp_challenges SET delivery_status='sent', sent_at=now() WHERE phone_e164='+966500000951'$q$);
+SELECT expect_fail('locked number without locked_until',
+ $q$UPDATE customer_otp_challenges SET status='locked', closed_at=now(), code_ciphertext=NULL WHERE phone_e164='+966500000951'$q$);
+SELECT expect_fail('more than five attempts on a code',
+ $q$UPDATE customer_otp_challenges SET attempts_left=6 WHERE phone_e164='+966500000951'$q$);
+INSERT INTO customer_account_sessions(account_id,device_id,platform,refresh_hash,access_hash,access_expires_at,refresh_expires_at) VALUES
+ ('00000000-0000-0000-0000-00000000ca01','device-0001','ios','rh1','ah1',now()+interval '15 minutes',now()+interval '60 days');
+SELECT expect_fail('second live session of an account on the same device',
+ $q$INSERT INTO customer_account_sessions(account_id,device_id,platform,refresh_hash,access_hash,access_expires_at,refresh_expires_at) VALUES ('00000000-0000-0000-0000-00000000ca01','device-0001','ios','rh2','ah2',now()+interval '15 minutes',now()+interval '60 days')$q$);
+SELECT expect_fail('customer session revoked without a reason',
+ $q$UPDATE customer_account_sessions SET revoked_at=now() WHERE refresh_hash='rh1'$q$);
+SELECT expect_fail('terms consent recorded as refused (withdrawal is account deletion)',
+ $q$INSERT INTO customer_account_consents(account_id,kind,version,granted) VALUES ('00000000-0000-0000-0000-00000000ca01','terms','2026-11-01',false)$q$);
+INSERT INTO customer_vehicles(account_id,plate_digits,plate_letters_ar,plate_letters_en) VALUES
+ ('00000000-0000-0000-0000-00000000ca01','4821','ب ح د','B J D');
+SELECT expect_fail('same plate twice in one customer account',
+ $q$INSERT INTO customer_vehicles(account_id,plate_digits,plate_letters_ar,plate_letters_en) VALUES ('00000000-0000-0000-0000-00000000ca01','4821','ب ح د','B J D')$q$);
+SELECT expect_fail('Saudi plate of a customer vehicle without letters',
+ $q$INSERT INTO customer_vehicles(account_id,plate_digits) VALUES ('00000000-0000-0000-0000-00000000ca01','12')$q$);
+UPDATE customers SET customer_account_id='00000000-0000-0000-0000-00000000ca01' WHERE id='00000000-0000-0000-0000-000000000c51';
+SELECT expect_fail('two customers rows of one operator for the same account',
+ $q$INSERT INTO customers(org_id,phone_e164,customer_account_id) VALUES ('00000000-0000-0000-0000-000000000001','+966500000952','00000000-0000-0000-0000-00000000ca01')$q$);
+SELECT expect_fail('customer audit row of a customer without account',
+ $q$INSERT INTO customer_audit_log(actor_type,action,entity_type) VALUES ('customer','customer.auth.signed_in','customer_account')$q$);
 SELECT 'ALL INVARIANT TESTS PASSED';

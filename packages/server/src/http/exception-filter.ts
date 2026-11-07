@@ -1,5 +1,6 @@
 import { Catch, HttpException, Inject, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
-import { ERROR_CATALOG, type ErrorCode } from '@point/shared';
+import type { ErrorCode } from '@point/shared';
+import { apiErrorDef } from '../core/errors/api-codes.js';
 import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { AppError, asAppError } from '../core/errors/app-error.js';
@@ -21,7 +22,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const res = host.switchToHttp().getResponse<Response>();
     const requestId = req.requestId ?? resolveRequestId(req.headers['x-request-id']);
     const { error, unexpected } = toHttpAppError(err);
-    const def = ERROR_CATALOG[error.code];
+    const def = apiErrorDef(error.code);
     sendError(res, error, requestId);
     // 05 §7.6 fields; an unmatched route also logs its path (never the query: it may carry tokens)
     const fields = {
@@ -37,7 +38,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
 }
 
 export function sendError(res: Response, error: AppError, requestId: string): void {
-  const def = ERROR_CATALOG[error.code];
+  const def = apiErrorDef(error.code);
   if (def.http === 429 || def.http === 503 || error.code === 'IDEMPOTENCY_IN_PROGRESS') {
     res.setHeader('Retry-After', String(error.options.retryAfterS ?? 1));
   }

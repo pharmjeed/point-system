@@ -4,12 +4,15 @@ import {
   BRAND_DEFAULTS,
   W09_VARIANTS,
   WA_BRAND_TOKEN,
+  WA_CUSTOMER_OTP_LANGUAGES,
+  WA_CUSTOMER_OTP_TEMPLATE_NAME,
   WA_LINK_PREFILLED_TEXT,
   WA_TEMPLATES,
   WA_TEMPLATE_DEFINITIONS,
   WA_TEMPLATE_SOURCES,
   WA_TEMPLATE_NAMES,
   WaSendJobPayloadSchema,
+  customerOtpMessage,
   lintWaCatalog,
   renderWaText,
   waCatalog,
@@ -17,6 +20,7 @@ import {
   waTemplateById,
   type WaTemplateDef,
 } from '../src/index.js';
+import { CUSTOMER_OTP_TTL_S } from '../src/customer/index.js';
 import { backticks, readDoc, repoPath, section, tableRows } from './docs.js';
 
 const doc14 = readDoc('14_Notification_Matrix_Templates.md');
@@ -259,5 +263,63 @@ describe('DEC-470 — the customer brand comes from configuration (canon §1, V2
     expect(waCatalog('  ')).toBe(waCatalog());
     expect(WA_TEMPLATES).toBe(waCatalog().templates);
     expect(WA_LINK_PREFILLED_TEXT).toBe(`ربط تذكرة ${BRAND_DEFAULTS.BRAND_CUSTOMER_NAME_AR} {{1}}`);
+  });
+});
+
+describe('V2-010 — the customer app sign-in template (AUTHENTICATION, DEC-460, DEC-496)', () => {
+  const c = waCatalog('BRAND_X');
+
+  it('is a Meta AUTHENTICATION template with a copy-code button, outside W-01 … W-12', () => {
+    expect(c.customerOtp).toMatchObject({
+      name: WA_CUSTOMER_OTP_TEMPLATE_NAME,
+      category: 'AUTHENTICATION',
+      languages: ['ar', 'en'],
+      button: { type: 'OTP', otp_type: 'COPY_CODE' },
+      code_expiration_minutes: CUSTOMER_OTP_TTL_S / 60,
+      brand: 'BRAND_X',
+    });
+    expect(c.templates.map((t) => t.name)).not.toContain(WA_CUSTOMER_OTP_TEMPLATE_NAME);
+    // the W catalog keeps its single button «طلب السيارة»
+    expect(lintWaCatalog(c.templates, { customer: ['BRAND_X'], staff: ['STAFF_X'] })).toEqual([]);
+    for (const lang of WA_CUSTOMER_OTP_LANGUAGES) {
+      expect(c.customerOtp.body[lang]).toMatch(/^\{\{1\}\} /);
+      expect(c.customerOtp.body[lang]).not.toMatch(/https?:|sms/i);
+    }
+  });
+
+  it('Meta creation bodies: one per language, preset body with the security line, the expiry footer, COPY_CODE', () => {
+    expect(c.authDefinitions.map((d) => [d.name, d.language, d.category])).toEqual([
+      [WA_CUSTOMER_OTP_TEMPLATE_NAME, 'ar', 'AUTHENTICATION'],
+      [WA_CUSTOMER_OTP_TEMPLATE_NAME, 'en', 'AUTHENTICATION'],
+    ]);
+    expect(c.authDefinitions[0]!.message_send_ttl_seconds).toBe(CUSTOMER_OTP_TTL_S);
+    expect(c.authDefinitions[0]!.components).toEqual([
+      { type: 'BODY', add_security_recommendation: true },
+      { type: 'FOOTER', code_expiration_minutes: 5 },
+      { type: 'BUTTONS', buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: 'نسخ الرمز' }] },
+    ]);
+  });
+
+  it('the send body carries the code in the body and the button, and the simulator has the same template', () => {
+    const m = customerOtpMessage('966512345678', 'ar', '123456');
+    expect(m.template.components).toEqual([
+      { type: 'body', parameters: [{ type: 'text', text: '123456' }] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '123456' }] },
+    ]);
+    const fixture = JSON.parse(
+      readFileSync(repoPath('tools/wa-simulator/fixtures/templates.json'), 'utf8'),
+    ) as {
+      authTemplates: { name: string; language: string; category: string; body: string; buttons: unknown[] }[];
+    };
+    expect(fixture.authTemplates).toEqual(
+      WA_CUSTOMER_OTP_LANGUAGES.map((language) => ({
+        purpose: 'C-OTP',
+        name: WA_CUSTOMER_OTP_TEMPLATE_NAME,
+        language,
+        category: 'AUTHENTICATION',
+        body: c.customerOtp.body[language],
+        buttons: [{ type: 'OTP', text: c.customerOtp.button.text[language] }],
+      })),
+    );
   });
 });

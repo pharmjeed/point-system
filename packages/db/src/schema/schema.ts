@@ -480,8 +480,16 @@ export const customers = pgTable(
     wa_opted_out_at: timestamp({ withTimezone: true, mode: 'string' }),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    customer_account_id: uuid(),
   },
   (table) => [
+    uniqueIndex('uq_customers_org_account')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('uuid_ops'),
+        table.customer_account_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(customer_account_id IS NOT NULL)`),
     uniqueIndex('uq_customers_wa_id')
       .using(
         'btree',
@@ -2168,6 +2176,317 @@ export const venue_public_profiles = pgTable(
     check(
       'ck_venue_public_profiles_approved',
       sql`(status <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (approved_at IS NOT NULL))`,
+    ),
+  ],
+);
+
+// V2-010: the customer at platform level (0011_customer_accounts.sql, docs/v2/03 §3)
+export const customer_accounts = pgTable(
+  'customer_accounts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    phone_e164: text().notNull(),
+    display_name: text(),
+    locale: text().default('ar').notNull(),
+    status: text().default('active').notNull(),
+    deleted_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('uq_customer_accounts_phone').on(table.phone_e164),
+    check('ck_customer_accounts_deleted', sql`(status <> 'deleted'::text) OR (deleted_at IS NOT NULL)`),
+    check(
+      'ck_customer_accounts_display_name',
+      sql`(display_name IS NULL) OR ((char_length(display_name) >= 2) AND (char_length(display_name) <= 60))`,
+    ),
+    check('ck_customer_accounts_locale', sql`locale = ANY (ARRAY['ar'::text, 'en'::text])`),
+    check('ck_customer_accounts_phone', sql`phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text`),
+    check(
+      'ck_customer_accounts_status',
+      sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'deleted'::text])`,
+    ),
+  ],
+);
+
+export const customer_otp_challenges = pgTable(
+  'customer_otp_challenges',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    phone_e164: text().notNull(),
+    device_id: text().notNull(),
+    platform: text().notNull(),
+    locale: text().default('ar').notNull(),
+    status: text().default('open').notNull(),
+    code_hash: text().notNull(),
+    code_ciphertext: text(),
+    attempts_left: integer().notNull(),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    resend_available_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    locked_until: timestamp({ withTimezone: true, mode: 'string' }),
+    consumed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    closed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    wa_channel_id: uuid(),
+    delivery_status: text().default('queued').notNull(),
+    wa_message_id: text(),
+    delivery_error_code: text(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_otp_device').using(
+      'btree',
+      table.device_id.asc().nullsLast().op('text_ops'),
+      table.created_at.asc().nullsLast().op('text_ops'),
+    ),
+    index('ix_customer_otp_locked')
+      .using(
+        'btree',
+        table.phone_e164.asc().nullsLast().op('text_ops'),
+        table.locked_until.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(status = 'locked'::text)`),
+    index('ix_customer_otp_phone').using(
+      'btree',
+      table.phone_e164.asc().nullsLast().op('timestamptz_ops'),
+      table.created_at.asc().nullsLast().op('text_ops'),
+    ),
+    uniqueIndex('uq_customer_otp_open_phone')
+      .using('btree', table.phone_e164.asc().nullsLast().op('text_ops'))
+      .where(sql`(status = 'open'::text)`),
+
+    check('ck_customer_otp_attempts', sql`(attempts_left >= 0) AND (attempts_left <= 5)`),
+    check('ck_customer_otp_ciphertext', sql`(status = 'open'::text) OR (code_ciphertext IS NULL)`),
+    check('ck_customer_otp_closed', sql`(status = 'open'::text) = (closed_at IS NULL)`),
+    check('ck_customer_otp_consumed', sql`(status = 'consumed'::text) = (consumed_at IS NOT NULL)`),
+    check(
+      'ck_customer_otp_delivery',
+      sql`delivery_status = ANY (ARRAY['queued'::text, 'sent'::text, 'failed'::text, 'skipped'::text])`,
+    ),
+    check(
+      'ck_customer_otp_delivery_sent',
+      sql`(delivery_status <> 'sent'::text) OR ((sent_at IS NOT NULL) AND (code_ciphertext IS NULL))`,
+    ),
+    check('ck_customer_otp_device', sql`(char_length(device_id) >= 8) AND (char_length(device_id) <= 128)`),
+    check('ck_customer_otp_expiry', sql`(expires_at > created_at) AND (resend_available_at > created_at)`),
+    check('ck_customer_otp_locale', sql`locale = ANY (ARRAY['ar'::text, 'en'::text])`),
+    check('ck_customer_otp_locked', sql`(status = 'locked'::text) = (locked_until IS NOT NULL)`),
+    check('ck_customer_otp_phone', sql`phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text`),
+    check('ck_customer_otp_platform', sql`platform = ANY (ARRAY['ios'::text, 'android'::text])`),
+    check(
+      'ck_customer_otp_status',
+      sql`status = ANY (ARRAY['open'::text, 'consumed'::text, 'superseded'::text, 'locked'::text])`,
+    ),
+  ],
+);
+
+export const customer_account_sessions = pgTable(
+  'customer_account_sessions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    device_id: text().notNull(),
+    platform: text().notNull(),
+    refresh_hash: text().notNull(),
+    access_hash: text().notNull(),
+    access_expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    refresh_expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    rotation_count: integer().default(0).notNull(),
+    push_token: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    last_seen_at: timestamp({ withTimezone: true, mode: 'string' }),
+    refreshed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    revoked_at: timestamp({ withTimezone: true, mode: 'string' }),
+    revoked_reason: text(),
+  },
+  (table) => [
+    index('ix_customer_sessions_account')
+      .using('btree', table.account_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(revoked_at IS NULL)`),
+    uniqueIndex('uq_customer_sessions_live_device')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('text_ops'),
+        table.device_id.asc().nullsLast().op('text_ops'),
+      )
+      .where(sql`(revoked_at IS NULL)`),
+
+    unique('uq_customer_sessions_refresh').on(table.refresh_hash),
+    unique('uq_customer_sessions_access').on(table.access_hash),
+    check(
+      'ck_customer_sessions_device',
+      sql`(char_length(device_id) >= 8) AND (char_length(device_id) <= 128)`,
+    ),
+    check(
+      'ck_customer_sessions_expiry',
+      sql`(access_expires_at > created_at) AND (refresh_expires_at > created_at)`,
+    ),
+    check('ck_customer_sessions_platform', sql`platform = ANY (ARRAY['ios'::text, 'android'::text])`),
+    check('ck_customer_sessions_revoked', sql`(revoked_at IS NULL) = (revoked_reason IS NULL)`),
+    check(
+      'ck_customer_sessions_revoked_reason',
+      sql`revoked_reason = ANY (ARRAY['logout'::text, 'refresh_reuse'::text, 'device_mismatch'::text, 'signed_in_again'::text, 'account_closed'::text, 'expired_cleanup'::text])`,
+    ),
+    check('ck_customer_sessions_rotation', sql`rotation_count >= 0`),
+  ],
+);
+
+export const customer_account_consents = pgTable(
+  'customer_account_consents',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'customer_account_consents_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    account_id: uuid().notNull(),
+    kind: text().notNull(),
+    version: text().notNull(),
+    granted: boolean().notNull(),
+    request_id: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_consents_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('text_ops'),
+      table.kind.asc().nullsLast().op('text_ops'),
+      table.id.asc().nullsLast().op('int8_ops'),
+    ),
+
+    check(
+      'ck_customer_consents_kind',
+      sql`kind = ANY (ARRAY['terms'::text, 'privacy'::text, 'marketing'::text, 'card_on_file'::text])`,
+    ),
+    check(
+      'ck_customer_consents_required_granted',
+      sql`(kind <> ALL (ARRAY['terms'::text, 'privacy'::text])) OR granted`,
+    ),
+    check('ck_customer_consents_version', sql`(char_length(version) >= 1) AND (char_length(version) <= 40)`),
+  ],
+);
+
+export const customer_vehicles = pgTable(
+  'customer_vehicles',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    plate_country: text().default('SA').notNull(),
+    plate_digits: text(),
+    plate_letters_ar: text(),
+    plate_letters_en: text(),
+    plate_raw: text(),
+    vehicle_make: text(),
+    vehicle_model: text(),
+    vehicle_color: text(),
+    vehicle_type: text(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_vehicles_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+    uniqueIndex('uq_customer_vehicles_plate')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.plate_country.asc().nullsLast().op('uuid_ops'),
+        table.plate_digits.asc().nullsLast().op('text_ops'),
+        table.plate_letters_ar.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+
+    check('ck_customer_vehicles_digits', sql`plate_digits ~ '^[0-9]{1,4}$'::text`),
+    check(
+      'ck_customer_vehicles_sa_plate',
+      sql`(plate_country <> 'SA'::text) OR ((plate_digits IS NOT NULL) AND (plate_letters_ar IS NOT NULL) AND (plate_letters_en IS NOT NULL))`,
+    ),
+    check(
+      'ck_customer_vehicles_type',
+      sql`vehicle_type = ANY (ARRAY['sedan'::text, 'suv'::text, 'pickup'::text, 'van'::text, 'other'::text])`,
+    ),
+  ],
+);
+
+export const customer_idempotency_keys = pgTable(
+  'customer_idempotency_keys',
+  {
+    account_id: uuid().notNull(),
+    key: text().notNull(),
+    operation: text().notNull(),
+    request_hash: text().notNull(),
+    status: text().default('in_progress').notNull(),
+    response_status: integer(),
+    response_body: jsonb(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' })
+      .default(sql`(now() + '24:00:00'::interval)`)
+      .notNull(),
+  },
+  (table) => [
+    index('ix_customer_idempotency_expiry').using(
+      'btree',
+      table.expires_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    primaryKey({ columns: [table.account_id, table.key], name: 'pk_customer_idempotency_keys' }),
+    check('ck_customer_idempotency_keys_key', sql`(length(key) >= 8) AND (length(key) <= 128)`),
+    check(
+      'ck_customer_idempotency_keys_status',
+      sql`status = ANY (ARRAY['in_progress'::text, 'completed'::text])`,
+    ),
+  ],
+);
+
+export const customer_audit_log = pgTable(
+  'customer_audit_log',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'customer_audit_log_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    occurred_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    actor_type: text().notNull(),
+    account_id: uuid(),
+    action: text().notNull(),
+    entity_type: text().notNull(),
+    entity_id: uuid(),
+    request_id: text(),
+    ip: inet(),
+    user_agent: text(),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    index('ix_customer_audit_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('timestamptz_ops'),
+        table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(account_id IS NOT NULL)`),
+    index('ix_customer_audit_occurred').using(
+      'btree',
+      table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    check(
+      'ck_customer_audit_actor',
+      sql`((actor_type = 'customer'::text) AND (account_id IS NOT NULL)) OR (actor_type = ANY (ARRAY['anonymous'::text, 'system'::text]))`,
     ),
   ],
 );

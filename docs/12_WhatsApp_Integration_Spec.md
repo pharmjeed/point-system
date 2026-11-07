@@ -885,6 +885,20 @@ W-05 يحمل رمز تسليم. صياغته معاملية (استلام مر�
 
 ---
 
+### 8.5 الإصدار الثاني — قالب رمز دخول تطبيق العميل (V2-010، DEC-460، DEC-496)
+
+القناة الوحيدة لرمز دخول تطبيق العميل هي واتساب، بقالب **AUTHENTICATION** على رقم بوينت؛ ليس من W-01…W-12 فلا يغيّر canon §11 ولا قاعدة الزر الواحد (§8.3 يفحص W-01…W-12 كما هي).
+
+| الحقل | القيمة |
+|---|---|
+| الاسم | `point_customer_otp_v1` بلغتين `ar` و`en` (لغة `locale` في `POST /v1/customer/auth/otp`) |
+| الفئة | `AUTHENTICATION` — نصه ثابت لدى Meta: المتن «`{{1}}` هو رمز التحقق الخاص بك» مع سطر الأمان (`add_security_recommendation`)، والتذييل «تنتهي صلاحية هذا الرمز خلال 5 دقائق» (`code_expiration_minutes: 5`)؛ لا نص حر ولا رابط ولا اسم علامة (العلامة اسم الرقم المعروض، §10) |
+| الزر | `OTP` / `COPY_CODE` «نسخ الرمز» / «Copy code»؛ الإرسال يضع الرمز في معامل المتن وفي معامل الزر (`sub_type: url`) |
+| مدة البقاء | `message_send_ttl_seconds: 300` = صلاحية الرمز |
+| المصدر | `waCatalog(brand).customerOtp` و`.authDefinitions` في `packages/shared/src/canon/wa-templates.ts`؛ المحاكي في `tools/wa-simulator/fixtures/templates.json` (`authTemplates`) |
+| الإنشاء | `POST /v1/admin/whatsapp/templates/sync` يُنشئه مع W-01…W-08؛ صفه في `whatsapp_templates` بفئة `AUTHENTICATION`، ولا يعدّ تدهورًا إلا إن خرج عن `approved` في فئته |
+| الإرسال | `job.customer_otp_send` بعد COMMIT من القناة النشطة للمؤسسة `is_platform_operated` (وإلا الأقدم)، ببوابة الاعتماد (§5.4) و`WA_TEST_RECIPIENT_ALLOWLIST`؛ حالة التسليم على `customer_otp_challenges` لا في `whatsapp_messages`، والرمز لا يُسجَّل ولا يُكتب إلا HMAC ونسخة مشفرة تُمحى بعد الإرسال |
+
 ## 9. ردود الجلسة W-09 … W-12
 
 رسائل نصية عادية بلا أزرار، تُرسل فقط ردًا على رسالة واردة وداخل نافذة الخدمة، وتحتسب من حصة الخدمة الشهرية (F-03). النص النهائي:

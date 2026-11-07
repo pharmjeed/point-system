@@ -19,6 +19,17 @@ const PLATFORM_TABLES = [
   'venue_public_profiles',
 ];
 
+/** The V2 customer tables of 0011_customer_accounts.sql (V2-010, docs/v2/03_Data_Model.md §3). */
+const CUSTOMER_TABLES = [
+  'customer_accounts',
+  'customer_otp_challenges',
+  'customer_account_sessions',
+  'customer_account_consents',
+  'customer_vehicles',
+  'customer_idempotency_keys',
+  'customer_audit_log',
+];
+
 /**
  * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
  * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
@@ -53,11 +64,11 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql and the 6 platform tables of 0008 (V2-001)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001) and the 7 customer tables of 0011 (V2-010)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
-    expect(r.rows[0].n).toBe(47 + PLATFORM_TABLES.length);
+    expect(r.rows[0].n).toBe(47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length);
     const ref = await refClient.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -123,6 +134,7 @@ describe('migrations', () => {
       '0005_wa_quota_index.sql',
       '0006_wa_inbound_received_index.sql',
       '0007_alerts_manual_resolved_index.sql',
+      '0011_customers_account_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -132,17 +144,25 @@ describe('migrations', () => {
         .split(';')
         .filter((s) => s.trim());
       expect(statements, m.name).toHaveLength(1);
-      expect(statements[0], m.name).toMatch(/^\s*CREATE INDEX CONCURRENTLY IF NOT EXISTS /);
+      expect(statements[0], m.name).toMatch(/^\s*CREATE (?:UNIQUE )?INDEX CONCURRENTLY IF NOT EXISTS /);
     }
     const r = await client.query<{ name: string; valid: boolean }>(
       `SELECT c.relname AS name, i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
         WHERE c.relname = ANY($1) ORDER BY c.relname`,
-      [['ix_alerts_manual_resolved', 'ix_whatsapp_inbound_org_received', 'ix_whatsapp_messages_accepted']],
+      [
+        [
+          'ix_alerts_manual_resolved',
+          'ix_whatsapp_inbound_org_received',
+          'ix_whatsapp_messages_accepted',
+          'uq_customers_org_account',
+        ],
+      ],
     );
     expect(r.rows).toEqual([
       { name: 'ix_alerts_manual_resolved', valid: true },
       { name: 'ix_whatsapp_inbound_org_received', valid: true },
       { name: 'ix_whatsapp_messages_accepted', valid: true },
+      { name: 'uq_customers_org_account', valid: true },
     ]);
   });
 
@@ -207,7 +227,7 @@ describe('migrations', () => {
       expect(new Set(cfg.columns.map((c) => c.name))).toEqual(expected);
       checked++;
     }
-    expect(checked).toBe(47 + PLATFORM_TABLES.length);
+    expect(checked).toBe(47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length);
   });
 
   it('runs docs/06_schema_invariants_test.sql green on the migrated schema', async () => {
@@ -226,9 +246,16 @@ describe('migrations', () => {
         'custody_events',
         'analytics_events',
         'platform_audit_log',
+        'customer_account_consents',
+        'customer_audit_log',
       ]) {
         await client.query('SAVEPOINT s');
-        const col = t === 'platform_audit_log' ? 'action' : 'org_id';
+        const col =
+          t === 'customer_account_consents'
+            ? 'kind'
+            : t.endsWith('_audit_log') && t !== 'audit_log'
+              ? 'action'
+              : 'org_id';
         await expect(client.query(`UPDATE ${t} SET ${col} = ${col} WHERE false`)).rejects.toThrow(
           /permission denied/,
         );

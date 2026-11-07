@@ -6,13 +6,13 @@ import { errorEnvelope, successEnvelope } from '../errors/envelope.js';
 import { dbUnavailableError, isPgError, mapPgError, type PgMapContext } from '../errors/pg-constraint-map.js';
 
 export interface CommandContext {
-  /** users.id, or platform_users.id when `keyScope` is 'platform' */
+  /** users.id, platform_users.id when `keyScope` is 'platform', customer_accounts.id when 'customer' */
   userId: string;
   /**
    * Where the key is kept: `idempotency_keys` (staff, the default) or `platform_idempotency_keys` (a V2 platform
    * command; its owner is a platform account, which idempotency_keys.user_id cannot reference, DEC-462).
    */
-  keyScope?: 'staff' | 'platform';
+  keyScope?: 'staff' | 'platform' | 'customer';
   idempotencyKey: string;
   /** method + route template, e.g. 'POST /v1/task-offers/{offerId}/accept' */
   operation: string;
@@ -171,6 +171,8 @@ type Claim = { kind: 'claimed' } | { kind: 'replay'; response: CommandResponse }
 
 /** The key table of the caller (fixed identifiers only: never built from input). */
 function keyTable(ctx: CommandContext) {
+  if (ctx.keyScope === 'customer')
+    return { table: 'customer_idempotency_keys', owner: 'account_id' } as const; // V2-010
   return ctx.keyScope === 'platform'
     ? ({ table: 'platform_idempotency_keys', owner: 'platform_user_id' } as const)
     : ({ table: 'idempotency_keys', owner: 'user_id' } as const);

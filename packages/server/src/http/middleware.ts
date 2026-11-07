@@ -25,6 +25,8 @@ export type PipelineRequest = Request & {
   actor?: { userId?: string; role?: string; venueId?: string | null };
   /** V2: the platform account of a /v1/platform/* route (DEC-462) */
   platformActor?: { userId?: string; role?: string };
+  /** V2-010: the customer account of a /v1/customer/* route (DEC-497) */
+  customerActor?: { accountId?: string };
 };
 
 /**
@@ -42,6 +44,8 @@ export function requestLogFields(req: PipelineRequest, status: number) {
     duration_ms: req.startedAt === undefined ? undefined : Math.round(performance.now() - req.startedAt),
     // a platform request names its platform account apart from the staff user_id (V2, DEC-462)
     ...(req.platformActor?.userId ? { platform_user_id: req.platformActor.userId } : {}),
+    // a customer request names its account (an id, never the phone: canon rule 8)
+    ...(req.customerActor?.accountId ? { customer_account_id: req.customerActor.accountId } : {}),
   };
 }
 

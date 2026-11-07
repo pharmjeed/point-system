@@ -1,5 +1,6 @@
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { PLATFORM_ROUTES, ROUTES } from '@point/shared';
+import { CUSTOMER_ROUTES } from '@point/shared/customer';
 import { Database, FakeClock, collectRoutes, routeProblems } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/bootstrap.js';
@@ -30,11 +31,14 @@ describe('routes contract (canon §9)', () => {
 
   const platform = new Map(PLATFORM_ROUTES.map((r) => [key(r.method, r.path), r]));
 
+  const customer = new Map(Object.values(CUSTOMER_ROUTES).map((r) => [key(r.method, r.path), r]));
+
   it('every declared route exists in canon §9 with the same permission and idempotency', () => {
     const problems: string[] = [];
     for (const r of declared) {
       if (r.path.startsWith('/health')) continue;
       if (platform.has(key(r.method, r.path))) continue; // V2: checked below against PLATFORM_ROUTES
+      if (customer.has(key(r.method, r.path))) continue; // V2-010: checked below against CUSTOMER_ROUTES
       const c = canon.get(key(r.method, r.path));
       if (!c) {
         problems.push(`${key(r.method, r.path)} is not in canon §9`);
@@ -82,14 +86,43 @@ describe('routes contract (canon §9)', () => {
     expect(declared.filter((r) => r.platformPermission && !r.path.startsWith('/v1/platform/'))).toEqual([]);
   });
 
+  it('V2-010 (DEC-497): the customer routes match CUSTOMER_ROUTES, Bearer-authorized, with no staff or platform permission', () => {
+    const problems: string[] = [];
+    const served = declared.filter((r) => r.path.startsWith('/v1/customer'));
+    for (const r of served) {
+      const c = customer.get(key(r.method, r.path));
+      if (!c) {
+        problems.push(`${key(r.method, r.path)} is not in CUSTOMER_ROUTES`);
+        continue;
+      }
+      if ((c.auth === 'public') !== r.public)
+        problems.push(`${key(r.method, r.path)}: public=${r.public}, registry ${c.auth}`);
+      if (c.auth === 'customer' && !r.customer)
+        problems.push(`${key(r.method, r.path)}: not @RequireCustomer`);
+      if (r.permission || r.platformPermission)
+        problems.push(`${key(r.method, r.path)}: carries a staff or platform permission`);
+      if (c.idempotency === 'required' && !r.command?.idempotent)
+        problems.push(`${key(r.method, r.path)}: Idempotency-Key required by the registry`);
+      if (c.idempotency === 'none' && r.command?.idempotent)
+        problems.push(`${key(r.method, r.path)}: Idempotency-Key required, registry none`);
+      if (r.command && r.command.operation !== key(r.method, r.path))
+        problems.push(`${key(r.method, r.path)}: @Command operation is "${r.command.operation}"`);
+    }
+    expect(problems).toEqual([]);
+    expect(served.map((r) => key(r.method, r.path)).sort()).toEqual([...customer.keys()].sort());
+    expect(declared.filter((r) => r.customer && !r.path.startsWith('/v1/customer/'))).toEqual([]);
+  });
+
   it('the boot audit refuses a mixed-up route declaration (DEC-462)', () => {
-    const base = { method: 'GET', public: false, command: null, handler: 'X.y' };
+    const base = { method: 'GET', public: false, customer: false, command: null, handler: 'X.y' };
     expect(
       routeProblems([
         { ...base, path: '/v1/platform/x', permission: 'venue.read', platformPermission: null },
         { ...base, path: '/v1/venues', permission: null, platformPermission: 'platform.self' },
         { ...base, path: '/v1/platform/y', permission: 'venue.read', platformPermission: 'platform.self' },
         { ...base, path: '/v1/z', permission: null, platformPermission: null },
+        { ...base, path: '/v1/customer/x', permission: 'venue.read', platformPermission: null },
+        { ...base, path: '/v1/venues/x', permission: null, platformPermission: null, customer: true },
       ]),
     ).toEqual([
       'staff permission on a platform route: GET /v1/platform/x (X.y)',
@@ -97,6 +130,8 @@ describe('routes contract (canon §9)', () => {
       'staff and platform permission together: GET /v1/platform/y (X.y)',
       'staff permission on a platform route: GET /v1/platform/y (X.y)',
       'no @RequirePermission/@Public: GET /v1/z (X.y)',
+      'staff or platform permission on a customer route: GET /v1/customer/x (X.y)',
+      'customer authorization off /v1/customer: GET /v1/venues/x (X.y)',
     ]);
   });
 

@@ -1,4 +1,4 @@
-import { WA_TEMPLATE_NAMES } from '@point/shared';
+import { WA_CUSTOMER_OTP_TEMPLATE_NAME, WA_TEMPLATE_NAMES } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newKey } from './harness.js';
 import { ORG, createWaTestApp, type WaTestApp } from './wa-harness.js';
@@ -143,16 +143,27 @@ describe('WhatsApp channel and templates (canon §9.7)', () => {
     it('POST sync reads /{waba_id}/message_templates and stores W-01 … W-08 in catalog order', async () => {
       const r = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'ADM1' });
       expect(r.status).toBe(200);
-      expect(r.body.data.map((t: { name: string }) => t.name)).toEqual([...WA_TEMPLATE_NAMES]);
-      for (const t of r.body.data)
+      // W-01 … W-08, then the customer app's sign-in template in its two languages (V2-010, DEC-496)
+      expect(r.body.data.map((t: { name: string; language: string }) => `${t.name}:${t.language}`)).toEqual([
+        ...WA_TEMPLATE_NAMES.map((n) => `${n}:ar`),
+        `${WA_CUSTOMER_OTP_TEMPLATE_NAME}:ar`,
+        `${WA_CUSTOMER_OTP_TEMPLATE_NAME}:en`,
+      ]);
+      for (const t of r.body.data.slice(0, WA_TEMPLATE_NAMES.length))
         expect(t).toMatchObject({ language: 'ar', category: 'UTILITY', status: 'approved', version: 1 });
+      for (const t of r.body.data.slice(WA_TEMPLATE_NAMES.length))
+        expect(t).toMatchObject({ category: 'AUTHENTICATION', status: 'approved', version: 1 });
+      // an approved sign-in template in its own category does not degrade the channel
+      expect((await w.get('/v1/admin/whatsapp/channel', 'ADM1')).body.data.health_status).not.toBe(
+        'degraded',
+      );
       expect(r.body.data[0].meta_template_id).toBeTruthy();
       const list = await w.get('/v1/admin/whatsapp/templates', 'OWN1');
       expect(list.body.data).toEqual(r.body.data);
       // a second sync with nothing changed keeps the versions
       const again = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });
       expect(again.body.data.map((t: { version: number }) => t.version)).toEqual(
-        WA_TEMPLATE_NAMES.map(() => 1),
+        [...WA_TEMPLATE_NAMES, 'otp:ar', 'otp:en'].map(() => 1),
       );
       const audits = await w.db.query(`SELECT 1 FROM audit_log WHERE action = 'wa.templates_manage'`);
       expect(audits.rowCount).toBe(2);

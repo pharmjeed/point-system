@@ -233,6 +233,25 @@ function parseTemplate(
         throw new GraphReject(131008, `template['components'][${ci}]['index'] is required`);
       const btn = def.buttons[index];
       if (!btn) throw new GraphReject(131009, `button at index ${index} does not exist in template ${name}`);
+      // an authentication template's copy-code button takes the code as its `url` parameter (V2-010)
+      if (btn.type === 'OTP') {
+        const p = params[0];
+        if (
+          subType !== 'url' ||
+          params.length !== 1 ||
+          !isRecord(p) ||
+          p.type !== 'text' ||
+          typeof p.text !== 'string'
+        )
+          throw new GraphReject(
+            131008,
+            `template['components'][${ci}]: a copy-code button takes {type:'text', text}`,
+          );
+        if (payloads.has(index))
+          throw new GraphReject(131009, `duplicate button component for index ${index}`);
+        payloads.set(index, p.text);
+        return;
+      }
       if (subType !== 'quick_reply' || btn.type !== 'QUICK_REPLY') {
         throw new GraphReject(
           131009,
@@ -268,8 +287,12 @@ function parseTemplate(
   const buttons: SentButton[] = def.buttons.flatMap((b, index) =>
     b.type === 'QUICK_REPLY'
       ? [{ index, subType: 'quick_reply', payload: payloads.get(index) ?? null, text: b.text }]
-      : [],
+      : b.type === 'OTP'
+        ? [{ index, subType: 'url', payload: payloads.get(index) ?? null, text: b.text }]
+        : [],
   );
+  if (def.category === 'AUTHENTICATION' && buttons.some((b) => b.payload !== finalParams[0]))
+    throw new GraphReject(131008, 'the copy-code button must carry the code of the body');
   return {
     template: def,
     templateName: name,

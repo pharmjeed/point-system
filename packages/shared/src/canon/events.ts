@@ -146,6 +146,8 @@ export const JOB_TYPES = [
   'job.heartbeat_sweep',
   'job.retention_purge',
   'job.export_generate',
+  // V2 (V2-010, DEC-496): the customer app's sign-in code over WhatsApp, sent after COMMIT
+  'job.customer_otp_send',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

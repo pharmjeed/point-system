@@ -453,6 +453,31 @@
 | `PLATFORM_AUTH_REQUIRED` | أي مسار `/v1/platform/*` غير عام بلا كوكي المنصة (`PLATFORM_SESSION_COOKIE_NAME`، `__Host-point_psid`) أو برمز غير معروف أو بخطوة تحقق لم تكتمل — ومنه الطلب الذي يحمل كوكي جلسة الموظفين وحده: جلسة الموظف لا تُقرأ على مسار المنصة أبدًا، فلا يُرفع `AUTH_UNAUTHENTICATED` الذي يُخرج الموظف من تطبيقه (DEC-462). أما الجلسة المنصية المنتهية أو المبطلة أو الحساب المعطّل أو المقيد فبرموز 4.1 نفسها (`AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`، `AUTH_ACCOUNT_DISABLED`، `AUTH_SECRET_CHANGE_REQUIRED`، `AUTH_MFA_SETUP_REQUIRED` مع `allowed_paths` = مسارات `platform.self`)، ودخول المنصة بـ`AUTH_INVALID_CREDENTIALS`/`AUTH_ACCOUNT_LOCKED`/`AUTH_MFA_*` كدخول الموظفين | — | `/platform/login` (لوحة المنصة)؛ لا يمس جلسة الموظف في التبويب نفسه | info · — |
 | `OPERATOR_SUSPENDED` | فتح حفل أو وردية جديدة لمؤسسة `operator_status` فيها `suspended` أو `terminated` (V2-005؛ التذاكر الجارية تكتمل) | `operator_status` | `dialog` «تواصل مع المنصة» ثم `refetch` | info · — |
 
+### 4.18 واجهة العميل `/v1/customer/*` (الإصدار الثاني، V2-010)
+
+رموز تطبيق العميل خارج كتالوج canon §8 عمدًا: مصدرها `CUSTOMER_ERROR_CATALOG` في `packages/shared/src/customer/errors.ts` (DEC-482)، ويرميها الخادم بـ`AppError` نفسه (`ApiErrorCode`، DEC-495) على مسارات العميل وحدها، بالغلاف نفسه (§1). ومعها رموز §4 التي تعيدها هذه المسارات كما هي (`CUSTOMER_REUSED_ERROR_CODES`، ومنها `AUTH_ACCOUNT_DISABLED` لحساب معلّق). الجدولان بستة أعمدة لأن الكتالوج ليس canon §8.
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` | متى · `details` |
+|---|---|---|---|---|---|
+| `CUSTOMER_OTP_INVALID` | 422 | لا | رمز التحقق غير صحيح. | The verification code is incorrect. | رمز خاطئ لرمز مفتوح غير منتهٍ؛ `attempts_left` (المحاولات تنتقل إلى الرمز الجديد، DEC-496) |
+| `CUSTOMER_OTP_EXPIRED` | 410 | لا | انتهت صلاحية الرمز. اطلب رمزًا جديدًا. | The verification code has expired. Request a new one. | لا رمز مفتوح للرقم، أو مضت 300 ث، أو استُعمل الرمز |
+| `CUSTOMER_OTP_LOCKED` | 423 | لا | محاولات كثيرة خاطئة. حاول بعد 15 دقيقة. | Too many wrong codes. Try again later. | الخطأ الخامس، ثم كل طلب رمز أو تحقق للرقم مدة القفل؛ `locked_until` |
+| `CUSTOMER_CONSENT_VERSION_STALE` | 409 | لا | حُدّثت الشروط. راجع النسخة الجديدة ثم وافق. | The terms were updated. Review the new version. | إصدار غير الساري في `POST /v1/customer/consents` ولا يُكتب شيء؛ `kind`، `current_version` |
+| `CUSTOMER_VEHICLE_LIMIT` | 422 | لا | وصلت إلى الحد الأقصى للسيارات في حسابك. | The vehicle limit for the account is reached. | السيارة السادسة؛ `max` = 5 |
+| `CUSTOMER_VEHICLE_DUPLICATE` | 409 | لا | هذه السيارة مضافة في حسابك. | This vehicle is already in your account. | لوحة مطبّعة موجودة في الحساب بأي كتابة |
+| `VENUE_NOT_LISTED` | 404 | لا | هذا الموقع غير متاح في التطبيق. | This location is not available in the app. | موقع غير موجود أو ملفه غير معتمد أو غير نشط أو مشغله غير نشط — بالرد نفسه (DEC-499) |
+| `ACCOUNT_DELETED` | 410 | لا | حُذف هذا الحساب. | This account was deleted. | جلسة أو دخول لحساب `deleted` |
+
+| الحالة | الرمز | `details` | الواجهة (تطبيق العميل) | السجل | ملاحظة |
+|---|---|---|---|---|---|
+| طلب رمز قبل `resend_available_at`، أو تجاوز 5 رموز للرقم أو 10 للجهاز في الساعة | `RATE_LIMITED` (429) | `retry_after_s`، `scope`: `resend` / `phone` / `device` | عدّاد `C-03` | info | ترويسة `Retry-After` |
+| رقم بوينت غير مضبوط أو `down` | `WA_CHANNEL_UNAVAILABLE` (503) | `reason: no_channel` | «تعذّر الإرسال، أعد المحاولة» | warn | واتساب القناة الوحيدة (DEC-460)؛ لا يُكتب رمز |
+| جوال ليس سعوديًا في طلب الرمز | `PHONE_INVALID` (422) | `field: phone_e164` | خطأ الحقل في `C-02` | info | قبل التحقق من الجسم كالخادم الوهمي |
+| لا ترويسة Bearer، رمز تالف، جلسة غير معروفة، أو كوكي موظف/منصة وحده | `AUTH_UNAUTHENTICATED` (401) | — | الخروج إلى `C-01` | info | الكوكي لا يُقرأ على مسار العميل أبدًا (DEC-497) |
+| رمز وصول مضت دقائقه الخمس عشرة أو استبدله تحديث | `AUTH_SESSION_EXPIRED` (401) | — | تحديث مرة ثم إعادة الطلب بالمفتاح نفسه | info | |
+| رمز تحديث منتهٍ أو ملغى أو مستعمل سابقًا أو من جهاز آخر، أو جلسة ملغاة | `AUTH_SESSION_REVOKED` (401) | `reason` | الخروج | info | المستعمل سابقًا والجهاز الآخر يلغيان الجلسة كلها |
+| حساب `suspended` | `AUTH_ACCOUNT_DISABLED` (403) | — | رسالة الخادم | info | |
+
 ---
 
 ## 5. ربط قيود قاعدة البيانات بالرموز

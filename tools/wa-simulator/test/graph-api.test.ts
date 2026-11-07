@@ -249,6 +249,9 @@ describe('other Graph routes', () => {
       'masaf_vehicle_delivered_v1',
       'masaf_request_canceled_v1',
       'masaf_returned_to_parking_v1',
+      // the customer app's sign-in template, Arabic and English (V2-010, DEC-496)
+      'point_customer_otp_v1',
+      'point_customer_otp_v1',
     ]);
     expect(list.data[0]).toMatchObject({
       status: 'APPROVED',
@@ -259,7 +262,13 @@ describe('other Graph routes', () => {
         { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'طلب السيارة' }] },
       ],
     });
-    for (const t of list.data.slice(1)) expect(t.components).toHaveLength(1);
+    for (const t of list.data.slice(1, 8)) expect(t.components).toHaveLength(1);
+    for (const t of list.data.slice(8))
+      expect(t).toMatchObject({
+        status: 'APPROVED',
+        category: 'AUTHENTICATION',
+        components: [{ type: 'BODY' }, { type: 'BUTTONS', buttons: [{ type: 'OTP' }] }],
+      });
 
     const create = (name: string) =>
       fetch(`${sim.url}/v26.0/200000000000001/message_templates`, {

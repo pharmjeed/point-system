@@ -50,6 +50,8 @@ tags:
 - name: Admin
 - name: Platform
   description: الإصدار الثاني — لوحة المنصة /platform (docs/v2/02)، جلسة منفصلة __Host-point_psid
+- name: Customer
+  description: 'الإصدار الثاني — تطبيق العميل /v1/customer/* (docs/v2/05 §1، V2-010)؛ Bearer قصير + رمز تحديث يُدوَّر، بلا كوكي ولا CSRF'
 - name: Webhooks
 - name: Health
 security:
@@ -9137,6 +9139,749 @@ paths:
       x-idempotency: none
       x-rate-limit-class: read
       x-error-codes: [AUTH_ACCOUNT_DISABLED, PLATFORM_AUTH_REQUIRED]
+  /v1/customer/auth/otp:
+    post:
+      operationId: customerAuthOtp
+      summary: طلب رمز الدخول على واتساب
+      tags: [Customer]
+      description: |-
+        C-02 / C-03 «إعادة الإرسال» (V2-D11 كما عدّله DEC-460: واتساب فقط بقالب مصادقة AUTHENTICATION على رقم بوينت، بلا SMS؛ DEC-496).
+        الرمز 6 أرقام يصلح 300 ث ويُخزَّن HMAC فقط مع نسخة مشفرة واحدة يرسلها العامل بعد COMMIT ثم تُمحى. إعادة الإرسال بعد 60 ث من وقت الخادم وإلا RATE_LIMITED مع retry_after_s، وحد لكل رقم ولكل جهاز في الساعة (scope: phone | device | resend). الرمز الجديد لا يعيد المحاولات.
+
+        الأثر: customer_otp_challenges + outbox_events job.customer_otp_send + customer_audit_log في معاملة واحدة؛ لا اتصال بواتساب داخلها
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone_e164:
+                  type: string
+                  pattern: '^\+9665[0-9]{8}$'
+                  description: جوال سعودي فقط
+                  examples: ['+966512345678']
+                device_id:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                  description: معرّف عشوائي ينشئه التطبيق مرة لكل تثبيت (حد المعدل لكل جهاز)
+                platform:
+                  type: string
+                  enum: [ios, android]
+                locale:
+                  type: string
+                  enum: [ar, en]
+                  default: ar
+                  description: لغة قالب المصادقة
+              required: [phone_e164, device_id, platform]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOtpChallengeEnvelope'
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: PHONE_INVALID | VALIDATION_FAILED
+        '423':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_OTP_LOCKED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: WA_CHANNEL_UNAVAILABLE | SERVICE_UNAVAILABLE
+      security: []
+      x-permission: public
+      x-idempotency: none
+      x-rate-limit-class: auth
+      x-error-codes: [CUSTOMER_OTP_LOCKED, PHONE_INVALID, WA_CHANNEL_UNAVAILABLE]
+  /v1/customer/auth/verify:
+    post:
+      operationId: customerAuthVerify
+      summary: التحقق من الرمز وفتح الجلسة
+      tags: [Customer]
+      description: |-
+        C-03. الخطأ CUSTOMER_OTP_INVALID مع attempts_left، والخامس يقفل الرقم 15 دقيقة CUSTOMER_OTP_LOCKED مع locked_until (يرفض الطلب والتحقق معًا)، والمنتهي أو المستعمل CUSTOMER_OTP_EXPIRED. أول نجاح ينشئ الحساب (is_new_account).
+
+        الأثر: customer_accounts (أول مرة) + customer_account_sessions (sha256 للرمزين فقط؛ جلسة الجهاز السابقة تُلغى) + customer_audit_log؛ لا كوكي
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone_e164:
+                  type: string
+                  pattern: '^\+9665[0-9]{8}$'
+                  description: جوال سعودي فقط
+                  examples: ['+966512345678']
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+                device_id:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                  description: معرّف عشوائي ينشئه التطبيق مرة لكل تثبيت (حد المعدل لكل جهاز)
+                platform:
+                  type: string
+                  enum: [ios, android]
+              required: [phone_e164, code, device_id, platform]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAuthResultEnvelope'
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_OTP_EXPIRED | ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_OTP_INVALID | VALIDATION_FAILED
+        '423':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_OTP_LOCKED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security: []
+      x-permission: public
+      x-idempotency: none
+      x-rate-limit-class: auth
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, CUSTOMER_OTP_EXPIRED, CUSTOMER_OTP_INVALID, CUSTOMER_OTP_LOCKED]
+  /v1/customer/auth/refresh:
+    post:
+      operationId: customerAuthRefresh
+      summary: تدوير رمزي الجلسة
+      tags: [Customer]
+      description: |-
+        زوج جديد في كل استدعاء، ورمز التحديث القديم يتوقف. رمز تحديث منتهٍ أو ملغى أو مستعمل سابقًا أو من جهاز آخر ← 401 AUTH_SESSION_REVOKED، والمستعمل سابقًا أو جهاز آخر يلغي الجلسة كلها (كشف السرقة، DEC-497). رمز التحديث يصلح 60 يومًا من الدخول ولا يُمدَّد.
+
+        الأثر: customer_account_sessions (تدوير)؛ الإلغاء يُحفظ رغم الرفض مع customer_audit_log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  minLength: 16
+                device_id:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+              required: [refresh_token, device_id]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerTokensEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security: []
+      x-permission: public
+      x-idempotency: none
+      x-rate-limit-class: auth
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_REVOKED]
+  /v1/customer/auth/logout:
+    post:
+      operationId: customerAuthLogout
+      summary: خروج الجهاز
+      tags: [Customer]
+      description: |-
+        يلغي جلسة هذا الجهاز إن كان رمز التحديث رمزها (رمز جلسة أخرى يُتجاهل ويُرد الشيء نفسه).
+
+        الأثر: customer_account_sessions.revoked_reason = logout + customer_audit_log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  minLength: 16
+              required: [refresh_token]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerLogoutResultEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+  /v1/customer/me:
+    get:
+      operationId: customerMe
+      summary: حساب العميل
+      tags: [Customer]
+      description: |-
+        CustomerMe: الموافقات بالإصدار الساري (granted لإجابة الإصدار الساري فقط) وprofile_complete يحسبه الخادم (اسم + الشروط والخصوصية بالإصدار الساري)، وvehicles_count.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerMeEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+    patch:
+      operationId: customerMePatch
+      summary: تعديل الاسم أو اللغة
+      tags: [Customer]
+      description: |-
+        C-04 الاسم (2–60 حرفًا بعد التقليم وضم المسافات)، C-19 اللغة. حقل واحد على الأقل.
+
+        الأثر: customer_accounts + customer_audit_log (أسماء الحقول فقط، لا الاسم)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                  minLength: 2
+                  maxLength: 60
+                locale:
+                  type: string
+                  enum: [ar, en]
+              minProperties: 1
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerMeEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED]
+  /v1/customer/consents:
+    post:
+      operationId: customerConsents
+      summary: الموافقات بإصدار النص
+      tags: [Customer]
+      description: |-
+        صفوف إلحاقية بالإصدار المعروض؛ الشروط والخصوصية لا تُرسل إلا granted: true (سحبها حذف الحساب C-20)؛ إصدار غير الساري ← CUSTOMER_CONSENT_VERSION_STALE مع kind وcurrent_version ولا يُكتب شيء. الإصدارات والروابط من الإعداد CUSTOMER_*_VERSION / CUSTOMER_*_URL (DEC-498).
+
+        الأثر: customer_account_consents + customer_audit_log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                consents:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items:
+                    type: object
+                    properties:
+                      kind:
+                        type: string
+                        enum: [terms, privacy, marketing]
+                      version:
+                        type: string
+                        minLength: 1
+                        maxLength: 40
+                      granted:
+                        type: boolean
+                    required: [kind, version, granted]
+                    additionalProperties: false
+              required: [consents]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerMeEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_CONSENT_VERSION_STALE | IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_CONSENT_VERSION_STALE, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED]
+  /v1/customer/vehicles:
+    get:
+      operationId: customerVehicles
+      summary: سياراتي
+      tags: [Customer]
+      description: |-
+        الأقدم أولًا، 5 على الأكثر فلا مؤشر صفحات. in_active_visit: تذكرة مفتوحة لأحد صفوف customers المربوطة بالحساب باللوحة نفسها.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVehicleListEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+    post:
+      operationId: customerVehicleCreate
+      summary: إضافة سيارة
+      tags: [Customer]
+      description: |-
+        C-05. اللوحة تُطبَّع بقاعدة tickets نفسها (normalizeSaudiPlate، 07 §1.8) وإلا PLATE_INVALID مع field وreason؛ الحد 5 (CUSTOMER_VEHICLE_LIMIT مع max)؛ المكررة في الحساب بأي كتابة CUSTOMER_VEHICLE_DUPLICATE. تحت قفل صف الحساب.
+
+        الأثر: customer_vehicles + customer_audit_log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plate:
+                  type: object
+                  properties:
+                    country:
+                      type: string
+                      enum: [SA]
+                      default: SA
+                    digits:
+                      type: string
+                      maxLength: 12
+                    letters_ar:
+                      type: string
+                      maxLength: 24
+                  required: [digits, letters_ar]
+                  additionalProperties: false
+                vehicle_make:
+                  type: [string, 'null']
+                  maxLength: 40
+                vehicle_model:
+                  type: [string, 'null']
+                  maxLength: 40
+                vehicle_color:
+                  type: [string, 'null']
+                  maxLength: 40
+                vehicle_type:
+                  type: [string, 'null']
+                  enum: [sedan, suv, pickup, van, other, null]
+              required: [plate]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVehicleEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_VEHICLE_DUPLICATE | IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: PLATE_INVALID | CUSTOMER_VEHICLE_LIMIT | VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_VEHICLE_DUPLICATE, CUSTOMER_VEHICLE_LIMIT, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, PLATE_INVALID]
+  /v1/customer/locations:
+    get:
+      operationId: customerLocations
+      summary: المواقع المدرجة
+      tags: [Customer]
+      description: |-
+        C-07: ملف عام معتمد لموقع نشط لمشغل نشط (operator_status = active) فقط. بحث بالاسم أو المدينة، تصفية، ترتيب بالمسافة إن أُعطي الموقع وإلا بالاسم، ومؤشر meta.next_cursor. open_now بتوقيت الموقع على ساعة الخادم، والمبالغ بالهللة شاملة الضريبة.
+      parameters:
+      - name: q
+        in: query
+        schema:
+          type: string
+          maxLength: 60
+      - name: filter
+        in: query
+        schema:
+          type: string
+          enum: [subscribed, subscribable, open_now]
+      - name: lat
+        in: query
+        schema:
+          type: number
+          minimum: -90
+          maximum: 90
+      - name: lng
+        in: query
+        schema:
+          type: number
+          minimum: -180
+          maximum: 180
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerLocationListEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+  /v1/customer/locations/{venueId}:
+    get:
+      operationId: customerLocation
+      summary: صفحة الموقع
+      tags: [Customer]
+      description: |-
+        C-08: الملخص مع العنوان والمنطقة الزمنية والساعات وروابط الصور (روابط موقّعة قصيرة العمر من الحاوية الخاصة فقط) والباقات. غير المدرج — غير موجود أو غير معتمد أو موقع غير نشط أو مشغل غير نشط — VENUE_NOT_LISTED بالرد نفسه.
+      parameters:
+      - name: venueId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerLocationDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: VENUE_NOT_LISTED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, VENUE_NOT_LISTED]
+  /v1/customer/home:
+    get:
+      operationId: customerHome
+      summary: الرئيسية C-06 بقراءة واحدة
+      tags: [Customer]
+      description: |-
+        الزيارة الجارية (أحدث تذكرة مفتوحة لصفوف customers المربوطة بالحساب، V2-D12، بلا خانة مفتاح ولا موقف)، الاشتراكات الحية، أقرب المواقع (≤ 5)، عدد السيارات (DEC-482).
+      parameters:
+      - name: lat
+        in: query
+        schema:
+          type: number
+          minimum: -90
+          maximum: 90
+      - name: lng
+        in: query
+        schema:
+          type: number
+          minimum: -180
+          maximum: 180
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerHomeEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsAppWebhook
@@ -9372,6 +10117,10 @@ components:
       in: cookie
       name: __Host-point_psid
       description: الإصدار الثاني — جلسة لوحة المنصة (platform_sessions.token_hash = sha256)؛ منفصلة عن __Host-point_sid، فلا تفتح إحداهما مسارات الأخرى (DEC-462)
+    customerBearer:
+      type: http
+      scheme: bearer
+      description: الإصدار الثاني — رمز وصول العميل المعتم (pca.<session>.<secret>) 15 دقيقة في Authorization، sha256 فقط في customer_account_sessions؛ لا كوكي، فلا CSRF (لا اعتماد يرسله المتصفح تلقائيًا)، ولا تفتح جلسة موظف أو منصة مسارات العميل ولا العكس (DEC-497)
     csrfHeader:
       type: apiKey
       in: header
@@ -9593,6 +10342,21 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    CustomerError:
+      description: خطأ بغلاف 08 لمسارات العميل؛ code من CUSTOMER_ERROR_CATALOG أو رموز 08 المعادة (docs/v2/05 §5)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CustomerErrorResponse'
+    CustomerRateLimited:
+      description: RATE_LIMITED (details.retry_after_s، وscope phone | device | resend على طلب الرمز)
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CustomerErrorResponse'
     RateLimited:
       description: RATE_LIMITED أو RESEND_LIMIT_REACHED
       headers:
@@ -13707,6 +14471,364 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/OrgSettings'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: نص حر في التطبيق (رمز يضاف لاحقًا لا يكسر نسخة مثبتة، DEC-482)
+            message:
+              type: string
+            message_ar:
+              type: string
+            request_id:
+              type: string
+            retryable:
+              type: boolean
+            details:
+              type: object
+              properties: {}
+              additionalProperties: true
+          required: [code, message, message_ar, request_id, retryable]
+      required: [error]
+    CustomerOtpChallenge:
+      type: object
+      properties:
+        channel:
+          type: string
+          enum: [whatsapp]
+        phone_masked:
+          type: string
+          examples: ['05•••••678']
+        expires_at:
+          type: string
+          format: date-time
+        resend_available_at:
+          type: string
+          format: date-time
+        attempts_left:
+          type: integer
+          minimum: 0
+          maximum: 5
+      required: [channel, phone_masked, expires_at, resend_available_at, attempts_left]
+    CustomerTokens:
+      type: object
+      properties:
+        token_type:
+          type: string
+          enum: [Bearer]
+        access_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_token:
+          type: string
+        refresh_expires_at:
+          type: string
+          format: date-time
+      required: [token_type, access_token, access_expires_at, refresh_token, refresh_expires_at]
+    CustomerConsentState:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [terms, privacy, marketing, card_on_file]
+        current_version:
+          type: string
+        granted:
+          type: [boolean, 'null']
+        answered_version:
+          type: [string, 'null']
+        answered_at:
+          type: [string, 'null']
+          format: date-time
+        document_url:
+          type: [string, 'null']
+          format: uri
+      required: [kind, current_version, granted, answered_version, answered_at, document_url]
+    CustomerMe:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone_e164:
+          type: string
+        phone_masked:
+          type: string
+        display_name:
+          type: [string, 'null']
+        locale:
+          type: string
+          enum: [ar, en]
+        status:
+          type: string
+          enum: [active, suspended, deleted]
+        consents:
+          type: object
+          properties:
+            terms:
+              $ref: '#/components/schemas/CustomerConsentState'
+            privacy:
+              $ref: '#/components/schemas/CustomerConsentState'
+            marketing:
+              $ref: '#/components/schemas/CustomerConsentState'
+          required: [terms, privacy, marketing]
+        profile_complete:
+          type: boolean
+        vehicles_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+      required: [id, phone_e164, phone_masked, display_name, locale, status, consents, profile_complete, vehicles_count, created_at]
+    CustomerAuthResult:
+      allOf:
+      - $ref: '#/components/schemas/CustomerTokens'
+      - type: object
+        properties:
+          account:
+            $ref: '#/components/schemas/CustomerMe'
+          is_new_account:
+            type: boolean
+        required: [account, is_new_account]
+    CustomerVehicle:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        plate:
+          $ref: '#/components/schemas/Plate'
+        vehicle_make:
+          type: [string, 'null']
+        vehicle_model:
+          type: [string, 'null']
+        vehicle_color:
+          type: [string, 'null']
+        vehicle_type:
+          type: [string, 'null']
+          enum: [sedan, suv, pickup, van, other, null]
+        in_active_visit:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      required: [id, plate, vehicle_make, vehicle_model, vehicle_color, vehicle_type, in_active_visit, created_at]
+    CustomerLocationSummary:
+      type: object
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+        name_ar:
+          type: string
+        name_en:
+          type: [string, 'null']
+        category:
+          type: string
+          enum: [hall, office, mall, hospital, residential, hotel, club, other]
+        operator_name_ar:
+          type: string
+        operator_name_en:
+          type: [string, 'null']
+        city:
+          type: [string, 'null']
+        lat:
+          type: [number, 'null']
+        lng:
+          type: [number, 'null']
+        distance_m:
+          type: [integer, 'null']
+        open_now:
+          type: [boolean, 'null']
+        subscriptions_enabled:
+          type: boolean
+        pay_per_visit_halalas:
+          type: [integer, 'null']
+          description: بالهللة شاملة الضريبة
+        monthly_from_halalas:
+          type: [integer, 'null']
+      required: [venue_id, name_ar, name_en, category, operator_name_ar, operator_name_en, city, lat, lng, distance_m, open_now, subscriptions_enabled, pay_per_visit_halalas, monthly_from_halalas]
+    CustomerLocationDetail:
+      allOf:
+      - $ref: '#/components/schemas/CustomerLocationSummary'
+      - type: object
+        properties:
+          address:
+            type: [string, 'null']
+          timezone:
+            type: string
+          opening_hours:
+            type: object
+            description: '{ always_open, days: { sun…sat: [{ open: HH:MM, close: HH:MM }] } } بالتوقيت المحلي؛ close قبل open يمتد بعد منتصف الليل'
+            additionalProperties: true
+          photo_urls:
+            type: array
+            maxItems: 10
+            items:
+              type: string
+              format: uri
+          plans:
+            type: array
+            items:
+              type: object
+              properties:
+                plan_id:
+                  type: string
+                  format: uuid
+                name_ar:
+                  type: string
+                vehicles_included:
+                  type: integer
+                monthly_price_halalas:
+                  type: [integer, 'null']
+                yearly_price_halalas:
+                  type: [integer, 'null']
+              required: [plan_id, name_ar, vehicles_included, monthly_price_halalas, yearly_price_halalas]
+        required: [address, timezone, opening_hours, photo_urls, plans]
+    CustomerHome:
+      type: object
+      properties:
+        display_name:
+          type: [string, 'null']
+        current_visit:
+          type: [object, 'null']
+          properties:
+            ticket_id:
+              type: string
+              format: uuid
+            venue_id:
+              type: string
+              format: uuid
+            venue_name_ar:
+              type: string
+            venue_name_en:
+              type: [string, 'null']
+            status:
+              $ref: '#/components/schemas/TicketStatus'
+            plate_display:
+              type: [string, 'null']
+            received_at:
+              type: string
+              format: date-time
+        subscriptions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        nearby_locations:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/CustomerLocationSummary'
+        vehicles_count:
+          type: integer
+          minimum: 0
+      required: [display_name, current_visit, subscriptions, nearby_locations, vehicles_count]
+    CustomerOtpChallengeEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerOtpChallenge'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerTokensEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerTokens'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerAuthResultEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerAuthResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerMeEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerMe'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerVehicleEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerVehicle'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerLogoutResultEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            logged_out:
+              type: boolean
+              enum: [true]
+          required: [logged_out]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerVehicleListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              maxItems: 5
+              items:
+                $ref: '#/components/schemas/CustomerVehicle'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerLocationListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomerLocationSummary'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    CustomerLocationDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerLocationDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerHomeEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerHome'
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]

@@ -12,13 +12,18 @@ import type { Clock } from '../clock/clock.js';
 import type { Env } from '../config/env.js';
 import type { Database } from '../db/database.js';
 import { AppError } from '../errors/app-error.js';
-import { PERMISSION_KEY, PLATFORM_PERMISSION_KEY, PUBLIC_KEY } from '../../http/decorators.js';
+import { CUSTOMER_KEY, PERMISSION_KEY, PLATFORM_PERMISSION_KEY, PUBLIC_KEY } from '../../http/decorators.js';
 import { CLOCK, DATABASE, ENV } from '../../http/tokens.js';
 import { hasPermission, type ActorContext } from './actor-context.js';
 import { loadActor, touchSession } from './actor-loader.js';
+import { loadCustomerActor, touchCustomerSession, type CustomerActorContext } from './customer-actor.js';
 import { loadPlatformActor, touchPlatformSession, type PlatformActorContext } from './platform-actor.js';
 
-type Req = Request & { actor?: ActorContext; platformActor?: PlatformActorContext };
+type Req = Request & {
+  actor?: ActorContext;
+  platformActor?: PlatformActorContext;
+  customerActor?: CustomerActorContext;
+};
 
 /** The auth.self routes a restricted session may still use (08 §4.1 `allowed_paths`). */
 export const AUTH_SELF_PATHS = ROUTES.filter((r) => r.permission === 'auth.self').map(
@@ -32,6 +37,10 @@ export const AUTH_SELF_PATHS = ROUTES.filter((r) => r.permission === 'auth.self'
  *
  * V2 (DEC-462): a @RequirePlatformPermission route reads the platform cookie only and checks the platform matrix;
  * a staff route reads the staff cookie only. Neither session can authorize the other kind of route.
+ *
+ * V2-010 (DEC-497): a @RequireCustomer route reads the customer Bearer access token only (no cookie at all), and the
+ * staff and platform paths never read the Authorization header: a customer token opens no staff or platform route,
+ * and a staff or platform session opens no customer route.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -55,6 +64,7 @@ export class AuthGuard implements CanActivate {
       targets,
     );
     if (platform) return this.platform(ctx, platform);
+    if (this.reflector.getAllAndOverride<boolean>(CUSTOMER_KEY, targets)) return this.customer(ctx);
     const permission = this.reflector.getAllAndOverride<Permission | undefined>(PERMISSION_KEY, targets);
     if (!permission)
       throw new Error(
@@ -75,6 +85,16 @@ export class AuthGuard implements CanActivate {
     }
     if (!hasPermission(actor, permission)) throw new AppError('PERMISSION_DENIED', { permission });
     void touchSession(this.db, actor.sessionId, now).catch(() => {});
+    return true;
+  }
+
+  /** Customer access token → session → account (loadCustomerActor). */
+  private async customer(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest<Req>();
+    const now = this.clock.now();
+    const actor = await loadCustomerActor(this.db, req.headers.authorization, now);
+    req.customerActor = actor;
+    void touchCustomerSession(this.db, actor.sessionId, now).catch(() => {});
     return true;
   }
 

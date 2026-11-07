@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { DRIVE_PERMISSIONS, ROLE_PERMISSIONS, findRoute, type Permission, type Role } from '@point/shared';
-import { collectRoutes, sha256Hex } from '@point/server';
+import { collectRoutes, newCustomerToken, sha256Hex } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   documentedCodes,
@@ -63,14 +63,35 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     return platformCookie;
   };
 
+  // V2-010: a customer account signed in on a device (Bearer tokens), for the /v1/customer/* routes
+  let customerAccess = '';
+  const customerSession = async () => {
+    if (customerAccess) return customerAccess;
+    const a = await t.db.query<{ id: string }>(
+      `INSERT INTO customer_accounts (phone_e164) VALUES ('+966551119301') RETURNING id`,
+    );
+    const id = '00000000-0000-4000-8000-00000000c501';
+    const access = newCustomerToken('access', id);
+    await t.db.query(
+      `INSERT INTO customer_account_sessions (id, account_id, device_id, platform, refresh_hash, access_hash,
+              access_expires_at, refresh_expires_at, created_at)
+       VALUES ($1, $2, 'openapi-sweep-device', 'ios', $3, $4, $5::timestamptz + interval '15 minutes',
+               $5::timestamptz + interval '60 days', $5)`,
+      [id, a.rows[0]!.id, sha256Hex(newCustomerToken('refresh', id)), sha256Hex(access), t.clock.now()],
+    );
+    customerAccess = access;
+    return customerAccess;
+  };
+
   const call = async (
     r: (typeof routes)[number],
-    o: { as?: SeedUserKey | 'PLATFORM'; key?: boolean } = {},
+    o: { as?: SeedUserKey | 'PLATFORM' | 'CUSTOMER'; key?: boolean } = {},
   ): Promise<{ status: number; code: string | undefined }> => {
     const path = r.path.replace(/\{[A-Za-z]+\}/g, DUMMY);
     const m = r.method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete';
     let req = t.http()[m](path);
     if (o.as === 'PLATFORM') req = req.set('Cookie', await platformSession());
+    else if (o.as === 'CUSTOMER') req = req.set('Authorization', `Bearer ${await customerSession()}`);
     else if (o.as) req = req.set('Cookie', await t.sessionFor(o.as));
     if (m !== 'get') {
       req = req.set(CSRF);
@@ -111,9 +132,20 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
         check(r, 'OWN1 (staff) on a platform route', await call(r, { as: 'OWN1' }));
         check(r, 'platform owner', await call(r, { as: 'PLATFORM' }));
       }
+      if (r.customer) {
+        // V2-010 (DEC-497): a staff session on a customer route, then the customer (with and without a key)
+        check(r, 'OWN1 (staff) on a customer route', await call(r, { as: 'OWN1' }));
+        check(r, 'customer', await call(r, { as: 'CUSTOMER' }));
+        if (r.command?.idempotent)
+          check(r, 'customer without a key', await call(r, { as: 'CUSTOMER', key: false }));
+      }
     }
-    // the 131 operations of 07 but the internal GET /metrics, and the 7 platform operations (V2-002)
-    expect(routes).toHaveLength(130 + 7);
+    // the 131 operations of 07 but the internal GET /metrics, the 7 platform operations (V2-002) and the 12 customer
+    // operations (V2-010)
+    expect(routes).toHaveLength(130 + 7 + 12);
+    expect(seen).toContain('GET /v1/customer/me AUTH_UNAUTHENTICATED');
+    expect(seen).toContain('GET /v1/customer/locations/{venueId} VENUE_NOT_LISTED');
+    expect(seen).toContain('PATCH /v1/customer/me IDEMPOTENCY_KEY_REQUIRED');
     expect(seen).toContain('GET /v1/platform/me PLATFORM_AUTH_REQUIRED');
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
@@ -143,7 +175,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(96); // the 85 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2)
+    expect(checked).toBe(96 + 7); // the 85 operations with a requestBody and the 11 without one (V2-002 adds 4 and 2,
+    // V2-010 the 7 customer writes)
     expect(problems).toEqual([]);
   });
 
@@ -171,7 +204,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(89 + 6); // + the 6 V2-002 platform commands
+    expect(checked).toBe(89 + 6 + 7); // + the 6 V2-002 platform commands and the 7 V2-010 customer writes
     expect(problems).toEqual([]);
   });
 });

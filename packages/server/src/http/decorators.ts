@@ -6,6 +6,7 @@ export const PERMISSION_KEY = 'point:permission';
 export const PLATFORM_PERMISSION_KEY = 'point:platform_permission';
 export const COMMAND_KEY = 'point:command';
 export const AUTH_SELF_KEY = 'point:auth_self';
+export const CUSTOMER_KEY = 'point:customer';
 
 /** Route without a session (login, MFA verify, webhooks, health). */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
@@ -20,6 +21,13 @@ export const RequirePermission = (permission: Permission) => SetMetadata(PERMISS
  */
 export const RequirePlatformPermission = (permission: PlatformPermission) =>
   SetMetadata(PLATFORM_PERMISSION_KEY, permission);
+
+/**
+ * V2 customer route (`/v1/customer/*`, V2-010, DEC-497): the guard reads the `Authorization: Bearer` access token
+ * of a customer account only — never a staff or platform cookie — and no permission matrix applies (the account
+ * reaches its own data only). A route carries this or a staff/platform permission, never both (boot audit).
+ */
+export const RequireCustomer = () => SetMetadata(CUSTOMER_KEY, true);
 
 export interface CommandMeta {
   /** ✓ in canon §9: Idempotency-Key is mandatory */
@@ -61,6 +69,11 @@ export const CurrentActor = createParamDecorator(
 /** The platform account of a @RequirePlatformPermission route (PlatformActorContext), or null. */
 export const CurrentPlatformActor = createParamDecorator(
   (_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().platformActor ?? null,
+);
+
+/** The customer account of a @RequireCustomer route (CustomerActorContext), or null. */
+export const CurrentCustomer = createParamDecorator(
+  (_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().customerActor ?? null,
 );
 
 export const RequestId = createParamDecorator(

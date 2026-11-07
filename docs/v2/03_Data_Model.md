@@ -179,6 +179,8 @@ CREATE INDEX ix_venue_public_profiles_listed ON venue_public_profiles(category) 
 
 ## 3. العميل على مستوى المنصة
 
+> **نُفذ في `packages/db/migrations/0011_customer_accounts.sql` و`0011_customers_account_index.sql` (V2-010، DEC-496…DEC-498).** الفروق عن المسودة أدناه: أسماء صريحة لكل قيد وفهرس، وفحص اللغة وطول الاسم والجهاز؛ في `customer_account_sessions` أعمدة `access_hash` و`access_expires_at` و`refresh_expires_at` و`rotation_count` و`refreshed_at` و`revoked_reason` وجلسة حية واحدة لكل حساب وجهاز؛ جداول جديدة `customer_otp_challenges` (رموز الدخول: HMAC ونسخة مشفرة مؤقتة) و`customer_idempotency_keys` و`customer_audit_log` (إلحاقي)؛ `customer_account_consents.request_id` وقيد يمنع «رفض» الشروط والخصوصية؛ وفهرس `uq_customers_org_account` في ملف مستقل يُبنى `CONCURRENTLY`. أما `tickets.customer_vehicle_id` و`entitlement` و`customer_passes` فليست في هذا الترحيل (V2-013 وما بعدها).
+
 ```sql
 CREATE TABLE customer_accounts (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),

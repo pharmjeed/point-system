@@ -1,5 +1,6 @@
 import {
   WA_TEMPLATE_NAMES,
+  type WaAuthTemplateCreation,
   type WaTemplateCategory,
   type WaTemplateCreation,
   type WaTemplateStatus,
@@ -91,7 +92,8 @@ export async function templateStatus(
 
 /** Remote state of one catalog template, fetched outside any transaction. */
 export interface RemoteTemplate {
-  definition: WaTemplateCreation;
+  /** W-01 … W-08 (UTILITY) or, since V2-010, the customer app's sign-in template (AUTHENTICATION, DEC-496) */
+  definition: WaTemplateCreation | WaAuthTemplateCreation;
   remote: GraphTemplate | null;
   /** created during this sync because Meta did not have it */
   created: boolean;
@@ -141,7 +143,8 @@ export class WhatsappTemplates {
 
   /**
    * Network phase (never inside a transaction): reads the remote catalog and creates the W-01 … W-08
-   * definitions Meta does not have yet (12 §8.1). Timeout → DEPENDENCY_TIMEOUT; channel down, 5xx or a
+   * definitions Meta does not have yet (12 §8.1), and the customer app's sign-in template in each of its languages
+   * (V2-010, DEC-496). Timeout → DEPENDENCY_TIMEOUT; channel down, 5xx or a
    * channel-class error → WA_CHANNEL_UNAVAILABLE; other Graph errors → WA_SEND_FAILED (08 §4.13).
    */
   async fetchRemote(q: Queryable, orgId: string): Promise<RemoteSync> {
@@ -168,7 +171,7 @@ export class WhatsappTemplates {
     const templates: RemoteTemplate[] = [];
     // bodies with the configured customer brand (DEC-470); matched by name, so a template already on
     // Meta keeps its approved text: a changed brand needs new `_v2` names (DEC-471)
-    for (const definition of this.rt.catalog.definitions) {
+    for (const definition of [...this.rt.catalog.definitions, ...this.rt.catalog.authDefinitions]) {
       let found =
         remote.find((t) => t.name === definition.name && t.language === definition.language) ?? null;
       let created = false;
@@ -230,8 +233,9 @@ export class WhatsappTemplates {
       );
       if (!before || before.status !== status || before.category !== category)
         changed.push({ name: t.definition.name, from: before?.status ?? null, to: status });
-      // a catalog template that is not approved UTILITY degrades the channel (12 §6.9)
-      if (status !== 'approved' || category !== 'UTILITY')
+      // a catalog template that is not approved in its own category (UTILITY; AUTHENTICATION for the sign-in
+      // template) degrades the channel (12 §6.9)
+      if (status !== 'approved' || category !== t.definition.category)
         degraded ??= `template_${t.definition.name}_${status}`;
     }
     if (degraded) await setChannelHealth(tx, sync.channelId, 'degraded', degraded, 'wa.templates_manage');

@@ -532,7 +532,9 @@ export class WhatsappInboundProcessor {
 
   private async accountField(channel: ChannelRow, change: Json): Promise<boolean> {
     const v: Json = change?.value ?? {};
-    const catalog = (name: unknown) => this.rt.catalog.definitions.find((d) => d.name === name);
+    // W-01 … W-08 and the customer app's sign-in template (V2-010): each keeps its own category
+    const catalog = (name: unknown) =>
+      [...this.rt.catalog.definitions, ...this.rt.catalog.authDefinitions].find((d) => d.name === name);
     switch (change?.field) {
       case 'message_template_status_update': {
         const def = catalog(v.message_template_name);
@@ -541,7 +543,7 @@ export class WhatsappInboundProcessor {
         await this.db.transaction(async (tx) => {
           await tx.query(
             `INSERT INTO whatsapp_templates (org_id, name, language, category, status, components, meta_template_id, rejection_reason, last_synced_at, created_at, updated_at)
-             VALUES ($1, $2, $3, 'UTILITY', $4, $5, $6, $7, $8, $8, $8)
+             VALUES ($1, $2, $3, $9, $4, $5, $6, $7, $8, $8, $8)
              ON CONFLICT (org_id, name, language) DO UPDATE SET status = EXCLUDED.status,
                meta_template_id = COALESCE(EXCLUDED.meta_template_id, whatsapp_templates.meta_template_id),
                rejection_reason = EXCLUDED.rejection_reason, last_synced_at = EXCLUDED.last_synced_at,
@@ -555,6 +557,7 @@ export class WhatsappInboundProcessor {
               v.message_template_id != null ? String(v.message_template_id) : null,
               status === 'rejected' ? String(v.reason ?? 'REJECTED') : null,
               tx.now,
+              def.category,
             ],
           );
           if (status !== 'approved' && status !== 'pending') {
@@ -573,8 +576,8 @@ export class WhatsappInboundProcessor {
       case 'template_category_update': {
         const def = catalog(v.message_template_name);
         if (!def) return true;
-        const cat = String(v.new_category ?? v.category ?? 'UTILITY').toUpperCase();
-        if (cat === 'UTILITY') return true;
+        const cat = String(v.new_category ?? v.category ?? def.category).toUpperCase();
+        if (cat === def.category) return true;
         await this.db.transaction(async (tx) => {
           await tx.query(
             `UPDATE whatsapp_templates SET category = $3, version = version + 1 WHERE org_id = $1 AND name = $2`,

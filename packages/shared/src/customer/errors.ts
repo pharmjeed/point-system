@@ -28,6 +28,8 @@ export const CUSTOMER_REUSED_ERROR_CODES = [
   'AUTH_UNAUTHENTICATED',
   'AUTH_SESSION_EXPIRED',
   'AUTH_SESSION_REVOKED',
+  // a suspended account (customer_accounts.status, P-06) cannot sign in or call the API (V2-010, DEC-497)
+  'AUTH_ACCOUNT_DISABLED',
   'VALIDATION_FAILED',
   'PHONE_INVALID',
   'PLATE_INVALID',

@@ -98,6 +98,17 @@ export const envSchema = z.object({
   RATE_LIMIT_DEVICE_PER_MIN: int(60), // per device (session): heartbeat, devices, audio test, telemetry
   RATE_LIMIT_EXPORTS_PER_HOUR: int(5), // per user
   RATE_LIMIT_WEBHOOK_PER_MIN: int(6000), // per source IP (valve only, 05 §14.3)
+  // V2-010 customer sign-in codes (DEC-496): on top of the 60 s resend wait, per number and per device per hour
+  CUSTOMER_OTP_PER_PHONE_PER_HOUR: int(5),
+  CUSTOMER_OTP_PER_DEVICE_PER_HOUR: int(10),
+  // V2-010 versions of the texts the customer accepts on C-04 and their public pages (DEC-498); a new version sends
+  // every account back to C-04 (profile_complete = false until it is accepted)
+  CUSTOMER_TERMS_VERSION: z.string().min(1).max(40).default('2026-11-01'),
+  CUSTOMER_PRIVACY_VERSION: z.string().min(1).max(40).default('2026-11-01'),
+  CUSTOMER_MARKETING_VERSION: z.string().min(1).max(40).default('2026-11-01'),
+  CUSTOMER_TERMS_URL: z.string().default(''),
+  CUSTOMER_PRIVACY_URL: z.string().default(''),
+  CUSTOMER_MARKETING_URL: z.string().default(''),
   // Express `trust proxy` (05 §14.2): hops in front of the api (1 = the reverse proxy), or a subnet list
   TRUST_PROXY: z.string().default('1'),
 
@@ -163,6 +174,10 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   }
   if (env.VAPID_PUBLIC_KEY && !/^(mailto:|https:)/.test(env.VAPID_SUBJECT)) {
     throw new EnvError(['VAPID_SUBJECT must be a mailto: or https: URL']);
+  }
+  // V2-010: the public pages of the customer texts are links the app opens (C-04)
+  for (const k of ['CUSTOMER_TERMS_URL', 'CUSTOMER_PRIVACY_URL', 'CUSTOMER_MARKETING_URL'] as const) {
+    if (env[k] && !/^https?:\/\/[^\s]+$/.test(env[k])) throw new EnvError([`${k} must be an http(s) URL`]);
   }
   return env;
 }

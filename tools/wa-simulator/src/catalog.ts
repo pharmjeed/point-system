@@ -57,7 +57,13 @@ export function renderBody(body: string, params: readonly string[]): string {
 let fixtureTemplates: FixtureTemplate[] | undefined;
 
 function fixtures(): FixtureTemplate[] {
-  fixtureTemplates ??= readFixture<{ templates: FixtureTemplate[] }>('templates.json').templates;
+  // W-01 … W-08 and, since V2-010, the customer app's AUTHENTICATION sign-in template (DEC-496)
+  if (!fixtureTemplates) {
+    const f = readFixture<{ templates: FixtureTemplate[]; authTemplates?: FixtureTemplate[] }>(
+      'templates.json',
+    );
+    fixtureTemplates = [...f.templates, ...(f.authTemplates ?? [])];
+  }
   return fixtureTemplates;
 }
 
@@ -73,7 +79,7 @@ export function templateKey(name: string, language: string): string {
   return `${name}:${language}`;
 }
 
-/** Fresh copy of the local catalog (W-01 … W-08), all APPROVED. */
+/** Fresh copy of the local catalog (W-01 … W-08 and the sign-in template), all APPROVED. */
 export function defaultTemplates(): TemplateInfo[] {
   return fixtures().map((t, i) => ({
     id: String(900000000000001 + i),

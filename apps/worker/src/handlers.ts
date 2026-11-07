@@ -71,6 +71,9 @@ services.push((deps) => {
 import { useCasesJobs } from '@point/server';
 handlers.push(...useCasesJobs());
 
+import { customerAccountsJobs } from '@point/server';
+handlers.push(...customerAccountsJobs());
+
 export function allHandlers(): JobHandler[] {
   return handlers;
 }
