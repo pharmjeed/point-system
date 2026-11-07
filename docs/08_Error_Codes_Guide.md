@@ -440,6 +440,7 @@
 | `POST /v1/duty-sessions/{sessionId}/force-end` | تدقيق المشرف |
 | `POST /v1/staff/{userId}/reset-mfa` | تدقيق المالك (`audit_log.reason`) |
 | `POST /v1/events/{eventId}/cancel` | `events.cancel_reason` |
+| `POST /v1/platform/venues/{venueId}/send-back` · `…/hide` · `…/unhide` | ملاحظة المراجع للمشغل (`platform_audit_log.reason`، V2-004، DEC-491) |
 
 ### 4.17 المنصة والمشغلون (الإصدار الثاني، `docs/v2`)
 

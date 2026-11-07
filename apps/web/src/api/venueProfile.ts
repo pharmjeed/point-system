@@ -77,7 +77,8 @@ export interface PutVenueProfileBody {
 
 const staffPath = (venueId: string, tail = '') =>
   `/v1/venues/${encodeURIComponent(venueId)}/public-profile${tail}`;
-const platformPath = (venueId: string, tail = '') => `/v1/platform/venues/${encodeURIComponent(venueId)}${tail}`;
+const platformPath = (venueId: string, tail = '') =>
+  `/v1/platform/venues/${encodeURIComponent(venueId)}${tail}`;
 
 export const venueProfileKeys = {
   staff: (venueId: string) => ['venue-public-profile', venueId] as const,
@@ -125,7 +126,11 @@ export interface PlatformVenueFilters {
   org_id?: string | undefined;
 }
 
-export async function fetchPlatformVenues(filters: PlatformVenueFilters, cursor?: string, signal?: AbortSignal) {
+export async function fetchPlatformVenues(
+  filters: PlatformVenueFilters,
+  cursor?: string,
+  signal?: AbortSignal,
+) {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) if (v) params.set(k, String(v));
   if (cursor) params.set('cursor', cursor);
@@ -148,8 +153,9 @@ export async function reviewVenue(
   body: { expected_version: number; reason?: string },
   key: string,
 ) {
-  return (await api.post<PlatformVenueProfile>(platformPath(venueId, `/${action}`), { body, idempotencyKey: key }))
-    .data;
+  return (
+    await api.post<PlatformVenueProfile>(platformPath(venueId, `/${action}`), { body, idempotencyKey: key })
+  ).data;
 }
 
 export async function setVenuePricing(
@@ -157,6 +163,7 @@ export async function setVenuePricing(
   body: { expected_version: number; subscriptions_enabled: boolean; pay_per_visit_halalas: number | null },
   key: string,
 ) {
-  return (await api.put<PlatformVenueProfile>(platformPath(venueId, '/pricing'), { body, idempotencyKey: key }))
-    .data;
+  return (
+    await api.put<PlatformVenueProfile>(platformPath(venueId, '/pricing'), { body, idempotencyKey: key })
+  ).data;
 }

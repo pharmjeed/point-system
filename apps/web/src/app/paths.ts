@@ -20,6 +20,7 @@ export const paths = {
   admin: '/admin', // S-13
   platform: '/platform', // P-01 (V2, docs/v2/02 §2)
   platformLogin: '/platform/login', // V2-002
+  platformVenues: '/platform/venues', // P-04 (V2-004)
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)
 } as const;
 
@@ -63,6 +64,7 @@ export const ADMIN_PERMISSIONS = [
   'wa.templates_manage',
   'retention.manage',
   'org.settings_manage',
+  'venue.manage', // «ملف الموقع العام» (V2-004)
 ];
 
 export const canAdmin = (me: Me) => me.permissions.some((p) => ADMIN_PERMISSIONS.includes(p));

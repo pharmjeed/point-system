@@ -4,6 +4,7 @@
  * locations (C-07). Shared by the server (validation) and the web app (the S-13 form, the P-04 console) — DEC-490.
  */
 import { z } from 'zod';
+export type { VenueCategory, VenuePublicStatus } from './canon/platform.js';
 import { VENUE_CATEGORIES, VENUE_PUBLIC_STATUSES } from './canon/platform.js';
 import {
   OpeningHoursSchema as CustomerOpeningHoursSchema,

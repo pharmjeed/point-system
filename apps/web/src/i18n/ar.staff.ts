@@ -178,13 +178,7 @@ export const p04 = {
     reasonHint: 'يراه المشغل في شاشة الملف.',
   },
   pricingHallHint: 'القاعات لا تقبل الاشتراك.',
-  done: {
-    approve: 'اعتُمد الملف.',
-    'send-back': 'أُعيد الملف للمشغل.',
-    hide: 'أُخفي الموقع.',
-    unhide: 'أُظهر الموقع.',
-    pricing: 'حُفظت الأسعار.',
-  },
+  done: { pricing: 'حُفظت الأسعار.' },
   back: 'المواقع',
 } as const;
 
@@ -911,6 +905,7 @@ export const s13 = {
   title: 'الإدارة',
   sections: {
     staff: 'الموظفون',
+    listing: 'ملف الموقع العام',
     channel: 'قناة واتساب',
     templates: 'القوالب',
     outbox: 'صندوق الأحداث',

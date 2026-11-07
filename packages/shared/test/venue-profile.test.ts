@@ -15,7 +15,10 @@ import {
   isOpenAt,
   normalizeOpeningHours,
 } from '../src/index.js';
-import { OpeningHoursSchema as CustomerOpeningHoursSchema, VENUE_PUBLIC_CATEGORIES } from '../src/customer/index.js';
+import {
+  OpeningHoursSchema as CustomerOpeningHoursSchema,
+  VENUE_PUBLIC_CATEGORIES,
+} from '../src/customer/index.js';
 
 /** A Riyadh local time (UTC+3) as an instant. */
 const riyadh = (iso: string) => new Date(`${iso}+03:00`);
@@ -60,7 +63,9 @@ describe('opening hours', () => {
     expect(issue({ mon: [{ open: '9:00', close: '10:00' }] })).toBe('time_format');
     expect(OpeningHoursInputSchema.safeParse({ always_open: false, days: { xyz: [] } }).success).toBe(false);
     const five = Array.from({ length: 5 }, (_, i) => ({ open: `0${i}:00`, close: `0${i}:30` }));
-    expect(OpeningHoursInputSchema.safeParse({ always_open: false, days: { mon: five } }).success).toBe(false);
+    expect(OpeningHoursInputSchema.safeParse({ always_open: false, days: { mon: five } }).success).toBe(
+      false,
+    );
     // touching intervals are fine
     expect(
       issue({
@@ -130,9 +135,9 @@ describe('bodies', () => {
     expect(PutVenuePublicProfileBodySchema.safeParse({ ...body, lat: null, lng: null }).success).toBe(true);
     const id = '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
     expect(PutVenuePublicProfileBodySchema.safeParse({ ...body, photo_ids: [id, id] }).success).toBe(false);
-    expect(
-      PutVenuePublicProfileBodySchema.safeParse({ ...body, photo_ids: Array(7).fill(id) }).success,
-    ).toBe(false);
+    expect(PutVenuePublicProfileBodySchema.safeParse({ ...body, photo_ids: Array(7).fill(id) }).success).toBe(
+      false,
+    );
     expect(PutVenuePublicProfileBodySchema.safeParse({ ...body, price: 1 }).success).toBe(false); // strict
   });
 

@@ -126,6 +126,18 @@ export const routes: RouteObject[] = [
           Component: (await import('@/features/platform/PlatformHomePage')).PlatformHomePage,
         }),
       },
+      {
+        path: paths.platformVenues,
+        lazy: async () => ({
+          Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuesPage,
+        }),
+      },
+      {
+        path: `${paths.platformVenues}/:venueId`,
+        lazy: async () => ({
+          Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuePage,
+        }),
+      },
       ...galleryRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],
