@@ -37,10 +37,10 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 | 16 | `16_Dev_Tickets_Sprint_Plan.md` | **the build order**: sprints S0–S8, tickets `PNT-001…PNT-103`, gates G1–G5 |
 | 17 | `17_Test_Acceptance_Plan.md` | test strategy, `TC-###`, race/chaos/device/load designs |
 | — | `brand/BRAND_GUIDELINES.md`, `brand/tokens/`, `brand/logo/`, `brand/app-icons/`, `brand/sounds/` | UI identity assets (copy, never redraw) |
-| — | `docs/v2/` | **draft** V2 (customer app, subscriptions, operators; DEC-459) — not binding until the owner approves it (gate H0) |
+| — | `docs/v2/` | V2 (customer app, subscriptions, operators; DEC-459) — **approved** by the owner (DEC-460, gate H0); built phase by phase from `06_Delivery_Plan.md` |
 | — | `docs/design/README.md`, `docs/design/system/` | the published design system «بوينت · POINT» (Claude Design): every component's look, states and both themes. Read the README first: values come from `brand/tokens`, behaviour and props from 02/03/07 (DEC-49, DEC-50) |
 
-**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-460`) in `docs/DECISIONS.md` and fix the affected file in the same change.
+**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-461`) in `docs/DECISIONS.md` and fix the affected file in the same change.
 
 ## 3. Non-negotiables (full list: canon §2)
 
