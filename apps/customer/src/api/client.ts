@@ -26,6 +26,7 @@ import {
   type CustomerMe,
   type CustomerMePatchBody,
   type CustomerOtpChallenge,
+  type CustomerPass,
   type CustomerReauth,
   type CustomerRouteKey,
   type CustomerTokens,
@@ -253,6 +254,13 @@ export function createCustomerApi(opts: CustomerApiOptions) {
 
     async home(query: CustomerHomeQuery = {}): Promise<CustomerHome> {
       return (await call('home', { query: { ...query } })).data;
+    },
+
+    // ---- V2-013 (C-11)
+
+    /** The entry pass secret, the server time and the vehicles: cached on the device to draw the QR offline. */
+    async pass(): Promise<CustomerPass> {
+      return (await call('pass')).data;
     },
 
     // ---- V2-012 (C-15) and V2-017 (C-20)

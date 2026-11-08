@@ -92,7 +92,10 @@ describe('pass token', () => {
   it('refuses a tampered token, another secret, another vehicle, and accepts a previous secret in the list', () => {
     const t = generatePassToken({ secret, accountId: ACCOUNT, vehicleId: VEHICLE, nowMs: T0 });
     const other = base64UrlEncode(new Uint8Array(32).fill(9));
-    expect(verifyPassToken({ token: t, secrets: [other], nowMs: T0 })).toEqual({ ok: false, reason: 'bad_mac' });
+    expect(verifyPassToken({ token: t, secrets: [other], nowMs: T0 })).toEqual({
+      ok: false,
+      reason: 'bad_mac',
+    });
     expect(verifyPassToken({ token: t, secrets: [other, secret], nowMs: T0 })).toMatchObject({
       ok: true,
       secretIndex: 1,
@@ -130,7 +133,9 @@ describe('pass token', () => {
       server_time: '2026-11-08T10:00:00.000Z',
       rotated_at: '2026-11-08T10:00:00.000Z',
       refresh_after: '2026-12-08T10:00:00.000Z',
-      vehicles: [{ vehicle_id: VEHICLE, plate_display: '1234 ب ح د', vehicle_make: null, vehicle_color: null }],
+      vehicles: [
+        { vehicle_id: VEHICLE, plate_display: '1234 ب ح د', vehicle_make: null, vehicle_color: null },
+      ],
     });
     expect(ok.success).toBe(true);
     expect(CustomerPassSchema.safeParse({ ...ok.data, secret: 'x' }).success).toBe(false);

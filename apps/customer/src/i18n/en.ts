@@ -262,8 +262,16 @@ export const en: Dictionary = {
   },
   pass: {
     title: 'Entry pass',
-    comingSoon: 'The rotating entry pass arrives in the next update.',
-    body: 'A QR code that changes every 30 seconds and works offline, shown to the driver at the gate.',
+    hint: 'Show the code to the driver at the gate to hand over your car.',
+    vehicle: 'Car',
+    noVehicle: 'No car in your account. The driver will take its details, or add your car first.',
+    addVehicle: 'Add a car',
+    changesIn: 'The code changes in {seconds} s',
+    offline: 'Offline — the code works as usual.',
+    loading: 'Preparing your pass…',
+    unavailable: 'Open the pass once while online; it then works without a connection.',
+    retry: 'Try again',
+    qrLabel: 'Entry pass code',
   },
   ticketStatus: {
     received: 'We received your car',
