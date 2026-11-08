@@ -8,5 +8,6 @@ allowBuilds:
   argon2: true
   esbuild: true
   cpu-features: false
+  '@ibm/plex-sans-arabic': false
   protobufjs: false
   ssh2: false
