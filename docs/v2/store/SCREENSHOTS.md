@@ -36,6 +36,8 @@ pnpm --filter @point/customer run store:screenshots -- --skip-export --locale ar
 
 `apps/customer/scripts/store-screenshots.mjs`: يصدّر التطبيق للويب على الخادم الوهمي (`CUSTOMER_API_MODE=fake`، و`CUSTOMER_STORE_SCREENSHOTS=1` يضيف هدف الويب الذي لا يوجد إلا لهذا، DEC-568)، ويخدمه محليًا، ويقود رحلة R1 بـPlaywright على رقم العرض `0500000099` (زيارة جارية في الخادم الوهمي)، ثم الشاشات أعلاه بالعربية (`ar-SA`، RTL) والإنجليزية. الناتج في `apps/customer/store-screenshots/<ar|en>/<الجهاز>/` (مستثنى من git). يحتاج Playwright (مثبّت عامًا، أو `@playwright/test` من `apps/web`) ومتصفح Chromium (`PW_CHROMIUM_PATH` أو `/opt/pw-browsers/chromium` أو متصفح Playwright نفسه)؛ لا يثبّت السكربت شيئًا ولا يتصل بأي خدمة خارجية.
 
+**ملاحظة على اللقطات الإنجليزية:** اسم الباقة في `C-09` يظهر بالعربية («اشتراك سيارة واحدة») لأن عقد الباقة يحمل `name_ar` وحده (`CustomerLocationPlanSchema`، `subscription_plans`)؛ إما أن تُستبعد لقطة `07-subscribe` من القائمة الإنجليزية، أو يُضاف اسم إنجليزي للباقة في تذكرة مستقلة قبل الالتقاط.
+
 **حدود لقطات الويب:** هي المكوّنات والخطوط والألوان نفسها مرسومة بـReact Native Web، لكن بلا شريط الحالة الأصلي ولا لوحة المفاتيح، والخريطة لا تظهر (`react-native-maps` بلا ويب، فتبقى القائمة). تصلح للإصدار الأول وللقطات Play؛ والأفضل قبل الإطلاق العام التقاط اللقطات نفسها من محاكي iOS (`xcrun simctl io booted screenshot`) وجهاز أندرويد على بناء `development` (الخادم الوهمي)، بالترتيب نفسه، لأن Apple تطلب أن تُظهر اللقطات التطبيق في الاستعمال (Guideline 2.3.3). لا تُرفع لقطة دون أن يراها المالك.
 
 ## 4. الأصول المرئية الأخرى

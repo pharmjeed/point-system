@@ -242,11 +242,8 @@ async function journey(page, locale, deviceName, base, dir) {
     await page.getByTestId('location-subscribe').filter({ visible: true }).click();
     await page.getByTestId('subscribe-pay').filter({ visible: true }).waitFor();
     await settle(page);
-    // the first plan, then the car if it is not already ticked
-    const ticks = page.getByRole('checkbox').filter({ visible: true });
-    for (let i = 0; i < (await ticks.count()); i++) {
-      if ((await ticks.nth(i).getAttribute('aria-checked')) !== 'true') await ticks.nth(i).click();
-    }
+    // C-09 opens with no plan and the account's only car already chosen: tick the first plan
+    await page.getByRole('checkbox').filter({ visible: true }).first().click();
     await shot('07-subscribe');
   } else {
     process.stdout.write('  (no location with a subscription in the fake data: C-08/C-09 skipped)\n');
