@@ -167,6 +167,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
     expect(seen).toContain('POST /webhooks/whatsapp WA_WEBHOOK_SIGNATURE_INVALID');
     expect(seen).toContain('POST /webhooks/payments/moyasar PAYMENT_WEBHOOK_SIGNATURE_INVALID');
+    expect(seen).toContain('POST /webhooks/einvoicing EINVOICE_WEBHOOK_SIGNATURE_INVALID');
     expect(problems).toEqual([]);
   });
 
@@ -195,7 +196,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     // the 93 staff writes (82 with a requestBody, 11 without; V2-004 adds 3), the platform commands and the 7 customer
     // writes (V2-010)
     expect(checked).toBe(
-      95 + // + intake-pass (V2-013), the payment webhook (V2-021)
+      97 + // + intake-pass (V2-013), the payment webhook (V2-021), the settlement dispute and the e-invoicing webhook (V5)
         PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length +
         CUSTOMER_WRITES,
     );
@@ -226,8 +227,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    // + the platform commands and the customer writes
-    expect(checked).toBe(93 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
+    // + the platform commands and the customer writes (+ the settlement dispute, V5; the e-invoicing webhook is raw)
+    expect(checked).toBe(94 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
     expect(problems).toEqual([]);
   });
 });

@@ -241,6 +241,9 @@ STORAGE_ORIGIN=
 | `MOYASAR_SECRET_KEY` / `MOYASAR_WEBHOOK_SECRET` | — | المفتاح السري (`sk_live_…` في الإنتاج وحده؛ المحوّل يرفض إرسال مفتاح حي خارج الإنتاج) وسر الـWebhook المشترك الذي يُضبط في لوحة Moyasar |
 | `MOYASAR_HTTP_TIMEOUT_MS` | `10000` | مهلة كل استدعاء للبوابة |
 | `CUSTOMER_PUSH_MODE` | `simulator` | الإصدار الثاني (V2-016، DEC-519): `live` (Expo Push API) إلزامي في production ومرفوض في غيرها؛ `simulator` لا يتصل بالشبكة — فلا جهاز حقيقي يتلقى إشعارًا خارج الإنتاج |
+| `EINVOICE_MODE` | `simulator` | الإصدار الثاني (V2-040، DEC-540): `live` إلزامي في production ومرفوض في غيرها؛ `simulator` لا يتصل بالشبكة — فلا يصل مستند إلى الهيئة خارج الإنتاج. لا محوّل مزود بعد: في `live` تبقى الفواتير `pending` مع تنبيه `einvoice_submit_failed` حتى يختار المالك المزود |
+| `INVOICE_SELLER_LEGAL_NAME_AR` · `_EN` · `INVOICE_SELLER_VAT_NUMBER` · `INVOICE_SELLER_CR_NUMBER` · `INVOICE_SELLER_ADDRESS_AR` | فارغة | الإصدار الثاني (DEC-540): بيانات بوينت بائعًا في كل فاتورة؛ قيم تجريبية ظاهرة خارج الإنتاج، وإلزامية في production (يرفض الإقلاع دونها) |
+| `VAT_RATE_BP` · `EINVOICE_WEBHOOK_SECRET_REF` · `SETTLEMENT_MONTHLY_CRON_UTC` | `1500` · `env://EINVOICE_WEBHOOK_SECRET` · `15 0 1 * *` | الضريبة بنقاط الأساس، سر إشعار مزود الفوترة، وموعد `job.settlement_monthly` (الأول من الشهر 03:15 الرياض) — DEC-543، DEC-544، DEC-549 |
 | `CUSTOMER_PUSH_ACCESS_TOKEN_REF` / `EXPO_ACCESS_TOKEN` | `env://EXPO_ACCESS_TOKEN` / — | رمز وصول مشروع Expo إن فُعّل «push security» فيه (اختياري، بالمرجع، `sm://` في الإنتاج) |
 | `CUSTOMER_PUSH_HTTP_TIMEOUT_MS` / `CUSTOMER_PUSH_RECEIPT_DELAY_S` | `10000` / `900` | مهلة استدعاء Expo، ومتى تُقرأ إيصالات التسليم |
 | `PAYMENTS_RECONCILE_CRON_UTC` | `30 0 * * *` | المطابقة اليومية مع البوابة (03:30 بتوقيت الرياض) لليوم السابق (DEC-514) |

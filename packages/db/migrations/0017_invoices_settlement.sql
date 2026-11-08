@@ -361,8 +361,8 @@ CREATE FUNCTION invoices_chain() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   s record;
 BEGIN
-  SELECT * INTO s FROM invoice_series WHERE series = NEW.series FOR UPDATE;
-  IF NEW.icv <> s.last_icv + 1 OR NEW.previous_hash <> s.last_hash
+  SELECT * INTO s FROM invoice_series WHERE series = NEW.series FOR NO KEY UPDATE;
+  IF NOT FOUND OR NEW.icv <> s.last_icv + 1 OR NEW.previous_hash <> s.last_hash
      OR NEW.number <> s.prefix || '-' || lpad(NEW.icv::text, 8, '0') THEN
     RAISE EXCEPTION 'invoice % breaks the chain of series %', NEW.number, NEW.series USING ERRCODE = 'check_violation',
       CONSTRAINT = 'ck_invoices_chain';

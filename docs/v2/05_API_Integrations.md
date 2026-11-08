@@ -106,10 +106,12 @@
 |---|---|
 | `POST /v1/tickets/intake-pass` | استلام بمسح بطاقة الدخول (O-01، **مبني V2-013**، DEC-501): `{ pass_token, ticket_id, expected_version }` يجعل مسودة D-05 للسائق تذكرة `channel = app` (200)، أو بلا `ticket_id` (و`event_id` كـ`POST /v1/tickets`) ينشئها (201)؛ يرد `{ ticket, customer: { first_name, phone_masked, vehicle_prefilled }, task?, driver_state? }`؛ `ticket.intake`، `Idempotency-Key`، نطاق الاستلام و`OPERATOR_SUSPENDED`؛ والأهلية كما حُددت عند الإنشاء (DEC-502) |
 | `GET /v1/venues/{venueId}/public-profile` · `PUT …` · `POST …/photos` · `POST …/submit` | ملف الموقع العام (O-04، V2-004 مبني): القراءة، الحفظ مسودة باستبدال كامل (`expected_version` 0 للإنشاء)، رابط رفع صورة موقّع، الإرسال للمراجعة؛ `venue.manage` (DEC-490 … DEC-494) |
-| `GET /v1/settlement/statements[/{id}]` | كشوف التسوية للمشغل (قراءة، O-05) |
-| `GET /v1/operator/subscription` | اشتراك النظام وفواتيره (O-06) |
+| `GET /v1/settlement-statements` · `GET /v1/settlement-statements/{statementId}` · ✓ `POST …/{statementId}/dispute` | كشوف التسوية للمشغل (O-05، **مبني V2-041**، DEC-547): الصادرة وما بعدها فقط ببنودها الفعالة وفواتيرها، والاعتراض بسبب؛ `settlement.read` / `settlement.dispute` (المالك والإدارة) |
+| `GET /v1/system-subscription` · `GET /v1/system-subscription/invoices/{invoiceId}` | اشتراك النظام وفواتيره (O-06، **مبني V2-042**، DEC-547): العقد الساري وسجله، المواقع النشطة، فواتير بوينت برابط PDF قصير؛ `settlement.read` |
 
 ## 3. مسارات المنصة `/v1/platform/*` (أدوار المنصة، MFA)
+
+**مبني في V5 (V2-040 … V2-042، DEC-544 … DEC-548):** `GET /v1/platform/settlements[/{statementId}]`، ✓ `POST /v1/platform/settlements/generate` و`POST …/{statementId}/adjustments|issue|record-payment|resolve-dispute|void` (`platform.settlement_manage`)، و`GET /v1/platform/invoices[/{invoiceId}]` (`platform.invoice_read`) — التفاصيل في `02_Platform_and_Operators.md` §5.4 و07 §8.
 
 المشغلون والعقود، المواقع واعتمادها (V2-004 مبني: `GET /v1/platform/venues[/{venueId}]`، `POST …/{venueId}/approve|send-back|hide|unhide`، `PUT …/{venueId}/pricing` بـ`platform.plan_manage`)، الباقات والأسعار، العملاء والاشتراكات (قراءة ودعم)، المدفوعات والاستردادات، كشوف التسوية (إنشاء، إصدار، تسجيل الدفع)، الفواتير، الإعدادات، وسجل المنصة — بمقابل كل شاشة `P-##`.
 
@@ -118,7 +120,7 @@
 | المسار | المصدر | المعالجة |
 |---|---|---|
 | `POST /webhooks/payments/{gateway}` | بوابة الدفع | توقيع، تخزين خام، معالجة مرة واحدة عبر Outbox (V2 §4.3) — **مبني لـMoyasar: `POST /webhooks/payments/moyasar`** (أدناه) |
-| `POST /webhooks/einvoicing` | مزود الفوترة | حالة الإبلاغ/الاعتماد للفاتورة |
+| `POST /webhooks/einvoicing` | مزود الفوترة | حالة الإبلاغ/الاعتماد للفاتورة — **مبني (V2-040، DEC-543)**، §4.3 |
 | `/webhooks/whatsapp` | Meta | كما هو |
 
 ### 4.1 Webhook بوابة الدفع (المنفَّذ في V2-021، DEC-511، DEC-512)
@@ -132,6 +134,16 @@
 
 - `POST /v1/platform/payments/{paymentId}/refunds` (`platform.refund_issue`: المالية والمالك، ✓ `Idempotency-Key`) بـ`{ amount_halalas?, reason }`: جزئي أو كامل (غياب المبلغ = كل المتبقي)، لا يتجاوز المدفوع ناقص المسترد وما ينتظر (`REFUND_AMOUNT_EXCEEDS_PAID`)، ومن `paid`/`partially_refunded` فقط (`PAYMENT_NOT_REFUNDABLE`). يرد `201 { refund (requested), payment }`، والبوابة يستدعيها `job.payment_refund_send` بعد COMMIT (استرداد بعد آخر للدفعة)، فتصير `succeeded` أو `failed` مع تنبيه `payment_refund_failed`.
 - `job.payments_reconcile` يوميًا (`PAYMENTS_RECONCILE_CRON_UTC`): مدفوعات البوابة ليوم الرياض السابق مقابل `online_payments`، وكل فرق بند في `payment_reconciliation_runs.mismatches` وتنبيه في `platform_alerts`.
+
+### 4.3 مزود الفوترة الإلكترونية وإشعار حالته (V2-040، DEC-540 … DEC-543)
+
+- **المنفذ** `EInvoicingProvider`: `report` (فاتورة مبسطة أو إشعارها الدائن، الإبلاغ خلال 24 ساعة)، `clear` (فاتورة ضريبية B2B أو إشعارها، الاعتماد)، `verifyCallback`. `EINVOICE_MODE=simulator` (بلا شبكة، كل بيئة غير الإنتاج) أو `live` (الإنتاج وحده؛ لا محوّل بعد حتى يختار المالك المزود، فيُرفض الإرسال بلا اتصال وتبقى الفاتورة `pending` مع تنبيه).
+- **الإرسال** `job.einvoice_submit` بعد COMMIT، بترتيب السلسلة؛ القبول يكتب الحالة (`reported`/`cleared`) ومرجع المزود وبصمته وQR المختوم ثم `job.invoice_pdf_render`؛ الرفض نهائي بتنبيه `einvoice_rejected`، والتعذر يُعاد ثم `einvoice_submit_failed`.
+- **الإشعار** `POST /webhooks/einvoicing` (canon §9.8، فئة `webhook`): `X-Einvoice-Signature: sha256=<HMAC-SHA256 للجسم الخام بسر EINVOICE_WEBHOOK_SECRET_REF>` بمقارنة زمن ثابت قبل أي قراءة، وإلا `401 EINVOICE_WEBHOOK_SIGNATURE_INVALID`. الجسم `{ invoice_uuid, status: reported|cleared|rejected, reference?, codes? }`؛ يُطبق على مستند `pending` فقط، والباقي يُدوَّن `ignored`؛ 200 بلا جسم. صيغة توقيع المزود الحقيقي يتبناها محوّله.
+
+### 4.4 فواتير العميل C-17 (V2-040، DEC-548)
+
+`GET /v1/customer/invoices` (أحدث 100 مستند للحساب: فواتير مبسطة وإشعارات دائنة) و`GET /v1/customer/invoices/{invoiceId}` (البائع ورقماه، البنود والضريبة منفصلة، QR بصيغة TLV base64، و`pdf_url` موقّع لدقائق أو `null` أثناء التوليد)؛ مستند حساب آخر ← `RESOURCE_NOT_FOUND`.
 
 ## 5. رموز خطأ جديدة (مقترحة، بنمط 08)
 

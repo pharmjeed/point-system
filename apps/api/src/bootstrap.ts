@@ -57,7 +57,7 @@ export async function createApp(opts: CoreModuleOptions): Promise<NestExpressApp
   // V2-040 (DEC-543): the e-invoicing provider's status callback is signed over its raw bytes
   app.use(
     '/webhooks/einvoicing',
-    express.raw({ type: () => true, limit: '256kb' }),
+    express.raw({ type: () => true, limit: '1mb' }),
     (req: Request & { rawBody?: Buffer }, _res: Response, next: NextFunction) => {
       if (Buffer.isBuffer(req.body)) req.rawBody = req.body;
       next();

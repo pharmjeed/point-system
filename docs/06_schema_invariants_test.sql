@@ -305,7 +305,11 @@ SELECT expect_fail('unknown customer push kind',
  $q$INSERT INTO customer_push_messages(account_id,session_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'marketing','push:y' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
 -- V5 invoices and settlement (0017_invoices_settlement.sql, V2-040 … V2-042, DEC-540 … DEC-549): a gapless,
 -- immutable invoice chain per series; one live statement per operator and month equal to its lines, each source row
--- counted once
+-- counted once. The two series rows are data of 0017; a structure-only copy (the restore drill) has none.
+INSERT INTO invoice_series(series,prefix,last_hash) VALUES
+ ('simplified','PS','NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='),
+ ('standard','PB','NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==')
+ ON CONFLICT (series) DO NOTHING;
 SELECT expect_fail('invoice skipping a counter of its series',
  $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','customer_simplified',388,'PS-00000002',2,gen_random_uuid(),'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator')$q$);
 SELECT expect_fail('invoice that does not chain to the previous hash',

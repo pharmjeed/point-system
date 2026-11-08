@@ -181,6 +181,7 @@ describe('object storage selection from the environment', () => {
           WA_MODE: 'live',
           MOYASAR_MODE: 'live',
           CUSTOMER_PUSH_MODE: 'live',
+          EINVOICE_MODE: 'live',
         }),
       ),
     ).toBe('s3');

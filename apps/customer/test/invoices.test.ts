@@ -102,13 +102,7 @@ describe('C-17 on the fake backend', () => {
         ticketId: DEMO_TICKET,
         source: {
           type: 'token',
-          token: fakeTokenize({
-            number: '4111111111111111',
-            month: 12,
-            year: 2030,
-            cvc: '123',
-            name: 'SARA',
-          }),
+          token: fakeTokenize({ number: '4111111111111111', month: 12, year: 2030 }),
         },
         idempotencyKey: 'k-1',
       },

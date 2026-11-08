@@ -3381,16 +3381,14 @@ export const invoice_provider_events = pgTable(
   'invoice_provider_events',
   {
     // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    id: bigint({ mode: 'number' })
-      .primaryKey()
-      .generatedAlwaysAsIdentity({
-        name: 'invoice_provider_events_id_seq',
-        startWith: 1,
-        increment: 1,
-        minValue: 1,
-        maxValue: 9223372036854775807,
-        cache: 1,
-      }),
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'invoice_provider_events_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
     invoice_id: uuid().notNull(),
     kind: text().notNull(),
     outcome: text().notNull(),
