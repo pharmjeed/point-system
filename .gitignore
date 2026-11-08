@@ -1,0 +1,43 @@
+# dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
+
+# environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# logs and local data
+*.log
+tmp/
+.cache/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# delivery archives are not part of the repository
+*.zip
+
+# database backups and site-specific proxy snippets stay on the server (docs/DEPLOYMENT.md)
+*.dump
+*.dump.age
+*.dump.enc
+backups/
+infra/caddy/conf.d/*
+!infra/caddy/conf.d/00-site.caddy
+
+# agent worktrees
+.claude/worktrees/

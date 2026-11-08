@@ -1,0 +1,69 @@
+{
+  "$comment": "Local template catalog of the simulator (docs/12 §8.2, docs/14 §4). Status APPROVED unless changed through the control API.",
+  "templates": [
+    {
+      "purpose": "W-01",
+      "name": "masaf_ticket_issued_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "مصاف — {{1}} — تذكرة {{2}}\nتم استلام مركبتك: {{3}}.\nعند رغبتك بالخروج اضغط «طلب السيارة».",
+      "buttons": [{ "type": "QUICK_REPLY", "text": "طلب السيارة" }]
+    },
+    {
+      "purpose": "W-02",
+      "name": "masaf_request_received_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "تم تسجيل طلب سيارتك رقم {{1}}؛ سنبلغك عند جاهزيتها.",
+      "buttons": []
+    },
+    {
+      "purpose": "W-03",
+      "name": "masaf_request_reserved_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "طلبك لسيارتك رقم {{1}} في الانتظار وتم إسناده؛ سنبلغك عند بدء الإحضار.",
+      "buttons": []
+    },
+    {
+      "purpose": "W-04",
+      "name": "masaf_retrieval_started_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "جارٍ إحضار سيارتك رقم {{1}} الآن.",
+      "buttons": []
+    },
+    {
+      "purpose": "W-05",
+      "name": "masaf_vehicle_ready_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "سيارتك رقم {{1}} جاهزة عند نقطة التسليم.\nرمز التسليم: {{2}}\nأعطِ الرمز للسائق عند الاستلام ولا تشاركه مع غيره.",
+      "buttons": []
+    },
+    {
+      "purpose": "W-06",
+      "name": "masaf_vehicle_delivered_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك مصاف.",
+      "buttons": []
+    },
+    {
+      "purpose": "W-07",
+      "name": "masaf_request_canceled_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "تم إلغاء طلب إحضار سيارتك رقم {{1}}، وتبقى سيارتك محفوظة لدينا. متى رغبت اضغط «طلب السيارة» في رسالة التذكرة.",
+      "buttons": []
+    },
+    {
+      "purpose": "W-08",
+      "name": "masaf_returned_to_parking_v1",
+      "language": "ar",
+      "category": "UTILITY",
+      "body": "لم يتم استلام سيارتك رقم {{1}}، لذلك تُعاد الآن إلى الموقف. متى كنت جاهزًا اضغط «طلب السيارة» في رسالة التذكرة.",
+      "buttons": []
+    }
+  ]
+}

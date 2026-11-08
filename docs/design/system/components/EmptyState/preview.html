@@ -1,0 +1,16 @@
+<!-- @dsCard group="التغذية الراجعة" height=340 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>EmptyState</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(React.Fragment, null,
+  h(P.EmptyState, {icon:'bell-ring', title:'لا توجد طلبات الآن', body:'سيصلك صوت وبطاقة عند أي طلب إحضار.'}),
+  h(P.EmptyState, {icon:'wifi-off', title:'تعذّر التحميل', body:'تحقق من الاتصال.', actionLabel:'إعادة المحاولة', actionIcon:'refresh-cw'}))));
+</script>
+</body>
+</html>

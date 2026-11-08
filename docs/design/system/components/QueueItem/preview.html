@@ -1,0 +1,17 @@
+<!-- @dsCard group="المشرف" height=520 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>QueueItem</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, {stack:true}, h('div', {style:{display:'grid', gap:16}},
+  h(P.QueueItem, {ticketNumber:118, vehicle:'جي إم سي يوكن · أسود', plate:{digits:'5520', letters:['ط','ع','ن']}, waiting:'6:40', critical:true, escalations:[{level:'critical', label:'تصعيد للمشرف'},{level:'warning', label:'لم يُقبل'}]}),
+  h(P.QueueItem, {ticketNumber:125, status:'assigned', vehicle:'تويوتا كامري · أبيض', waiting:'1:12', assignee:'سالم', changed:true}),
+  h(P.QueueItem, {ticketNumber:131, status:'requested', vehicle:'هيونداي سوناتا · أسود', waiting:'0:20'}))));
+</script>
+</body>
+</html>

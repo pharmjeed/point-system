@@ -1,0 +1,19 @@
+<!-- @dsCard group="المشرف" height=680 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>Timeline</title>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(P.Timeline, {events:[
+  {kind:'ticket', text:'استلام المركبة', actor:'سالم · D-05', time:'21:41'},
+  {kind:'whatsapp', text:'رسالة للعميل', actor:'النظام', time:'21:41', message:'مصاف — قاعة ريماس — تذكرة 125\nتم استلام مركبتك: تويوتا كامري بيضاء — لوحة 1234.'},
+  {kind:'custody', text:'المفتاح في الخانة K-12', actor:'سالم', time:'21:47'},
+  {kind:'ticket', icon:'bell-ring', text:'طلب العميل السيارة', actor:'العميل عبر واتساب', time:'23:02'},
+  {kind:'whatsapp', text:'رسالة للعميل', actor:'النظام', time:'23:07', failed:true, message:'سيارتك رقم 125 جاهزة عند نقطة التسليم.'}]})));
+</script>
+</body>
+</html>

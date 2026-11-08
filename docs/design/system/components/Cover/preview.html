@@ -1,0 +1,58 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>بوينت · POINT</title>
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--pt-bg); color:var(--pt-text); font-family:var(--pt-font-sans); overflow:hidden; }
+  .cover { position:relative; width:960px; height:288px; overflow:hidden; }
+  /* RTL brand: mirrored — the name sits bottom-right, the composition in the left 480px box */
+  .art { position:absolute; top:0; left:0; width:480px; height:288px; overflow:hidden; }
+  .art svg { display:block; width:480px; height:288px; }
+  .brand { fill:var(--pt-primary); }
+  .deep { fill:var(--pt-surface-inverse); }
+  .tint { fill:var(--pt-primary-subtle); }
+  .ground { fill:var(--pt-bg); }
+  .ready { fill:var(--pt-status-ready-bg); }
+  .warn { fill:var(--pt-warning); }
+  .dot { fill:var(--pt-primary); }
+  .words { position:absolute; right:24px; bottom:24px; max-width:440px; text-align:right; }
+  .name { margin:0; font-size:96px; line-height:.95; font-weight:700; color:var(--pt-text); }
+  .name span { display:block; }
+  .tag { margin:8px 0 0; font-size:14px; line-height:22px; color:var(--pt-text-muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<!--
+  blocks      pt-surface-inverse 144×256 bleeding off the bottom · pt-primary 176×232 bled off the top (the largest, the brand blue) · pt-primary-subtle 112×176 · pt-status-ready-bg and pt-warning as two chip-shaped pills only — about 30% of 960×288
+  arrangement one tall blue slab flanked by a navy slab and a tint slab, a space-4 gutter between them, edges bleeding top and bottom like a parking row
+  pattern     literal motif: the pin from the mark ("نقطة" = point) cut from the blue slab as a ground ring around a blue dot; plus a dot grid of 8px connection dots at a space-6 pitch on the tint, and status pills (radius-full) on the navy — "status is text + colour + icon"
+  scales      gutters space-4 (16); pitch space-6 (24); corners radius-lg (16); pills radius-full (rx = 14, half of 28); dots r 4
+-->
+<rect class="deep" x="0" y="48" width="144" height="256" rx="16"/>
+<rect class="ready" x="24" y="196" width="104" height="28" rx="14"/>
+<rect class="warn" x="56" y="156" width="72" height="28" rx="14"/>
+<rect class="brand" x="160" y="-16" width="176" height="232" rx="16"/>
+<circle class="ground" cx="248" cy="104" r="48"/>
+<circle class="brand" cx="248" cy="104" r="18"/>
+<rect class="tint" x="352" y="96" width="112" height="176" rx="16"/>
+<g>
+  <circle class="dot" cx="372" cy="120" r="4"/><circle class="dot" cx="396" cy="120" r="4"/><circle class="dot" cx="420" cy="120" r="4"/><circle class="dot" cx="444" cy="120" r="4"/>
+  <circle class="dot" cx="372" cy="144" r="4"/><circle class="dot" cx="396" cy="144" r="4"/><circle class="dot" cx="420" cy="144" r="4"/>
+  <circle class="dot" cx="372" cy="168" r="4"/><circle class="dot" cx="396" cy="168" r="4"/>
+  <circle class="dot" cx="372" cy="192" r="4"/>
+</g>
+</svg>
+</div>
+<div class="words">
+  <h1 class="name"><span>بوينت ·</span><span>POINT</span></h1>
+  <p class="tag">نظام واجهات الفاليت لقاعات الأفراح — للسائق والمشرف والإدارة.</p>
+</div>
+</div>
+</body>
+</html>

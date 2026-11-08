@@ -1,0 +1,662 @@
+import { QueryClient } from '@tanstack/react-query';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { queryKeys } from '@/api/queryClient';
+import type { DriverHome, TaskCard } from '@/api/types';
+import { useLinkStore } from '@/features/driver/linkStore';
+import {
+  homeRegistry,
+  loadHomeSnapshot,
+  resetHomeRegistry,
+  SERVICE_DOWN_AFTER_MS,
+} from '@/features/driver/useDriverHome';
+import { playSound } from '@/lib/audio';
+import { driverEvents, startRealtime } from '@/realtime/driverRuntime';
+import { RESYNC_RETRY_MS } from '@/realtime/engine';
+import { commandGate } from '@/realtime/hooks';
+import { useOfferLive } from '@/realtime/offerStore';
+import type { ServerEvent } from '@/realtime/protocol';
+import { resetSync, useSyncStore } from '@/realtime/syncStore';
+import { useFieldStore } from '@/stores/field';
+import { useUiStore } from '@/stores/ui';
+import { applyOffer, mergeSnapshot } from '@/realtime/driverHome';
+import { FakeEnv, FakeTransport } from './engineFakes';
+import { home, IDS, offerCard, taskCard } from './fixtures';
+
+vi.mock('@/lib/audio', async (original) => ({
+  ...(await original<typeof import('@/lib/audio')>()),
+  playSound: vi.fn(async () => true),
+  stopSound: vi.fn(),
+}));
+
+const options = (qc: QueryClient) => ({ area: 'driver' as const, userId: IDS.me, qc, hasDuty: () => true });
+
+function reply(status: number, body: unknown) {
+  return new Response(body === undefined ? '' : JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+const errorBody = (code: string, retryable: boolean) => ({
+  error: { code, message: code, message_ar: `نص ${code}`, retryable, details: {} },
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetSync();
+  resetHomeRegistry();
+  useFieldStore.getState().reset();
+  useOfferLive.getState().reset();
+  vi.mocked(playSound).mockClear();
+});
+
+describe('the driver resync counts only the server state as a sync (PNT-065 AC2)', () => {
+  let qc: QueryClient;
+  let stop: () => void;
+  beforeEach(() => {
+    qc = new QueryClient();
+  });
+  afterEach(() => stop?.());
+
+  const start = () => {
+    const env = new FakeEnv();
+    const handle = startRealtime(options(qc), { transport: new FakeTransport(), env });
+    stop = handle.stop;
+    return env;
+  };
+
+  it.each([
+    ['SERVICE_UNAVAILABLE', 503, errorBody('SERVICE_UNAVAILABLE', true)],
+    ['DEPENDENCY_TIMEOUT', 504, errorBody('DEPENDENCY_TIMEOUT', true)],
+    ['INTERNAL_ERROR', 500, errorBody('INTERNAL_ERROR', false)],
+    ['a proxy 502 without an envelope', 502, undefined],
+    ['RATE_LIMITED', 429, errorBody('RATE_LIMITED', false)],
+  ])('%s keeps the data stale, the commands closed, and tries again', async (_name, status, body) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => reply(status, body)),
+    );
+    const env = start();
+    await vi.waitFor(() => expect(env.pending()).toContain(RESYNC_RETRY_MS));
+    const s = useSyncStore.getState();
+    expect(s).toMatchObject({ stale: true, lastSyncAt: null });
+    expect(commandGate('online', s.stale).ready).toBe(false);
+    // 02 D-15 ح waits until SERVICE_UNAVAILABLE persists (decisions:F1-d15h): one failure never covers the screens
+    expect(s.serviceDown).toBe(false);
+  });
+
+  it('a definitive 4xx (no assignment) is the server state: the sync is complete', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => reply(403, errorBody('ASSIGNMENT_REQUIRED', false))),
+    );
+    start();
+    await vi.waitFor(() => expect(useSyncStore.getState().stale).toBe(false));
+  });
+
+  it('the retry after a 503 that succeeds clears stale and never shows the D-15 ح screen', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(reply(503, errorBody('SERVICE_UNAVAILABLE', true)))
+      .mockResolvedValue(reply(200, { data: home(), meta: { server_time: '2026-10-29T18:00:05.000Z' } }));
+    vi.stubGlobal('fetch', fetch);
+    const env = start();
+    await vi.waitFor(() => expect(env.pending()).toContain(RESYNC_RETRY_MS));
+    expect(useSyncStore.getState().serviceDown).toBe(false); // transient: no D-15 ح
+    env.run(RESYNC_RETRY_MS);
+    await vi.waitFor(() => expect(useSyncStore.getState().stale).toBe(false));
+    // «آخر مزامنة» is the snapshot's own server_time
+    expect(useSyncStore.getState()).toMatchObject({
+      serviceDown: false,
+      lastSyncAt: '2026-10-29T18:00:00.000Z',
+    });
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.server_time).toBe('2026-10-29T18:00:00.000Z');
+  });
+
+  it('a snapshot still travelling at sign-out writes neither the cache nor the sync state', async () => {
+    let answer: (r: Response) => void = () => undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            answer = resolve;
+            init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          }),
+      ),
+    );
+    start();
+    stop(); // useLogout / RootLayout: stopRealtime()
+    resetSync();
+    qc.clear();
+    answer(reply(200, { data: home(), meta: { server_time: '2026-10-29T18:00:05.000Z' } }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(qc.getQueryData(queryKeys.home)).toBeUndefined();
+    expect(useSyncStore.getState()).toMatchObject({ stale: true, lastSyncAt: null });
+  });
+});
+
+describe('02 D-15 ح once SERVICE_UNAVAILABLE persists (decisions:F1-d15h, 08 «auto-retry … ثم banner إن استمر»)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('one 503 is not D-15 ح; still unavailable after SERVICE_DOWN_AFTER_MS it is; a read that succeeds ends it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const qc = new QueryClient();
+    let status = 503;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        status === 503
+          ? reply(503, errorBody('SERVICE_UNAVAILABLE', true))
+          : reply(200, { data: home(), meta: { server_time: '2026-10-29T18:00:05.000Z' } }),
+      ),
+    );
+    await expect(loadHomeSnapshot(qc)).rejects.toThrow();
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+    vi.advanceTimersByTime(SERVICE_DOWN_AFTER_MS - 1);
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+    vi.advanceTimersByTime(1); // nothing answered meanwhile
+    expect(useSyncStore.getState().serviceDown).toBe(true);
+    status = 200;
+    await loadHomeSnapshot(qc);
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+
+    // a 503 answered by a success inside the window never shows it
+    status = 503;
+    await expect(loadHomeSnapshot(qc)).rejects.toThrow();
+    vi.advanceTimersByTime(3000);
+    status = 200;
+    await loadHomeSnapshot(qc);
+    vi.advanceTimersByTime(SERVICE_DOWN_AFTER_MS);
+    expect(useSyncStore.getState().serviceDown).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- events → notices and sounds (14 §3, §5.1)
+
+function event<T extends ServerEvent['type']>(
+  type: T,
+  payload: Record<string, unknown>,
+  aggregate: ServerEvent['aggregate'] = null,
+): ServerEvent {
+  return {
+    id: globalThis.crypto.randomUUID(),
+    type,
+    occurred_at: '2026-10-29T18:00:01.000Z',
+    venue_id: IDS.venue,
+    dispatch_pool_id: null,
+    event_id: null,
+    aggregate,
+    payload,
+  } as unknown as ServerEvent;
+}
+
+const card = (taskId: string, status: TaskCard['task']['status'], version: number, patch: object = {}) => ({
+  ...taskCard(taskId, status, version),
+  ...patch,
+});
+
+describe('driver events (14 §3.1–§3.2, §5.1; 02 D-04, D-09, D-10)', () => {
+  let qc: QueryClient;
+  let onEvent: (e: ServerEvent) => void;
+  beforeEach(() => {
+    qc = new QueryClient();
+    onEvent = driverEvents(options(qc));
+  });
+
+  it('a cancel of the current retrieval: «أُلغي طلب الإحضار — تذكرة n» without a sound', () => {
+    qc.setQueryData(queryKeys.home, home({ current_task: taskCard(IDS.taskA, 'in_progress', 3) }));
+    onEvent(
+      event(
+        'task.updated',
+        { cause: 'task.canceled', ...card(IDS.taskA, 'canceled', 4) },
+        {
+          type: 'task',
+          id: IDS.taskA,
+          version: 4,
+        },
+      ),
+    );
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task).toBeNull();
+    expect(useFieldStore.getState().notices).toMatchObject([
+      { kind: 'canceled', taskId: IDS.taskA, ticketNumber: 125 },
+    ]);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('a cancel of the reserved next task (Task view) is a cancel too, not a withdrawal', () => {
+    qc.setQueryData(
+      queryKeys.home,
+      home({
+        current_task: taskCard(IDS.taskA, 'in_progress', 3),
+        next_task: taskCard(IDS.taskB, 'assigned_waiting', 2, IDS.ticketB, 131),
+      }),
+    );
+    onEvent(
+      event('task.updated', {
+        cause: 'task.canceled',
+        id: IDS.taskB,
+        ticket_id: IDS.ticketB,
+        type: 'retrieve',
+        status: 'canceled',
+        version: 3,
+        assignee: null,
+      }),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'canceled', ticketNumber: 131 }]);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('a withdrawal: the red notice and `reminder` (14 §3.2 task.withdrawn)', () => {
+    qc.setQueryData(queryKeys.home, home({ current_task: taskCard(IDS.taskA, 'accepted', 3) }));
+    onEvent(
+      event('task.updated', {
+        cause: 'task.withdrawn',
+        id: IDS.taskA,
+        ticket_id: IDS.ticketA,
+        type: 'retrieve',
+        status: 'queued',
+        version: 4,
+        assignee: null,
+      }),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'withdrawn', ticketNumber: 125 }]);
+    expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
+  });
+
+  it('a withdrawal whose snapshot arrived first (read between the commit and the event) still says so', () => {
+    const before = home({ current_task: taskCard(IDS.taskA, 'accepted', 3) });
+    qc.setQueryData(queryKeys.home, mergeSnapshot(undefined, before, homeRegistry, 0));
+    // the snapshot read after the withdrawal no longer lists the task
+    qc.setQueryData(
+      queryKeys.home,
+      mergeSnapshot(qc.getQueryData<DriverHome>(queryKeys.home), home({}), homeRegistry, Date.now()),
+    );
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task).toBeNull();
+    onEvent(
+      event('task.updated', {
+        cause: 'task.withdrawn',
+        id: IDS.taskA,
+        ticket_id: IDS.ticketA,
+        type: 'retrieve',
+        status: 'queued',
+        version: 4,
+        assignee: null,
+      }),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'withdrawn', ticketNumber: 125 }]);
+    expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
+    // once: the same view again changes nothing
+    onEvent(
+      event('task.updated', {
+        cause: 'task.withdrawn',
+        id: IDS.taskA,
+        ticket_id: IDS.ticketA,
+        type: 'retrieve',
+        status: 'queued',
+        version: 4,
+        assignee: null,
+      }),
+    );
+    expect(playSound).toHaveBeenCalledTimes(1);
+  });
+
+  it('the promotion of the reserved next task is announced on any screen (next_due via the dialog)', () => {
+    qc.setQueryData(
+      queryKeys.home,
+      home({
+        current_task: taskCard(IDS.taskA, 'in_progress', 3),
+        next_task: taskCard(IDS.taskB, 'assigned_waiting', 2, IDS.ticketB, 131),
+      }),
+    );
+    // the current retrieval canceled before it started → the next task is promoted (10 §6.3)
+    onEvent(event('task.updated', { cause: 'task.canceled', ...card(IDS.taskA, 'canceled', 4) }));
+    onEvent(
+      event('task.updated', {
+        cause: 'task.promoted',
+        ...taskCard(IDS.taskB, 'accepted', 3, IDS.ticketB, 131),
+      }),
+    );
+    const { promotion, announced } = useFieldStore.getState();
+    expect(promotion).toMatchObject({ card: { task: { id: IDS.taskB } }, title: 'بدأت مهمتك التالية: #{n}' });
+    expect(announced).toContain(IDS.taskB);
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.id).toBe(IDS.taskB);
+  });
+
+  it('while D-08 / D-11 complete the current task, the promotion is theirs to announce', () => {
+    qc.setQueryData(
+      queryKeys.home,
+      home({
+        current_task: taskCard(IDS.taskA, 'in_progress', 3),
+        next_task: taskCard(IDS.taskB, 'assigned_waiting', 2),
+      }),
+    );
+    useFieldStore.getState().setCompleting(Date.now() + 30_000);
+    onEvent(event('task.updated', { cause: 'task.promoted', ...taskCard(IDS.taskB, 'accepted', 3) }));
+    expect(useFieldStore.getState().promotion).toBeNull();
+  });
+
+  it('the repark after a supervisor cancel (DEC-30): the D-08 notice and next_due', () => {
+    qc.setQueryData(queryKeys.home, home({ current_task: taskCard(IDS.taskA, 'in_progress', 5) }));
+    onEvent(event('task.updated', { cause: 'task.canceled', ...card(IDS.taskA, 'canceled', 6) }));
+    const repark = taskCard(IDS.taskC, 'in_progress', 1);
+    repark.task.type = 'repark';
+    onEvent(event('task.updated', { cause: 'ticket.reparking', ...repark }));
+    expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['canceled', 'repark']);
+    expect(playSound).toHaveBeenCalledWith('next_due', { key: `task:${IDS.taskC}` });
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.type).toBe('repark');
+  });
+
+  it('the repark card may arrive before the cancel it follows (07 §4.5 best-effort order): both notices, the repark stays current', () => {
+    // the snapshot read before: the retrieval in progress (its card is known live)
+    qc.setQueryData(
+      queryKeys.home,
+      mergeSnapshot(
+        undefined,
+        home({ current_task: taskCard(IDS.taskA, 'in_progress', 5) }),
+        homeRegistry,
+        0,
+      ),
+    );
+    const repark = taskCard(IDS.taskC, 'in_progress', 1);
+    repark.task.type = 'repark';
+    onEvent(event('task.updated', { cause: 'ticket.reparking', ...repark }));
+    // one movement per driver: the card learned last takes the slot, whatever the versions of two tasks
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.id).toBe(IDS.taskC);
+    onEvent(event('task.updated', { cause: 'task.canceled', ...card(IDS.taskA, 'canceled', 6) }));
+    expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['repark', 'canceled']);
+    expect(qc.getQueryData<DriverHome>(queryKeys.home)?.current_task?.task.id).toBe(IDS.taskC);
+    expect(playSound).toHaveBeenCalledTimes(1); // next_due for the repark; the cancel has no sound
+  });
+
+  it('an early request during parking: 02 D-08 notice and `reminder` for the parking driver only', () => {
+    const park = taskCard(IDS.taskA, 'in_progress', 2);
+    park.task.type = 'park';
+    park.ticket.status = 'parking';
+    qc.setQueryData(queryKeys.home, home({ current_task: park }));
+    const summary = {
+      id: IDS.ticketA,
+      display_number: 125,
+      status: 'parking',
+      version: 4,
+      plate: { country: 'SA', display: '1234' },
+      vehicle: {},
+    };
+    onEvent(event('ticket.updated', { cause: 'ticket.retrieval_requested_early', ...summary }));
+    expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'early', taskId: IDS.taskA }]);
+    expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
+    // another ticket's early request is not this driver's
+    vi.mocked(playSound).mockClear();
+    onEvent(
+      event('ticket.updated', {
+        cause: 'ticket.retrieval_requested_early',
+        ...summary,
+        id: IDS.ticketB,
+        version: 9,
+      }),
+    );
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('an early request merged under another cause (decisions:F6): the notice follows the ticket state', async () => {
+    const park = taskCard(IDS.taskA, 'in_progress', 2);
+    park.task.type = 'park';
+    park.ticket.status = 'parking';
+    park.ticket.version = 3;
+    qc.setQueryData(queryKeys.home, home({ current_task: park }));
+    const pending: string | null = '2026-10-29T18:00:00.000Z';
+    const reads: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        reads.push(String(url));
+        return reply(200, {
+          data: { id: IDS.ticketA, status: 'parking', version: 5, pending_retrieval_at: pending },
+          meta: { request_id: 'r', server_time: new Date().toISOString() },
+        });
+      }),
+    );
+    const summary = {
+      id: IDS.ticketA,
+      display_number: 125,
+      status: 'parking',
+      wa_link_status: 'linked',
+      version: 5,
+      plate: { country: 'SA', display: '1234' },
+      vehicle: {},
+    };
+    // DEC-265: the opted-out customer's press resumes the link first, so the merged cause is wa_link_changed
+    onEvent(event('ticket.updated', { cause: 'ticket.wa_link_changed', ...summary }));
+    await vi.waitFor(() =>
+      expect(useFieldStore.getState().notices).toMatchObject([{ kind: 'early', taskId: IDS.taskA }]),
+    );
+    expect(playSound).toHaveBeenCalledWith('reminder', { key: `task:${IDS.taskA}` });
+    expect(reads.some((u) => u.endsWith(`/v1/tickets/${IDS.ticketA}`))).toBe(true);
+    // once per parking task: a later update of the same ticket raises nothing again
+    vi.mocked(playSound).mockClear();
+    onEvent(event('ticket.updated', { cause: 'ticket.photo_uploaded', ...summary, version: 6 }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(playSound).not.toHaveBeenCalled();
+    expect(useFieldStore.getState().notices).toHaveLength(1);
+  });
+
+  it('a newer version of the parking ticket without an early request raises nothing', async () => {
+    const park = taskCard(IDS.taskA, 'in_progress', 2);
+    park.task.type = 'park';
+    park.ticket.status = 'parking';
+    park.ticket.version = 3;
+    qc.setQueryData(queryKeys.home, home({ current_task: park }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        reply(200, {
+          data: { id: IDS.ticketA, status: 'parking', version: 4, pending_retrieval_at: null },
+          meta: { request_id: 'r', server_time: new Date().toISOString() },
+        }),
+      ),
+    );
+    onEvent(
+      event('ticket.updated', {
+        cause: 'ticket.photo_uploaded',
+        id: IDS.ticketA,
+        display_number: 125,
+        status: 'parking',
+        version: 4,
+        plate: { country: 'SA', display: '1234' },
+        vehicle: {},
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(useFieldStore.getState().notices).toEqual([]);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('«قبل الطلب سائق آخر» only when the card is on screen (02 D-09)', () => {
+    const offer = offerCard(IDS.offerA, IDS.taskA, '2026-10-29T17:58:00.000Z', { mode: 'broadcast' });
+    const claimed = () =>
+      event('task.claimed', {
+        cause: 'task.claimed',
+        task_id: IDS.taskA,
+        offer_ids: [IDS.offerA],
+        result: 'accepted',
+        claimed_by: { id: IDS.other },
+      });
+    qc.setQueryData(queryKeys.home, applyOffer(home(), offer, homeRegistry, Date.now()));
+    onEvent(claimed()); // D-12 open: the banner only, the card never rendered
+    expect(useUiStore.getState().toasts).toEqual([]);
+    resetHomeRegistry();
+    qc.setQueryData(queryKeys.home, applyOffer(home(), offer, homeRegistry, Date.now()));
+    useOfferLive.getState().setOnScreen(IDS.offerA); // D-04, or the Sheet open
+    onEvent(claimed());
+    expect(useUiStore.getState().toasts.map((t) => t.message)).toEqual(['قبل الطلب سائق آخر']);
+  });
+});
+
+describe('ticket.updated and the WhatsApp link (02 D-07, D-10, D-11; 14 §5.1; 09 §5.1)', () => {
+  let qc: QueryClient;
+  let onEvent: (e: ServerEvent) => void;
+  beforeEach(() => {
+    qc = new QueryClient();
+    onEvent = driverEvents(options(qc));
+    useLinkStore.getState().reset();
+  });
+
+  const summary = (patch: Record<string, unknown> = {}) => ({
+    id: IDS.ticketA,
+    display_number: 125,
+    status: 'parking',
+    channel: 'whatsapp',
+    wa_link_status: 'pending_send',
+    version: 5,
+    plate: { country: 'SA', display: '1234' },
+    vehicle: {},
+    ...patch,
+  });
+  const detail = (version: number) =>
+    qc.setQueryData(queryKeys.ticket(IDS.ticketA), { ...summary(), version, projection: 'full' });
+
+  it('W-01 refused: «تعذر إرسال تذكرة #n للعميل.» once per ticket, gone when the link is no longer failed', () => {
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'failed' })));
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'failed',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toMatchObject([
+      { kind: 'waFailed', key: `waFailed:${IDS.ticketA}`, ticketId: IDS.ticketA, ticketNumber: 125 },
+    ]);
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 6 })));
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('the failure of an older W-01 (superseded by a resend) on a ticket not failed raises no notice', () => {
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'linked',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          wa_link_status: 'pending_send',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-01', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('an older ticket.updated arriving late raises no notice (versions)', () => {
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', version: 7 })));
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'failed', version: 6 }),
+      ),
+    );
+    expect(useFieldStore.getState().notices).toEqual([]);
+  });
+
+  it('the customer stopped the messages: «العميل أوقف رسائل واتساب…» (14 §5.1)', () => {
+    onEvent(
+      event('ticket.updated', summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'opted_out' })),
+    );
+    expect(useFieldStore.getState().notices.map((n) => n.kind)).toEqual(['optedOut']);
+  });
+
+  it('the pending QR confirmation is kept for D-07 (the privileged payload only), and cleared with it', () => {
+    const pending = {
+      link_code_id: globalThis.crypto.randomUUID(),
+      inbound_phone_masked: '05•••••887',
+      received_at: '2026-10-29T18:00:00.000Z',
+    };
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'ticket.wa_link_changed',
+          wa_link_status: 'pending_confirmation',
+          wa_link_pending: pending,
+        }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toEqual(pending);
+    // the API leaves the field out when nothing waits (ticket-updates.ts): any other link state clears it
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'none', version: 6 }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a pending confirmation without the field (a viewer the API does not privilege) keeps nothing stale', () => {
+    const first = {
+      link_code_id: globalThis.crypto.randomUUID(),
+      inbound_phone_masked: '05•••••887',
+      received_at: '2026-10-29T18:00:00.000Z',
+    };
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'ticket.wa_link_changed',
+          wa_link_status: 'pending_confirmation',
+          wa_link_pending: first,
+        }),
+      ),
+    );
+    // the code expired unanswered (none), then another message waits — announced without the field
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'none', version: 6 }),
+      ),
+    );
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({ cause: 'ticket.wa_link_changed', wa_link_status: 'pending_confirmation', version: 7 }),
+      ),
+    );
+    expect(useLinkStore.getState().pending[IDS.ticketA]).toBeNull();
+  });
+
+  it('a handover code issued or locked (no version move) re-reads the ticket and the task card (14 §3.4)', () => {
+    detail(5);
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    onEvent(event('ticket.updated', summary({ cause: 'handover.code_issued', status: 'ready' })));
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.home, exact: true });
+  });
+
+  it('a message state re-reads the ticket although its version did not move (W-05 on D-10 / D-11)', () => {
+    detail(5);
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    onEvent(event('ticket.updated', summary({ cause: 'ticket.wa_link_changed' })));
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+    onEvent(
+      event(
+        'ticket.updated',
+        summary({
+          cause: 'wa.message_status_changed',
+          message: { id: globalThis.crypto.randomUUID(), purpose: 'W-05', status: 'failed', status_rank: 9 },
+        }),
+      ),
+    );
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.ticket(IDS.ticketA) });
+  });
+});

@@ -1,0 +1,52 @@
+{
+  "name": "@point/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drizzle schema matching docs/06_schema.sql, SQL migrations, seed, drift check",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@point/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "@point/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./seed": {
+      "@point/source": "./src/seed/index.ts",
+      "types": "./dist/seed/index.d.ts",
+      "default": "./dist/seed/index.js"
+    },
+    "./seed/ids": {
+      "@point/source": "./src/seed/ids.ts",
+      "types": "./dist/seed/ids.d.ts",
+      "default": "./dist/seed/ids.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "node dist/cli.js migrate",
+    "reset": "node dist/cli.js reset",
+    "seed": "node dist/cli.js seed",
+    "invariants": "node dist/cli.js invariants",
+    "drift": "node dist/cli.js drift",
+    "pull": "node scripts/pull.mjs"
+  },
+  "dependencies": {
+    "argon2": "^0.45.1",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.1",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
+  },
+  "bin": {
+    "point-db": "./dist/cli.js"
+  }
+}

@@ -1,0 +1,169 @@
+# PNT-004: lint · typecheck · unit · db drift · db invariants · integration (Testcontainers, PostgreSQL 16) · build · e2e
+# (mocked API) · PNT-036: the G1 path in the browser against the real API on a seeded PostgreSQL · PNT-098: the kill
+# points of 17 H-03 (AC-06) against the production build, on pushes to main.
+# Private repository with limited minutes: runs on pull requests and on main only; superseded runs are cancelled.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_ENV: test
+  TZ: UTC
+
+jobs:
+  checks:
+    name: lint · typecheck · unit · db · integration · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          # pnpm comes from corepack in the next step: no automatic package-manager cache here
+          package-manager-cache: false
+      - name: Enable pnpm (corepack, version from package.json)
+        run: corepack enable && pnpm --version
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint (ESLint, Prettier, brand names, secrets scan)
+        run: pnpm lint
+      - name: Security — production dependencies (no high or critical advisories, PNT-096)
+        run: pnpm audit:prod
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Unit tests
+        run: pnpm test
+      - name: DB drift (migrations vs docs/06_schema.sql)
+        run: pnpm db:drift
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: DB invariants (docs/06_schema_invariants_test.sql)
+        run: pnpm db:invariants | tee invariants.log && grep -q "ALL INVARIANT TESTS PASSED" invariants.log
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: Integration tests (Testcontainers postgres:16)
+        run: pnpm test:int
+      - name: Ops scripts (shellcheck, preinstalled on the runner)
+        run: shellcheck -s bash infra/backup/*.sh && shellcheck -s sh infra/compose/*.sh
+      - name: PostgreSQL 16 client tools for the drill (the runner's newer pg_dump writes settings a 16 server refuses)
+        run: |
+          sudo apt-get update -qq
+          if ! apt-cache show postgresql-client-16 >/dev/null 2>&1; then
+            sudo apt-get install -y -qq postgresql-common
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          fi
+          sudo apt-get install -y -qq postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+      - name: Restore drill (PNT-095, encrypted backup → restore → verify; openssl when age is absent)
+        run: pg_dump --version && pnpm ops:restore-drill
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+  chaos:
+    # PNT-098, 17 §5: AC-06 is automated chaos (TC-013 … TC-017, «ليلي»); 17 §15.1 #1 wants every automated TC-### green
+    # on main. The kill points run against the production build (~4 min) on pushes to main only (CI minutes, CLAUDE.md
+    # §8); the outages of 17 §12 take ~25 min and stay with `pnpm ops:chaos` before a release (infra/chaos/README.md).
+    name: chaos — kill points KP-1 … KP-5 (AC-06)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          # pnpm comes from corepack in the next step: no automatic package-manager cache here
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Build the backend (tsc → dist)
+        run: pnpm -r --filter @point/shared --filter @point/db --filter @point/server --filter @point/api --filter @point/worker --filter @point/wa-simulator build
+      - name: pnpm ops:chaos — KP-1 … KP-5 (TC-013 … TC-017)
+        run: pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5 --no-build --out chaos-report
+        env:
+          HARNESS_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-report
+          path: chaos-report
+          retention-days: 14
+
+  e2e:
+    name: e2e (Playwright 360/390/430, RTL · G1 on the real API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45 # the mocked suite (~1,000 cases at three widths) takes ~13 min, then the live G1 run
+    services:
+      postgres: # for the G1 run against the real API (PNT-036)
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          # pnpm comes from corepack in the next step: no automatic package-manager cache here
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @point/web exec playwright install --with-deps chromium
+      - name: Build shared packages
+        run: pnpm --filter @point/shared build
+      - name: Playwright
+        run: pnpm test:e2e
+      - name: Playwright — G1 against the real API and a seeded PostgreSQL (gate G1)
+        run: pnpm --filter @point/web test:e2e:live
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

@@ -1,0 +1,17 @@
+<!-- @dsCard group="المركبة واللوحة" height=220 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>PlateBadge</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(R, null,
+  h(S, {label:'عادي'}, h(P.PlateBadge, {digits:'1234', letters:['ب','ح','د']})),
+  h(S, {label:'مع اللاتيني'}, h(P.PlateBadge, {digits:'7051', letters:['ر','س','ع'], lettersEn:['R','S','E']})),
+  h(S, {label:'lg'}, h(P.PlateBadge, {digits:'92', letters:['ك','ل'], size:'lg'})))));
+</script>
+</body>
+</html>

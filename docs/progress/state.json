@@ -1,0 +1,517 @@
+{
+  "PNT-001": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "pnpm monorepo, strict TS 7, ESLint/Prettier, brand check"
+  },
+  "PNT-002": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "compose, .env.example, env validation (boot stops with the missing variables)"
+  },
+  "PNT-003": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "06_schema.sql verbatim as 0001, Drizzle schema, drift check, 10 integration tests"
+  },
+  "PNT-004": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "CI workflow (lint, typecheck, unit, drift, invariants, Testcontainers, e2e); runners blocked by the GitHub account — checks run locally"
+  },
+  "PNT-005": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "canon as types: 96 error codes, 131 routes, settings defaults; 528 tests"
+  },
+  "PNT-006": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "Nest skeleton: envelopes, filter, CSRF, health, metrics, request ids"
+  },
+  "PNT-007": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "outbox dispatcher: SKIP LOCKED, ordering keys, retries, dead letters, lease recovery"
+  },
+  "PNT-008": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "idempotency protocol incl. concurrent duplicates and replays"
+  },
+  "PNT-009": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "audit/ticket/custody writers, append-only privileges"
+  },
+  "PNT-010": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "seed matches 17 §4, idempotent, refuses production (16 tests)"
+  },
+  "PNT-011": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "login, lockout, secret change, logout; argon2id + pepper"
+  },
+  "PNT-012": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "TOTP setup/confirm/verify with replay protection"
+  },
+  "PNT-013": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "actor context, auth + permission guards, route audit, permission matrix test"
+  },
+  "PNT-014": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "/v1/me, devices, push subscription triplet, audio test, heartbeat"
+  },
+  "PNT-015": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "drivers: create/patch/disable/enable/reset-secret (DEC-32 via DriverReleaseHook)"
+  },
+  "PNT-016": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "assignments with ASSIGNMENT_CONFLICT and scope"
+  },
+  "PNT-017": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "staff, scopes, owner-only MFA reset"
+  },
+  "PNT-018": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "venues, settings, dispatch pools (one default per venue), zones/spots/boards/slots with bulk create; 23 int tests"
+  },
+  "PNT-019": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "event lifecycle draft→open, reopen, cancel (EVENT_CLOSE_BLOCKED), pricing rules; 14 int tests"
+  },
+  "PNT-020": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "shifts: one open per pool, close auto-ends free duties via DriverReleaseHook, SHIFT_CLOSE_BLOCKED details; 9 int tests"
+  },
+  "PNT-021": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "React 19 + Vite PWA shell, RTL, 51 design-system components, both themes, API client with Idempotency-Key reuse; 196 unit + 170 e2e"
+  },
+  "PNT-022": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "D-01/D-02/S-01/D-15 sign-in flows, MFA setup, 08 texts, no secrets in browser storage"
+  },
+  "PNT-023": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "S-08 venues/events/shifts, S-09 layout + settings, S-05/S-06 basics; buttons by /v1/me permissions; e2e on a stateful fake API (07/08) seeded from 17 §4"
+  },
+  "PNT-024": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "duty start/break/end with pool lock, open shift check, release hook"
+  },
+  "PNT-025": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "POST /v1/tickets: L1→L2 locks, ticket numbers on the event row (50-way race: consecutive), fee snapshot"
+  },
+  "PNT-026": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "PATCH intake: plate rules, customer + consent at PATCH (DEC-170)"
+  },
+  "PNT-027": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "private photos: presigned PUT, EXIF/GPS stripping, ≤300 s signed GET, S3/MinIO + in-memory storage; 22 API tests"
+  },
+  "PNT-028": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "submit-intake: INTAKE_INCOMPLETE.missing, inspection, W-01 hook point"
+  },
+  "PNT-029": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "discard draft / void with custody rules (DRAFT_HAS_DATA, CUSTODY_OPEN)"
+  },
+  "PNT-030": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "complete-parking: spot + key slot FOR SHARE and active, custody events, early request conversion"
+  },
+  "PNT-031": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "retrieval on behalf of the customer with reason"
+  },
+  "PNT-032": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "dispatch pass v1, single offers, atomic accept (10 §5.2), expiry, sweep, release hook"
+  },
+  "PNT-033": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "key pickup, start retrieval, ready"
+  },
+  "PNT-034": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "paper-stub handover: attempts from ticket_events, payment gate before verification"
+  },
+  "PNT-035": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "D-03…D-11 on 5 s polling, paper channel: two-step intake with on-device JPEG + presigned PUT, parking pickers, offer accept, retrieval steps, stub handover + collection; G1 and 08-error e2e at 390 on the stateful fake, layout 360/390/430; live-API seam for PNT-036"
+  },
+  "PNT-036": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "G1 in the browser against the real API (g1-live project, E2E_BACKEND=live): fresh seeded PostgreSQL, D-01 sign-in, vite proxy, photos into the in-memory bucket; actors, custody chain and one audit row per command checked in SQL; CI e2e job step"
+  },
+  "PNT-037": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "simulator: fake Graph API, signed webhooks, faults, scenarios; 90 tests"
+  },
+  "PNT-038": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "single channel (secret refs only), template sync via Graph before the tx"
+  },
+  "PNT-039": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "W-01…W-12 catalog as code, linter, Meta creation definitions"
+  },
+  "PNT-040": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "webhook: verify token, X-Hub-Signature-256 on raw bytes, store before 200, 3 MB, duplicates (DEC-130)"
+  },
+  "PNT-041": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "inbound processing, statuses, opt-out"
+  },
+  "PNT-042": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "sender via outbox: ordering per ticket, pacing, retries, channel health"
+  },
+  "PNT-043": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "direct W-01 link at submit with action tokens (hash only), WA_TEMPLATE_NOT_APPROVED"
+  },
+  "PNT-044": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "QR link D-07: link codes, W-11, expiry job"
+  },
+  "PNT-045": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "«طلب السيارة» → retrieval request (one request path with S4), early requests, W-09/W-10"
+  },
+  "PNT-046": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "NotificationPlanner customer column W-02…W-08 (14 §3.1)"
+  },
+  "PNT-047": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "claim codes: hash + single ciphertext, issue at ready, W-05, verify, resend, lock alert, expiry"
+  },
+  "PNT-048": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "free text replies and opt-out"
+  },
+  "PNT-049": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "customer phone change with link_version"
+  },
+  "PNT-050": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "one number for two venues (routing by token/link)"
+  },
+  "PNT-051": {
+    "status": "in_progress",
+    "date": "2026-10-28",
+    "note": "automated G2 scenario green with the simulator; manual run on the Meta test number waits for Q-03 (owner)"
+  },
+  "PNT-052": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "job.offer_remind + job.offer_expire (expires_at + grace), version-checked; silent driver rotated, round 2"
+  },
+  "PNT-053": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "broadcast mode: eligible_as from the live state, one job.broadcast_remind, extension, conversion, R-3"
+  },
+  "PNT-054": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "next-task reservation (assigned_waiting), NEXT_TASK_ALREADY_RESERVED incl. the uq index mapping (AC-15)"
+  },
+  "PNT-055": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "promotion inside the ending transaction, no availability gap (concurrency test), W-04 at the real start"
+  },
+  "PNT-056": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "priority guard (10 §5.4) in accept and reassign, override_priority audited; AC-17 100-round race"
+  },
+  "PNT-057": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "escalation per episode (request_unaccepted), next_task_waiting_long, idle_driver alert, auto-resolution"
+  },
+  "PNT-058": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "reassign to the queue or a driver, release-custody, task.withdrawn/task.reassigned, audit with the reason"
+  },
+  "PNT-059": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "field cancel before the movement and after it (TT-20b repark, AC-11), W-07 only"
+  },
+  "PNT-060": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "requestRetrievalForCustomer (entry point for PNT-045): pending_retrieval_at once, original time (AC-05)"
+  },
+  "PNT-061": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "job.ready_uncollected_check + repark (TT-20): W-08, incident, times kept, cycle_no + 1"
+  },
+  "PNT-062": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "job.heartbeat_sweep (connection state only, lost-with-custody alert); 5 s sweep proven as the safety net"
+  },
+  "PNT-063": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "race suite (broadcast, intake/accept, accept/expiry, double handover, reassign/accept, AC-17); pnpm test:race"
+  },
+  "PNT-064": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "Socket.IO /ws: cookie+Origin handshake, server-decided rooms, NOTIFY relay, targeted session.revoked, 60 s revalidation, WS heartbeat, offer_seen"
+  },
+  "PNT-065": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "one Socket.IO client, envelopes checked by the shared zod schemas, merge by version, full resync on connect/foreground/sync.required, «قديم» with the last sync time, commands gated while stale (e2e driver-live)"
+  },
+  "PNT-066": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "sound unlocked only from a tap, preloaded brand sounds, 14 §7 priority, stops on task.claimed/offer.closed, blocked state shown and saved (POST /v1/me/audio-test)"
+  },
+  "PNT-067": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "live D-09: server-clock countdown, reminder, accept / reserve-next, 08 texts; only the oldest actionable card; stale press in two contexts handled"
+  },
+  "PNT-068": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "full D-04 and the D-15 banners (offline, uncertain, sound, WhatsApp down, session end, update, service unavailable), best-effort Wake Lock"
+  },
+  "PNT-069": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "D-12 search by digits with cursor pages, D-13 by projection: minimal fields for others, masked phone and slot for the assignee; request on behalf"
+  },
+  "PNT-070": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "D-14 in full; brand manifest, hand-built service worker (never caches /v1), offline shell, installability verified in Chromium; permission only from a tap"
+  },
+  "PNT-071": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "intake drafts and pending photos in IndexedDB, the same Idempotency-Key after a reload, AC-21: one effect after a cut at submit"
+  },
+  "PNT-072": {
+    "status": "in_progress",
+    "date": "2026-10-29",
+    "note": "web part done (SW push, subscription for drivers and staff, in-page alert mode, AC-22 e2e); real-device checks remain (PNT-099)"
+  },
+  "PNT-073": {
+    "status": "in_progress",
+    "date": "2026-11-03",
+    "note": "G3: automated part passed — AC-04/14/15/17/21/22 green incl. TC-042 (broadcast claimed, the other three cards gone within 3 s, p95 ≈ 70 ms) and the race suite (docs/progress/G3.md); the first AC-08 recordings on real iOS/Android devices are the owner's (PNT-099)"
+  },
+  "PNT-074": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "operations board API (matches reference SQL after 200 random ops) + S-02 screen"
+  },
+  "PNT-075": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "alerts center API (ack/resolve, auto-resolution) + S-04 with escalation sound"
+  },
+  "PNT-076": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "ticket timeline API (redacted messages, signed photo URLs) + S-03"
+  },
+  "PNT-077": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "reveal-phone: reason, audit without the number, per-user hourly limit (RATE_LIMITED + Retry-After), masked stored replay; 4 API tests"
+  },
+  "PNT-078": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "handover exception without code (identity fields, incident, code revoked) + S-03 action"
+  },
+  "PNT-079": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "inspection-exception and custody-transfers (official_transfer, task follows the item with settlement, allocations, unknown key to the assignee); 8 API tests"
+  },
+  "PNT-080": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "collection at handover (inline + route), amount/method checks"
+  },
+  "PNT-081": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "waiver and reversal with payment_status recomputation"
+  },
+  "PNT-082": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "cash handovers with discrepancy incident, settlement report"
+  },
+  "PNT-083": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "incidents list/create/get/PATCH (11 §6.11, resolution required, drivers for their venue only), incident.opened/updated/resolved, openIncident() seam"
+  },
+  "PNT-084": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "force-end with DUTY_END_BLOCKED_CUSTODY (DEC-32), live drivers data; list polls until the realtime client"
+  },
+  "PNT-085": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "manual-reconcile (TT-22): no customer message, custody manual_reconcile, payment per 13 §8.5, drivers settled, audit; 6 API tests"
+  },
+  "PNT-086": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "driver transfers (immediate/scheduled, job.transfer_activate, transfer_blocked) + S-07"
+  },
+  "PNT-087": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "start-closing, reconciliation blockers, close with summary + S-10"
+  },
+  "PNT-088": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "reports per 15 KPIs + S-11"
+  },
+  "PNT-089": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "audited CSV exports to the private bucket, signed links, expiry + S-11"
+  },
+  "PNT-090": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "AC2 on the G4 run: all 71 domain event types projected once each, allow-list respected, ingest_latency_ms filled"
+  },
+  "PNT-091": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "retention policy + job.retention_purge (dry run, holds, audit, point_retention role) + org settings (owner only)"
+  },
+  "PNT-092": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "audit log viewer, outbox list/retry (stale aggregate → canceled, never replayed)"
+  },
+  "PNT-093": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "G4: a full event through the real routes (paper + WhatsApp, transfer, repark, cancel, cash/POS, reversal, waiver, cash handovers ± difference, close); custody, amounts and invariants all hold"
+  },
+  "PNT-094": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "system monitor: outbox_lag per venue raise/auto-resolve, task_stuck, gauges; tracing proposal pending"
+  },
+  "PNT-095": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "encrypted backups (age/openssl, snapshot manifest, 30 d + 12 monthly), verified restore, pnpm ops:restore-drill passes locally (also in CI); drill on the chosen hosting due before G5"
+  },
+  "PNT-096": {
+    "status": "done",
+    "date": "2026-10-28",
+    "note": "rate limits per x-rate-limit-class (429 + Retry-After), boot guards (__Host-/Secure/https/one origin), API+proxy headers, secrets scan in lint, audit:prod clean, security tests; CSP vs Radix scroll lock pending (notes)"
+  },
+  "PNT-097": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "AC-13: 5 venues, 50 drivers, 100 requests/min — request save p95 189 ms, assignment publish p95 91 ms, 0 errors, nothing stuck (docs/test-evidence/load)"
+  },
+  "PNT-098": {
+    "status": "done",
+    "date": "2026-10-29",
+    "note": "13 chaos scenarios, 115/115 checks: AC-06 at every kill point, outages raise alerts, only current states sent after recovery (docs/test-evidence/chaos)"
+  },
+  "PNT-099": {
+    "status": "in_progress",
+    "date": "2026-10-29",
+    "note": "device protocol and recording template ready (docs/test-evidence/devices); real phones needed (owner/QA)"
+  },
+  "PNT-100": {
+    "status": "in_progress",
+    "date": "2026-10-29",
+    "note": "WhatsApp production runbook with the template table and the G2 manual-run sheet ready; owner submission to Meta pending (Q-03)"
+  },
+  "PNT-101": {
+    "status": "in_progress",
+    "date": "2026-10-29",
+    "note": "paper outage procedure, printable forms (PDF), driver and supervisor guides ready; the drill runs in the human rehearsal"
+  },
+  "PNT-102": {
+    "status": "in_progress",
+    "date": "2026-10-29",
+    "note": "automated rehearsal passed (150 cars, two venues, pnpm ops:rehearsal); human rehearsal with staff pending (owner)"
+  },
+  "PNT-103": {
+    "status": "in_progress",
+    "date": "2026-11-03",
+    "note": "G5 checklist current: GAP-1…GAP-9 closed, AC evidence mapped (docs/runbooks/go-live-checklist.md); waits for the owner items (domain, hosting, Meta, devices, human rehearsal, sign-off)"
+  }
+}

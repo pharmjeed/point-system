@@ -1,0 +1,18 @@
+<!-- @dsCard group="الإدخال" height=440 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>Select</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(React.Fragment, null,
+  h(P.Select, {id:'s1', label:'الحفل', placeholder:'اختر الحفل', options:[['a','حفل آل فلان — قاعة ريماس'],['b','حفل آل فلان — قاعة الماسة']]}),
+  h(P.Select, {id:'s2', label:'الحفل', value:'a', pressed:true, options:[['a','حفل آل فلان — قاعة ريماس']]}),
+  h(P.Select, {id:'s3', label:'الحفل', placeholder:'اختر الحفل', error:'اختر الحفل أولًا', options:[]}),
+  h(P.Select, {id:'s4', label:'الحفل', value:'a', disabled:true, options:[['a','حفل آل فلان — قاعة ريماس']]}))));
+</script>
+</body>
+</html>

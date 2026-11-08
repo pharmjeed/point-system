@@ -1,0 +1,877 @@
+/**
+ * Arabic copy of the staff area (S-01 … S-13), split from ./ar.ts so that the driver's first load does not carry
+ * it: only the lazy staff chunks import this module. Same rules and sources as ./ar.ts (05 §7.8; 02 §4 screen
+ * texts; the strings 02 does not define are listed in docs/progress/notes/pnt-023.md and web-supervisor.md).
+ * Brand names are never written here (canon §1): `{brand}` placeholders are filled with `fmt()` + `useBrand()`.
+ * Keys are stable identifiers; change the text, not the key.
+ */
+
+/** S-01 — الدخول والتحقق الثنائي */
+export const s01 = {
+  title: 'دخول المشرفين والإدارة',
+  phoneLabel: 'رقم الجوال',
+  passwordLabel: 'كلمة المرور',
+  submit: 'دخول',
+  mfaTitle: 'أدخل رمز التحقق من تطبيق المصادقة',
+  mfaCodeLabel: 'رمز التحقق',
+  mfaSubmit: 'تحقق',
+  changeTitle: 'تغيير كلمة المرور',
+  currentPassword: 'كلمة المرور الحالية',
+  newPassword: 'كلمة المرور الجديدة',
+  confirmPassword: 'تأكيدها',
+  passwordHint: 'استخدم كلمة مرور طويلة يصعب تخمينها.',
+  passwordMismatch: 'كلمتا المرور غير متطابقتين.',
+  changeSubmit: 'حفظ والمتابعة',
+  setupTitle: 'إعداد التحقق الثنائي',
+  setupBody: 'امسح الرمز بتطبيق المصادقة على جوالك ثم أدخل الرمز الظاهر.',
+  setupManual: 'أو أدخل هذا المفتاح يدويًا في التطبيق:',
+  setupQrAlt: 'رمز QR لإعداد التحقق الثنائي',
+  setupSubmit: 'تأكيد',
+  driverLink: 'دخول السائقين',
+} as const;
+
+/** S-05 — السائقون */
+export const s05 = {
+  search: 'ابحث بالاسم أو الرقم الوظيفي أو الجوال',
+  filters: {
+    all: 'الكل',
+    available: 'متاح',
+    busy: 'مشغول',
+    on_break: 'استراحة',
+    off_duty: 'خارج الوردية',
+    disabled: 'معطّل',
+  },
+  add: 'إضافة سائق',
+  addTitle: 'إضافة سائق',
+  fullName: 'الاسم الكامل',
+  phone: 'رقم الجوال',
+  employeeCode: 'الرقم الوظيفي',
+  initialVenue: 'الموقع الأولي (اختياري)',
+  tempSecret: 'الرقم السري المؤقت: {secret}. أعطه للسائق؛ سيُطلب منه تغييره عند أول دخول. لن يظهر مرة أخرى.',
+  /** 02 S-05 «على الشاشات الكبيرة: جدول بأعمدة …» */
+  table: {
+    name: 'الاسم',
+    employeeCode: 'الرقم الوظيفي',
+    state: 'الحالة',
+    task: 'المهمة',
+    connection: 'الاتصال',
+    dutyStart: 'بداية المناوبة',
+    device: 'الجهاز',
+  },
+  // not in 02 (docs/progress/notes/pnt-023.md)
+  venue: 'الموقع',
+  allVenues: 'كل المواقع',
+  empty: 'لا يوجد سائقون مطابقون.',
+  none: 'بلا تعيين',
+} as const;
+
+/** S-06 — ملف السائق */
+export const s06 = {
+  phone: 'رقم الجوال',
+  employeeCode: 'الرقم الوظيفي',
+  status: 'الحالة',
+  duty: 'المناوبة الحالية',
+  dutyStart: 'البداية',
+  connection: 'الاتصال',
+  history: 'سجل التعيينات',
+  from: 'من',
+  to: 'إلى',
+  reason: 'السبب',
+  assign: 'تعيين على موقع',
+  edit: 'تعديل البيانات',
+  disable: 'تعطيل الحساب',
+  enable: 'تفعيل الحساب',
+  resetSecret: 'إعادة تعيين الرقم السري',
+  resetConfirm:
+    'إعادة تعيين الرقم السري لـ{name}؟ ستنتهي جلساته الحالية، ويظهر رقم مؤقت مرة واحدة يغيّره عند أول دخول.',
+  transfer: 'نقل إلى موقع آخر',
+  forceEnd: 'إنهاء المناوبة قسرًا',
+  /** the DEC-32 confirmation of «تعطيل الحساب» and «إنهاء المناوبة قسرًا»: what happens automatically */
+  autoRelease:
+    'المهمة التالية المحجوزة {next} ومهمة الإحضار المقبولة قبل استلام المفتاح ستعودان للطابور بأولويتهما، وتُسحب عروضه الفردية.',
+  // not in 02 (docs/progress/notes/pnt-023.md)
+  venue: 'الموقع',
+  assignReason: 'السبب (اختياري)',
+  noDuty: 'لا توجد مناوبة مفتوحة.',
+  noHistory: 'لا توجد تعيينات.',
+  current: 'التعيين الحالي',
+  itemType: {
+    vehicle: 'مركبة',
+    key: 'مفتاح',
+    task: 'مهمة',
+    next_task: 'مهمة تالية',
+    draft: 'مسودة استلام',
+  },
+} as const;
+
+/** S-08 — المواقع والحفلات */
+export const s08 = {
+  newVenue: 'موقع جديد',
+  events: 'الحفلات',
+  shifts: 'الورديات',
+  today: 'اليوم',
+  upcoming: 'القادمة',
+  closed: 'المغلقة',
+  newEvent: 'حفل جديد',
+  eventName: 'اسم الحفل',
+  host: 'المضيف (اختياري)',
+  date: 'التاريخ',
+  start: 'البداية',
+  end: 'النهاية',
+  pricing: 'التسعير',
+  included: 'مشمول',
+  perVehicle: 'رسوم لكل مركبة',
+  amount: 'المبلغ',
+  methods: 'وسائل التحصيل',
+  open: 'فتح',
+  edit: 'تعديل',
+  cancel: 'إلغاء',
+  newShift: 'وردية جديدة',
+  openShift: 'فتح الوردية',
+  closeShift: 'إغلاق الوردية',
+  closeShiftBody:
+    'مناوبات السائقين الذين لا عهدة لديهم ولا مهام مفتوحة تُنهى آليًا؛ يمنع الإغلاق فقط سائق بعهدته عناصر أو لديه مهمة مفتوحة.',
+  openEvents: 'الحفلات المفتوحة: {n}',
+  shiftLine: 'الوردية: {status}',
+  setup: 'إعداد الموقع',
+  // the way to S-10 / S-11 (GAP-4)
+  startClosing: 'بدء الإغلاق',
+  closeEvent: 'إغلاق الحفل والمطابقة',
+  viewReport: 'عرض التقرير',
+  // not in 02 (docs/progress/notes/staff-gaps.md): the reopen of a closing event (07 `openEvent`, 11 §6.4)
+  reopen: 'إعادة فتح الحفل',
+  reopenBody: 'يعود الحفل «مفتوحًا» ويُسمح بتسجيل مركبات جديدة فيه. ابدأ الإغلاق من جديد بعد الانتهاء.',
+  // not in 02 (docs/progress/notes/pnt-023.md)
+  editVenue: 'تعديل الموقع',
+  venueCode: 'رمز الموقع',
+  venueName: 'اسم الموقع',
+  venueNameEn: 'الاسم بالإنجليزية (اختياري)',
+  city: 'المدينة (اختياري)',
+  address: 'العنوان (اختياري)',
+  pool: 'مجموعة التوزيع',
+  shiftName: 'اسم الوردية (اختياري)',
+  shiftEnd: 'النهاية (اختياري)',
+  perVehiclePrice: '{amount} لكل مركبة',
+  cancelEvent: 'إلغاء الحفل',
+  emptyVenues: 'لا توجد مواقع.',
+  emptyEvents: 'لا توجد حفلات في هذا القسم.',
+  emptyShifts: 'لا توجد ورديات.',
+  noShift: '—',
+} as const;
+
+/** S-09 — إعداد الموقع */
+export const s09 = {
+  sections: {
+    parking: 'المناطق والمواقف',
+    keys: 'لوحات المفاتيح',
+    pools: 'مجموعات التوزيع',
+    timers: 'المؤقتات',
+    handover: 'التسليم والتحصيل',
+    inspection: 'الفحص والصف',
+  },
+  poolsHint: 'الافتراضي مجموعة واحدة لكل موقع. لا تُنشئ مجموعة إضافية إلا عند فصل التوزيع بين حفلات متزامنة.',
+  timersHint: 'القيم أولية قابلة للتعديل بعد الاختبار.',
+  occupied: 'لا يمكن تعطيله الآن؛ مشغول بتذكرة مفتوحة.',
+  spotsPattern: 'A-01 إلى A-40',
+  slotsPattern: '1 إلى 120',
+  // not in 02 (docs/progress/notes/pnt-023.md); setting labels are the «المعنى» column of canon §12
+  newZone: 'منطقة جديدة',
+  zoneName: 'اسم المنطقة',
+  addSpots: 'إضافة مواقف',
+  newBoard: 'لوحة جديدة',
+  boardName: 'اسم اللوحة',
+  addSlots: 'إضافة خانات',
+  newPool: 'مجموعة جديدة',
+  poolName: 'اسم المجموعة',
+  defaultPool: 'الافتراضية',
+  prefix: 'البادئة',
+  from: 'من',
+  to: 'إلى',
+  disable: 'تعطيل',
+  enable: 'تفعيل',
+  zonesCount: 'المناطق: {n}',
+  spotsCount: 'المواقف: {n}',
+  boardsCount: 'اللوحات: {n}',
+  slotsCount: 'الخانات: {n}',
+  poolsCount: 'المجموعات: {n}',
+  emptyZones: 'لا توجد مناطق بعد.',
+  emptyBoards: 'لا توجد لوحات مفاتيح بعد.',
+  ttlAboveReminder: 'مهلة العرض الفردي أكبر من تذكيره، وكل القيم أعداد موجبة.',
+  outOfRange: 'القيمة خارج الحدود المسموحة ({min}–{max}).',
+  units: { s: 'ثانية', min: 'دقيقة', ms: 'مللي ثانية' },
+  parkingModes: { assigned_spots: 'مواقف مرقمة', free_text: 'وصف المكان', mixed: 'مختلط' },
+  settings: {
+    'dispatch.single_offer_reminder_s': 'تذكير العرض الفردي',
+    'dispatch.single_offer_ttl_s': 'انتهاء العرض الفردي',
+    'dispatch.broadcast_reminder_s': 'تذكير واحد للبث المفتوح',
+    'dispatch.unaccepted_escalation_s': 'تصعيد للمشرف من وقت دخول الطابور دون قبول',
+    'dispatch.next_task_wait_alert_s': 'تنبيه مهمة تالية تنتظر طويلًا',
+    'dispatch.idle_driver_alert': 'تنبيه المشرف بوجود متاح بينما الأقدم محجوز تالٍ',
+    'dispatch.accept_grace_ms': 'سماحية وصول القبول بعد انتهاء العرض بسبب تأخر الشبكة',
+    'dispatch.offline_drivers_last': 'تأخير السائقين ذوي الاتصال غير المؤكد في ترتيب العرض الفردي',
+    // canon §12 «المعنى» (DEC-340: listed in the timers tab)
+    'intake.draft_abandoned_alert_min': 'تنبيه مسودة استلام متروكة دون إرسال',
+    'handover.code_ttl_min': 'صلاحية رمز التسليم من الجاهزية',
+    'handover.max_attempts': 'محاولات الرمز قبل القفل',
+    'handover.max_resends': 'حد إعادة الإرسال',
+    'ready.uncollected_alert_min': 'تنبيه مركبة جاهزة لم تُستلم',
+    'pricing.default_mode': 'الافتراضي للحفلات الجديدة',
+    'pricing.default_fee_halalas': 'الرسوم الافتراضية',
+    'pricing.allowed_methods': 'وسائل التحصيل',
+    'inspection.required_photos': 'صور الفحص الإلزامية',
+    'inspection.max_extra_photos': 'صور إضافية',
+    'link.qr_ttl_min': 'صلاحية رمز ربط QR',
+    'parking.mode': 'نمط الصف',
+    'keys.require_slot': 'إلزام خانة مفتاح عند الصف',
+  },
+} as const;
+
+// ================================================================== supervisor/admin/owner screens
+// S-02…S-13 (PNT-074…PNT-092). Texts in «»-quotes of 02 §4 (and 03 / 13 where cited) are verbatim; strings 02
+// does not define are listed in docs/progress/notes/web-supervisor.md (DEC-PROPOSED) for 02 §8.5.
+
+/** Shared by the staff screens. */
+export const staff = {
+  venue: 'الموقع',
+  event: 'الحفل',
+  allOpenEvents: 'كل الحفلات المفتوحة',
+  alertsCount: 'التنبيهات ({n})',
+  enableAlertSound: 'تفعيل صوت التنبيهات',
+  done: 'تم تنفيذ الإجراء.',
+  yes: 'نعم',
+  no: 'لا',
+  none: '—',
+  since: 'منذ {time}',
+  withHolder: 'بعهدة {name}',
+  me: 'أنا',
+  system: 'النظام',
+  customerViaWhatsapp: 'العميل عبر واتساب',
+  status: 'الحالة',
+  type: 'النوع',
+  severity: 'الشدة',
+  allTypes: 'كل الأنواع',
+  from: 'من',
+  to: 'إلى',
+  time: 'الوقت',
+  reason: 'السبب',
+  note: 'ملاحظة',
+  driver: 'السائق',
+  amount: 'المبلغ',
+  method: 'وسيلة التحصيل',
+  ticket: 'التذكرة',
+  loadError: 'تعذر تحميل البيانات.',
+  noResults: 'لا توجد نتائج.',
+  minValue: 'الحد الأدنى {n}',
+  maxValue: 'الحد الأعلى {n}',
+  wholeNumber: 'أدخل عددًا صحيحًا.',
+  required: 'هذا الحقل مطلوب.',
+} as const;
+
+/** Custody subjects (`custody_events.subject`). */
+export const custodySubject = {
+  vehicle: 'المركبة',
+  key: 'المفتاح',
+} as const;
+
+/** `payments.status` (not in 02 §8.1). */
+export const paymentRecordStatus = {
+  recorded: 'مسجّل',
+  reversed: 'معكوس',
+} as const;
+
+/** `whatsapp_channel.health_status` (02 S-13: «سليمة/متدهورة/متوقفة»). */
+export const waHealth = {
+  healthy: 'سليمة',
+  degraded: 'متدهورة',
+  down: 'متوقفة',
+} as const;
+
+/** `whatsapp_channel.mode` (02 S-13: «حي/محاكي»). */
+export const waChannelMode = {
+  live: 'حي',
+  simulator: 'محاكي',
+} as const;
+
+/** `whatsapp_templates.status`. */
+export const waTemplateStatus = {
+  draft: 'مسودة',
+  pending: 'بانتظار الاعتماد',
+  approved: 'معتمد',
+  rejected: 'مرفوض',
+  paused: 'موقوف مؤقتًا',
+  disabled: 'معطّل',
+} as const;
+
+/** `outbox_events.status`. */
+export const outboxStatus = {
+  pending: 'معلّق',
+  processing: 'قيد المعالجة',
+  done: 'تم',
+  failed: 'فشل',
+  dead: 'متوقف نهائيًا',
+  canceled: 'ملغى',
+} as const;
+
+/** `exports.kind`. */
+export const exportKind = {
+  event_summary: 'ملخص الحفل',
+  tickets: 'التذاكر',
+  payments: 'التحصيل',
+  drivers: 'أداء السائقين',
+  messages: 'الرسائل',
+  audit: 'سجل التدقيق',
+} as const;
+
+/** Timeline lines per `ticket_events.type` (S-03); `{spot}` / `{slot}` / `{kind}` filled from `data`. */
+export const ticketEventText = {
+  'ticket.created': 'بدء الاستلام',
+  'ticket.intake_submitted': 'إصدار التذكرة',
+  'ticket.parked': 'صف المركبة',
+  'ticket.parked_at': 'صف في {spot} وإيداع المفتاح في {slot}',
+  'ticket.retrieval_requested': 'طلب السيارة',
+  'ticket.retrieval_requested_early': 'طلب مبكر أثناء الصف',
+  'ticket.assigned': 'قبول الطلب',
+  'ticket.assigned_waiting': 'حجز كمهمة تالية',
+  'ticket.retrieving': 'بدء الإحضار',
+  'ticket.ready': 'جاهزة',
+  'ticket.delivered': 'تسليم للعميل',
+  'ticket.reparking': 'إعادة الصف',
+  'ticket.retrieval_canceled': 'إلغاء طلب الإحضار',
+  'ticket.voided': 'إلغاء التذكرة',
+  'ticket.customer_phone_changed': 'تغيير جوال العميل',
+  'ticket.wa_link_changed': 'ربط واتساب: {status}',
+  'ticket.inspection_completed': 'اكتمل الفحص',
+  'ticket.inspection_exception_approved': 'اعتماد استثناء الفحص',
+  'ticket.manually_reconciled': 'مطابقة يدوية',
+  'ticket.photo_uploaded': 'رفع صورة {kind}',
+  // the other ticket-scoped rows of ticket_events (11 §1.6, DEC-186, DEC-210 TT-19): 02 §8.6 has no text for
+  // them — DEC-PROPOSED-2 of docs/progress/notes/int-web.md (decisions:F4)
+  'task.created': 'إنشاء مهمة',
+  'task.offered': 'عرض الطلب على سائق',
+  'task.broadcast_opened': 'فتح البث لكل السائقين',
+  'task.broadcast_extended': 'تمديد البث',
+  'task.claimed': 'قبول المهمة',
+  'task.promoted': 'بدء المهمة المحجوزة',
+  'task.key_picked_up': 'استلام المفتاح من الخانة',
+  'task.started': 'بدء المهمة',
+  'task.completed': 'إتمام المهمة',
+  'task.canceled': 'إلغاء المهمة',
+  'task.withdrawn': 'سحب المهمة من السائق',
+  'task.reassigned': 'إعادة إسناد المهمة',
+  'task.escalated': 'تصعيد للمشرف: لم يُقبل الطلب',
+  'handover.code_issued': 'إصدار رمز التسليم',
+  'handover.code_attempt_failed': 'محاولة رمز تسليم خاطئة',
+  'handover.code_locked': 'قفل رمز التسليم بعد المحاولات',
+  'handover.completed': 'إتمام التسليم',
+  'handover.exception_approved': 'اعتماد تسليم استثنائي',
+  'payment.recorded': 'تسجيل التحصيل',
+  'payment.reversed': 'عكس التحصيل',
+  'payment.waived': 'إعفاء من الرسوم',
+  'incident.opened': 'فتح بلاغ',
+  'incident.updated': 'تحديث بلاغ',
+  'incident.resolved': 'حل بلاغ',
+  /** A type the client does not know yet (never the raw key on the Arabic screen). */
+  other: 'تحديث على التذكرة',
+} as const;
+
+/** S-02 — لوحة التشغيل */
+export const s02 = {
+  title: 'لوحة التشغيل',
+  noDriversBanner: 'لا يوجد سائقون في الوردية!',
+  staleBanner: 'بيانات قديمة — آخر مزامنة {time}',
+  kpi: {
+    openRequests: 'طلبات مفتوحة',
+    oldestWait: 'أقدم انتظار',
+    avgAccept: 'متوسط القبول',
+    available: 'متاح',
+    busyBreak: 'مشغول {busy} · استراحة {onBreak}',
+    failedMessages: 'رسائل فاشلة',
+    criticalAlerts: 'تنبيهات حرجة',
+  },
+  tabs: {
+    queue: 'الطابور',
+    active: 'الجارية',
+    next: 'التالية',
+    alerts: 'التنبيهات',
+    failed: 'الرسائل الفاشلة',
+    custody: 'العهدة',
+    drivers: 'السائقون',
+  },
+  tabsLabel: 'أقسام لوحة التشغيل',
+  queueHeading: 'الطابور (الأقدم أولًا)',
+  queueState: {
+    queued: 'في الطابور',
+    offered: 'معروض على {driver}',
+    offeredAnyone: 'معروض',
+    broadcast: 'بث',
+    assigned_waiting: 'محجوز تالٍ لـ{driver}',
+    accepted: 'مقبول — {driver}',
+    in_progress: 'جارٍ الإحضار — {driver}',
+  },
+  escalation: {
+    late: 'متأخر',
+    longWait: 'انتظار طويل',
+    notCollected: 'لم تُستلم',
+  },
+  reassign: 'إعادة إسناد',
+  emptyQueue: 'لا توجد طلبات الآن',
+  emptyActive: 'لا توجد مهام جارية.',
+  emptyNext: 'لا توجد مهام تالية.',
+  emptyFailed: 'لا توجد رسائل فاشلة.',
+  emptyCustody: 'لا توجد مشكلات عهدة.',
+  emptyAlerts: 'لا توجد تنبيهات مفتوحة.',
+  noEvent: 'لا يوجد حفل مفتوح في هذا الموقع.',
+  openEvent: 'فتح حفل',
+  searchResults: 'نتائج البحث',
+  custodyLine: '{subject} — {holder}',
+  failedLine: 'فشل إرسال {purpose}',
+} as const;
+
+/** S-03 — تفاصيل التذكرة وسجلها */
+export const s03 = {
+  screen: 'تفاصيل التذكرة',
+  title: 'تفاصيل التذكرة · #{n}',
+  actions: 'الإجراءات',
+  createdBy: 'سجّلها: {name} {time}',
+  parkedBy: 'صفّها: {name} {time}',
+  retrievedBy: 'أحضرها: {name}',
+  deliveredBy: 'سلّمها: {name}',
+  phone: 'الجوال:',
+  revealPhone: 'إظهار الرقم',
+  channel: 'قناة العميل:',
+  channelName: { whatsapp: 'واتساب', paper: 'تذكرة ورقية' },
+  inspection: 'الفحص:',
+  payment: 'التحصيل:',
+  spot: 'الموقف:',
+  key: 'المفتاح:',
+  tabs: {
+    timeline: 'الخط الزمني',
+    custody: 'العهدة',
+    messages: 'الرسائل',
+    photos: 'الصور',
+    payments: 'التحصيل',
+    incidents: 'الوقائع',
+  },
+  tabsLabel: 'أقسام التذكرة',
+  custodyChain: '{from} ← {to}',
+  messageDirection: { outbound: 'إلى العميل', inbound: 'من العميل' },
+  emptyCustody: 'لا توجد حركات عهدة.',
+  emptyMessages: 'لا توجد رسائل.',
+  emptyPhotos: 'لا توجد صور.',
+  emptyPayments: 'لا يوجد تحصيل مسجّل.',
+  waiverReason: 'السبب: {reason}', // not in 02: the waiver row of «التحصيل» (A-S03-1, notes/audit-close.md)
+  emptyIncidents: 'لا توجد وقائع مرتبطة.',
+  noActions: 'لا توجد إجراءات متاحة لهذه التذكرة الآن.',
+  action: {
+    reassign: 'إعادة الإسناد',
+    releaseCustody: 'إقرار إعادة المفتاح',
+    cancelRetrieval: 'إلغاء طلب الإحضار',
+    repark: 'إعادة الصف لغياب العميل',
+    handoverException: 'تسليم استثنائي دون رمز',
+    resendCode: 'إعادة إرسال رمز التسليم',
+    custodyTransfer: 'نقل عهدة رسمي',
+    revealPhone: 'إظهار الجوال',
+    changePhone: 'تغيير الجوال',
+    relinkWhatsApp: 'إعادة الربط بواتساب',
+    onBehalf: 'طلب نيابة عن العميل',
+    voidTicket: 'إلغاء التذكرة',
+    inspectionException: 'اعتماد استثناء الفحص',
+    manualReconcile: 'مطابقة يدوية بعد انقطاع',
+    waiver: 'إعفاء من الرسوم',
+    reverse: 'عكس تحصيل',
+    openIncident: 'فتح واقعة',
+    recordPayment: 'تسجيل التحصيل',
+  },
+  reassign: {
+    title: 'إعادة إسناد #{n}',
+    toQueue: 'إعادته للطابور (يُوزع حسب الأولوية)',
+    toDriver: 'إسناده لسائق متاح',
+    destination: 'الوجهة',
+    keyHeld: 'المفتاح بعهدة {name} — أقرّ بإعادته للخانة أولًا',
+    confirm: 'تأكيد إعادة الإسناد',
+    noAvailable: 'لا يوجد سائق متاح الآن.',
+    overridePriority: 'تجاوز أولوية الطلب الأقدم (يُسجّل في التدقيق)',
+  },
+  release: {
+    slot: 'خانة المفتاح',
+  },
+  cancel: {
+    afterMovement:
+      'بدأ {driver} إحضار #{n}. الإلغاء يعيد المركبة لإعادة الصف مع {driver} نفسه، ويبقى مشغولًا بها حتى إتمام الصف، ويُبطل رمز التسليم. يصل العميل رسالة الإلغاء (W-07) فقط.',
+    confirm: 'تأكيد الإلغاء',
+  },
+  exception: {
+    title: 'تسليم دون رمز (استثناء)',
+    phoneLast4: 'مطابقة آخر 4 أرقام من جوال العميل',
+    last4: 'آخر 4 أرقام',
+    document: 'مطابقة استمارة المركبة أو الهوية',
+    documentNote: 'ملاحظة التحقق',
+    documentHint: 'مثل: اطّلعت على الهوية الوطنية',
+    contents: 'وصف محتويات المركبة',
+    minTwo: 'اختر طريقتي تحقق على الأقل؛ رقم اللوحة وحده لا يكفي.',
+    paymentSection: 'التحصيل',
+    collectedBy: 'المحصّل',
+    posReference: 'مرجع جهاز نقاط البيع',
+    posHint: 'رمز الموافقة أو رقم الإيصال القصير — لا تكتب رقم البطاقة',
+    confirm: 'تأكيد التسليم الاستثنائي',
+  },
+  reveal: {
+    reasons: {
+      no_show: 'التواصل مع العميل لعدم الحضور',
+      fix_number: 'تصحيح رقم',
+      incident: 'واقعة',
+      other: 'أخرى',
+    },
+    reasonLegend: 'سبب الإظهار',
+    otherReason: 'اكتب السبب',
+    audit: 'يُسجّل هذا الإجراء في سجل التدقيق.',
+    call: 'اتصال',
+    remaining: 'يعود الرقم مقنّعًا خلال {s} ث',
+  },
+  void: {
+    custodyReturned: 'تحققت أن المركبة والمفتاح عادا للعميل أو لم يُستلما',
+  },
+  reverse: {
+    warning: 'العكس بلا بديل يعيد التذكرة مستحقة؛ لتصحيح الوسيلة استخدم البديل',
+    withReplacement: 'تسجيل تحصيل بديل',
+  },
+  onBehalf: {
+    legend: 'سبب الطلب',
+  },
+  transfer: {
+    subject: 'العنصر',
+    holder: 'الحائز الجديد',
+    holderType: { driver: 'سائق', supervisor: 'أنا (المشرف)', spot: 'موقف', key_slot: 'خانة مفتاح' },
+    target: 'الحائز',
+  },
+  incident: {
+    title: 'فتح واقعة',
+  },
+  /**
+   * «إعادة الربط بواتساب» (02 S-03 → the D-07 texts, modes A and B). The QR panel itself is the customer-brand
+   * surface (`QrPanel`, canon §1 rule 2); nothing else here names a brand.
+   */
+  relink: {
+    hint: 'تأكد مع العميل من الرقم، أو اطلب منه مسح رمز QR.',
+    direct: 'إعادة الإرسال',
+    qr: 'الربط عبر QR',
+    waiting: 'بانتظار رسالتك…',
+    newCode: 'رمز جديد',
+    expired: 'انتهت صلاحية الرمز.',
+    arrived: 'وصلت رسالة الربط من رقم ينتهي بـ {last3}.',
+    question: 'هل هو جوال العميل الذي أمامك؟',
+    yes: 'نعم، اربط التذكرة',
+    no: 'لا، ليس هو',
+    linked: 'تم الربط — وصلت التذكرة للعميل.',
+    // not in 02: the state line of the direct send (`wa_link_status` names of 02 §8.1)
+    status: 'حالة الربط: «{status}»',
+  },
+  /** «مطابقة يدوية بعد انقطاع» (02 S-03: «الحالة الفعلية + الدليل + السبب»; 07 `manualReconcile`). */
+  reconcile: {
+    target: 'الحالة الفعلية',
+    note: 'لا تُشغّل أوامر مؤجلة ولا تُرسل رسائل عميل قديمة.',
+    // not in 02 (the paper-log fields of docs/runbooks/paper-fallback.md §5.4)
+    paperRef: 'مرجع السجل الورقي',
+    paperRefHint: 'مرجع آخر سطر للمركبة، مثل P02-R07',
+    evidenceNote: 'ملاحظة الدليل (اختياري)',
+    evidenceNoteHint: 'كل أسطر المركبة وطريقة التحقق',
+    spot: 'الموقف',
+    spotNote: 'وصف المكان',
+    slot: 'خانة المفتاح',
+    unknownHolder: 'دونهما يبقى الحائز «غير معروف».',
+    collectorHint: 'المحصِّل من السجل الورقي',
+    incident: 'الواقعة المرتبطة (اختياري)',
+    paperOnlyVoid: 'تذكرة ورقية بلا رقم كعب: «ملغاة» فقط.',
+    paymentRecorded: 'عليها تحصيل مسجّل: لا تُلغى (اعكس التحصيل أولًا).',
+  },
+} as const;
+
+/** S-04 — مركز التنبيهات */
+export const s04 = {
+  title: 'مركز التنبيهات',
+  statusFilter: { open: 'مفتوحة', acknowledged: 'مستلمة', resolved: 'محلولة' },
+  resolveTitle: 'حل التنبيه',
+  resolveNote: 'ملاحظة الحل',
+  resolveNoteRequired: 'اكتب ملاحظة الحل.',
+  empty: 'لا توجد تنبيهات مفتوحة.',
+} as const;
+
+/** S-07 — نقل سائق */
+export const s07 = {
+  screen: 'نقل سائق',
+  title: 'نقل سائق · {name} ({code})',
+  steps: { destination: 'الوجهة', schedule: 'الموعد', confirm: 'التحقق والتأكيد' },
+  from: 'من: {venue} (الحالي)',
+  to: 'إلى',
+  toHint: 'مواقع نطاقك فقط',
+  schedule: 'الموعد',
+  now: 'الآن',
+  later: 'في وقت محدد',
+  at: 'الوقت',
+  checklist: 'التحقق من العهدة',
+  vehicles: 'مركبات بعهدته: {n}',
+  keys: 'مفاتيح بعهدته: {n}',
+  movement: 'مهمة جارية أو صف/إعادة صف: {v}',
+  acceptedBeforeKey: 'إحضار مقبول قبل استلام المفتاح: {v}',
+  acceptedNote: '(يُعاد للطابور إن وُجد)',
+  nextTask: 'مهمة تالية محجوزة: {v}',
+  nextNote: 'ستُعاد لطابور {venue}',
+  offers: 'عروض فردية حية: {n}',
+  offersNote: 'ستُسحب',
+  mustRelease: '#{n} — يجب إعادته أو نقله رسميًا',
+  after: 'بعد النقل: تُنهى جلسته الحالية، وتنقطع صلاحياته في {venue}، ويحتفظ السجل التاريخي بموقعه الأصلي.',
+  reason: 'سبب النقل (إلزامي)',
+  confirm: 'تأكيد النقل',
+  successNow: 'تم نقل {name} إلى {venue}. أُنهيت جلسته في {from}.',
+  successScheduled: 'جُدول نقل {name} إلى {venue} الساعة {time}.',
+  pending: 'نقل {status} إلى {venue} — {time}',
+  cancelPending: 'إلغاء النقل المجدول',
+  noAssignment: 'لا يوجد تعيين نشط لهذا السائق.',
+  timeRequired: 'اختر موعد النقل.',
+} as const;
+
+/** S-10 — إغلاق الحفل والمطابقة */
+export const s10 = {
+  title: 'إغلاق الحفل · {name}',
+  steps: { start: 'بدء الإغلاق', reconcile: 'المطابقة', close: 'الإغلاق' },
+  startBody: 'بدء الإغلاق يمنع تسجيل مركبات جديدة في هذا الحفل، وتستمر الطلبات الحالية.',
+  openTickets: 'تذاكر مفتوحة: {n}',
+  pendingRequests: 'طلبات معلقة: {n}',
+  openTasks: 'مهام مفتوحة: {n}',
+  driverCustody: 'عهدة لدى سائقين: {n}',
+  cashOutstanding: 'تحصيل غير مسلّم: {amount}',
+  unsettled: 'تحصيل مستحق: {n}',
+  integrity: 'خلل في سلامة التحصيل: {n}',
+  openTicketsHeading: 'التذاكر المفتوحة',
+  requestsHeading: 'الطلبات والمهام المفتوحة',
+  custodyHeading: 'العهدة لدى السائقين',
+  unsettledHeading: 'التحصيل المستحق',
+  cashByDriver: 'التحصيل حسب السائق',
+  discrepancies: 'الفروقات',
+  warnings: 'تحذيرات لا تمنع الإغلاق',
+  openIncidents: 'وقائع مفتوحة: {n}',
+  failedMessages: 'رسائل فاشلة: {n}',
+  keyOf: 'مفتاح #{n}',
+  transferCustody: 'نقل عهدة',
+  collected: 'مسجّل {amount}',
+  handed: 'مُسلّم {amount}',
+  outstanding: 'بعهدته {amount}',
+  difference: 'الفرق {amount}',
+  receiveCash: 'استلام نقد',
+  expected: 'المبلغ المتوقع',
+  received: 'المبلغ المستلم',
+  differencePreview: 'الفرق: {amount}',
+  cashDiffOf: 'فرق تحصيل {name} {amount}',
+  openIncident: 'فتح واقعة',
+  close: 'إغلاق الحفل',
+  // not in 02: the 03 §4.5 confirmation of «إغلاق الحفل» (closed is final, 11 §6.4; 13 §12) — notes/audit-close.md
+  closeConfirmBody: 'إغلاق الحفل نهائي: لا يُعاد فتحه بعده ولا يُقبل عليه أي تحصيل أو عكس أو إعفاء.',
+  closed: 'أُغلق الحفل. التقرير متاح.',
+  viewReport: 'عرض التقرير',
+  blockedHint: 'لا يمكن الإغلاق قبل حل البنود المظللة.',
+  allClear: 'لا توجد بنود مانعة.',
+} as const;
+
+/** S-11 — التقارير والتصدير */
+export const s11 = {
+  title: 'التقارير والتصدير',
+  period: 'الفترة',
+  periodInvalid: 'اختر فترة صحيحة: «من» لا يتجاوز «إلى».',
+  chooseEvent: 'اختر حفلًا لعرض ملخصه.',
+  cards: {
+    eventSummary: 'ملخص الحفل',
+    drivers: 'أداء السائقين',
+    payments: 'التحصيل',
+    messages: 'الرسائل',
+  },
+  summary: {
+    vehicles: 'عدد المركبات',
+    delivered: 'المسلّمة',
+    canceled: 'الدورات الملغاة (منفصلة)',
+    reparks: 'إعادات الصف',
+    accept: 'زمن القبول',
+    start: 'زمن بدء الإحضار',
+    requestToReady: 'الطلب حتى الجاهزية',
+    readyToDelivered: 'الجاهزية حتى التسليم',
+    openAtClose: 'تذاكر مفتوحة عند الإغلاق',
+    p90: 'p90 {v}',
+  },
+  canceledNote: 'الدورات الملغاة لا تدخل متوسط التسليم وتظهر منفصلة.',
+  driversCols: {
+    intakes: 'الاستلامات',
+    retrievals: 'الإحضارات',
+    delivered: 'المسلّمة',
+    accept: 'متوسط القبول',
+    expired: 'العروض المنتهية',
+  },
+  paymentsCols: {
+    reversed: 'العكس',
+    waived: 'الإعفاءات',
+    outstanding: 'المستحق',
+  },
+  messagesCols: {
+    sent: 'المرسلة',
+    delivered: 'الواصلة',
+    read: 'المقروءة',
+    failed: 'الفاشلة حسب السبب',
+  },
+  export: 'تصدير CSV',
+  exportBody: 'يُسجّل التصدير في سجل التدقيق.',
+  exportKind: 'نوع التصدير',
+  exportStatus: {
+    pending: 'جارٍ التجهيز…',
+    running: 'جارٍ التجهيز…',
+    ready: 'جاهز للتنزيل',
+    failed: 'تعذر التصدير',
+    expired: 'انتهت صلاحية رابط التنزيل',
+  },
+  download: 'تنزيل',
+} as const;
+
+/** S-12 — الوقائع */
+export const s12 = {
+  title: 'الوقائع',
+  create: 'فتح واقعة',
+  description: 'الوصف',
+  owner: 'المسؤول',
+  history: 'سجل التحديثات',
+  resolution: 'الحل',
+  resolutionRequired: 'اكتب الحل قبل إغلاق الواقعة.',
+  descriptionRequired: 'اكتب وصف الواقعة.',
+  assignMe: 'تعييني مسؤولًا',
+  unassigned: 'بلا مسؤول',
+  empty: 'لا توجد وقائع.',
+  opened: 'فُتحت {time} — {name}',
+  updated: 'آخر تحديث {time}',
+  resolvedAt: 'حُلّت {time} — {name}',
+  closedAt: 'أُغلقت {time}',
+  moveTo: 'نقل الحالة إلى',
+} as const;
+
+/** S-13 — الإدارة */
+export const s13 = {
+  title: 'الإدارة',
+  sections: {
+    staff: 'الموظفون',
+    channel: 'قناة واتساب',
+    templates: 'القوالب',
+    outbox: 'صندوق الأحداث',
+    audit: 'سجل التدقيق',
+    retention: 'سياسة الاحتفاظ',
+    org: 'إعدادات المؤسسة',
+  },
+  channel: {
+    displayName: 'اسم العرض',
+    number: 'الرقم',
+    status: 'الحالة',
+    quality: 'تقييم الجودة',
+    healthChanged: 'آخر تغيّر للحالة',
+    mode: 'الوضع',
+    secrets: 'الأسرار',
+    secretConfigured: { true: 'مضبوط', false: 'غير مضبوط' },
+    secretNames: { access_token: 'رمز الوصول', app_secret: 'سر التطبيق', verify_token: 'رمز التحقق' },
+    businessAccountId: 'معرّف حساب الأعمال',
+    phoneNumberId: 'معرّف الرقم',
+    phoneDisplay: 'الرقم الظاهر',
+    apiVersion: 'إصدار الواجهة',
+    accessTokenRef: 'مرجع رمز الوصول',
+    appSecretRef: 'مرجع سر التطبيق',
+    verifyTokenRef: 'مرجع رمز التحقق',
+    refsHint: 'مراجع لمدير الأسرار فقط؛ لا تُكتب الأسرار هنا.',
+    empty: 'لم تُضبط القناة بعد.',
+  },
+  templates: {
+    approval: 'حالة الاعتماد',
+    lastSync: 'آخر مزامنة',
+    sync: 'مزامنة من Meta',
+    preview: 'معاينة',
+    empty: 'لا توجد قوالب.',
+  },
+  outbox: {
+    attempts: 'المحاولات',
+    lastError: 'آخر خطأ',
+    age: 'العمر',
+    olderThan: 'أقدم من (ثانية)',
+    empty: 'لا توجد أحداث عالقة أو فاشلة.',
+    // not in 02: the result of «إعادة المحاولة» (02 S-13 / DEC-150; audit A-S13-2, notes/audit-close.md)
+    requeued: 'أُعيد الحدث إلى الطابور: «{status}».',
+    canceled: 'أُغلق الحدث «ملغى» دون إعادة: {reason}',
+  },
+  audit: {
+    actor: 'الفاعل',
+    action: 'الإجراء',
+    entity: 'الكيان',
+    entityId: 'معرّف الكيان',
+    before: 'قبل',
+    after: 'بعد',
+    // not in 02 (audit A-S11-2, notes/audit-close.md): 09 §10 rule 2 `metadata.self_approved`
+    metadata: 'بيانات إضافية',
+    selfApproved: 'اعتماد ذاتي',
+    search: 'بحث',
+    empty: 'لا توجد سجلات مطابقة.',
+  },
+  retention: {
+    photos_days: 'الصور (أيام)',
+    wa_messages_days: 'رسائل واتساب (أيام)',
+    tickets_months: 'التذاكر (أشهر)',
+    audit_months: 'سجل التدقيق (أشهر)',
+    wa_raw_days: 'أجسام Webhook الخام (أيام)',
+    analytics_months: 'القياسات (أشهر)',
+    warning: 'تُطبّق المدد بمهمة دورية، وتُستثنى التذاكر المرتبطة بوقائع مفتوحة.',
+    approved: 'معتمدة من المالك',
+    proposed: 'قيم مقترحة بانتظار اعتماد المالك',
+  },
+  org: {
+    security: 'الأمان',
+    heartbeat: 'النبض',
+    supervisor_mfa_required: 'إلزام التحقق الثنائي للمشرفين',
+    driver_session_hours: 'مدة جلسة السائق بالساعات',
+    staff_session_hours: 'مدة جلسة الطاقم بالساعات',
+    max_login_attempts: 'عدد محاولات الدخول قبل القفل',
+    admin_idle_minutes: 'دقائق خمول الإدارة',
+    reveal_phone_per_hour: 'حد كشف الجوال في الساعة',
+    interval_s: 'الفاصل بالثواني',
+    uncertain_after_s: 'حد «غير مؤكد» بالثواني',
+    offline_after_s: 'حد «منقطع» بالثواني',
+    heartbeatRule: 'الفاصل أقل من حد «غير مؤكد»، وحد «غير مؤكد» أقل من حد «منقطع».',
+    notice: 'تغيير إعدادات الأمان يسري على الجلسات الجديدة، وإعدادات النبض تصل للأجهزة فورًا.',
+  },
+  /**
+   * «الموظفون» (02 S-13: «قائمة المشرفين والإدارة، إضافة (الاسم، الجوال، الدور، يسمح بالقيادة، النطاقات)، كلمة
+   * مرور مؤقتة تظهر مرة واحدة»). Strings 02 does not quote are listed in docs/progress/notes/staff-gaps.md.
+   */
+  staff: {
+    add: 'إضافة موظف',
+    role: 'الدور',
+    canDrive: 'يسمح بالقيادة',
+    scopes: 'النطاقات',
+    allVenues: 'كل المواقع',
+    noScope: 'بلا نطاق',
+    mfa: 'التحقق الثنائي',
+    mfaOn: 'مفعّل',
+    mfaOff: 'غير مفعّل',
+    lastLogin: 'آخر دخول',
+    never: 'لم يدخل بعد',
+    empty: 'لا يوجد موظفون مطابقون.',
+    search: 'ابحث بالاسم أو الرقم الوظيفي',
+    all: 'الكل',
+    tempSecret:
+      'كلمة المرور المؤقتة: {secret}. أعطها للموظف؛ سيُطلب منه تغييرها وإعداد التحقق الثنائي عند أول دخول. لن تظهر مرة أخرى.',
+    resetMfa: 'إعادة ضبط التحقق الثنائي',
+    resetMfaConfirm:
+      'إعادة ضبط التحقق الثنائي لـ{name}؟ تنتهي جلساته الحالية، ويُطلب منه إعداد التحقق الثنائي عند دخوله التالي.',
+    orgScopeHint: 'حساب الإدارة يعمل على كل المواقع؛ سحب النطاق يوقف وصوله دون تعطيل الحساب.',
+    venuesHint: 'المشرف يرى المواقع المختارة فقط، والسحب يسري فورًا.',
+    canDriveHint: 'يبدأ مناوبة ويدخل التوزيع كسائق داخل نطاقه.',
+    enableReason: 'سبب التفعيل',
+  },
+  notBuilt: 'يُبنى هذا القسم في تذكرة لاحقة.',
+} as const;
+
+/** `users.role` of the staff accounts (canon §4, §10 legend «O مالك · A إدارة · S مشرف · D سائق»). */
+export const staffRole = {
+  owner: 'المالك',
+  admin: 'الإدارة',
+  supervisor: 'مشرف',
+  driver: 'سائق',
+} as const;

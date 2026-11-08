@@ -1,0 +1,17 @@
+<!-- @dsCard group="الإدخال" height=300 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>SegmentedControl</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(React.Fragment, null,
+  h(S, {label:'D-05', wide:true}, h('div', {style:{width:'100%'}}, h(P.SegmentedControl, {label:'طريقة الربط', value:'wa', options:[['wa','واتساب','message-circle'],['paper','تذكرة ورقية']]}))),
+  h(S, {label:'D-07 · ضغط', wide:true}, h('div', {style:{width:'100%'}}, h(P.SegmentedControl, {label:'وضع الربط', value:'qr', pressed:'direct', options:[['qr','QR','qr-code'],['direct','إرسال مباشر']]}))),
+  h(S, {label:'تعطيل', wide:true}, h('div', {style:{width:'100%'}}, h(P.SegmentedControl, {label:'وضع الربط', value:'qr', disabled:true, options:[['qr','QR'],['direct','إرسال مباشر']]}))))));
+</script>
+</body>
+</html>

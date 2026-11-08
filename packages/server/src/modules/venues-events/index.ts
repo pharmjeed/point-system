@@ -1,0 +1,20 @@
+/**
+ * venues-events module (PNT-018 … PNT-020): venues and their settings, dispatch pools, parking zones/spots, key
+ * boards/slots, the event lifecycle (draft → open, reopen, cancel) and shifts (open/close with automatic duty end).
+ *
+ * Other modules use only what is exported here. Shift close releases each auto-ended driver through the core
+ * `releaseDriverWork` seam (core/hooks/driver-release.ts) that the dispatch module implements.
+ */
+export { VenuesEventsHttpModule } from './http/venues-events.module.js';
+export { venueSettingsFor } from './application/venues.service.js';
+export {
+  findDefaultDispatchPool,
+  findOpenShiftForPool,
+  listVenueEventsByStatus,
+  type VenueOpenEvent,
+} from './application/read-api.js';
+// signed keyset cursors and the VenueEvent view, shared with the S6 supervisor reads (incidents, operations board)
+export { ListCursorCodec, pageOf, type CursorValue } from './infra/cursor.js';
+// the event close (CloseEvent use-case, PNT-087) and the reports read events with the module's own shapes
+export { assertClosable, FINAL_EVENT_STATUSES } from './domain/event-lifecycle.js';
+export { EVENT_COLUMNS, toVenueEvent, type VenueEventRow, type VenueEventDto } from './infra/rows.js';

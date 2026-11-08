@@ -1,0 +1,22 @@
+{
+  "name": "@point/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Canon names as types: enums, errors, events, permissions, settings, envelopes",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@point/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {}
+}

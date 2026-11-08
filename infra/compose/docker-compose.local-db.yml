@@ -1,0 +1,43 @@
+# Optional: PostgreSQL 16 on this server instead of a managed service (docs/DEPLOYMENT.md). Add after the
+# production file:
+#   docker compose --env-file .env -f infra/compose/docker-compose.prod.yml -f infra/compose/docker-compose.local-db.yml up -d
+# The first start (empty volume) runs infra/db/bootstrap-roles.sql: roles point_owner / point_api / point_worker
+# and the database «point». The URLs in .env then point at the service «postgres»:
+#   MIGRATION_DATABASE_URL=postgres://point_owner:<POINT_OWNER_DB_PASSWORD>@postgres:5432/point
+#   API_DATABASE_URL=postgres://point_api:<POINT_API_DB_PASSWORD>@postgres:5432/point
+#   WORKER_DATABASE_URL=postgres://point_worker:<POINT_WORKER_DB_PASSWORD>@postgres:5432/point
+# The port is not published. Backups: infra/backup/backup.sh (PITR needs WAL archiving, see the guide).
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      POSTGRES_DB: postgres
+      POINT_OWNER_DB_PASSWORD: ${POINT_OWNER_DB_PASSWORD:?POINT_OWNER_DB_PASSWORD is required}
+      POINT_API_DB_PASSWORD: ${POINT_API_DB_PASSWORD:?POINT_API_DB_PASSWORD is required}
+      POINT_WORKER_DB_PASSWORD: ${POINT_WORKER_DB_PASSWORD:?POINT_WORKER_DB_PASSWORD is required}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../db/bootstrap-roles.sql:/point/bootstrap-roles.sql:ro
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-point-roles.sh:ro
+    networks:
+      - point
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d point']
+      interval: 5s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
+
+  migrate:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data: {}

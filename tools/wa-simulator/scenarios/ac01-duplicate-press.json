@@ -1,0 +1,17 @@
+{
+  "name": "ac01-duplicate-press",
+  "description": "AC-01 / TC-001: the same button webhook body 10 times (5 in parallel), then 3 real taps, then the statuses of the W-01. Run after the API sent W-01 to the number.",
+  "steps": [
+    {
+      "action": "press",
+      "to": "+966551234567",
+      "purpose": "W-01",
+      "copies": 10,
+      "parallel": 5,
+      "duplicateMode": "same_body"
+    },
+    { "action": "wait", "ms": 20 },
+    { "action": "press", "to": "+966551234567", "purpose": "W-01", "copies": 3, "duplicateMode": "distinct" },
+    { "action": "statuses", "to": "+966551234567", "template": "masaf_ticket_issued_v1", "order": "natural" }
+  ]
+}

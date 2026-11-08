@@ -1,0 +1,307 @@
+/*
+ * Layout of the supervisor/admin/owner screens (S-02…S-13). The components keep their own look
+ * (src/styles/components.css); these rules only arrange them. Tokens only (DEC-49/50), logical properties only,
+ * cards below 1024px and columns/tables from 1024px (02 §1.4, 03 §2.4). Colour pairs are the ones listed in
+ * src/styles/contrastPairs.ts.
+ */
+.st-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-4);
+  min-inline-size: 0;
+}
+.st-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pt-space-2) var(--pt-space-3);
+}
+.st-head__title {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-2);
+  min-inline-size: 0;
+}
+.st-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-2);
+}
+.st-pickers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--pt-space-3);
+}
+.st-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-2);
+}
+.st-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-3);
+  min-inline-size: 0;
+}
+.st-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-3);
+  min-inline-size: 0;
+}
+.st-stack > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-2);
+  min-inline-size: 0;
+}
+.st-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-2);
+}
+.st-board {
+  display: grid;
+  gap: var(--pt-space-4);
+  min-inline-size: 0;
+}
+.st-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-4);
+  min-inline-size: 0;
+}
+@media (max-width: 1023px) {
+  .st-panel.is-inactive {
+    display: none;
+  }
+  .st-panel__title {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (min-width: 1024px) {
+  .st-board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+  .st-board-tabs {
+    display: none;
+  }
+}
+.st-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-2);
+}
+.st-facts__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pt-space-1) var(--pt-space-4);
+}
+.st-fact {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pt-space-1);
+  margin: 0;
+  min-inline-size: 0;
+}
+.st-fact dt {
+  color: var(--pt-text-muted);
+}
+.st-fact dd {
+  margin: 0;
+}
+.st-muted {
+  color: var(--pt-text-muted);
+  font-size: var(--pt-text-sm);
+  line-height: var(--pt-leading-sm);
+}
+.st-num {
+  font-family: var(--pt-font-mono);
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+.st-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-2);
+}
+.st-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pt-space-2);
+  min-block-size: var(--pt-touch-min);
+}
+.st-check__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: var(--pt-weight-semibold);
+}
+.st-check__mark.is-ok {
+  color: var(--pt-success-text);
+}
+.st-check__mark.is-bad {
+  color: var(--pt-danger-text);
+}
+.st-check__mark.is-info {
+  color: var(--pt-text-muted);
+}
+.st-flagged {
+  border-color: var(--pt-danger);
+  border-width: 2px;
+}
+.st-json {
+  margin: 0;
+  padding: var(--pt-space-3);
+  max-block-size: 240px;
+  overflow: auto;
+  border-radius: var(--pt-radius-md);
+  border: 1px solid var(--pt-border);
+  background: var(--pt-surface-2);
+  color: var(--pt-text);
+  font-family: var(--pt-font-mono);
+  font-size: var(--pt-text-sm);
+  line-height: var(--pt-leading-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  direction: ltr;
+  text-align: left;
+}
+.st-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-1);
+  min-inline-size: 0;
+}
+.st-details > summary {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--pt-touch-min);
+  cursor: pointer;
+  color: var(--pt-primary-text);
+  font-weight: var(--pt-weight-semibold);
+}
+.st-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+  gap: var(--pt-space-3);
+}
+.st-photo {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-1);
+}
+.st-photo img {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--pt-radius-md);
+  border: 1px solid var(--pt-border);
+  background: var(--pt-surface-2);
+}
+.st-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-1);
+  padding: var(--pt-space-3);
+  border-radius: var(--pt-radius-md);
+  border: 1px solid var(--pt-border);
+  background: var(--pt-surface-2);
+  color: var(--pt-text);
+}
+.st-bubble p {
+  margin: 0;
+  white-space: pre-line;
+  font-size: var(--pt-text-sm);
+  line-height: var(--pt-leading-sm);
+}
+.st-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-3);
+  min-inline-size: 0;
+}
+.st-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+.st-cardset {
+  margin: 0;
+  min-inline-size: 0;
+}
+.st-cardset > legend {
+  float: inline-start;
+  inline-size: 100%;
+  padding: 0;
+}
+.st-cardset > legend + * {
+  clear: both;
+}
+.st-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--pt-space-3);
+}
+.st-reveal {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pt-space-2);
+}
+.st-reveal__number {
+  font-family: var(--pt-font-mono);
+  font-weight: var(--pt-weight-semibold);
+  unicode-bidi: isolate;
+}
+.st-link-row {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--pt-radius-lg);
+}
+.st-inline-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-2);
+  align-items: center;
+}
+.st-hidden-mobile {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .st-hidden-mobile {
+    display: initial;
+  }
+}
+/* a list below 1024px, its table from 1024px (02 §1.4 «والقوائم جداول DataTable»; S-05, S-04, S-12) */
+@media (min-width: 1024px) {
+  .st-below-desktop {
+    display: none;
+  }
+}
+@media (max-width: 1023px) {
+  .st-desktop-only {
+    display: none;
+  }
+}

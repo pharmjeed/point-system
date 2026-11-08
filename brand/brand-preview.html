@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دليل الهوية — بوينت ومصاف</title>
+<link rel="icon" href="app-icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens/tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--pt-border); }
+  header.top img { height: 64px; }
+  h1 { font-size: var(--pt-text-3xl); line-height: var(--pt-leading-3xl); margin: 0; font-weight: 700; }
+  h2 { font-size: var(--pt-text-2xl); line-height: var(--pt-leading-2xl); margin: 48px 0 8px; font-weight: 700; }
+  h3 { font-size: var(--pt-text-lg); margin: 0 0 8px; font-weight: 600; }
+  p.lead { color: var(--pt-text-muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .g4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  @media (max-width: 860px) { .g2,.g3,.g4 { grid-template-columns: 1fr; } }
+  .card { background: var(--pt-surface); border: 1px solid var(--pt-border); border-radius: var(--pt-radius-lg); padding: 20px; box-shadow: var(--pt-shadow-sm); }
+  .card.dark { background: var(--pt-ink-950); border-color: var(--pt-ink-900); color: #EAF0FF; }
+  .card.blue { background: var(--pt-blue-600); border-color: var(--pt-blue-700); color: #fff; }
+  .logo-box { display: flex; align-items: center; justify-content: center; min-height: 220px; }
+  .logo-box img { max-width: 100%; max-height: 200px; }
+  .caption { font-size: var(--pt-text-sm); color: var(--pt-text-muted); margin-top: 12px; direction: ltr; text-align: right; font-family: var(--pt-font-mono); }
+  .card.dark .caption, .card.blue .caption { color: #A3B0CF; }
+  .arch { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .arch .card h3 { display: flex; align-items: center; gap: 10px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: var(--pt-text-sm); font-weight: 600; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 12px; }
+  .sw { border-radius: var(--pt-radius-md); overflow: hidden; border: 1px solid var(--pt-border); background: var(--pt-surface); }
+  .sw .chip { height: 72px; }
+  .sw .meta { padding: 8px 10px; font-size: var(--pt-text-sm); }
+  .sw .meta b { display: block; }
+  .sw .meta code { font-family: var(--pt-font-mono); color: var(--pt-text-muted); direction: ltr; unicode-bidi: isolate; display: block; text-align: right; }
+  .scale { display: grid; grid-template-columns: repeat(11, 1fr); border-radius: var(--pt-radius-md); overflow: hidden; border: 1px solid var(--pt-border); }
+  .scale div { height: 44px; font-size: 11px; display: flex; align-items: end; justify-content: center; padding-bottom: 4px; font-family: var(--pt-font-mono); }
+  .status-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; font-weight: 600; font-size: var(--pt-text-sm); }
+  .status i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .type-specimen .s { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px dashed var(--pt-border); }
+  .type-specimen .s span.t { color: var(--pt-text-muted); font-family: var(--pt-font-mono); font-size: 12px; direction: ltr; }
+  /* device mockups */
+  .phones { display: grid; grid-template-columns: repeat(2, 360px); gap: 24px; justify-content: center; }
+  @media (max-width: 860px) { .phones { grid-template-columns: 1fr; justify-items: center; } }
+  .phone { width: 360px; border-radius: 28px; border: 8px solid #0A1F47; overflow: hidden; background: var(--pt-bg); color: var(--pt-text); }
+  .phone .bar { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: var(--pt-surface); border-bottom: 1px solid var(--pt-border); }
+  .phone .bar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; }
+  .phone .bar .brand img { height: 26px; }
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--pt-text-muted); }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--pt-conn-online); }
+  .phone .body { padding: 14px; display: grid; gap: 12px; min-height: 520px; align-content: start; }
+  .btn-xl { height: 56px; border-radius: var(--pt-radius-md); border: 0; background: var(--pt-primary); color: var(--pt-on-primary); font: inherit; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .btn { height: 48px; border-radius: var(--pt-radius-md); border: 1px solid var(--pt-border-strong); background: var(--pt-surface); color: var(--pt-text); font: inherit; font-weight: 600; }
+  .offer { background: var(--pt-surface); border: 2px solid var(--pt-primary); border-radius: var(--pt-radius-lg); padding: 14px; display: grid; gap: 10px; box-shadow: var(--pt-shadow-md); }
+  .offer .top { display: flex; align-items: center; justify-content: space-between; }
+  .offer .num { font-size: 32px; font-weight: 700; }
+  .ring { width: 56px; height: 56px; position: relative; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; }
+  .plate { display: inline-flex; border: 2px solid var(--pt-text); border-radius: 6px; overflow: hidden; font-weight: 700; direction: ltr; }
+  .plate span { padding: 2px 8px; }
+  .plate span + span { border-inline-start: 2px solid var(--pt-text); }
+  .muted { color: var(--pt-text-muted); font-size: 14px; }
+  .task { background: var(--pt-surface); border: 1px solid var(--pt-border); border-radius: var(--pt-radius-lg); padding: 12px 14px; display: grid; gap: 8px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .nav { display: grid; grid-template-columns: repeat(3,1fr); background: var(--pt-surface); border-top: 1px solid var(--pt-border); height: 64px; }
+  .nav div { display: grid; place-items: center; font-size: 13px; color: var(--pt-text-muted); }
+  .nav div.on { color: var(--pt-primary-text); font-weight: 700; }
+  /* whatsapp */
+  .wa { width: 360px; border-radius: 28px; border: 8px solid #1f2c33; overflow: hidden; background: #efeae2; margin: 0 auto; }
+  .wa .head { background: #075e54; color: #fff; display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .wa .head img { width: 38px; height: 38px; border-radius: 50%; }
+  .wa .msgs { padding: 14px 12px; display: grid; gap: 10px; min-height: 520px; align-content: start; font-size: 15px; }
+  .bubble { background: #fff; border-radius: 10px; padding: 8px 10px 6px; max-width: 86%; box-shadow: 0 1px 1px rgba(0,0,0,.08); color: #111b21; line-height: 1.6; }
+  .bubble .t { font-size: 11px; color: #667781; text-align: left; }
+  .bubble .btn-wa { border-top: 1px solid #e9edef; margin: 8px -10px -6px; padding: 9px; text-align: center; color: #027eb5; font-weight: 600; }
+  .bubble.me { background: #d9fdd3; justify-self: end; }
+  .icons { display: flex; gap: 20px; align-items: end; flex-wrap: wrap; }
+  .icons figure { margin: 0; text-align: center; font-size: 12px; color: var(--pt-text-muted); font-family: var(--pt-font-mono); }
+  .icons img { display: block; margin: 0 auto 6px; }
+  audio { width: 100%; }
+  .theme-toggle { font: inherit; border: 1px solid var(--pt-border-strong); background: var(--pt-surface); color: var(--pt-text); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>دليل الهوية — بوينت ومصاف</h1>
+      <p class="lead" style="margin:6px 0 0">بوينت للموظفين داخل النظام، ومصاف للعميل على واتساب. الإصدار 1.0 — 27 أكتوبر 2026.</p>
+    </div>
+    <img src="logo/point/point-lockup-horizontal-rtl.svg" alt="POINT بوينت">
+  </header>
+
+  <h2>بنية العلامة</h2>
+  <p class="lead">علامتان لشركة واحدة بلوحة ألوان واحدة: الموظف يرى «بوينت» والعميل يرى «مصاف» فقط.</p>
+  <div class="arch">
+    <div class="card">
+      <h3><span class="pill" style="background:var(--pt-blue-50);color:var(--pt-blue-700)">الموظفون</span> بوينت · POINT</h3>
+      <div class="logo-box" style="min-height:160px"><img src="logo/point/point-lockup-horizontal-rtl.svg" alt="" style="max-height:110px"></div>
+      <p class="muted">تطبيق الويب للسائق والمشرف والإدارة، أيقونة الشاشة الرئيسية، الإشعارات، المستندات الداخلية.</p>
+    </div>
+    <div class="card">
+      <h3><span class="pill" style="background:var(--pt-green-50);color:var(--pt-green-700)">العميل</span> مصاف · MASAF</h3>
+      <div class="logo-box" style="min-height:160px"><img src="logo/masaf/masaf-wordmark.svg" alt="" style="max-height:100px"></div>
+      <p class="muted">حساب واتساب ورسائله، التذكرة الورقية، لوحة QR الموجّهة للعميل. نقطة الفاء هي دبوس الموقع من علامة بوينت.</p>
+    </div>
+  </div>
+
+  <h2>شعار بوينت</h2>
+  <p class="lead">العلامة أعيد بناؤها هندسيًا من الشعار المرفق؛ الكلمات متجهية بالكامل.</p>
+  <div class="grid g3">
+    <div class="card"><div class="logo-box"><img src="logo/point/point-logo-stacked.svg" alt=""></div><div class="caption">point-logo-stacked.svg</div></div>
+    <div class="card dark"><div class="logo-box"><img src="logo/point/point-logo-stacked-on-dark.svg" alt=""></div><div class="caption">point-logo-stacked-on-dark.svg</div></div>
+    <div class="card blue"><div class="logo-box"><img src="logo/point/point-logo-stacked-white.svg" alt=""></div><div class="caption">point-logo-stacked-white.svg</div></div>
+    <div class="card"><div class="logo-box" style="min-height:140px"><img src="logo/point/point-lockup-horizontal-rtl.svg" alt="" style="max-height:90px"></div><div class="caption">point-lockup-horizontal-rtl.svg</div></div>
+    <div class="card dark"><div class="logo-box" style="min-height:140px"><img src="logo/point/point-lockup-horizontal-rtl-on-dark.svg" alt="" style="max-height:90px"></div><div class="caption">point-lockup-horizontal-rtl-on-dark.svg</div></div>
+    <div class="card"><div class="logo-box" style="min-height:140px"><img src="logo/point/point-mark.svg" alt="" style="max-height:110px"></div><div class="caption">point-mark.svg</div></div>
+  </div>
+
+  <h2>شعار مصاف وواتساب</h2>
+  <div class="grid g3">
+    <div class="card"><div class="logo-box"><img src="logo/masaf/masaf-wordmark.svg" alt="" style="max-height:120px"></div><div class="caption">masaf-wordmark.svg</div></div>
+    <div class="card dark"><div class="logo-box"><img src="logo/masaf/masaf-wordmark-on-dark.svg" alt="" style="max-height:120px"></div><div class="caption">masaf-wordmark-on-dark.svg</div></div>
+    <div class="card"><div class="logo-box"><img src="whatsapp/masaf-profile-640.png" alt="" style="width:180px;height:180px;border-radius:50%"></div><div class="caption">whatsapp/masaf-profile-640.png</div></div>
+  </div>
+
+  <h2>الألوان</h2>
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:#015AFE"></div><div class="meta"><b>أزرق بوينت</b><code>#015AFE · 1 90 254</code></div></div>
+    <div class="sw"><div class="chip" style="background:#031435"></div><div class="meta"><b>كحلي بوينت</b><code>#031435 · 3 20 53</code></div></div>
+    <div class="sw"><div class="chip" style="background:#FFFFFF"></div><div class="meta"><b>أبيض</b><code>#FFFFFF</code></div></div>
+    <div class="sw"><div class="chip" style="background:#F5F7FA"></div><div class="meta"><b>خلفية التطبيق</b><code>ink-50 #F5F7FA</code></div></div>
+    <div class="sw"><div class="chip" style="background:#05875C"></div><div class="meta"><b>نجاح</b><code>#05875C</code></div></div>
+    <div class="sw"><div class="chip" style="background:#F5A00B"></div><div class="meta"><b>تنبيه</b><code>#F5A00B</code></div></div>
+    <div class="sw"><div class="chip" style="background:#D92D20"></div><div class="meta"><b>خطر</b><code>#D92D20</code></div></div>
+    <div class="sw"><div class="chip" style="background:#6A3DE8"></div><div class="meta"><b>مهمة تالية</b><code>#6A3DE8</code></div></div>
+  </div>
+  <h3 style="margin-top:20px">سلّم الأزرق</h3>
+  <div class="scale">
+    <div style="background:#EEF4FF">50</div><div style="background:#DCE7FF">100</div><div style="background:#BCD2FF">200</div><div style="background:#8FB3FF">300</div><div style="background:#5C8DFF;color:#fff">400</div><div style="background:#2B6BFF;color:#fff">500</div><div style="background:#015AFE;color:#fff">600</div><div style="background:#0047CC;color:#fff">700</div><div style="background:#00379E;color:#fff">800</div><div style="background:#022A73;color:#fff">900</div><div style="background:#031A47;color:#fff">950</div>
+  </div>
+  <h3 style="margin-top:16px">سلّم الحياديات (الكحلي)</h3>
+  <div class="scale">
+    <div style="background:#F5F7FA">50</div><div style="background:#EBEEF4">100</div><div style="background:#D9DEE8">200</div><div style="background:#B9C1D2">300</div><div style="background:#8C96AE;color:#fff">400</div><div style="background:#5B6785;color:#fff">500</div><div style="background:#4A5573;color:#fff">600</div><div style="background:#33415F;color:#fff">700</div><div style="background:#1B2C52;color:#fff">800</div><div style="background:#0A1F47;color:#fff">900</div><div style="background:#031435;color:#fff">950</div>
+  </div>
+
+  <h2>حالات التذكرة</h2>
+  <p class="lead">كل شارة تحمل نص الحالة؛ اللون لا يكفي وحده.</p>
+  <div class="status-row">
+    <span class="status" style="background:var(--pt-status-received-bg);color:var(--pt-status-received-fg)"><i></i>مستلمة</span>
+    <span class="status" style="background:var(--pt-status-parking-bg);color:var(--pt-status-parking-fg)"><i></i>جارٍ الصف</span>
+    <span class="status" style="background:var(--pt-status-parked-bg);color:var(--pt-status-parked-fg)"><i></i>متوقفة</span>
+    <span class="status" style="background:var(--pt-status-requested-bg);color:var(--pt-status-requested-fg)"><i></i>مطلوبة</span>
+    <span class="status" style="background:var(--pt-status-assigned-bg);color:var(--pt-status-assigned-fg)"><i></i>مُسندة</span>
+    <span class="status" style="background:var(--pt-status-assigned-waiting-bg);color:var(--pt-status-assigned-waiting-fg)"><i></i>محجوزة تالية</span>
+    <span class="status" style="background:var(--pt-status-retrieving-bg);color:var(--pt-status-retrieving-fg)"><i></i>جارٍ الإحضار</span>
+    <span class="status" style="background:var(--pt-status-ready-bg);color:var(--pt-status-ready-fg)"><i></i>جاهزة</span>
+    <span class="status" style="background:var(--pt-status-delivered-bg);color:var(--pt-status-delivered-fg)"><i></i>مُسلّمة</span>
+    <span class="status" style="background:var(--pt-status-reparking-bg);color:var(--pt-status-reparking-fg)"><i></i>جارٍ إعادة الصف</span>
+    <span class="status" style="background:var(--pt-status-voided-bg);color:var(--pt-status-voided-fg)"><i></i>ملغاة</span>
+  </div>
+  <h3 style="margin-top:20px">حالات السائق</h3>
+  <div class="status-row">
+    <span class="status" style="background:var(--pt-driver-available-bg);color:var(--pt-driver-available-fg)"><i></i>متاح</span>
+    <span class="status" style="background:var(--pt-driver-intake-parking-bg);color:var(--pt-driver-intake-parking-fg)"><i></i>يسجل/يصف</span>
+    <span class="status" style="background:var(--pt-driver-retrieving-bg);color:var(--pt-driver-retrieving-fg)"><i></i>يحضر/يسلّم</span>
+    <span class="status" style="background:var(--pt-driver-busy-with-next-bg);color:var(--pt-driver-busy-with-next-fg)"><i></i>مشغول ولديه مهمة تالية</span>
+    <span class="status" style="background:var(--pt-driver-on-break-bg);color:var(--pt-driver-on-break-fg)"><i></i>استراحة</span>
+    <span class="status" style="background:var(--pt-driver-off-duty-bg);color:var(--pt-driver-off-duty-fg)"><i></i>خارج الوردية</span>
+  </div>
+
+  <h2>الخطوط</h2>
+  <div class="grid g2">
+    <div class="card type-specimen">
+      <div class="s"><span style="font-size:40px;font-weight:700">#125</span><span class="t">display 40/48 · 700</span></div>
+      <div class="s"><span style="font-size:28px;font-weight:700">قبول الطلب</span><span class="t">3xl 28/38 · 700</span></div>
+      <div class="s"><span style="font-size:20px;font-weight:600">طلب إحضار — قاعة ريماس</span><span class="t">xl 20/30 · 600</span></div>
+      <div class="s"><span style="font-size:16px">سجّل اللوحة والنوع واللون وجوال العميل.</span><span class="t">base 16/26 · 400</span></div>
+      <div class="s"><span style="font-size:14px;color:var(--pt-text-muted)">آخر مزامنة قبل 12 ثانية</span><span class="t">sm 14/22 · 400</span></div>
+    </div>
+    <div class="card type-specimen">
+      <div class="s"><span style="font-size:22px;font-weight:700">IBM Plex Sans Arabic</span><span class="t">UI · Arabic + Latin</span></div>
+      <div class="s"><span style="font-size:18px">ابجد هوز حطي كلمن سعفص قرشت 0123456789</span><span class="t">400</span></div>
+      <div class="s"><span style="font-size:18px;font-weight:600">ابجد هوز حطي كلمن سعفص قرشت</span><span class="t">600</span></div>
+      <div class="s"><span style="font-family:var(--pt-font-mono);font-size:22px;font-weight:600;letter-spacing:.2em">K7Q2-9F · 482731</span><span class="t">IBM Plex Mono 600</span></div>
+    </div>
+  </div>
+
+  <h2>نماذج من الواجهة (فاتح وداكن)</h2>
+  <div class="phones">
+    <div class="phone" data-theme="light">
+      <div class="bar"><div class="brand"><img src="logo/point/point-mark.svg" alt="">بوينت</div><span class="conn"><i></i>متصل</span></div>
+      <div class="body">
+        <div class="row"><span class="muted">قاعة ريماس · حفل آل فلان</span><span class="status" style="background:var(--pt-driver-available-bg);color:var(--pt-driver-available-fg);height:28px"><i></i>متاح</span></div>
+        <button class="btn-xl">+ استلام مركبة</button>
+        <div class="offer">
+          <div class="top"><div><div class="muted">طلب إحضار — لك</div><div class="num">#125</div></div>
+            <div class="ring"><svg width="56" height="56" viewBox="0 0 56 56"><circle cx="28" cy="28" r="24" fill="none" stroke="var(--pt-border)" stroke-width="5"/><circle cx="28" cy="28" r="24" fill="none" stroke="var(--pt-primary)" stroke-width="5" stroke-dasharray="150.8" stroke-dashoffset="50" stroke-linecap="round"/></svg><b>21</b></div></div>
+          <div class="row"><span>تويوتا كامري · أبيض</span><span class="plate"><span>1234</span><span>ب ح د</span></span></div>
+          <div class="muted">حفل آل فلان · ينتظر منذ 1:12</div>
+          <button class="btn-xl">قبول الطلب</button>
+        </div>
+      </div>
+      <div class="nav"><div class="on">الرئيسية</div><div>المركبات</div><div>حسابي</div></div>
+    </div>
+    <div class="phone" data-theme="dark">
+      <div class="bar"><div class="brand"><img src="logo/point/point-mark.svg" alt="">بوينت</div><span class="conn"><i style="background:var(--pt-conn-uncertain)"></i>الاتصال غير مؤكد</span></div>
+      <div class="body">
+        <div class="row"><span class="muted">قاعة ريماس · حفل آل فلان</span><span class="status" style="background:var(--pt-driver-retrieving-bg);color:var(--pt-driver-retrieving-fg);height:28px"><i></i>يحضر/يسلّم</span></div>
+        <div class="task"><div class="row"><b>المهمة الحالية #125</b><span class="status" style="background:var(--pt-status-ready-bg);color:var(--pt-status-ready-fg);height:28px"><i></i>جاهزة</span></div>
+          <div class="muted">اطلب من العميل رمز التسليم</div>
+          <div style="display:flex;gap:8px;justify-content:center;direction:ltr">
+            <span class="plate" style="font-family:var(--pt-font-mono);font-size:22px"><span>4</span><span>8</span><span>2</span><span>_</span><span>_</span><span>_</span></span>
+          </div>
+          <button class="btn-xl" style="background:var(--pt-success);color:var(--pt-ink-950)">تأكيد التسليم</button>
+        </div>
+        <div class="offer" style="border-color:var(--pt-driver-busy-with-next-bg)">
+          <div class="top"><div><div class="muted">طلب إحضار — لكل السائقين</div><div class="num">#131</div></div></div>
+          <div class="muted">احجزه فقط وأنت متوقف. لا تستخدم الجوال أثناء القيادة.</div>
+          <button class="btn-xl" style="background:var(--pt-driver-busy-with-next-bg);color:var(--pt-driver-busy-with-next-fg)">حجز كمهمة تالية</button>
+        </div>
+      </div>
+      <div class="nav"><div class="on">الرئيسية</div><div>المركبات</div><div>حسابي</div></div>
+    </div>
+  </div>
+
+  <h2>محادثة العميل — مصاف على واتساب</h2>
+  <div class="wa">
+    <div class="head"><img src="whatsapp/masaf-profile-640.png" alt=""><div><b>مصاف</b><div style="font-size:12px;opacity:.8">حساب أعمال</div></div></div>
+    <div class="msgs">
+      <div class="bubble">مصاف — قاعة ريماس — تذكرة 125<br>تم استلام مركبتك: تويوتا كامري بيضاء — لوحة 1234.<br>عند رغبتك بالخروج اضغط «طلب السيارة».<div class="t">9:41 م</div><div class="btn-wa">طلب السيارة</div></div>
+      <div class="bubble me">طلب السيارة<div class="t">11:02 م</div></div>
+      <div class="bubble">تم تسجيل طلب سيارتك رقم 125؛ سنبلغك عند جاهزيتها.<div class="t">11:02 م</div></div>
+      <div class="bubble">جارٍ إحضار سيارتك رقم 125 الآن.<div class="t">11:04 م</div></div>
+      <div class="bubble">سيارتك رقم 125 جاهزة عند نقطة التسليم.<br>رمز التسليم: 482731<br>أعطِ الرمز للسائق عند الاستلام ولا تشاركه مع غيره.<div class="t">11:07 م</div></div>
+      <div class="bubble">تم تسليم سيارتك رقم 125. شكرًا لاختيارك مصاف.<div class="t">11:08 م</div></div>
+    </div>
+  </div>
+  <p class="lead" style="text-align:center;margin-top:10px">النصوص النهائية للقوالب في docs/14 وتخضع لاعتماد Meta.</p>
+
+  <h2>أيقونات التطبيق</h2>
+  <div class="card icons">
+    <figure><img src="app-icons/icon-512.png" width="128" height="128" alt="">icon-512 (any)</figure>
+    <figure><img src="app-icons/icon-maskable-512.png" width="128" height="128" alt="" style="border-radius:50%">maskable</figure>
+    <figure><img src="app-icons/apple-touch-icon.png" width="96" height="96" alt="" style="border-radius:22px">apple-touch</figure>
+    <figure><img src="app-icons/favicon-48.png" width="48" height="48" alt="">favicon 48</figure>
+    <figure><img src="app-icons/favicon-32.png" width="32" height="32" alt="">32</figure>
+    <figure><img src="app-icons/favicon-16.png" width="16" height="16" alt="">16</figure>
+    <figure style="background:#33415F;padding:8px;border-radius:8px;color:#fff"><img src="app-icons/badge-96.png" width="48" height="48" alt="">badge</figure>
+  </div>
+
+  <h2>الأصوات</h2>
+  <div class="grid g3">
+    <div class="card"><h3>عرض فردي</h3><audio controls preload="none" src="sounds/point-offer.mp3"></audio><div class="caption">point-offer.mp3</div></div>
+    <div class="card"><h3>بث</h3><audio controls preload="none" src="sounds/point-broadcast.mp3"></audio><div class="caption">point-broadcast.mp3</div></div>
+    <div class="card"><h3>تذكير</h3><audio controls preload="none" src="sounds/point-reminder.mp3"></audio><div class="caption">point-reminder.mp3</div></div>
+    <div class="card"><h3>مهمة تالية مستحقة</h3><audio controls preload="none" src="sounds/point-next-due.mp3"></audio><div class="caption">point-next-due.mp3</div></div>
+    <div class="card"><h3>تصعيد للمشرف</h3><audio controls preload="none" src="sounds/point-escalation.mp3"></audio><div class="caption">point-escalation.mp3</div></div>
+    <div class="card"><h3>اختبار الصوت</h3><audio controls preload="none" src="sounds/point-test.mp3"></audio><div class="caption">point-test.mp3</div></div>
+  </div>
+
+  <h2>التذكرة الورقية (مصاف)</h2>
+  <div class="card" style="display:flex;justify-content:center"><img src="print/masaf-paper-ticket.svg" alt="" style="height:520px"></div>
+</div>
+</body>
+</html>

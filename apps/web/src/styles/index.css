@@ -1,0 +1,10 @@
+/*
+ * Style entry. Tokens are imported straight from brand/tokens (the single source of values, DEC-49/50);
+ * nothing is copied, so a token change in brand/ reaches the app on the next build.
+ * Tailwind v4 is CSS-first: brand/tokens/tailwind.theme.css maps the --pt-* roles to utilities
+ * (bg-surface, text-text-muted, rounded-md, …).
+ */
+@import 'tailwindcss';
+@import '../../../../brand/tokens/tokens.css';
+@import '../../../../brand/tokens/tailwind.theme.css';
+@import './components.css';

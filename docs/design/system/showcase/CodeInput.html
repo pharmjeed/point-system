@@ -1,0 +1,18 @@
+<!-- @dsCard group="الطلبات والإحضار" height=720 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>CodeInput</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(React.Fragment, null,
+  h(S, {label:'جزئي (تركيز)', wide:true}, h('div', {style:{width:'100%'}}, h(P.CodeInput, {id:'ci1', value:'482', pressed:true, attemptsLeft:3}))),
+  h(S, {label:'خطأ', wide:true}, h('div', {style:{width:'100%'}}, h(P.CodeInput, {id:'ci2', value:'482713', error:'الرمز غير صحيح', attemptsLeft:2}))),
+  h(S, {label:'قفل HANDOVER_CODE_LOCKED', wide:true}, h('div', {style:{width:'100%'}}, h(P.CodeInput, {id:'ci3', locked:true}))),
+  h(S, {label:'مع الزر: «جارٍ…»', wide:true}, h('div', {style:{width:'100%', display:'grid', gap:12}}, h(P.CodeInput, {id:'ci4', value:'482731', disabled:true}), h(P.Button, {variant:'success', size:'lg', loading:true}, 'تأكيد التسليم'))))));
+</script>
+</body>
+</html>

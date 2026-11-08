@@ -1,0 +1,18 @@
+<!-- @dsCard group="المشرف" height=260 -->
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head><meta charset="utf-8"><title>KpiTile</title><link rel="stylesheet" href="../tokens/source/tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="../components/bundle.css"><script src="vendor/react.production.min.js"></script><script src="vendor/react-dom.production.min.js"></script><script src="../components/bundle.js"></script>
+<style>html,body{margin:0} body{padding:12px;background:var(--pt-bg);color:var(--pt-text);font-family:var(--pt-font-sans);}</style>
+</head>
+<body><p style="margin:0 0 12px;font-family:var(--pt-font-sans)"><a href="index.html">← كل المكونات</a></p>
+<div id="root" dir="rtl" lang="ar"></div>
+<script>
+var P = window.Point, h = React.createElement, M = P._Modes, S = P._State, R = P._Row;
+ReactDOM.createRoot(document.getElementById('root')).render(h(M, null, h(R, null,
+  h(S, {label:'عادي'}, h(P.KpiTile, {label:'الطلبات المفتوحة', value:'7', icon:'bell-ring'})),
+  h(S, {label:'تنبيه'}, h(P.KpiTile, {label:'أقدم انتظار', value:'6:40', icon:'clock', tone:'warning'})),
+  h(S, {label:'خطأ'}, h(P.KpiTile, {label:'الرسائل الفاشلة', value:'1', icon:'message-circle', tone:'danger'})),
+  h(S, {label:'«جارٍ…»'}, h(P.KpiTile, {label:'أقدم انتظار', loading:true})))));
+</script>
+</body>
+</html>

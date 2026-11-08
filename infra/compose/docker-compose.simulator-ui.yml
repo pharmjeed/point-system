@@ -1,0 +1,8 @@
+# Optional, STAGING ONLY, with docker-compose.simulator.yml: publishes the WhatsApp simulator's page (the
+# customer's phone, 12 §11) on one host address for the server's reverse proxy, which puts it behind a password
+# on its own host name (infra/deploy/install.sh, DEC-457). Never on a public interface, never in production.
+#   POINT_SIM_BIND=<address>:<port>   default 127.0.0.1:8497
+services:
+  wa-simulator:
+    ports:
+      - '${POINT_SIM_BIND:-127.0.0.1:8497}:4010'
