@@ -52,6 +52,12 @@ describe('docs/v2/05 §1: every customer route of the contracts is documented', 
       'paymentMethodCreate',
       'paymentMethodPatch',
       'paymentMethodDelete',
+      // V2-032 (DEC-532, DEC-534)
+      'subscribe',
+      'subscriptionPay',
+      'subscriptionCancel',
+      'subscriptionResume',
+      'subscriptionVehicles',
     ]);
     // signed-in auth calls: logout, and the re-verification of C-20 (V2-017, DEC-507)
     const signedIn = ['/v1/customer/auth/logout', '/v1/customer/auth/reauth/verify'];

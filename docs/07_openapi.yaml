@@ -1143,7 +1143,7 @@ paths:
 
         الشروط: نطاق POST /v1/tickets نفسه (مناوبة في الموقع، ليس في استراحة، المشغل غير معلّق ← OPERATOR_SUSPENDED حتى للمسودة القائمة) · المسودة بلا قناة عميل (لا جوال ولا رقم ورقي ولا رمز ربط ولا تذكرة تطبيق) وإلا INVALID_STATE_TRANSITION (reason: customer_channel_set) · الرمز بصيغته وتوقيعه بسر الحساب لحساب active (PASS_INVALID) · الخطوة ضمن الحالية ± 1 على ساعة الخادم وأكبر من آخر خطوة استُعملت (PASS_EXPIRED).
 
-        الأثر: channel = app، wa_link_status = none، صف customers للمشغل مربوط بالحساب (customer_account_id؛ الجوال واللغة فقط، V2-D12)، customer_vehicle_id وحقول السيارة منسوخة من customer_vehicles إن كانت السيارة المختارة في الحساب (وإلا تبقى للسائق يدويًا، vehicle_prefilled: false)، entitlement كما حُدد عند إنشاء التذكرة (event_included لحفل included وإلا none)، customer_passes.last_used_step، audit_log. لا W-01 ولا أي رسالة واتساب لهذه التذكرة (DEC-503).
+        الأثر: channel = app، wa_link_status = none، صف customers للمشغل مربوط بالحساب (customer_account_id؛ الجوال واللغة فقط، V2-D12)، customer_vehicle_id وحقول السيارة منسوخة من customer_vehicles إن كانت السيارة المختارة في الحساب (وإلا تبقى للسائق يدويًا، vehicle_prefilled: false)، entitlement: subscription إن كان للحساب اشتراك active في هذا الموقع يغطي السيارة الممسوحة ولا تذكرة مفتوحة أخرى لها (V2-033، DEC-535: subscription_id، payment_status = not_required، الرسوم 0؛ ويُحسم ثانية عند إتمام التسجيل باللوحة النهائية)، وإلا كما حُدد عند إنشاء التذكرة (event_included لحفل included وإلا none)، customer_passes.last_used_step، audit_log. لا W-01 ولا أي رسالة واتساب لهذه التذكرة (DEC-503).
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1585,7 +1585,7 @@ paths:
 
         الشروط: status=received · منشئ التذكرة
 
-        الأثر: status=parking (لقطة الرسوم أُخذت عند الإنشاء، DEC-43)؛ واتساب مباشر: wa_link_status=pending_send + action token + job.wa_send(W-01)؛ alert inspection_incomplete عند الحاجة
+        الأثر: status=parking (لقطة الرسوم أُخذت عند الإنشاء، DEC-43)؛ واتساب مباشر: wa_link_status=pending_send + action token + job.wa_send(W-01)؛ alert inspection_incomplete عند الحاجة؛ V2-033 (DEC-535): الأهلية تُحسم باللوحة والعميل النهائيين — اشتراك active لحساب صف customers المربوط في هذا الموقع يغطي السيارة (customer_vehicle_id لتذكرة التطبيق، وإلا لوحة سيارة مشمولة) بلا تذكرة مفتوحة أخرى لها ← entitlement=subscription وsubscription_id وpayment_status=not_required؛ وإلا ما يقرره الحفل (والرسوم من الحفل إن كانت subscription ولم تعد)، وticket.intake_submitted يحمل entitlement وsubscription_id
       parameters:
       - $ref: '#/components/parameters/ticketId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -13515,6 +13515,905 @@ paths:
       x-idempotency: none
       x-rate-limit-class: health
       x-error-codes: []
+  /v1/platform/plans:
+    get:
+      operationId: platformListPlans
+      summary: باقات الاشتراك لكل موقع (P-05)
+      tags: [Platform]
+      description: |-
+        P-05 (V2-030، DEC-531): المواقع التي لها ملف عام، بمفتاح الاشتراك وسعر الزيارة وإصدار الملف (لأمر PUT …/pricing)، وباقاتها النشطة والمتقاعدة مع عدد المشتركين الأحياء لكل باقة. q بحث في اسم الموقع، subscriptions تصفية بالمفتاح.
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 60
+      - name: venue_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: subscriptions
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [enabled, disabled]
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlanVenueListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.plan_manage
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+    post:
+      operationId: platformCreatePlan
+      summary: باقة جديدة لموقع (P-05)
+      tags: [Platform]
+      description: |-
+        باقة اشتراك لموقع متكرر يبيع الاشتراك (V2-D07): السعر الشهري و/أو السنوي شاملًا الضريبة بالهللة (1.00 ريال حدًا أدنى)، وعدد السيارات 1…5. مع replaces_plan_id هو تغيير سعر (03 §4): الباقة الجديدة وتقاعد القديمة في معاملة واحدة بسبب، ومشتركو القديمة على سعرهم حتى أول تجديد يعلنه إشعار التجديد (DEC-531).
+
+        الشروط: قاعة أو موقع بلا ملف ← VALIDATION_FAILED (not_recurring_venue) أو RESOURCE_NOT_FOUND؛ مفتاح الاشتراك مطفأ ← VALIDATION_FAILED (subscriptions_disabled)؛ باقة مستبدلة متقاعدة ← INVALID_STATE_TRANSITION؛ استبدال بلا سبب ← REASON_REQUIRED
+
+        الأثر: subscription_plans (+ تقاعد المستبدلة)؛ platform_audit_log وaudit_log للمشغل (subscription_plan.create / .retire)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                venue_id: {type: string, format: uuid}
+                name_ar: {type: string, minLength: 2, maxLength: 60}
+                name_en: {type: [string, 'null'], minLength: 2, maxLength: 60}
+                vehicles_included: {type: integer, minimum: 1, maximum: 5}
+                monthly_price_halalas: {type: [integer, 'null'], minimum: 100}
+                yearly_price_halalas: {type: [integer, 'null'], minimum: 100}
+                replaces_plan_id: {type: [string, 'null'], format: uuid}
+                reason: {type: [string, 'null'], maxLength: 500}
+              required: [venue_id, name_ar, vehicles_included]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlanEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.plan_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/plans/{planId}/retire:
+    post:
+      operationId: platformRetirePlan
+      summary: تقاعد باقة (P-05)
+      tags: [Platform]
+      description: |-
+        الباقة لا تُباع بعدها (تختفي من C-08)، ومشتركوها يبقون عليها بسعرهم (DEC-531). سبب 3 محارف إلزامي ← وإلا REASON_REQUIRED؛ باقة متقاعدة ← INVALID_STATE_TRANSITION.
+
+        الأثر: subscription_plans (retired، retired_by، retire_reason)؛ platform_audit_log وaudit_log للمشغل (subscription_plan.retire)
+      parameters:
+      - name: planId
+        in: path
+        required: true
+        description: معرّف الباقة
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: [string, 'null'], maxLength: 500}
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlanEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.plan_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/subscriptions:
+    get:
+      operationId: platformListSubscriptions
+      summary: الاشتراكات (P-07)
+      tags: [Platform]
+      description: |-
+        P-07 (V2-035، DEC-537): اشتراكات كل المشغلين بتصفية الحالة والموقع والمشغل والدورة، وrenews_before للتجديدات القادمة (النشطة غير الملغاة قبل الحد، الأقرب أولًا)؛ العميل بجوال مقنّع وعدد زيارات الاشتراك.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/SubscriptionStatus'
+      - name: venue_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: org_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: billing_cycle
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/BillingCycle'
+      - name: renews_before
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSubscriptionListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.subscription_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/subscriptions/report:
+    get:
+      operationId: platformSubscriptionsReport
+      summary: تقرير الاشتراكات (P-07)
+      tags: [Platform]
+      description: |-
+        P-07 (DEC-537): أعداد ومبالغ فقط بساعة الخادم — الأعداد لكل حالة، MRR (الأسعار الشهرية المكافئة للنشطة: السنوي على 12)، التجديدات المستحقة في days القادمة ومبلغها، التسرب في days الماضية ونسبته (المتسرب ÷ (النشطة الآن + المتسرب))، الجديدة، ولكل موقع النشطة والمجمدة والمتأخرة وMRR.
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 30
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSubscriptionsReportEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.subscription_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED]
+  /v1/platform/subscriptions/{subscriptionId}:
+    get:
+      operationId: platformGetSubscription
+      summary: اشتراك واحد (P-07)
+      tags: [Platform]
+      description: |-
+        P-07: الاشتراك بفتراته المدفوعة (والتمديد بأيام التجميد) ومدفوعاته وخطه الزمني من platform_audit_log وعدد سياراته المشمولة (بلا لوحات)، والعميل مقنّع. معرّف مجهول ← RESOURCE_NOT_FOUND.
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        description: معرّف الاشتراك
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSubscriptionEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.subscription_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/customer/subscriptions:
+    get:
+      operationId: customerSubscriptions
+      summary: اشتراكاتي C-14
+      tags: [Customer]
+      description: |-
+        C-06 / C-14 (V2-032، DEC-532): اشتراكات الحساب الأحدث أولًا بحالتها وفترتها والتجديد القادم والسيارات المشمولة وآخر دفعة، وما يُسمح به (الإلغاء، الاستئناف، الدفع، تغيير السيارة). Cache-Control: no-store.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionListEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+    post:
+      operationId: customerSubscribe
+      summary: الاشتراك C-09 ← C-10
+      tags: [Customer]
+      description: |-
+        C-09 ← C-10 (V2-032، DEC-532، DEC-534): باقة نشطة لموقع مدرج يبيع الاشتراك، الدورة، والسيارات المشمولة (1 … vehicles_included من سيارات الحساب)، والدفع ببطاقة محفوظة أو ببطاقة رُمّزت على الجهاز مع save_card وموافقة card_on_file (لأن التجديد يخصم بطاقة محفوظة؛ Apple Pay أو بطاقة لا تُحفظ ← SUBSCRIPTION_CARD_REQUIRED). الشبكة ثم الالتزام كأمر دفع الزيارة (DEC-96، DEC-521): given_id مشتق من الحساب والمفتاح. الرد 201 بالاشتراك (pending_payment حتى تُدفع، ثم active بفترة تبدأ من وقت الخادم عند الدفع) والدفعة (paid، أو initiated مع transaction_url لـ3-D Secure)؛ رفض البطاقة PAYMENT_FAILED بـsubscription_id والاشتراك ينتظر بطاقة أخرى 30 دقيقة عبر …/pay.
+
+        الأثر: subscriptions (pending_payment) + subscription_vehicles + online_payments (subscription، subscription_period_seq 1) + job.pending_payment_expire + customer_audit_log/platform_audit_log (subscription.subscribe، customer.subscription.subscribe)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_id: {type: string, format: uuid}
+                billing_cycle:
+                  $ref: '#/components/schemas/BillingCycle'
+                vehicle_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items: {type: string, format: uuid}
+                source:
+                  oneOf:
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [token]}
+                      token: {type: string, pattern: '^[A-Za-z0-9_-]{8,128}$'}
+                    required: [type, token]
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [applepay]}
+                      token: {type: string, maxLength: 16000}
+                    required: [type, token]
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [saved]}
+                      payment_method_id: {type: string, format: uuid}
+                    required: [type, payment_method_id]
+                    additionalProperties: false
+                save_card: {type: boolean}
+                card_on_file_version: {type: string, maxLength: 40}
+              required: [plan_id, billing_cycle, vehicle_ids, source]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionCheckoutEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '402':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYMENT_FAILED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND | VENUE_NOT_LISTED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | SUBSCRIPTION_ALREADY_EXISTS | SUBSCRIPTION_PLAN_UNAVAILABLE | CUSTOMER_CONSENT_VERSION_STALE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | SUBSCRIPTION_CARD_REQUIRED | CUSTOMER_CONSENT_REQUIRED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+        '504':
+          $ref: '#/components/responses/CustomerError'
+          description: DEPENDENCY_TIMEOUT
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_CONSENT_REQUIRED, CUSTOMER_CONSENT_VERSION_STALE, DEPENDENCY_TIMEOUT, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, PAYMENT_FAILED, RESOURCE_NOT_FOUND, SUBSCRIPTION_ALREADY_EXISTS, SUBSCRIPTION_CARD_REQUIRED, SUBSCRIPTION_PLAN_UNAVAILABLE, VENUE_NOT_LISTED]
+  /v1/customer/subscriptions/{subscriptionId}:
+    get:
+      operationId: customerSubscription
+      summary: اشتراك واحد C-14
+      tags: [Customer]
+      description: |-
+        C-14 / C-10: اشتراك الحساب نفسه (وإلا RESOURCE_NOT_FOUND)، يستطلعه التطبيق بعد 3-D Secure. Cache-Control: no-store.
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        description: معرّف الاشتراك
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, RESOURCE_NOT_FOUND]
+  /v1/customer/subscriptions/{subscriptionId}/pay:
+    post:
+      operationId: customerSubscriptionPay
+      summary: دفع اشتراك C-14 ← C-10
+      tags: [Customer]
+      description: |-
+        اشتراك ينتظر دفعته (pending_payment بعد رفض بطاقة) أو في مهلة السماح (past_due، «حدّث وسيلة الدفع»): الدفعة للفترة التالية بسعرها (المعلن بإشعار التجديد إن وُجد). نجاحها في past_due يبدأ الفترة من تاريخ النهاية الأصلي (لا تمديد مجاني، 04 §1). حالة أخرى ← SUBSCRIPTION_NOT_ACTIVE؛ دفعة للفترة تنتظر 3-D Secure ← PAYMENT_IN_PROGRESS؛ مصادر الدفع وموافقتها كالاشتراك.
+
+        الأثر: online_payments (subscription) + customer_audit_log (customer.subscription.pay)
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        description: معرّف الاشتراك
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source:
+                  oneOf:
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [token]}
+                      token: {type: string, pattern: '^[A-Za-z0-9_-]{8,128}$'}
+                    required: [type, token]
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [applepay]}
+                      token: {type: string, maxLength: 16000}
+                    required: [type, token]
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [saved]}
+                      payment_method_id: {type: string, format: uuid}
+                    required: [type, payment_method_id]
+                    additionalProperties: false
+                save_card: {type: boolean}
+                card_on_file_version: {type: string, maxLength: 40}
+              required: [source]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionCheckoutEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '402':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYMENT_FAILED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | SUBSCRIPTION_NOT_ACTIVE | PAYMENT_IN_PROGRESS | CUSTOMER_CONSENT_VERSION_STALE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | SUBSCRIPTION_CARD_REQUIRED | CUSTOMER_CONSENT_REQUIRED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+        '504':
+          $ref: '#/components/responses/CustomerError'
+          description: DEPENDENCY_TIMEOUT
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_CONSENT_REQUIRED, CUSTOMER_CONSENT_VERSION_STALE, DEPENDENCY_TIMEOUT, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, PAYMENT_FAILED, PAYMENT_IN_PROGRESS, RESOURCE_NOT_FOUND, SUBSCRIPTION_CARD_REQUIRED, SUBSCRIPTION_NOT_ACTIVE]
+  /v1/customer/subscriptions/{subscriptionId}/cancel:
+    post:
+      operationId: customerSubscriptionCancel
+      summary: إلغاء الاشتراك C-14
+      tags: [Customer]
+      description: |-
+        «إلغاء» (04 §1، DEC-532): active/frozen ← cancel_at_period_end (لا تجديد، ويمكن الاستئناف قبل النهاية)؛ pending_payment ← canceled فورًا (abandoned، ودفعة تنجح لاحقًا تُسترد)؛ past_due ← canceled فورًا (past_due_canceled). منتهٍ ← SUBSCRIPTION_NOT_ACTIVE.
+
+        الأثر: subscriptions + customer_audit_log/platform_audit_log (subscription.cancel_at_period_end / abandon / past_due_cancel) + subscription.updated
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        description: معرّف الاشتراك
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | SUBSCRIPTION_NOT_ACTIVE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND, SUBSCRIPTION_NOT_ACTIVE]
+  /v1/customer/subscriptions/{subscriptionId}/resume:
+    post:
+      operationId: customerSubscriptionResume
+      summary: استئناف الاشتراك C-14
+      tags: [Customer]
+      description: |-
+        يتراجع عن «الإلغاء في نهاية الفترة» لاشتراك active/frozen (بلا إلغاء معلّق لا يغيّر شيئًا)؛ حالة أخرى ← SUBSCRIPTION_NOT_ACTIVE.
+
+        الأثر: subscriptions.cancel_at_period_end + customer_audit_log/platform_audit_log (subscription.resume) + subscription.updated
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        description: معرّف الاشتراك
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | SUBSCRIPTION_NOT_ACTIVE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND, SUBSCRIPTION_NOT_ACTIVE]
+  /v1/customer/subscriptions/{subscriptionId}/vehicles:
+    put:
+      operationId: customerSubscriptionVehicles
+      summary: تغيير السيارة المشمولة C-14
+      tags: [Customer]
+      description: |-
+        القائمة الجديدة كاملة (1 … vehicles_included من سيارات الحساب)، مرة كل فترة (01 R6): تغيير ثانٍ في الفترة نفسها ← SUBSCRIPTION_VEHICLES_LOCKED (available_at)؛ القائمة نفسها لا تُحتسب تغييرًا؛ في active/past_due/frozen وإلا SUBSCRIPTION_NOT_ACTIVE.
+
+        الأثر: subscription_vehicles (removed_at / صف جديد) + subscriptions.vehicles_changed_at + customer_audit_log/platform_audit_log (subscription.vehicles)
+      parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        description: معرّف الاشتراك
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vehicle_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items: {type: string, format: uuid}
+              required: [vehicle_ids]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubscriptionEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | SUBSCRIPTION_NOT_ACTIVE | SUBSCRIPTION_VEHICLES_LOCKED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND, SUBSCRIPTION_NOT_ACTIVE, SUBSCRIPTION_VEHICLES_LOCKED]
 components:
   securitySchemes:
     cookieSession:
@@ -15189,6 +16088,10 @@ components:
             vehicle_prefilled:
               type: boolean
               description: false ← السيارة المختارة ليست في الحساب أو لم تُختر سيارة، فيكملها السائق يدويًا (01 §4)
+            subscription:
+              type: [string, 'null']
+              enum: [covered, vehicle_not_covered, open_ticket, null]
+              description: V2-033 (DEC-535) — covered «مشترك بوينت»؛ vehicle_not_covered «مشترك — هذه السيارة غير مشمولة» (01 §4)؛ open_ticket للسيارة تذكرة مفتوحة أخرى؛ null بلا اشتراك نشط للحساب في هذا الموقع
           required: [first_name, phone_masked, vehicle_prefilled]
       required: [ticket, customer]
     IntakePassResultEnvelope:
@@ -20029,7 +20932,7 @@ components:
         venue_name_en: {type: [string, 'null']}
         operator_name_ar: {type: string}
         operator_name_en: {type: [string, 'null']}
-        description: {type: string, enum: [visit]}
+        description: {type: string, enum: [visit, subscription]}
         amount_halalas: {type: integer}
         net_halalas: {type: integer}
         vat_halalas: {type: integer}
@@ -20108,6 +21011,339 @@ components:
             payment_method_id: {type: string, format: uuid}
             removed_at: {type: string, format: date-time}
           required: [payment_method_id, removed_at]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    SubscriptionStatus:
+      type: string
+      enum: [pending_payment, active, past_due, canceled, expired, frozen]
+      description: subscriptions.status — آلة 04 §1 (V2-031، DEC-532)
+    BillingCycle:
+      type: string
+      enum: [monthly, yearly]
+      description: الدورة (V2-D06)
+    SubscriptionPlanStatus:
+      type: string
+      enum: [active, retired]
+    SubscriptionFrozenReason:
+      type: string
+      enum: [operator_suspended, venue_inactive]
+    SubscriptionEndedReason:
+      type: string
+      enum: [pending_expired, abandoned, period_end, grace_expired, past_due_canceled, account_deleted, operator_terminated, refunded]
+    PlatformPlan:
+      type: object
+      properties:
+        plan_id: {type: string, format: uuid}
+        venue_id: {type: string, format: uuid}
+        name_ar: {type: string}
+        name_en: {type: [string, 'null']}
+        vehicles_included: {type: integer}
+        monthly_price_halalas: {type: [integer, 'null']}
+        yearly_price_halalas: {type: [integer, 'null']}
+        status:
+          $ref: '#/components/schemas/SubscriptionPlanStatus'
+        replaces_plan_id: {type: [string, 'null'], format: uuid}
+        replaced_by_plan_id: {type: [string, 'null'], format: uuid}
+        live_subscriptions: {type: integer}
+        created_at: {type: string, format: date-time}
+        retired_at: {type: [string, 'null'], format: date-time}
+      required: [plan_id, venue_id, name_ar, name_en, vehicles_included, monthly_price_halalas, yearly_price_halalas, status, replaces_plan_id, replaced_by_plan_id, live_subscriptions, created_at, retired_at]
+    PlatformPlanEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformPlan'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformPlanVenueListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  venue_id: {type: string, format: uuid}
+                  org_id: {type: string, format: uuid}
+                  name_ar: {type: string}
+                  name_en: {type: [string, 'null']}
+                  operator_name_ar: {type: string}
+                  category: {type: string}
+                  profile_status: {type: string}
+                  profile_version: {type: integer}
+                  subscriptions_enabled: {type: boolean}
+                  subscriptions_allowed: {type: boolean}
+                  pay_per_visit_halalas: {type: [integer, 'null']}
+                  plans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformPlan'
+                required: [venue_id, org_id, name_ar, operator_name_ar, category, subscriptions_enabled, subscriptions_allowed, plans]
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformSubscription:
+      type: object
+      description: اشتراك في P-07 — العميل بجوال مقنّع وعدد الزيارات (DEC-537)
+      properties:
+        subscription_id: {type: string, format: uuid}
+        account_id: {type: string, format: uuid}
+        phone_masked: {type: [string, 'null']}
+        account_status: {type: string}
+        org_id: {type: string, format: uuid}
+        operator_name_ar: {type: string}
+        venue_id: {type: string, format: uuid}
+        venue_name_ar: {type: string}
+        plan_id: {type: string, format: uuid}
+        plan_name_ar: {type: string}
+        billing_cycle:
+          $ref: '#/components/schemas/BillingCycle'
+        status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        price_halalas: {type: integer}
+        next_price_halalas: {type: [integer, 'null']}
+        vehicles_included: {type: integer}
+        current_period_start: {type: [string, 'null'], format: date-time}
+        current_period_end: {type: [string, 'null'], format: date-time}
+        cancel_at_period_end: {type: boolean}
+        grace_ends_at: {type: [string, 'null'], format: date-time}
+        renewal_attempts: {type: integer}
+        frozen_at: {type: [string, 'null'], format: date-time}
+        frozen_reason:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionFrozenReason'
+          - type: 'null'
+        frozen_days_total: {type: integer}
+        periods_paid: {type: integer}
+        visits: {type: integer}
+        activated_at: {type: [string, 'null'], format: date-time}
+        ended_at: {type: [string, 'null'], format: date-time}
+        ended_reason:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionEndedReason'
+          - type: 'null'
+        created_at: {type: string, format: date-time}
+      required: [subscription_id, account_id, phone_masked, org_id, venue_id, plan_id, billing_cycle, status, price_halalas, current_period_end, cancel_at_period_end, created_at]
+    PlatformSubscriptionListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlatformSubscription'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformSubscriptionEnvelope:
+      type: object
+      properties:
+        data:
+          allOf:
+          - $ref: '#/components/schemas/PlatformSubscription'
+          - type: object
+            properties:
+              covered_vehicles: {type: integer}
+              periods:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    seq: {type: integer}
+                    starts_at: {type: string, format: date-time}
+                    ends_at: {type: string, format: date-time}
+                    price_halalas: {type: integer}
+                    plan_id: {type: string, format: uuid}
+                    online_payment_id: {type: string, format: uuid}
+                    extended_days: {type: integer}
+              payments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    payment_id: {type: string, format: uuid}
+                    status: {type: string}
+                    amount_halalas: {type: integer}
+                    refunded_halalas: {type: integer}
+                    seq: {type: [integer, 'null']}
+                    paid_at: {type: [string, 'null'], format: date-time}
+              timeline:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    action: {type: string}
+                    occurred_at: {type: string, format: date-time}
+                    actor_type: {type: string}
+                    from_status: {type: [string, 'null']}
+                    to_status: {type: [string, 'null']}
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformSubscriptionsReportEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            generated_at: {type: string, format: date-time}
+            days: {type: integer}
+            counts:
+              type: object
+              additionalProperties: {type: integer}
+            active_subscribers: {type: integer}
+            mrr_halalas: {type: integer}
+            renewals_due:
+              type: object
+              properties:
+                count: {type: integer}
+                amount_halalas: {type: integer}
+                until: {type: string, format: date-time}
+            churn:
+              type: object
+              properties:
+                count: {type: integer}
+                rate_bp: {type: integer}
+                by_reason:
+                  type: object
+                  additionalProperties: {type: integer}
+                since: {type: string, format: date-time}
+            new_subscriptions: {type: integer}
+            venues:
+              type: array
+              items:
+                type: object
+                properties:
+                  venue_id: {type: string, format: uuid}
+                  venue_name_ar: {type: string}
+                  org_id: {type: string, format: uuid}
+                  operator_name_ar: {type: string}
+                  active: {type: integer}
+                  frozen: {type: integer}
+                  past_due: {type: integer}
+                  mrr_halalas: {type: integer}
+          required: [generated_at, days, counts, active_subscribers, mrr_halalas, renewals_due, churn, new_subscriptions, venues]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerSubscriptionPayment:
+      type: object
+      properties:
+        payment_id: {type: string, format: uuid}
+        subscription_id: {type: string, format: uuid}
+        status: {type: string, enum: [initiated, authorized, paid, failed, partially_refunded, refunded]}
+        amount_halalas: {type: integer}
+        vat_halalas: {type: integer}
+        currency: {type: string, enum: [SAR]}
+        card_brand: {type: [string, 'null']}
+        card_last4: {type: [string, 'null']}
+        failure_code: {type: [string, 'null']}
+        transaction_url: {type: [string, 'null']}
+        callback_url: {type: string}
+        paid_at: {type: [string, 'null'], format: date-time}
+        saved_payment_method_id: {type: [string, 'null'], format: uuid}
+        receipt:
+          oneOf:
+          - $ref: '#/components/schemas/CustomerReceipt'
+          - type: 'null'
+      required: [payment_id, subscription_id, status, amount_halalas, vat_halalas, currency, card_brand, card_last4, failure_code, transaction_url, callback_url, paid_at, saved_payment_method_id, receipt]
+    CustomerSubscription:
+      type: object
+      description: اشتراك كما يعرضه C-06 / C-14 (V2-032)
+      properties:
+        subscription_id: {type: string, format: uuid}
+        venue_id: {type: string, format: uuid}
+        venue_name_ar: {type: string}
+        venue_name_en: {type: [string, 'null']}
+        operator_name_ar: {type: string}
+        operator_name_en: {type: [string, 'null']}
+        plan_id: {type: string, format: uuid}
+        plan_name_ar: {type: string}
+        plan_name_en: {type: [string, 'null']}
+        billing_cycle:
+          $ref: '#/components/schemas/BillingCycle'
+        status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        price_halalas: {type: integer}
+        next_price_halalas: {type: [integer, 'null']}
+        vehicles_included: {type: integer}
+        vehicles:
+          type: array
+          items:
+            type: object
+            properties:
+              vehicle_id: {type: string, format: uuid}
+              plate_display: {type: [string, 'null']}
+              removed: {type: boolean}
+            required: [vehicle_id, plate_display, removed]
+        current_period_start: {type: [string, 'null'], format: date-time}
+        current_period_end: {type: [string, 'null'], format: date-time}
+        cancel_at_period_end: {type: boolean}
+        renews_at: {type: [string, 'null'], format: date-time}
+        pending_expires_at: {type: [string, 'null'], format: date-time}
+        grace_ends_at: {type: [string, 'null'], format: date-time}
+        frozen_at: {type: [string, 'null'], format: date-time}
+        frozen_reason:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionFrozenReason'
+          - type: 'null'
+        can_change_vehicles: {type: boolean}
+        can_cancel: {type: boolean}
+        can_resume: {type: boolean}
+        can_pay: {type: boolean}
+        latest_payment:
+          oneOf:
+          - $ref: '#/components/schemas/CustomerSubscriptionPayment'
+          - type: 'null'
+        ended_at: {type: [string, 'null'], format: date-time}
+        ended_reason:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionEndedReason'
+          - type: 'null'
+        created_at: {type: string, format: date-time}
+      required: [subscription_id, venue_id, venue_name_ar, venue_name_en, operator_name_ar, operator_name_en, plan_id, plan_name_ar, plan_name_en, billing_cycle, status, price_halalas, next_price_halalas, vehicles_included, vehicles, current_period_start, current_period_end, cancel_at_period_end, renews_at, pending_expires_at, grace_ends_at, frozen_at, frozen_reason, can_change_vehicles, can_cancel, can_resume, can_pay, latest_payment, ended_at, ended_reason, created_at]
+    CustomerSubscriptionEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerSubscription'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerSubscriptionListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomerSubscription'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerSubscriptionCheckoutEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            subscription:
+              $ref: '#/components/schemas/CustomerSubscription'
+            payment:
+              $ref: '#/components/schemas/CustomerSubscriptionPayment'
+          required: [subscription, payment]
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]

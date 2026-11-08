@@ -197,6 +197,8 @@ describe('V2-013 — POST /v1/tickets/intake-pass (O-01)', () => {
       first_name: 'سارة',
       phone_masked: `05•••••${a.phone.slice(-3)}`,
       vehicle_prefilled: true,
+      // V2-033: no subscription of the account at this venue
+      subscription: null,
     });
     expect(data.task).toBeUndefined();
     expect(data.ticket).toMatchObject({

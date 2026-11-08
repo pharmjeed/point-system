@@ -324,7 +324,7 @@
 
 ### 7.2 أنواع المهام المؤجلة (Jobs) في `outbox_events.type`
 
-`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.customer_push_send` · `job.customer_push_receipts` · `job.payment_method_token_delete`
+`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.customer_push_send` · `job.customer_push_receipts` · `job.payment_method_token_delete` · `job.subscription_renew` · `job.subscription_grace_expire` · `job.subscription_renewal_notice` · `job.pending_payment_expire`
 
 > الإصدار الثاني (V2-010، DEC-496): `job.customer_otp_send` يرسل رمز دخول تطبيق العميل بقالب المصادقة على رقم بوينت بعد COMMIT (المعاملة تكتب الرمز مجزأً ونسخته المشفرة الوحيدة وصف outbox فقط).
 
@@ -332,6 +332,8 @@
 
 > الإصدار الثاني (V2-016، DEC-519): `job.customer_push_send` يرسل إشعار تطبيق العميل بعد COMMIT (المعاملة تكتب صف `customer_push_messages` بالمعرّفات فقط)؛ `job.customer_push_receipts` يقرأ إيصالات التسليم من المزود لاحقًا ويُسقط رمز الجهاز غير المسجل.
 > الإصدار الثاني (V2-022/V2-023، DEC-522، DEC-524): `payment.online_paid` دفعة إلكترونية لزيارة صارت `paid` فصارت التذكرة `collected` بأهلية `app_paid` (في معاملة انتقال الدفعة نفسها، يكتبها العامل بعد قراءة البوابة أو رد إنشاء بلا 3-D Secure)؛ `payment.online_refunded` استرداد كامل لتلك الدفعة قبل التسليم أعاد التذكرة `due` بأهلية `none`. `job.payment_method_token_delete` يحذف رمز بطاقة محفوظة لدى البوابة بعد COMMIT إزالتها (C-18 أو حذف الحساب).
+
+> الإصدار الثاني (V2-031، DEC-532، DEC-533): مؤقتات الاشتراك (docs/v2/04 §1) بساعة الخادم المحقونة: `job.subscription_renew` التجديد عند نهاية الفترة ومحاولات السماح في اليوم 1 و3 بعدها (خارجي: يخصم البطاقة الافتراضية المحفوظة بـ`given_id` لكل فترة ومحاولة)؛ `job.subscription_grace_expire` شبكة أمان بعد انتهاء السماح بساعة؛ `job.subscription_renewal_notice` إشعار التجديد قبل النهاية بثلاثة أيام (ويعلن السعر الجديد إن تغيّرت الباقة، DEC-531)؛ `job.pending_payment_expire` يلغي اشتراكًا لم يُدفع خلال 30 دقيقة. كل منها يقارن الفترة والمحاولة المسجلتين فيه بالاشتراك عند التنفيذ، والمختلف ينتهي بلا أثر.
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.
 
