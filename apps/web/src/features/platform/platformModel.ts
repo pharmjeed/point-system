@@ -14,20 +14,31 @@ import { normalizeSaudiMobile } from '@/lib/phone';
  */
 
 export type PlatformPermission =
-  'platform.overview_read' | 'platform.operator_read' | 'platform.operator_manage' | 'platform.venue_review';
+  | 'platform.overview_read'
+  | 'platform.operator_read'
+  | 'platform.operator_manage'
+  | 'platform.venue_review'
+  | 'platform.customer_read'
+  | 'platform.customer_manage'
+  | 'platform.payment_read'
+  | 'platform.refund_issue';
 
 export const platformCan = (me: PlatformMe, permission: PlatformPermission) =>
   me.permissions.includes(permission);
 
+export type PlatformDestination = 'overview' | 'operators' | 'venues' | 'customers' | 'payments';
+
 /**
  * The console's destinations for this account (P-02 / P-03 need `platform.operator_read`, P-04
- * `platform.venue_review`, V2-004).
+ * `platform.venue_review`, V2-004; P-06 `platform.customer_read` and P-08 `platform.payment_read`, V2-024).
  */
-export function platformNav(me: PlatformMe): ('overview' | 'operators' | 'venues')[] {
+export function platformNav(me: PlatformMe): PlatformDestination[] {
   return [
     'overview' as const,
     ...(platformCan(me, 'platform.operator_read') ? (['operators'] as const) : []),
     ...(platformCan(me, 'platform.venue_review') ? (['venues'] as const) : []),
+    ...(platformCan(me, 'platform.customer_read') ? (['customers'] as const) : []),
+    ...(platformCan(me, 'platform.payment_read') ? (['payments'] as const) : []),
   ];
 }
 

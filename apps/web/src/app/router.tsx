@@ -157,6 +157,51 @@ export const routes: RouteObject[] = [
               Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuePage,
             }),
           },
+          // P-06 and P-08 (V2-024)
+          {
+            path: paths.platformCustomers,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformCustomersPage')).PlatformCustomersPage,
+            }),
+          },
+          {
+            path: `${paths.platformCustomers}/:accountId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformCustomersPage')).PlatformCustomerPage,
+            }),
+          },
+          {
+            path: paths.platformPayments,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformPaymentsPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/reconciliation`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage'))
+                .PlatformReconciliationPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/reconciliation/:runId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage'))
+                .PlatformReconciliationRunPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/alerts`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformAlertsPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/:paymentId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformPaymentPage,
+            }),
+          },
         ],
       },
       ...galleryRoutes,

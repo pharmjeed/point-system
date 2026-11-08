@@ -136,7 +136,7 @@ async function readyTicket(
 }
 
 /** A parked per_vehicle visit of the account (EVT-R2, 2000 halalas VAT included). */
-async function parkedVisit(a: Account, eventId = EVT_R2) {
+async function parkedVisit(a: Account, eventId: string = EVT_R2) {
   const p = await parkedPaperTicket(t, await driver(), { eventId });
   await link(p.ticketId, a);
   return p;
