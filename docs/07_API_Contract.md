@@ -78,7 +78,7 @@ sequenceDiagram
 
 ### 1.4 مفتاح التكرار (Idempotency-Key)
 
-إلزامي على كل مسار عليه ✓ في Canon §9 (82 مسارًا، `x-idempotency: required`) واختياري على بقية الأوامر.
+إلزامي على كل مسار عليه ✓ في Canon §9 (83 مسارًا، `x-idempotency: required`) واختياري على بقية الأوامر.
 
 - القيمة 8–128 حرفًا (UUIDv4 مفضل). العميل يولّد مفتاحًا جديدًا **لكل نية مستخدم** (كل ضغطة زر) ويعيد **نفس المفتاح** عند إعادة المحاولة الشبكية لنفس النية.
 - النطاق: لكل مستخدم `idempotency_keys (user_id, key)`، ويُخزن معه `operation` (الطريقة + قالب المسار) و`request_hash` = `sha256` لتمثيل JSON مرتب للجسم + معاملات المسار. الاحتفاظ 24 ساعة ثم حذف دوري.
@@ -738,6 +738,11 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 | `GET /v1/admin/org-settings` | إعدادات المؤسسة | `org.settings_manage` | — | — | — |
 | `PUT /v1/admin/org-settings` | تعديل إعدادات المؤسسة — للمالك فقط (DEC-39). تغيير security.* يسري على الجلسات الجديدة؛ heartbeat.* يُدفع للأجهزة عبر sync.required. | `org.settings_manage` | إلزامي | organizations.settings + audit_log | — |
 | `POST /v1/telemetry` | دفعة قياسات العميل — ليست أمرًا: بلا Idempotency-Key ولا صف تدقيق، 202 بلا جسم في معاملتها الخاصة (DEC-149)؛ ترد مشكلات الدفعة وحدها، والحدث غير الصالح يُسقط ويُعد (DEC-148، 15 §9) | `telemetry.write` | — | analytics_events(source=client) | — |
+| `GET /v1/settlement-statements` | O-05 (الإصدار الثاني، V2-041، DEC-547): كشوف تسوية المؤسسة غير المسودة، الأحدث شهرًا أولًا؛ مرشح `status` (`issued`/`disputed`/`paid`/`void`) ومؤشر `meta.next_cursor` | `settlement.read` | — | — | `PAGINATION_CURSOR_INVALID` |
+| `GET /v1/settlement-statements/{statementId}` | كشف المؤسسة ببنوده الفعالة (النوع، المبلغ الموقّع، يوم الرياض، الموقع، رقم التذكرة) وفواتيره؛ المسودة وكشف غيرها كغير الموجود | `settlement.read` | — | — | `RESOURCE_NOT_FOUND` |
+| `POST /v1/settlement-statements/{statementId}/dispute` | اعتراض المالك أو الإدارة على كشف `issued` بـ`{ expected_version, reason }` ← `disputed` | `settlement.dispute` | إلزامي | `audit_log` (`settlement.dispute`) | `RESOURCE_NOT_FOUND`، `VERSION_CONFLICT`، `INVALID_STATE_TRANSITION`، `REASON_REQUIRED` |
+| `GET /v1/system-subscription` | O-06 (V2-042): بيانات المشغل القانونية، عقده الساري (`state`) وسجل عقوده، عدد مواقعه النشطة، وفواتيره الضريبية وإشعاراته الدائنة من بوينت | `settlement.read` | — | — | — |
+| `GET /v1/system-subscription/invoices/{invoiceId}` | فاتورة المؤسسة أو إشعارها الدائن بحالة المزود و`pdf_url` موقّع قصير (`private, no-store`)، و`null` حتى يُولَّد الملف | `settlement.read` | — | — | `RESOURCE_NOT_FOUND` |
 
 ### 2.8 Webhooks والصحة (Canon §9.8)
 
@@ -756,6 +761,14 @@ replacement اختياري لتصحيح الوسيلة أو المرجع: يُع
 - الأثر: whatsapp_inbound_events(pending) + outbox job.wa_process_inbound
 - أحداث: `wa.inbound_received`
 - أخطاء خاصة: `WA_WEBHOOK_SIGNATURE_INVALID`
+
+#### `POST /webhooks/einvoicing` — حالة مستند من مزود الفوترة الإلكترونية (الإصدار الثاني، V2-040)
+
+يُقرأ الجسم الخام ويُتحقق من `X-Einvoice-Signature: sha256=<HMAC-SHA256 للجسم بسر EINVOICE_WEBHOOK_SECRET_REF>` بمقارنة زمن ثابت قبل التحليل. الجسم `{ invoice_uuid, status: reported|cleared|rejected, reference?, codes? }`؛ يُطبق على مستند `pending` فقط، والمستند المعروف حالته أو غير المعروف يُقبل ويُسجَّل `ignored` (DEC-543). 200 بلا جسم.
+
+- الصلاحية: `public` · مفتاح التكرار: — · نجاح: `200`
+- الأثر: `invoice_provider_events` + `invoices.zatca_status` + `job.invoice_pdf_render` عند القبول
+- أخطاء خاصة: `EINVOICE_WEBHOOK_SIGNATURE_INVALID`
 
 #### `GET /health/live` — الحياة
 
@@ -1293,3 +1306,5 @@ Content-Type: application/json
 - V2-005 (DEC-486): ✓ `POST …/{orgId}/activate`، `…/suspend` (سبب)، `…/reactivate`، `…/terminate` (سبب، نهائي). والتعليق يرفض بـ`409 OPERATOR_SUSPENDED` فتح الحفل والوردية وبدء المناوبة والاستلام، و`GET /v1/me` يحمل `organization.operator_status`.
 - V2-021 (DEC-513): ✓ `POST /v1/platform/payments/{paymentId}/refunds` (`platform.refund_issue`: المالية والمالك) — استرداد جزئي أو كامل بسبب، `201 { refund, payment }` بحالة `requested` والبوابة بعد COMMIT في العامل؛ `PAYMENT_NOT_REFUNDABLE` و`REFUND_AMOUNT_EXCEEDS_PAID` (`refundable_halalas`). وWebhook البوابة `POST /webhooks/payments/moyasar` في canon §9.8 (DEC-511، `docs/v2/05` §4.1).
 - V2-024 (P-06 / P-08، DEC-526 … DEC-530): `GET /v1/platform/customers` (بحث مطابق بالجوال بعد `normalizeSaudiMobile` أو أحدث الحسابات، الجوال مقنّعًا دائمًا، `PHONE_INVALID`) و`GET …/customers/{accountId}` (`platform.customer_read`؛ البحث والفتح يُدوَّنان `customer.search`/`customer.view`)؛ و✓ بـ`platform.customer_manage` وسبب: `POST …/customers/{accountId}/suspend`، `…/reactivate`، `…/sessions/revoke` (`INVALID_STATE_TRANSITION` للحالة الأخرى أو المحذوف)؛ وبـ`platform.payment_read`: `GET /v1/platform/payments` (الحالة والغرض والمشغل والموقع والحساب وأيام الرياض `from`/`to`)، `GET …/payments/{paymentId}` (المتاح للاسترداد والاستردادات والخط الزمني المنقّى)، `GET /v1/platform/reconciliation-runs[/{runId}]`، `GET /v1/platform/alerts`، و✓ `POST …/alerts/{alertId}/resolve` بـ`{ note }`. القوائم بمؤشر معتم `meta.next_cursor` (`PAGINATION_CURSOR_INVALID`).
+- V2-040 … V2-042 (P-09 / P-10، DEC-540 … DEC-549): بـ`platform.settlement_manage` (المالية والمالك): `GET /v1/platform/settlements` (`status`، `org_id`، `period` = `YYYY-MM`، مؤشر)، `GET …/settlements/{statementId}` (البنود الفعالة والمحررة، الفواتير، سجل الأفعال)، و✓: `POST …/settlements/generate` `{ period, org_id? }` (مسودات شهر انتهى بتوقيت الرياض لمشغل أو لكل المشغلين، وإعادة حساب المسودات فقط؛ غير ذلك `VALIDATION_FAILED` `period: not_closed`)، و`POST …/{statementId}/adjustments` `{ expected_version, amount_halalas (موقّع، غير صفر), reason }` (مسودة أو معترض عليه)، `…/issue` `{ expected_version }` (يصدر فاتورة اشتراك النظام الضريبية للمشغل في المعاملة نفسها؛ اسمه القانوني إلزامي)، `…/record-payment` `{ expected_version, reference, paid_on }`، `…/resolve-dispute` `{ expected_version, reason }`، `…/void` `{ expected_version, reason }` (يحرر البنود ويصدر إشعارًا دائنًا كاملًا لفاتورة الكشف)؛ والأخطاء `RESOURCE_NOT_FOUND` و`VERSION_CONFLICT` و`INVALID_STATE_TRANSITION` و`REASON_REQUIRED`. وبـ`platform.invoice_read`: `GET /v1/platform/invoices` (`kind`، `series`، `status`، `org_id`، `account_id`، `number`، `from`/`to` أيام الرياض، مؤشر) و`GET …/invoices/{invoiceId}` (المستند كاملًا وسلسلته وأحداث المزود والإشعارات الدائنة و`pdf_url`).
+- V2-040 (C-17، DEC-548): `GET /v1/customer/invoices` و`GET /v1/customer/invoices/{invoiceId}` في `CUSTOMER_ROUTES` (Bearer، قراءة): فواتير الحساب المبسطة وإشعاراتها الدائنة، والتفاصيل بالبنود ورمز QR (TLV) و`pdf_url` قصير؛ فاتورة حساب آخر ← `RESOURCE_NOT_FOUND`.

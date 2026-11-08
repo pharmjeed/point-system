@@ -60,3 +60,8 @@ FEATURE_MODULES.push(CustomerPaymentsHttpModule);
 
 import { SubscriptionsHttpModule } from '@point/server';
 FEATURE_MODULES.push(SubscriptionsHttpModule);
+import { InvoicingHttpModule } from '@point/server';
+FEATURE_MODULES.push(InvoicingHttpModule);
+
+import { SettlementHttpModule } from '@point/server';
+FEATURE_MODULES.push(SettlementHttpModule);

@@ -32,5 +32,8 @@ export * from './modules/customer-accounts/index.js';
 export * from './modules/payments-online/index.js';
 
 export * from './modules/subscriptions/index.js';
+export * from './modules/invoicing/index.js';
+
+export * from './modules/settlement/index.js';
 
 export * from './use-cases/index.js';

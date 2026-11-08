@@ -3,7 +3,8 @@
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
 -- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, 0009 the customer accounts,
 -- V2-010, 0010 the entry pass and the app tickets, V2-013/V2-014, 0011 their deletion, V2-017, 0012 the online payments,
--- V2-020 / V2-021, 0013 the customer visits and pushes, V2-015 / V2-016, and 0016 the subscriptions, V2-030 … V2-035):
+-- V2-020 / V2-021, 0013 the customer visits and pushes, V2-015 / V2-016, 0016 the subscriptions, V2-030 … V2-035, and
+-- 0017 the invoices and settlement, V2-040 … V2-042):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -364,4 +365,61 @@ SELECT expect_fail('subscription push of a visit kind',
  $q$INSERT INTO customer_push_messages(account_id,session_id,org_id,subscription_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000aa61','car_ready','push:s1' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
 SELECT expect_fail('push about a subscription and a ticket at once',
  $q$INSERT INTO customer_push_messages(account_id,session_id,org_id,ticket_id,subscription_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-00000000aa61','subscription_renewal','push:s2' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
+-- V5 invoices and settlement (0017_invoices_settlement.sql, V2-040 … V2-042, DEC-540 … DEC-549): a gapless,
+-- immutable invoice chain per series; one live statement per operator and month equal to its lines, each source row
+-- counted once. The two series rows are data of 0017; a structure-only copy (the restore drill) has none.
+INSERT INTO invoice_series(series,prefix,last_hash) VALUES
+ ('simplified','PS','NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='),
+ ('standard','PB','NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==')
+ ON CONFLICT (series) DO NOTHING;
+SELECT expect_fail('invoice skipping a counter of its series',
+ $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','customer_simplified',388,'PS-00000002',2,gen_random_uuid(),'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator')$q$);
+SELECT expect_fail('invoice that does not chain to the previous hash',
+ $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','customer_simplified',388,'PS-00000001',1,gen_random_uuid(),'aGFzaDJoYXNoMmhhc2gyaGFzaDJoYXNoMmhhc2gyaGFzaDI=','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator')$q$);
+SELECT expect_fail('invoice whose total is not subtotal plus VAT',
+ $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','customer_simplified',388,'PS-00000001',1,gen_random_uuid(),'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2301,'{}','[]','qr','simulator')$q$);
+SELECT expect_fail('simplified invoice billed to an operator',
+ $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider,org_id) VALUES ('simplified','customer_simplified',388,'PS-00000001',1,gen_random_uuid(),'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator','00000000-0000-0000-0000-000000000001')$q$);
+SELECT expect_fail('credit note without its original invoice',
+ $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','credit_note',381,'PS-00000001',1,gen_random_uuid(),'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator')$q$);
+INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','customer_simplified',388,'PS-00000001',1,gen_random_uuid(),'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==','aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator');
+SELECT expect_fail('second simplified invoice for the same payment',
+ $q$INSERT INTO invoices(series,kind,type_code,number,icv,zatca_uuid,previous_hash,invoice_hash,issued_at,supply_date,account_id,online_payment_id,vat_rate_bp,subtotal_halalas,vat_halalas,total_halalas,seller,lines,qr_payload,provider) VALUES ('simplified','customer_simplified',388,'PS-00000002',2,gen_random_uuid(),'aGFzaDFoYXNoMWhhc2gxaGFzaDFoYXNoMWhhc2gxaGFzaDE=','aGFzaDJoYXNoMmhhc2gyaGFzaDJoYXNoMmhhc2gyaGFzaDI=',now(),current_date,'00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000ab01',1500,2000,300,2300,'{}','[]','qr','simulator')$q$);
+SELECT expect_fail('an invoice edited after its issue',
+ $q$UPDATE invoices SET total_halalas=1, subtotal_halalas=1, vat_halalas=0 WHERE number='PS-00000001'$q$);
+UPDATE invoices SET zatca_status='reported', status_at=now() WHERE number='PS-00000001';
+SELECT expect_fail('the provider''s answer overwritten',
+ $q$UPDATE invoices SET zatca_status='rejected' WHERE number='PS-00000001'$q$);
+SELECT expect_fail('an invoice series moved back',
+ $q$UPDATE invoice_series SET last_icv=0 WHERE series='simplified'$q$);
+INSERT INTO settlement_statements(id,org_id,period_start,period_end) VALUES ('00000000-0000-0000-0000-000000005e01','00000000-0000-0000-0000-000000000001','2026-10-01','2026-11-01');
+SELECT expect_fail('second live statement for the same operator and month',
+ $q$INSERT INTO settlement_statements(org_id,period_start,period_end) VALUES ('00000000-0000-0000-0000-000000000001','2026-10-01','2026-11-01')$q$);
+SELECT expect_fail('statement not starting on the first day of a month',
+ $q$INSERT INTO settlement_statements(org_id,period_start,period_end) VALUES ('00000000-0000-0000-0000-000000000001','2026-09-02','2026-10-01')$q$);
+SELECT expect_fail('statement whose net is not its parts',
+ $q$UPDATE settlement_statements SET net_payable_halalas=5 WHERE id='00000000-0000-0000-0000-000000005e01'$q$);
+WITH l AS (INSERT INTO settlement_lines(statement_id,org_id,kind,line_key,amount_halalas,occurred_on,ticket_id)
+           VALUES ('00000000-0000-0000-0000-000000005e01','00000000-0000-0000-0000-000000000001','subscriber_visit','subscriber_visit:00000000-0000-0000-0000-0000000000e1',700,'2026-10-05','00000000-0000-0000-0000-0000000000e1'))
+UPDATE settlement_statements SET subscriber_visit_count=1, subscriber_payout_halalas=700, net_payable_halalas=700 WHERE id='00000000-0000-0000-0000-000000005e01';
+SELECT expect_fail('the same visit counted twice',
+ $q$INSERT INTO settlement_lines(statement_id,org_id,kind,line_key,amount_halalas,occurred_on,ticket_id) VALUES ('00000000-0000-0000-0000-000000005e01','00000000-0000-0000-0000-000000000001','subscriber_visit','subscriber_visit:00000000-0000-0000-0000-0000000000e1',700,'2026-10-05','00000000-0000-0000-0000-0000000000e1')$q$);
+SELECT expect_fail('a commission line that pays the operator',
+ $q$INSERT INTO settlement_lines(statement_id,org_id,kind,line_key,amount_halalas,occurred_on,online_payment_id) VALUES ('00000000-0000-0000-0000-000000005e01','00000000-0000-0000-0000-000000000001','app_commission','app_commission:x',230,'2026-10-05','00000000-0000-0000-0000-00000000ab01')$q$);
+SELECT expect_fail('an adjustment without its reason',
+ $q$INSERT INTO settlement_lines(statement_id,org_id,kind,line_key,amount_halalas,occurred_on,created_by) VALUES ('00000000-0000-0000-0000-000000005e01','00000000-0000-0000-0000-000000000001','adjustment','adjustment:x',-100,'2026-10-05','00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('a settlement line edited',
+ $q$UPDATE settlement_lines SET amount_halalas=800 WHERE statement_id='00000000-0000-0000-0000-000000005e01'$q$);
+BEGIN;
+SET CONSTRAINTS trg_settlement_totals, trg_settlement_line_totals IMMEDIATE;
+SELECT expect_fail('statement header that is not the sum of its lines',
+ $q$UPDATE settlement_statements SET subscriber_payout_halalas=800, net_payable_halalas=800 WHERE id='00000000-0000-0000-0000-000000005e01'$q$);
+COMMIT;
+SELECT expect_fail('statement jumping from draft to paid',
+ $q$UPDATE settlement_statements SET status='paid', paid_at=now(), paid_reference='TRX-1' WHERE id='00000000-0000-0000-0000-000000005e01'$q$);
+UPDATE settlement_statements SET status='issued', issued_at=now() WHERE id='00000000-0000-0000-0000-000000005e01';
+SELECT expect_fail('a computed line added to an issued statement',
+ $q$INSERT INTO settlement_lines(statement_id,org_id,kind,line_key,amount_halalas,occurred_on,ticket_id) VALUES ('00000000-0000-0000-0000-000000005e01','00000000-0000-0000-0000-000000000001','subscriber_visit','subscriber_visit:00000000-0000-0000-0000-0000000000e2',700,'2026-10-06','00000000-0000-0000-0000-0000000000e2')$q$);
+SELECT expect_fail('an issued statement''s amounts changed',
+ $q$UPDATE settlement_statements SET subscriber_visit_count=1, subscriber_payout_halalas=0, net_payable_halalas=0 WHERE id='00000000-0000-0000-0000-000000005e01'$q$);
 SELECT 'ALL INVARIANT TESTS PASSED';

@@ -106,6 +106,7 @@ describe('error texts (08 §4)', () => {
       'WA_WEBHOOK_SIGNATURE_INVALID',
       'WA_WEBHOOK_VERIFY_FAILED',
       'PAYMENT_WEBHOOK_SIGNATURE_INVALID', // answered to the payment gateway (V2-021)
+      'EINVOICE_WEBHOOK_SIGNATURE_INVALID', // answered to the e-invoicing provider (V2-040)
     ];
     for (const code of ERROR_CODES) {
       if (webhookOnly.includes(code)) expect(errorMessagesAr[code]).toBe('—');

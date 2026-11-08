@@ -26,6 +26,8 @@ export const paths = {
   platformPayments: '/platform/payments', // P-08 (V2-024); …/reconciliation, …/alerts, …/:paymentId
   platformPlans: '/platform/plans', // P-05 (V2-030)
   platformSubscriptions: '/platform/subscriptions', // P-07 (V2-035); one subscription is …/:subscriptionId
+  platformSettlements: '/platform/settlements', // P-09 (V2-041); one statement is /platform/settlements/:statementId
+  platformInvoices: '/platform/invoices', // P-10 (V2-040); one document is /platform/invoices/:invoiceId
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)
 } as const;
 
@@ -58,6 +60,12 @@ export const platformAlertsPath = `${paths.platformPayments}/alerts`;
 export const platformSubscriptionPath = (id: string) =>
   `${paths.platformSubscriptions}/${encodeURIComponent(id)}`;
 
+/** P-09 — one settlement statement; P-10 — one invoice or credit note (V2-040 / V2-041). */
+export const platformSettlementPath = (statementId: string) =>
+  `${paths.platformSettlements}/${encodeURIComponent(statementId)}`;
+export const platformInvoicePath = (invoiceId: string) =>
+  `${paths.platformInvoices}/${encodeURIComponent(invoiceId)}`;
+
 /** The V2 platform console: its own session and cookie; never the staff session handling (DEC-462). */
 export function isPlatformArea(pathname: string): boolean {
   return pathname === paths.platform || pathname.startsWith(`${paths.platform}/`);
@@ -86,6 +94,7 @@ export const ADMIN_PERMISSIONS = [
   'retention.manage',
   'org.settings_manage',
   'venue.manage', // «ملف الموقع العام» (V2-004)
+  'settlement.read', // «كشف التسوية» O-05 and «اشتراك النظام» O-06 (V2-041 / V2-042)
 ];
 
 export const canAdmin = (me: Me) => me.permissions.some((p) => ADMIN_PERMISSIONS.includes(p));

@@ -118,6 +118,8 @@ export const ERROR_CODES = [
   // V2-013 (DEC-500): the customer's entry pass scanned at intake (O-01)
   'PASS_INVALID',
   'PASS_EXPIRED',
+  // V2-040 (DEC-543): the e-invoicing provider's status callback with a missing or wrong signature
+  'EINVOICE_WEBHOOK_SIGNATURE_INVALID',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
@@ -901,6 +903,13 @@ export const ERROR_CATALOG: Readonly<Record<ErrorCode, ErrorDef>> = {
     log: 'info',
     message: 'The entry pass has expired. Scan the current one.',
     message_ar: 'انتهت صلاحية بطاقة الدخول. امسح البطاقة الظاهرة الآن في جوال العميل.',
+  },
+  EINVOICE_WEBHOOK_SIGNATURE_INVALID: {
+    http: 401,
+    retryable: false,
+    log: 'warn',
+    message: 'Invalid e-invoicing callback signature.',
+    message_ar: 'توقيع إشعار مزود الفوترة الإلكترونية غير صالح',
   },
 };
 

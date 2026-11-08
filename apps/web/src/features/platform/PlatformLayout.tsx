@@ -1,5 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Building2, CreditCard, LayoutDashboard, LogOut, MapPin, Repeat, Tags, Users } from 'lucide-react';
+import {
+  Building2,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  MapPin,
+  Repeat,
+  Scale,
+  Tags,
+  Users,
+} from 'lucide-react';
 import { Navigate, Outlet, useNavigate, useOutletContext } from 'react-router';
 import { ApiError } from '@/api/errors';
 import {
@@ -37,6 +48,8 @@ const NAV_ICON = {
   payments: CreditCard,
   plans: Tags,
   subscriptions: Repeat,
+  settlements: Scale,
+  invoices: FileText,
 } as const;
 const NAV_PATH = {
   overview: paths.platform,
@@ -46,6 +59,8 @@ const NAV_PATH = {
   payments: paths.platformPayments,
   plans: paths.platformPlans,
   subscriptions: paths.platformSubscriptions,
+  settlements: paths.platformSettlements,
+  invoices: paths.platformInvoices,
 } as const;
 
 /**

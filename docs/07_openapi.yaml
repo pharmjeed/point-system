@@ -9122,6 +9122,273 @@ paths:
       x-idempotency: none
       x-rate-limit-class: device
       x-error-codes: []
+  /v1/settlement-statements:
+    get:
+      operationId: listSettlementStatements
+      summary: كشوف التسوية للمشغل (O-05)
+      tags: [Reports & Exports]
+      description: |-
+        الإصدار الثاني (V2-041، DEC-547): كشوف تسوية المؤسسة الشهرية مع بوينت، الأحدث شهرًا أولًا؛ لا تظهر المسودات (عمل المنصة الجاري). المبالغ بالهللة، والصافي موجبًا = بوينت تدفع للمشغل.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [issued, disputed, paid, void]
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 24
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementStatementListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - cookieSession: []
+      x-permission: settlement.read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PERMISSION_DENIED]
+  /v1/settlement-statements/{statementId}:
+    get:
+      operationId: getSettlementStatement
+      summary: كشف تسوية وبنوده (O-05)
+      tags: [Reports & Exports]
+      description: |-
+        كشف المؤسسة ببنوده الفعالة (كل زيارة مشترك ودفعة وعمولة واسترداد وحصة اشتراك نظام وتسوية يدوية، مرة واحدة) وفواتيره. المسودة وكشف مؤسسة أخرى كغير الموجود.
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف (settlement_statements.id)
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementStatementDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - cookieSession: []
+      x-permission: settlement.read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PERMISSION_DENIED, RESOURCE_NOT_FOUND]
+  /v1/settlement-statements/{statementId}/dispute:
+    post:
+      operationId: disputeSettlementStatement
+      summary: الاعتراض على كشف (O-05)
+      tags: [Reports & Exports]
+      description: |-
+        issued ← disputed بسبب (3 محارف فأكثر، وإلا REASON_REQUIRED) و expected_version. تراه المنصة في P-09 وتسويه ثم تعيده issued.
+
+        الأثر: settlement_statements (disputed_at، disputed_by، dispute_reason)؛ audit_log (settlement.dispute)
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 1
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: سبب الاعتراض، 3 محارف على الأقل بعد التشذيب
+              required: [expected_version, reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementStatementEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - cookieSession: []
+        csrfHeader: []
+      x-permission: settlement.dispute
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, REASON_REQUIRED, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
+  /v1/system-subscription:
+    get:
+      operationId: getSystemSubscription
+      summary: اشتراك النظام للمشغل (O-06)
+      tags: [Reports & Exports]
+      description: |-
+        الإصدار الثاني (V2-042، DEC-547): بيانات المشغل القانونية، عقده الساري بتوقيت الرياض وسجل عقوده (رسم الموقع ودورته، مبلغ زيارة المشترك، العمولة)، عدد مواقعه النشطة، وفواتيره الضريبية وإشعاراته الدائنة من بوينت.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSubscriptionEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - cookieSession: []
+      x-permission: settlement.read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PERMISSION_DENIED]
+  /v1/system-subscription/invoices/{invoiceId}:
+    get:
+      operationId: getSystemSubscriptionInvoice
+      summary: فاتورة اشتراك النظام (O-06)
+      tags: [Reports & Exports]
+      description: |-
+        فاتورة المؤسسة الضريبية أو إشعارها الدائن (السلسلة standard) بحالة المزود وpdf_url موقّع قصير (private, no-store)، و null حتى يُولَّد الملف. فاتورة غيرها كغير الموجودة.
+      parameters:
+      - name: invoiceId
+        in: path
+        required: true
+        description: معرّف الفاتورة (invoices.id)
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - cookieSession: []
+      x-permission: settlement.read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PERMISSION_DENIED, RESOURCE_NOT_FOUND]
   /v1/platform/auth/login:
     post:
       operationId: platformAuthLogin
@@ -11084,6 +11351,735 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/settlements:
+    get:
+      operationId: platformListSettlements
+      summary: كشوف التسوية (P-09)
+      tags: [Platform]
+      description: |-
+        V2-041 (DEC-544): كشوف كل المشغلين، الأحدث شهرًا أولًا؛ مرشحات status وorg_id وperiod (YYYY-MM).
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/SettlementStatus'
+      - name: org_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: period
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.settlement_manage
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/settlements/generate:
+    post:
+      operationId: platformGenerateSettlements
+      summary: إعداد مسودات شهر (P-09)
+      tags: [Platform]
+      description: |-
+        عمل job.settlement_monthly عند الطلب (DEC-544): مسودة كشف شهر انتهى بتوقيت الرياض لمشغل (org_id) أو لكل المشغلين، تحت قفل صف المؤسسة ثم الكشف. المسودة القائمة يُعاد حسابها (تتحرر بنودها المحسوبة وتبقى التسويات اليدوية)، والكشف الصادر أو المدفوع لا يُمس (skipped: not_draft)، والمشغل بلا عقد ولا حركة لا يأخذ كشفًا (nothing_to_settle).
+
+        الشروط: شهر لم ينتهِ ← VALIDATION_FAILED (period: not_closed)؛ مشغل غير موجود أو تشغله بوينت ← RESOURCE_NOT_FOUND
+
+        الأثر: settlement_statements + settlement_lines؛ platform_audit_log وaudit_log للمشغل (settlement.generate / settlement.recompute)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                period:
+                  type: string
+                  pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+                org_id:
+                  type: string
+                  format: uuid
+              required: [period]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementGenerateEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.settlement_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/settlements/{statementId}:
+    get:
+      operationId: platformGetSettlement
+      summary: كشف تسوية (P-09)
+      tags: [Platform]
+      description: |-
+        الكشف ورأسه (مجموع بنوده الفعالة بالهللة)، وكل بنوده الفعالة والمحررة (إعادة الحساب والإلغاء)، وفواتيره، وسجل أفعاله من platform_audit_log.
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.settlement_manage
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/settlements/{statementId}/adjustments:
+    post:
+      operationId: platformAdjustSettlement
+      summary: تسوية يدوية على كشف
+      tags: [Platform]
+      description: |-
+        بند adjustment بمبلغ موقّع (موجب: بوينت تدفع للمشغل) وسبب، على مسودة أو كشف معترض عليه (DEC-545). الرأس يُعاد من البنود.
+
+        الأثر: settlement_lines(adjustment) + settlement_statements؛ platform_audit_log وaudit_log للمشغل (settlement.adjust)
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 1
+                amount_halalas:
+                  type: integer
+                  not: {const: 0}
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [expected_version, amount_halalas, reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementAdjustEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.settlement_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
+  /v1/platform/settlements/{statementId}/issue:
+    post:
+      operationId: platformIssueSettlement
+      summary: إصدار كشف
+      tags: [Platform]
+      description: |-
+        draft ← issued (يراه المشغل في O-05). يصدر في المعاملة نفسها فاتورة اشتراك النظام الضريبية (السلسلة standard، B2B) بمبلغ بنود saas_fee وضريبتها، والمشتري المشغل باسمه القانوني (إلزامي) ورقميه (DEC-546).
+
+        الأثر: settlement_statements + invoices + job.einvoice_submit؛ platform_audit_log وaudit_log للمشغل (settlement.issue، invoice.issue)
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 1
+              required: [expected_version]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementIssueEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.settlement_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
+  /v1/platform/settlements/{statementId}/record-payment:
+    post:
+      operationId: platformRecordSettlementPayment
+      summary: تسجيل دفع الكشف
+      tags: [Platform]
+      description: |-
+        issued ← paid بمرجع التحويل البنكي (3 محارف فأكثر) ويوم الرياض؛ نهائي.
+
+        الأثر: settlement_statements؛ platform_audit_log وaudit_log للمشغل (settlement.record_payment)
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 1
+                reference:
+                  type: [string, 'null']
+                  maxLength: 120
+                  description: مرجع التحويل، 3 محارف على الأقل
+                paid_on:
+                  type: string
+                  format: date
+              required: [expected_version, reference, paid_on]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementStatementEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.settlement_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
+  /v1/platform/settlements/{statementId}/resolve-dispute:
+    post:
+      operationId: platformResolveSettlementDispute
+      summary: حل اعتراض
+      tags: [Platform]
+      description: |-
+        disputed ← issued بملاحظة الحل (التسوية بالبنود اليدوية قبله).
+
+        الأثر: settlement_statements؛ platform_audit_log وaudit_log للمشغل (settlement.resolve_dispute)
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 1
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [expected_version, reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementStatementEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.settlement_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
+  /v1/platform/settlements/{statementId}/void:
+    post:
+      operationId: platformVoidSettlement
+      summary: إلغاء كشف
+      tags: [Platform]
+      description: |-
+        draft|issued|disputed ← void بسبب: البنود تتحرر (لا حذف) فيُعاد إعداد الشهر، وفاتورة الكشف تُلغى بإشعار دائن كامل في المعاملة نفسها (DEC-546). المدفوع نهائي.
+
+        الأثر: settlement_statements + settlement_lines.released_at + invoices(credit_note)؛ platform_audit_log وaudit_log للمشغل (settlement.void)
+      parameters:
+      - name: statementId
+        in: path
+        required: true
+        description: معرّف الكشف
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 1
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [expected_version, reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettlementVoidEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | VERSION_CONFLICT
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.settlement_manage
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND, VERSION_CONFLICT]
+  /v1/platform/invoices:
+    get:
+      operationId: platformListInvoices
+      summary: الفواتير والإشعارات الدائنة (P-10)
+      tags: [Platform]
+      description: |-
+        V2-040 (DEC-548): كل مستندات بوينت (فواتير العملاء المبسطة، فواتير المشغلين الضريبية، والإشعارات الدائنة)، الأحدث إصدارًا أولًا؛ العميل جوالًا مقنّعًا. from/to أيام الرياض على issued_at (from > to ← VALIDATION_FAILED).
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/InvoiceKind'
+      - name: series
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/InvoiceSeries'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/ZatcaStatus'
+      - name: org_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: account_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: number
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformInvoiceListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.invoice_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/invoices/{invoiceId}:
+    get:
+      operationId: platformGetInvoice
+      summary: فاتورة (P-10)
+      tags: [Platform]
+      description: |-
+        المستند كاملًا: البائع والمشتري والبنود والمجاميع، السلسلة (icv، previous_hash، invoice_hash)، QR، حالة المزود ومرجعه ورموزه، أحداث المزود، الإشعارات الدائنة عليه، وpdf_url قصير (null حتى يُولَّد).
+      parameters:
+      - name: invoiceId
+        in: path
+        required: true
+        description: معرّف الفاتورة
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.invoice_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
   /v1/platform/venues:
     get:
       operationId: platformListVenues
@@ -12988,6 +13984,93 @@ paths:
       x-idempotency: none
       x-rate-limit-class: read
       x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, RESOURCE_NOT_FOUND]
+  /v1/customer/invoices:
+    get:
+      operationId: customerInvoices
+      summary: الفواتير (C-17)
+      tags: [Customer]
+      description: |-
+        C-17 (V2-040، DEC-548): فواتير الحساب المبسطة (لكل دفعة إلكترونية مدفوعة) وإشعاراتها الدائنة (لكل استرداد)، أحدث 100 مستند. البائع بوينت.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerInvoiceListEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+  /v1/customer/invoices/{invoiceId}:
+    get:
+      operationId: customerInvoice
+      summary: فاتورة (C-17)
+      tags: [Customer]
+      description: |-
+        مستند الحساب نفسه (وإلا RESOURCE_NOT_FOUND): البنود والضريبة منفصلة، QR (TLV base64)، وpdf_url موقّع لدقائق (null أثناء التوليد).
+      parameters:
+      - name: invoiceId
+        in: path
+        required: true
+        description: معرّف الفاتورة
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerInvoiceDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, RESOURCE_NOT_FOUND]
   /v1/customer/payment-methods:
     get:
       operationId: customerPaymentMethods
@@ -13417,6 +14500,47 @@ paths:
       x-idempotency: none
       x-rate-limit-class: webhook
       x-error-codes: [PAYMENT_WEBHOOK_SIGNATURE_INVALID]
+  /webhooks/einvoicing:
+    post:
+      operationId: receiveEinvoiceCallback
+      summary: حالة مستند من مزود الفوترة الإلكترونية
+      tags: [Webhooks]
+      description: |-
+        V2-040 (DEC-543): يُقرأ الجسم الخام ويُقارن X-Einvoice-Signature (sha256=<HMAC-SHA256 للجسم بسر EINVOICE_WEBHOOK_SECRET_REF>) بزمن ثابت قبل التحليل. يُطبق على مستند pending فقط؛ المستند المعروف حالته أو غير المعروف يُقبل ويُدوَّن ignored. 200 بلا جسم.
+
+        الأثر: invoice_provider_events + invoices.zatca_status + job.invoice_pdf_render عند القبول
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EinvoiceCallbackPayload'
+      responses:
+        '200':
+          description: OK
+        '401':
+          $ref: '#/components/responses/Error'
+          description: EINVOICE_WEBHOOK_SIGNATURE_INVALID
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security: []
+      x-permission: public
+      x-idempotency: none
+      x-rate-limit-class: webhook
+      x-error-codes: [EINVOICE_WEBHOOK_SIGNATURE_INVALID]
   /health/live:
     get:
       operationId: healthLive
@@ -14988,21 +16112,25 @@ components:
       description: customer_consents.method
     ErrorCode:
       type: string
-      enum: [ASSIGNMENT_CONFLICT, ASSIGNMENT_REQUIRED, AUTH_ACCOUNT_DISABLED, AUTH_ACCOUNT_LOCKED, AUTH_INVALID_CREDENTIALS, AUTH_MFA_INVALID, AUTH_MFA_REQUIRED,
-        AUTH_MFA_SETUP_REQUIRED, AUTH_SECRET_CHANGE_REQUIRED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CONSENT_REQUIRED, CUSTODY_HOLDER_MISMATCH,
-        CUSTODY_OPEN, CUSTODY_RELEASE_REQUIRED, DEPENDENCY_TIMEOUT, DRAFT_HAS_DATA, DRIVER_DISABLED, DRIVER_NOT_AVAILABLE, DRIVER_ON_BREAK, DUTY_ALREADY_STARTED,
-        DUTY_END_BLOCKED_CUSTODY, DUTY_REQUIRED, EVENT_ALREADY_CLOSED, EVENT_CLOSE_BLOCKED, EVENT_NOT_OPEN, HANDOVER_CODE_CONSUMED, HANDOVER_CODE_EXPIRED, HANDOVER_CODE_INVALID,
-        HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, INSPECTION_INCOMPLETE, INTAKE_INCOMPLETE,
-        INTERNAL_ERROR, INVALID_STATE_TRANSITION, KEY_NOT_PICKED_UP, KEY_SLOT_OCCUPIED, KEY_TAG_IN_USE, MEDIA_TOO_LARGE, MEDIA_TYPE_UNSUPPORTED, MEDIA_UPLOAD_INCOMPLETE,
-        MOVEMENT_IN_PROGRESS, NEXT_TASK_ALREADY_RESERVED, NOT_OFFER_RECIPIENT, NOT_TASK_ASSIGNEE, OFFER_EXPIRED, OFFER_NOT_FOUND, OFFER_REVOKED, OLDER_REQUEST_PENDING,
-        OPERATOR_SUSPENDED,
-        PAGINATION_CURSOR_INVALID, PAPER_SERIAL_IN_USE, PAPER_STUB_MISMATCH, PARKING_SPOT_OCCUPIED, PASS_EXPIRED, PASS_INVALID, PAYLOAD_TOO_LARGE, PAYMENT_ALREADY_RECORDED, PAYMENT_ALREADY_REVERSED,
-        PAYMENT_AMOUNT_MISMATCH, PAYMENT_FAILED, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_NOT_REFUNDABLE, PAYMENT_PENDING,
-        PAYMENT_WEBHOOK_SIGNATURE_INVALID, PERMISSION_DENIED, PHONE_INVALID, PLATE_INVALID, PLATFORM_AUTH_REQUIRED, RATE_LIMITED, REASON_REQUIRED, REASSIGN_BLOCKED_MOVEMENT, REFUND_AMOUNT_EXCEEDS_PAID,
-        RESEND_LIMIT_REACHED, RESOURCE_NOT_FOUND, RETRIEVAL_ALREADY_ACTIVE, SCOPE_VENUE_DENIED, SERVICE_UNAVAILABLE, SHIFT_ALREADY_OPEN, SHIFT_CLOSE_BLOCKED, SHIFT_NOT_OPEN,
-        TASK_ALREADY_CLAIMED, TASK_NOT_STARTABLE, TICKET_CLOSED, TICKET_NOT_FOUND, TICKET_NOT_PARKED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED,
-        VALIDATION_FAILED, VERSION_CONFLICT, WA_CHANNEL_UNAVAILABLE, WA_CONSENT_MISSING, WA_CUSTOMER_OPTED_OUT, WA_LINK_CODE_EXPIRED, WA_NOT_LINKED, WA_SEND_FAILED,
-        WA_TEMPLATE_NOT_APPROVED, WA_WEBHOOK_SIGNATURE_INVALID, WA_WEBHOOK_VERIFY_FAILED]
+      enum: [ASSIGNMENT_CONFLICT, ASSIGNMENT_REQUIRED, AUTH_ACCOUNT_DISABLED, AUTH_ACCOUNT_LOCKED, AUTH_INVALID_CREDENTIALS,
+        AUTH_MFA_INVALID, AUTH_MFA_REQUIRED, AUTH_MFA_SETUP_REQUIRED, AUTH_SECRET_CHANGE_REQUIRED, AUTH_SESSION_EXPIRED,
+        AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CONSENT_REQUIRED, CUSTODY_HOLDER_MISMATCH, CUSTODY_OPEN, CUSTODY_RELEASE_REQUIRED,
+        DEPENDENCY_TIMEOUT, DRAFT_HAS_DATA, DRIVER_DISABLED, DRIVER_NOT_AVAILABLE, DRIVER_ON_BREAK, DUTY_ALREADY_STARTED,
+        DUTY_END_BLOCKED_CUSTODY, DUTY_REQUIRED, EINVOICE_WEBHOOK_SIGNATURE_INVALID, EVENT_ALREADY_CLOSED, EVENT_CLOSE_BLOCKED,
+        EVENT_NOT_OPEN, HANDOVER_CODE_CONSUMED, HANDOVER_CODE_EXPIRED, HANDOVER_CODE_INVALID, HANDOVER_CODE_LOCKED, HANDOVER_NOT_READY,
+        IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, INSPECTION_INCOMPLETE, INTAKE_INCOMPLETE,
+        INTERNAL_ERROR, INVALID_STATE_TRANSITION, KEY_NOT_PICKED_UP, KEY_SLOT_OCCUPIED, KEY_TAG_IN_USE, MEDIA_TOO_LARGE,
+        MEDIA_TYPE_UNSUPPORTED, MEDIA_UPLOAD_INCOMPLETE, MOVEMENT_IN_PROGRESS, NEXT_TASK_ALREADY_RESERVED, NOT_OFFER_RECIPIENT,
+        NOT_TASK_ASSIGNEE, OFFER_EXPIRED, OFFER_NOT_FOUND, OFFER_REVOKED, OLDER_REQUEST_PENDING, OPERATOR_SUSPENDED,
+        PAGINATION_CURSOR_INVALID, PAPER_SERIAL_IN_USE, PAPER_STUB_MISMATCH, PARKING_SPOT_OCCUPIED, PASS_EXPIRED, PASS_INVALID,
+        PAYLOAD_TOO_LARGE, PAYMENT_ALREADY_RECORDED, PAYMENT_ALREADY_REVERSED, PAYMENT_AMOUNT_MISMATCH, PAYMENT_FAILED,
+        PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_NOT_REFUNDABLE, PAYMENT_PENDING, PAYMENT_WEBHOOK_SIGNATURE_INVALID, PERMISSION_DENIED,
+        PHONE_INVALID, PLATE_INVALID, PLATFORM_AUTH_REQUIRED, RATE_LIMITED, REASON_REQUIRED, REASSIGN_BLOCKED_MOVEMENT,
+        REFUND_AMOUNT_EXCEEDS_PAID, RESEND_LIMIT_REACHED, RESOURCE_NOT_FOUND, RETRIEVAL_ALREADY_ACTIVE, SCOPE_VENUE_DENIED,
+        SERVICE_UNAVAILABLE, SHIFT_ALREADY_OPEN, SHIFT_CLOSE_BLOCKED, SHIFT_NOT_OPEN, TASK_ALREADY_CLAIMED, TASK_NOT_STARTABLE,
+        TICKET_CLOSED, TICKET_NOT_FOUND, TICKET_NOT_PARKED, TRANSFER_ALREADY_PENDING, TRANSFER_BLOCKED_CUSTODY, TRANSFER_SCOPE_DENIED,
+        VALIDATION_FAILED, VERSION_CONFLICT, WA_CHANNEL_UNAVAILABLE, WA_CONSENT_MISSING, WA_CUSTOMER_OPTED_OUT, WA_LINK_CODE_EXPIRED,
+        WA_NOT_LINKED, WA_SEND_FAILED, WA_TEMPLATE_NOT_APPROVED, WA_WEBHOOK_SIGNATURE_INVALID, WA_WEBHOOK_VERIFY_FAILED]
       description: رموز الأخطاء الموحدة (canon §8)
     Meta:
       type: object
@@ -19608,10 +20736,341 @@ components:
         meta:
           $ref: '#/components/schemas/PageMeta'
       required: [data, meta]
+    InvoiceKind:
+      type: string
+      enum: [customer_simplified, operator_standard, credit_note]
+      description: invoices.kind (V2-040، DEC-541)
+    InvoiceSeries:
+      type: string
+      enum: [simplified, standard]
+      description: invoice_series.series — سلسلة بلا فجوات لكل نوع (DEC-541)
+    ZatcaStatus:
+      type: string
+      enum: [pending, reported, cleared, rejected]
+      description: invoices.zatca_status — ما قاله المزود (DEC-543)
+    SettlementStatus:
+      type: string
+      enum: [draft, issued, disputed, paid, void]
+      description: settlement_statements.status (docs/v2/04 §5)
+    SettlementLineKind:
+      type: string
+      enum: [subscriber_visit, app_payment, app_commission, app_refund, app_refund_commission, saas_fee, saas_vat, adjustment]
+      description: settlement_lines.kind — المبلغ موقّع بأثره على الصافي (DEC-545)
+    InvoiceLine:
+      type: object
+      properties:
+        description_ar: {type: string}
+        description_en: {type: string}
+        quantity: {type: integer, minimum: 1}
+        unit_price_halalas: {type: integer}
+        net_halalas: {type: integer}
+        vat_rate_bp: {type: integer}
+        vat_halalas: {type: integer}
+        total_halalas: {type: integer}
+      required: [description_ar, description_en, quantity, unit_price_halalas, net_halalas, vat_rate_bp, vat_halalas, total_halalas]
+    InvoiceSeller:
+      type: object
+      properties:
+        legal_name_ar: {type: string}
+        legal_name_en: {type: string}
+        vat_number: {type: string}
+        cr_number: {type: string}
+        address_ar: {type: string}
+      required: [legal_name_ar, legal_name_en, vat_number, cr_number, address_ar]
+    InvoiceSummary:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string, example: PS-00000012}
+        series: {$ref: '#/components/schemas/InvoiceSeries'}
+        kind: {$ref: '#/components/schemas/InvoiceKind'}
+        issued_at: {type: string, format: date-time}
+        total_halalas: {type: integer}
+        vat_halalas: {type: integer}
+        status: {$ref: '#/components/schemas/ZatcaStatus'}
+        provider: {type: string}
+        original_number: {type: [string, 'null']}
+        org: {type: [object, 'null']}
+        account: {type: [object, 'null'], description: الحساب بجوال مقنّع فقط}
+        pdf_ready: {type: boolean}
+      required: [id, number, series, kind, issued_at, total_halalas, vat_halalas, status, provider, pdf_ready]
+    InvoiceDetail:
+      type: object
+      description: المستند كما خُزّن (لا يُعدَّل؛ التصحيح بإشعار دائن)، وحالة المزود، وpdf_url قصير
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string}
+        series: {$ref: '#/components/schemas/InvoiceSeries'}
+        kind: {$ref: '#/components/schemas/InvoiceKind'}
+        type_code: {type: integer, enum: [388, 381]}
+        icv: {type: integer}
+        uuid: {type: string, format: uuid}
+        issued_at: {type: string, format: date-time}
+        supply_date: {type: string, format: date}
+        currency: {type: string, enum: [SAR]}
+        vat_rate_bp: {type: integer}
+        subtotal_halalas: {type: integer}
+        vat_halalas: {type: integer}
+        total_halalas: {type: integer}
+        seller: {$ref: '#/components/schemas/InvoiceSeller'}
+        buyer: {type: object}
+        lines:
+          type: array
+          items: {$ref: '#/components/schemas/InvoiceLine'}
+        previous_hash: {type: string}
+        invoice_hash: {type: string}
+        qr: {type: string, description: TLV base64 (الوسوم 1–5، أو المختوم من المزود)}
+        status: {$ref: '#/components/schemas/ZatcaStatus'}
+        provider_reference: {type: [string, 'null']}
+        pdf_url: {type: [string, 'null']}
+        pdf_url_expires_at: {type: [string, 'null'], format: date-time}
+      required: [id, number, series, kind, type_code, icv, uuid, issued_at, total_halalas, vat_halalas, status, qr, pdf_url]
+    SettlementStatement:
+      type: object
+      description: رأس الكشف = مجموع بنوده الفعالة بالهللة (trg_settlement_totals)؛ الصافي موجبًا بوينت تدفع للمشغل
+      properties:
+        id: {type: string, format: uuid}
+        org_id: {type: string, format: uuid}
+        period: {type: string, example: 2026-10}
+        status: {$ref: '#/components/schemas/SettlementStatus'}
+        subscriber_visit_count: {type: integer}
+        subscriber_payout_halalas: {type: integer}
+        app_payment_count: {type: integer}
+        app_gross_halalas: {type: integer}
+        app_commission_halalas: {type: integer}
+        app_refund_halalas: {type: integer}
+        app_refund_commission_halalas: {type: integer}
+        saas_fee_halalas: {type: integer}
+        saas_vat_halalas: {type: integer}
+        adjustments_halalas: {type: integer}
+        net_payable_halalas: {type: integer}
+        saas_invoice_id: {type: [string, 'null'], format: uuid}
+        version: {type: integer}
+      required: [id, org_id, period, status, net_payable_halalas, version]
+    SettlementLine:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/SettlementLineKind'}
+        amount_halalas: {type: integer}
+        occurred_on: {type: string, format: date}
+        released_at: {type: [string, 'null'], format: date-time}
+      required: [id, kind, amount_halalas, occurred_on]
+    SettlementStatementDetail:
+      allOf:
+      - $ref: '#/components/schemas/SettlementStatement'
+      - type: object
+        properties:
+          lines:
+            type: array
+            items: {$ref: '#/components/schemas/SettlementLine'}
+          invoices: {type: array, items: {type: object}}
+    EinvoiceCallbackPayload:
+      type: object
+      properties:
+        invoice_uuid: {type: string, format: uuid}
+        status: {type: string, enum: [reported, cleared, rejected]}
+        reference: {type: string}
+        codes:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              category: {type: string, enum: [error, warning]}
+      required: [invoice_uuid, status]
+    CustomerInvoiceSummary:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string}
+        kind: {type: string, enum: [customer_simplified, credit_note]}
+        issued_at: {type: string, format: date-time}
+        total_halalas: {type: integer}
+        vat_halalas: {type: integer}
+        currency: {type: string, enum: [SAR]}
+        status: {$ref: '#/components/schemas/ZatcaStatus'}
+        venue_name_ar: {type: [string, 'null']}
+        venue_name_en: {type: [string, 'null']}
+        original_number: {type: [string, 'null']}
+      required: [id, number, kind, issued_at, total_halalas, vat_halalas, currency, status, venue_name_ar, venue_name_en, original_number]
+    SettlementStatementListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettlementStatement'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    SettlementStatementEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SettlementStatement'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    SettlementStatementDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SettlementStatementDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    SystemSubscriptionEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            operator: {type: object}
+            contract: {type: [object, 'null']}
+            contracts: {type: array, items: {type: object}}
+            active_venues: {type: integer}
+            invoices:
+              type: array
+              items: {$ref: '#/components/schemas/InvoiceDetail'}
+          required: [operator, contract, contracts, active_venues, invoices]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    InvoiceDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/InvoiceDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformInvoiceListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceSummary'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformSettlementListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettlementStatement'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformSettlementDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SettlementStatementDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformSettlementGenerateEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            period: {type: string}
+            results: {type: array, items: {type: object}}
+          required: [period, results]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformSettlementStatementEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            statement: {$ref: '#/components/schemas/SettlementStatement'}
+          required: [statement]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformSettlementAdjustEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            statement: {$ref: '#/components/schemas/SettlementStatement'}
+            line_id: {type: string, format: uuid}
+          required: [statement, line_id]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformSettlementIssueEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            statement: {$ref: '#/components/schemas/SettlementStatement'}
+            saas_invoice: {type: [object, 'null']}
+          required: [statement, saas_invoice]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformSettlementVoidEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            statement: {$ref: '#/components/schemas/SettlementStatement'}
+            credit_note: {type: [object, 'null']}
+          required: [statement, credit_note]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerInvoiceListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items: {$ref: '#/components/schemas/CustomerInvoiceSummary'}
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerInvoiceDetailEnvelope:
+      type: object
+      properties:
+        data:
+          allOf:
+          - $ref: '#/components/schemas/CustomerInvoiceSummary'
+          - type: object
+            properties:
+              type_code: {type: integer, enum: [388, 381]}
+              uuid: {type: string, format: uuid}
+              subtotal_halalas: {type: integer}
+              vat_rate_bp: {type: integer}
+              seller: {$ref: '#/components/schemas/InvoiceSeller'}
+              lines: {type: array, items: {$ref: '#/components/schemas/InvoiceLine'}}
+              credit_reason: {type: [string, 'null']}
+              online_payment_id: {type: [string, 'null'], format: uuid}
+              qr: {type: string}
+              pdf_url: {type: [string, 'null']}
+              pdf_url_expires_at: {type: [string, 'null'], format: date-time}
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
     PlatformAlertType:
       type: string
-      enum: [payment_unknown, payment_mismatch, payment_refund_failed, payment_reconcile_failed, payment_double]
-      description: platform_alerts.type (DEC-514)
+      enum: [payment_unknown, payment_mismatch, payment_refund_failed, payment_reconcile_failed, payment_double, einvoice_rejected, einvoice_submit_failed]
+      description: platform_alerts.type (DEC-514، DEC-543)
     PlatformNamedRef:
       type: object
       properties:

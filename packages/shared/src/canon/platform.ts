@@ -360,6 +360,62 @@ const PLATFORM_ROWS: readonly PRow[] = [
     'read',
     'V2-035',
   ],
+  // --- V5 invoices and settlement (V2-040 … V2-042, DEC-540 … DEC-549) ---
+  // P-09 settlement statements: list, generate (or recompute) drafts, adjust, issue, record the payment, disputes, void
+  ['GET', '/v1/platform/settlements', 'platform.settlement_manage', 'none', 'read', 'V2-041'],
+  [
+    'POST',
+    '/v1/platform/settlements/generate',
+    'platform.settlement_manage',
+    'required',
+    'command',
+    'V2-041',
+  ],
+  ['GET', '/v1/platform/settlements/{statementId}', 'platform.settlement_manage', 'none', 'read', 'V2-041'],
+  [
+    'POST',
+    '/v1/platform/settlements/{statementId}/adjustments',
+    'platform.settlement_manage',
+    'required',
+    'command',
+    'V2-041',
+  ],
+  [
+    'POST',
+    '/v1/platform/settlements/{statementId}/issue',
+    'platform.settlement_manage',
+    'required',
+    'command',
+    'V2-041',
+  ],
+  [
+    'POST',
+    '/v1/platform/settlements/{statementId}/record-payment',
+    'platform.settlement_manage',
+    'required',
+    'command',
+    'V2-041',
+  ],
+  [
+    'POST',
+    '/v1/platform/settlements/{statementId}/resolve-dispute',
+    'platform.settlement_manage',
+    'required',
+    'command',
+    'V2-041',
+  ],
+  [
+    'POST',
+    '/v1/platform/settlements/{statementId}/void',
+    'platform.settlement_manage',
+    'required',
+    'command',
+    'V2-041',
+  ],
+  // P-10 invoices and credit notes (customers' and operators'), with the provider's status and the PDF
+  ['GET', '/v1/platform/invoices', 'platform.invoice_read', 'none', 'read', 'V2-040'],
+  ['GET', '/v1/platform/invoices/{invoiceId}', 'platform.invoice_read', 'none', 'read', 'V2-040'],
+  // --- end V5 ---
 ];
 
 /** The `/v1/platform/*` routes (docs/07_openapi.yaml tag `platform`), checked by test/platform.test.ts. */

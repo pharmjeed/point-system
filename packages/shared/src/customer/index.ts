@@ -21,6 +21,8 @@ export * from './notifications.js';
 export * from './payments.js';
 // V2-032: the subscriptions (C-09, C-10, C-14)
 export * from './subscriptions.js';
+// V2-040: C-17 invoices and credit notes
+export * from './invoices.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,

@@ -27,6 +27,8 @@ import {
   type CustomerMePatchBody,
   type CustomerOtpChallenge,
   type CustomerPass,
+  type CustomerInvoiceDetail,
+  type CustomerInvoiceSummary,
   type CustomerPaymentMethod,
   type CustomerPaymentMethodCreateBody,
   type CustomerPaymentMethodRemoved,
@@ -358,6 +360,16 @@ export function createCustomerApi(opts: CustomerApiOptions) {
 
     async payment(paymentId: string): Promise<CustomerOnlinePayment> {
       return (await call('payment', { params: { paymentId } })).data;
+    },
+
+    // ---- V2-040 (C-17): invoices and credit notes
+
+    async invoices(): Promise<CustomerInvoiceSummary[]> {
+      return (await call('invoices')).data.items;
+    },
+
+    async invoice(invoiceId: string): Promise<CustomerInvoiceDetail> {
+      return (await call('invoice', { params: { invoiceId } })).data;
     },
 
     async paymentMethods(): Promise<CustomerPaymentMethod[]> {

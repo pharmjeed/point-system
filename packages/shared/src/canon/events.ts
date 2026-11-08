@@ -166,6 +166,11 @@ export const JOB_TYPES = [
   'job.subscription_grace_expire',
   'job.subscription_renewal_notice',
   'job.pending_payment_expire',
+  // V2 (V2-040 … V2-042, DEC-543, DEC-546): an invoice submitted to the e-invoicing provider and its PDF rendered
+  // after COMMIT, and the monthly settlement statements of the operators (the 1st of the Riyadh month)
+  'job.einvoice_submit',
+  'job.invoice_pdf_render',
+  'job.settlement_monthly',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

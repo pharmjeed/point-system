@@ -62,6 +62,8 @@ const EXCLUDED: Record<string, string> = {
     'signed Meta delivery: attribution to the right operator is checked by the WhatsApp test below',
   'POST /webhooks/payments/moyasar':
     'the payment gateway’s delivery (shared secret): POINT’s own payments, no operator session or id can be named (V2-021)',
+  'POST /webhooks/einvoicing':
+    'the e-invoicing provider’s signed callback: POINT’s own documents, no operator session or id can be named (V2-040)',
   'GET /health/live': 'no data (liveness)',
   'GET /health/ready': 'no data (readiness)',
   'GET /metrics': 'internal network only, process metrics without operator data',
@@ -110,6 +112,9 @@ const COLLECTION: Record<string, 'list' | 'refs' | string> = {
   'PUT /v1/admin/retention-policy': 'self: the caller’s organization settings',
   'PUT /v1/admin/org-settings': 'self: the caller’s organization settings',
   'POST /v1/telemetry': 'refs',
+  // V2-041 / V2-042 (O-05 / O-06): the caller's own organization, read from the session
+  'GET /v1/settlement-statements': 'list',
+  'GET /v1/system-subscription': 'list',
 };
 
 describe('V2-007 operator isolation: nothing of operator A is visible or writable from operator B', () => {
@@ -197,6 +202,8 @@ describe('V2-007 operator isolation: nothing of operator A is visible or writabl
       incidentId: (o) => [o.r.incident!],
       exportId: (o) => [o.r.export!],
       outboxId: (o) => [o.r.outbox!],
+      statementId: (o) => [o.r.statement!],
+      invoiceId: (o) => [o.r.invoice!],
     };
     // every session the suite uses exists before the snapshot (a session row is written on first use)
     for (const op of [A, B]) for (const a of ACTORS) await cookie(op.user(a.key));
@@ -343,6 +350,7 @@ describe('V2-007 operator isolation: nothing of operator A is visible or writabl
     'POST /v1/staff/{userId}/reset-mfa': () => ({ reason: 'عزل' }),
     'POST /v1/alerts/{alertId}/resolve': () => ({ note: 'عزل' }),
     'PATCH /v1/incidents/{incidentId}': () => ({ expected_version: 1, severity: 'low' }),
+    'POST /v1/settlement-statements/{statementId}/dispute': () => ({ expected_version: 1, reason: 'عزل' }),
   };
 
   async function call(

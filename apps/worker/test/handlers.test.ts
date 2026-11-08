@@ -16,8 +16,9 @@ describe('worker handlers', () => {
     const types = new Set(allHandlers().map((h) => h.type));
     expect(JOB_TYPES.filter((t) => !types.has(t))).toEqual([]);
     // + job.customer_otp_send (V2-010), the 3 payment jobs (V2-021), the 2 customer push jobs (V2-016), the
-    // saved-card token deletion (V2-023), the 4 subscription timers (V2-031)
-    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 2 + 1 + 4);
+    // saved-card token deletion (V2-023), the 4 subscription timers (V2-031), the e-invoice submission and PDF
+    // (V2-040) and the monthly settlement (V2-041)
+    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 2 + 1 + 4 + 3);
   });
 
   it('the network jobs run outside a transaction (mode external, 04 §6.4)', () => {
@@ -33,6 +34,9 @@ describe('worker handlers', () => {
       'job.payments_reconcile',
       'job.payment_method_token_delete',
       'job.subscription_renew',
+      'job.einvoice_submit',
+      'job.invoice_pdf_render',
+      'job.settlement_monthly',
     ])
       expect(mode.get(t as (typeof JOB_TYPES)[number]), t).toBe('external');
   });

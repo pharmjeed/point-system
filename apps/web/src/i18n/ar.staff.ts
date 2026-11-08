@@ -54,6 +54,8 @@ export const p01 = {
     payments: 'المدفوعات',
     plans: 'الباقات',
     subscriptions: 'الاشتراكات',
+    settlements: 'التسوية',
+    invoices: 'الفواتير',
     menu: 'أقسام لوحة المنصة',
   },
   operators: 'المشغلون',
@@ -1291,6 +1293,8 @@ export const s13 = {
     audit: 'سجل التدقيق',
     retention: 'سياسة الاحتفاظ',
     org: 'إعدادات المؤسسة',
+    settlements: 'كشف التسوية',
+    subscription: 'اشتراك النظام',
   },
   channel: {
     displayName: 'اسم العرض',
@@ -1516,4 +1520,183 @@ export const p07 = {
     operator_terminated: 'أُنهي المشغل (استرداد نسبي)',
     refunded: 'استُرد كاملًا',
   } as Record<string, string>,
+} as const;
+
+// ---- V5 invoices and settlement (V2-040 … V2-042; P-09, P-10, O-05, O-06; DEC-544 … DEC-548)
+
+/** `settlement_statements.status` (docs/v2/04 §5). */
+export const settlementStatus = {
+  draft: 'مسودة',
+  issued: 'صادر',
+  disputed: 'معترض عليه',
+  paid: 'مدفوع',
+  void: 'ملغى',
+} as const;
+
+/** `invoices.zatca_status`: what the e-invoicing provider (ZATCA) answered. */
+export const zatcaStatus = {
+  pending: 'بانتظار الإرسال',
+  reported: 'مُبلَّغ عنها',
+  cleared: 'معتمدة',
+  rejected: 'مرفوضة',
+} as const;
+
+export const invoiceKind = {
+  customer_simplified: 'فاتورة مبسطة',
+  operator_standard: 'فاتورة ضريبية',
+  credit_note: 'إشعار دائن',
+} as const;
+
+/** `settlement_lines.kind` (DEC-545). */
+export const settlementLineKind = {
+  subscriber_visit: 'زيارة مشترك',
+  app_payment: 'دفع في التطبيق',
+  app_commission: 'عمولة المنصة',
+  app_refund: 'استرداد',
+  app_refund_commission: 'عمولة مستردة',
+  saas_fee: 'اشتراك النظام',
+  saas_vat: 'ضريبة اشتراك النظام',
+  adjustment: 'تسوية يدوية',
+} as const;
+
+/** The breakdown of a statement, as P-09 and O-05 show it. */
+export const settlementBreakdown = {
+  subscriberVisits: 'زيارات المشتركين ({n})',
+  appGross: 'المدفوع في التطبيق ({n})',
+  appCommission: 'عمولة المنصة',
+  appRefunds: 'الاستردادات',
+  appRefundCommission: 'العمولة المستردة',
+  saasFee: 'اشتراك النظام',
+  saasVat: 'ضريبة القيمة المضافة على الاشتراك',
+  adjustments: 'التسويات اليدوية',
+  net: 'الصافي',
+  pointPays: 'تدفعه المنصة للمشغل',
+  operatorPays: 'يدفعه المشغل للمنصة',
+  nothing: 'لا مستحقات',
+} as const;
+
+export const p09 = {
+  title: 'التسوية',
+  filters: 'التصفية',
+  status: 'الحالة',
+  period: 'الشهر',
+  operator: 'المشغل',
+  all: 'الكل',
+  apply: 'تطبيق',
+  empty: 'لا كشوف بهذه التصفية.',
+  open: 'فتح',
+  back: 'التسوية',
+  net: 'الصافي',
+  generate: 'إعداد مسودات شهر',
+  generateTitle: 'إعداد مسودات كشوف شهر',
+  generateBody:
+    'يحسب مسودة كل مشغل لشهر انتهى بتوقيت الرياض، ويعيد حساب المسودات القائمة فقط. الكشوف الصادرة لا تُمس.',
+  generateDone: 'أُعدّت المسودات.',
+  periodInvalid: 'أدخل الشهر بالصيغة 2026-10.',
+  lines: 'البنود',
+  released: 'بنود محررة (إعادة حساب أو إلغاء)',
+  noLines: 'لا بنود.',
+  invoices: 'الفواتير',
+  history: 'سجل الأفعال',
+  dispute: 'اعتراض المشغل',
+  resolution: 'الحل',
+  paidRef: 'مرجع التحويل',
+  paidOn: 'يوم الدفع',
+  voidReason: 'سبب الإلغاء',
+  adjust: 'تسوية يدوية',
+  adjustTitle: 'إضافة تسوية يدوية',
+  adjustBody: 'المبلغ بالريال: موجب تدفعه المنصة للمشغل، وسالب يُخصم منه. السبب يظهر للمشغل.',
+  adjustAmount: 'المبلغ بالريال (مثل -12.50)',
+  adjustAmountInvalid: 'أدخل مبلغًا غير صفري بخانتين عشريتين على الأكثر.',
+  adjustDone: 'أُضيفت التسوية.',
+  issue: 'إصدار الكشف',
+  issueTitle: 'إصدار الكشف للمشغل',
+  issueBody: 'يراه المشغل بعد الإصدار ولا تتغير مبالغه، وتصدر معه فاتورة اشتراك النظام الضريبية للمشغل.',
+  issueDone: 'صدر الكشف.',
+  recordPayment: 'تسجيل الدفع',
+  recordTitle: 'تسجيل دفع الكشف',
+  recordBody: 'مرجع التحويل البنكي ويوم الدفع. الكشف المدفوع نهائي.',
+  recordDone: 'سُجّل الدفع.',
+  resolve: 'حل الاعتراض',
+  resolveTitle: 'حل اعتراض المشغل',
+  resolveBody: 'أضف التسويات اللازمة أولًا، ثم اكتب ملاحظة الحل ليعود الكشف صادرًا.',
+  resolveDone: 'حُلّ الاعتراض.',
+  void: 'إلغاء الكشف',
+  voidTitle: 'إلغاء الكشف',
+  voidBody: 'تتحرر بنود الكشف ليُعاد إعداد الشهر، وتُلغى فاتورته بإشعار دائن كامل.',
+  voidDone: 'أُلغي الكشف.',
+} as const;
+
+export const p10 = {
+  title: 'الفواتير',
+  kind: 'النوع',
+  series: 'السلسلة',
+  seriesName: { simplified: 'المبسطة (العملاء)', standard: 'الضريبية (المشغلون)' },
+  status: 'حالة الهيئة',
+  numberSearch: 'رقم الفاتورة (PS-00000001)',
+  all: 'الكل',
+  apply: 'تطبيق',
+  empty: 'لا فواتير بهذه التصفية.',
+  open: 'فتح',
+  back: 'الفواتير',
+  buyer: 'المشتري',
+  total: 'الإجمالي',
+  vat: 'الضريبة',
+  subtotal: 'غير شامل الضريبة',
+  issued: 'الإصدار',
+  provider: 'المزود',
+  simulated: 'محاكاة: لم يُرسل شيء إلى الهيئة.',
+  reference: 'مرجع المزود',
+  codes: 'رموز المزود',
+  events: 'ردود المزود',
+  noEvents: 'لا ردود بعد.',
+  credits: 'الإشعارات الدائنة',
+  original: 'الفاتورة الأصلية',
+  reason: 'السبب',
+  pdf: 'تنزيل PDF',
+  pdfPending: 'ملف PDF قيد الإعداد.',
+  lines: 'البنود',
+  chain: 'العدّاد في السلسلة: {icv}',
+} as const;
+
+export const o05 = {
+  title: 'كشف التسوية',
+  intro:
+    'كشوفك الشهرية مع المنصة: زيارات المشتركين، والمدفوع في التطبيق بعد العمولة والاستردادات، واشتراك النظام.',
+  empty: 'لا كشوف صادرة بعد.',
+  open: 'عرض',
+  back: 'الكشوف',
+  lines: 'البنود',
+  invoices: 'الفواتير',
+  dispute: 'اعتراض',
+  disputeTitle: 'الاعتراض على الكشف',
+  disputeBody: 'اكتب سبب الاعتراض (مثل زيارة لم تُحتسب). تراجعه المنصة وتعيد إصدار الكشف.',
+  disputeDone: 'أُرسل الاعتراض.',
+  disputeReason: 'سبب الاعتراض',
+  resolution: 'رد المنصة',
+  paidRef: 'مرجع التحويل',
+  ticket: 'تذكرة {n}',
+  days: '{n} يومًا',
+} as const;
+
+export const o06 = {
+  operator: 'بيانات المشغل',
+  legalName: 'الاسم القانوني',
+  vatNumber: 'الرقم الضريبي',
+  crNumber: 'السجل التجاري',
+  contract: 'العقد الساري',
+  noContract: 'لا عقد ساريًا اليوم.',
+  fee: 'رسم الموقع',
+  cycle: { monthly: 'شهري', yearly: 'سنوي' },
+  payout: 'مبلغ زيارة المشترك',
+  commission: 'عمولة الدفع في التطبيق',
+  since: 'من {from}',
+  until: 'حتى {to}',
+  activeVenues: 'المواقع النشطة: {n}',
+  contracts: 'سجل العقود',
+  state: { upcoming: 'قادم', current: 'ساري', ended: 'منتهٍ' },
+  invoices: 'فواتير المنصة',
+  noInvoices: 'لا فواتير بعد.',
+  pdf: 'PDF',
+  pdfPending: 'ملف PDF قيد الإعداد، أعد المحاولة بعد قليل.',
 } as const;

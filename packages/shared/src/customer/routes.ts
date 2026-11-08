@@ -59,6 +59,7 @@ import {
   CustomerSubscriptionSchema,
   CustomerSubscriptionVehiclesBodySchema,
 } from './subscriptions.js';
+import { CustomerInvoiceDetailSchema, CustomerInvoiceListSchema } from './invoices.js';
 
 export interface CustomerRouteDef {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -386,6 +387,24 @@ export const CUSTOMER_ROUTES = {
     data: CustomerSubscriptionSchema,
   },
   // --- end V2-032 ---
+  // --- V2-040: C-17 the customer's invoices and credit notes (DEC-548) ---
+  invoices: {
+    method: 'GET',
+    path: '/v1/customer/invoices',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerInvoiceListSchema,
+  },
+  invoice: {
+    method: 'GET',
+    path: '/v1/customer/invoices/{invoiceId}',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerInvoiceDetailSchema,
+  },
+  // --- end V2-040 ---
 } as const satisfies Record<string, CustomerRouteDef>;
 
 export type CustomerRouteKey = keyof typeof CUSTOMER_ROUTES;

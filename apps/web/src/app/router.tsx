@@ -197,6 +197,30 @@ export const routes: RouteObject[] = [
             }),
           },
           {
+            path: paths.platformSettlements,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformSettlementsPage,
+            }),
+          },
+          {
+            path: `${paths.platformSettlements}/:statementId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformSettlementPage,
+            }),
+          },
+          {
+            path: paths.platformInvoices,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformInvoicesPage,
+            }),
+          },
+          {
+            path: `${paths.platformInvoices}/:invoiceId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformInvoicePage,
+            }),
+          },
+          {
             path: `${paths.platformPayments}/:paymentId`,
             lazy: async () => ({
               Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformPaymentPage,

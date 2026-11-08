@@ -170,6 +170,13 @@ export default function Settings() {
           testID="settings-payment-methods"
         />
         <Button
+          label={t.settings.invoices}
+          variant="secondary"
+          size="md"
+          onPress={() => router.push('/invoices')}
+          testID="settings-invoices"
+        />
+        <Button
           label={t.settings.deleteAccount}
           variant="ghost"
           size="md"

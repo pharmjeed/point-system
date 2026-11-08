@@ -64,6 +64,9 @@ export const PERMISSIONS = [
   'retention.manage',
   'org.settings_manage',
   'telemetry.write',
+  // V2 (V2-041 / V2-042, DEC-547): the operator's settlement statements and system subscription (O-05, O-06)
+  'settlement.read',
+  'settlement.dispute',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 export const PermissionSchema = z.enum(PERMISSIONS);
@@ -184,6 +187,10 @@ export const PERMISSION_MATRIX = {
   // إعدادات المؤسسة `security.*` و`heartbeat.*`
   'org.settings_manage': row(Y, N, N, N),
   'telemetry.write': row(Y, Y, Y, Y),
+  // الإصدار الثاني: كشوف التسوية واشتراك النظام وفواتيره للمشغل (O-05، O-06)، قراءة
+  'settlement.read': row(Y, Y, N, N),
+  // الإصدار الثاني: الاعتراض على كشف صادر بسبب (O-05)
+  'settlement.dispute': row(Y, Y, N, N),
 } as const satisfies Record<Permission, PermissionRow>;
 
 function baseGrants(role: Role): readonly Permission[] {

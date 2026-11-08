@@ -11,6 +11,11 @@ describe('deployment configuration guards', () => {
     MOYASAR_MODE: 'live',
     MOYASAR_BASE_URL: 'https://api.moyasar.com',
     CUSTOMER_PUSH_MODE: 'live',
+    EINVOICE_MODE: 'live',
+    INVOICE_SELLER_LEGAL_NAME_AR: 'شركة الاختبار',
+    INVOICE_SELLER_VAT_NUMBER: '399999999900003',
+    INVOICE_SELLER_CR_NUMBER: '0000000000',
+    INVOICE_SELLER_ADDRESS_AR: 'الرياض',
     APP_BASE_URL: 'https://app.example.test',
     API_BASE_URL: 'https://app.example.test',
     SESSION_COOKIE_NAME: '__Host-point_sid',
@@ -58,6 +63,7 @@ describe('deployment configuration guards', () => {
       MOYASAR_MODE: 'simulator',
       MOYASAR_BASE_URL: 'http://payment-sim:4020',
       CUSTOMER_PUSH_MODE: 'simulator', // and pushes to the simulator only (DEC-519)
+      EINVOICE_MODE: 'simulator', // and invoices to the e-invoicing simulator only (DEC-540)
     };
     expect(problems(staging)).toEqual([
       'WA_TEST_RECIPIENT_ALLOWLIST is required in staging with WA_MODE=live (05 §9 rule 2)',
@@ -81,6 +87,25 @@ describe('deployment configuration guards', () => {
     expect(problems({ MOYASAR_BASE_URL: 'http://api.moyasar.example' })).toEqual([
       'MOYASAR_BASE_URL must be https when MOYASAR_MODE=live',
     ]);
+  });
+
+  it('V2-040 (DEC-540): no invoice reaches ZATCA outside production; production names its seller', () => {
+    expect(() => testEnv({ ...production, EINVOICE_MODE: 'simulator' })).toThrow(
+      'EINVOICE_MODE must be live in production',
+    );
+    for (const APP_ENV of ['local', 'test', 'staging'])
+      expect(() => testEnv({ APP_ENV, EINVOICE_MODE: 'live' })).toThrow(
+        'EINVOICE_MODE=live is only allowed in production',
+      );
+    expect(testEnv({}).EINVOICE_MODE).toBe('simulator');
+    expect(problems({ INVOICE_SELLER_VAT_NUMBER: '', INVOICE_SELLER_ADDRESS_AR: '' })).toEqual([
+      'INVOICE_SELLER_VAT_NUMBER is required in production (the seller of every invoice)',
+      'INVOICE_SELLER_ADDRESS_AR is required in production (the seller of every invoice)',
+    ]);
+    expect(() => testEnv({ INVOICE_SELLER_VAT_NUMBER: '123456789012345' })).toThrow(
+      'INVOICE_SELLER_VAT_NUMBER must be 15 digits starting and ending with 3',
+    );
+    expect(() => testEnv({ VAT_RATE_BP: '10001' })).toThrow('VAT_RATE_BP must be between 0 and 10000');
   });
 
   it('V2-016 (DEC-519): customer pushes reach real devices from production only, never simulated there', () => {
@@ -109,6 +134,7 @@ describe('deployment configuration guards', () => {
       APP_ENV: 'staging',
       WA_TEST_RECIPIENT_ALLOWLIST: '+966500000001',
       CUSTOMER_PUSH_MODE: 'simulator',
+      EINVOICE_MODE: 'simulator',
     };
     expect(problems({ ...staging, ...test })).toEqual([]);
     expect(problems({ ...staging, ...test, MOYASAR_BASE_URL: 'http://api.moyasar.example' })).toEqual([

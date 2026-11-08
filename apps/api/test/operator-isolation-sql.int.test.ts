@@ -45,6 +45,16 @@ const GLOBAL: { file: string; sql: string; why: string }[] = [
     why: 'the platform reconciliation checks for a pending twin of itself (one job for the whole platform, DEC-514)',
   },
   {
+    file: 'modules/settlement/application/monthly.ts',
+    sql: 'SELECT 1 FROM outbox_events WHERE type = $1',
+    why: 'the monthly settlement run checks for a pending twin of itself (one job for every operator, DEC-544)',
+  },
+  {
+    file: 'modules/invoicing/application/submission.ts',
+    sql: 'SELECT id FROM invoices WHERE zatca_uuid = $1',
+    why: 'the e-invoicing provider’s signed callback names POINT’s own document by its unique UUID (DEC-543)',
+  },
+  {
     file: 'modules/audit-monitoring/jobs/system-monitor.ts',
     sql: "type = 'task_stuck'",
     why: 'the system monitor sweeps live alerts of every operator; each alert carries its own org_id',

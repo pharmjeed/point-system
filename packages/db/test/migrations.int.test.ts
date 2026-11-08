@@ -53,6 +53,15 @@ const SUBSCRIPTION_TABLES = [
   'subscription_periods',
 ];
 
+/** The V5 invoicing and settlement tables of 0017_invoices_settlement.sql (V2-040 … V2-042, docs/v2/03 §5). */
+const INVOICING_TABLES = [
+  'invoice_series',
+  'settlement_statements',
+  'settlement_lines',
+  'invoices',
+  'invoice_provider_events',
+];
+
 /**
  * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
  * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
@@ -87,7 +96,7 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016) the 6 online-payment tables of 0012 (V2-020) and the 4 subscription tables of 0016 (V2-030 / V2-031)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016), the 6 online-payment tables of 0012 (V2-020), the 4 subscription tables of 0016 (V2-030 / V2-031) and the 5 invoicing tables of 0017 (V2-040)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -96,7 +105,8 @@ describe('migrations', () => {
         PLATFORM_TABLES.length +
         CUSTOMER_TABLES.length +
         ONLINE_PAYMENT_TABLES.length +
-        SUBSCRIPTION_TABLES.length,
+        SUBSCRIPTION_TABLES.length +
+        INVOICING_TABLES.length,
     );
     const ref = await refClient.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
@@ -281,7 +291,8 @@ describe('migrations', () => {
         PLATFORM_TABLES.length +
         CUSTOMER_TABLES.length +
         ONLINE_PAYMENT_TABLES.length +
-        SUBSCRIPTION_TABLES.length,
+        SUBSCRIPTION_TABLES.length +
+        INVOICING_TABLES.length,
     );
   });
 
@@ -385,6 +396,68 @@ describe('migrations', () => {
       );
     } finally {
       await client.query('ROLLBACK');
+    }
+  });
+
+  it('V2-040 / V2-041: nothing financial is deleted; the provider log is append-only; a line is released, never edited', async () => {
+    await client.query('BEGIN');
+    try {
+      await client.query('SET LOCAL ROLE point_app');
+      for (const t of INVOICING_TABLES) {
+        await client.query('SAVEPOINT s');
+        await expect(client.query(`DELETE FROM ${t} WHERE false`), t).rejects.toThrow(/permission denied/);
+        await client.query('ROLLBACK TO SAVEPOINT s');
+      }
+      await expect(
+        client.query(`UPDATE invoice_provider_events SET outcome = outcome WHERE false`),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      await client.query('ROLLBACK');
+    }
+    await client.query('BEGIN');
+    try {
+      const org = await client.query<{ id: string }>(
+        `INSERT INTO organizations (name_ar) VALUES ('مشغل التسوية') RETURNING id`,
+      );
+      const st = await client.query<{ id: string }>(
+        `INSERT INTO settlement_statements (org_id, period_start, period_end) VALUES ($1, '2026-10-01', '2026-11-01') RETURNING id`,
+        [org.rows[0]!.id],
+      );
+      const l = await client
+        .query<{ id: string }>(
+          `INSERT INTO settlement_lines (statement_id, org_id, kind, line_key, amount_halalas, occurred_on, note, created_by)
+         VALUES ($1, $2, 'adjustment', 'adjustment:x1', -500, '2026-10-05', 'تسوية', NULL) RETURNING id`,
+          [st.rows[0]!.id, org.rows[0]!.id],
+        )
+        .catch((e: Error) => e);
+      // an adjustment names its platform user
+      expect(l).toBeInstanceOf(Error);
+      await client.query('ROLLBACK');
+      await client.query('BEGIN');
+      const org2 = await client.query<{ id: string }>(
+        `INSERT INTO organizations (name_ar) VALUES ('مشغل التسوية') RETURNING id`,
+      );
+      const st2 = await client.query<{ id: string }>(
+        `INSERT INTO settlement_statements (org_id, period_start, period_end, subscriber_visit_count, net_payable_halalas)
+         VALUES ($1, '2026-10-01', '2026-11-01', 0, 0) RETURNING id`,
+        [org2.rows[0]!.id],
+      );
+      await client.query(
+        `INSERT INTO settlement_lines (statement_id, org_id, kind, line_key, amount_halalas, occurred_on)
+         VALUES ($1, $2, 'saas_fee', 'saas_fee:v1:2026-10:c1', -1000, '2026-10-01')`,
+        [st2.rows[0]!.id, org2.rows[0]!.id],
+      );
+      await client.query('SAVEPOINT s');
+      await expect(
+        client.query(`UPDATE settlement_lines SET amount_halalas = -1 WHERE statement_id = $1`, [
+          st2.rows[0]!.id,
+        ]),
+      ).rejects.toThrow(/append-only/);
+      await client.query('ROLLBACK TO SAVEPOINT s');
+      // the header must equal its lines at COMMIT (deferred): here it says 0 while the line says −10.00
+      await expect(client.query('COMMIT')).rejects.toThrow(/does not equal the sum of its lines/);
+    } finally {
+      await client.query('ROLLBACK').catch(() => {});
     }
   });
 });
