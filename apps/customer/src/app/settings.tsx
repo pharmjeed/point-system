@@ -116,6 +116,13 @@ export default function Settings() {
           onPress={() => void signOut()}
         />
         <Button
+          label={t.settings.paymentMethods}
+          variant="secondary"
+          size="md"
+          onPress={() => router.push('/payment-methods')}
+          testID="settings-payment-methods"
+        />
+        <Button
           label={t.settings.deleteAccount}
           variant="ghost"
           size="md"
