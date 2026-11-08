@@ -517,6 +517,10 @@
 - الخطوات: ربط مباشر برقم ينتهي بـ`0000` في المحاكي (فشل `131026`) ← من D-07 «تذكرة ورقية» برقم كعب ← ثم يُسلَّم W-01 متأخرًا في المحاكي ويضغط العميل زره.
 - المتوقع: التحويل ينجح أثناء `parking` فقط (`channel = paper`، `wa_link_status = none`، `link_version` زاد، `ticket.wa_link_changed`)؛ ضغطة الزر المتأخر لا تنشئ طلبًا (ترد W-09)؛ نفس الطلب لتذكرة `linked` أو بعد `parked` ← `INVALID_STATE_TRANSITION`؛ رقم كعب مكرر ← `PAPER_SERIAL_IN_USE`.
 
+#### TC-080 — الاستلام ببطاقة الدخول (الإصدار الثاني، O-01/O-02، DEC-500 … DEC-504)
+- الخطوات: حساب عميل بسيارة ← `GET /v1/customer/pass` ← رمز الخطوة الحالية ← مسح في D-05 لمسودة السائق ← «التالي» ← الصور ← «إتمام التسجيل».
+- المتوقع: `channel = app`، `wa_link_status = none`، صف `customers` مربوط بالحساب، السيارة منسوخة، الأهلية `event_included` لحفل `included` و`none` مع «يدفع» لحفل `per_vehicle`؛ لا W-01 ولا إشعار؛ الخطوة ± 1 مقبولة و± 2 `PASS_EXPIRED`، والخطوة المستعملة `already_used`، والمفتاح المكرر يعيد الرد نفسه؛ المشغل المعلّق `OPERATOR_SUSPENDED`، والحساب المعلّق أو المحذوف `PASS_INVALID`؛ سيارة ليست في الحساب ← إدخال يدوي. (`apps/api/test/intake-pass.int.test.ts`، `apps/web/e2e/driver-pass-scan.spec.ts`، `apps/customer/test/pass.test.ts`)
+
 ---
 
 ## 7. تصاميم أدوات الاختبارات الصعبة

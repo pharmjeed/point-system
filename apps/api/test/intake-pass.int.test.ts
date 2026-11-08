@@ -101,7 +101,7 @@ const intakePass = (as: string, body: Record<string, unknown>, key?: string) =>
   w.command('post', '/v1/tickets/intake-pass', { as, body, key });
 
 /** A new driver on duty at RMS with his D-04 draft. */
-async function draftOf(eventId = EVT_R1) {
+async function draftOf(eventId: string = EVT_R1) {
   const driver = await freshDriver(w);
   const d = await newDraft(w, driver, eventId);
   return { driver, ...d };
