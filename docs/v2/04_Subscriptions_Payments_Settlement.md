@@ -20,9 +20,38 @@
 
 **الاسترداد:** بقرار من المنصة بسبب مسجّل (P-06/P-08). السياسة الافتراضية: لا استرداد للفترة الجارية بعد أول زيارة، واسترداد كامل خلال 48 ساعة إن لم تُستخدم، واسترداد نسبي عند إغلاق الموقع أو تعليق المشغل.
 
+### 1.1 ما بُني (V2-030 … V2-035، DEC-531 … DEC-539، الترحيل `0016_subscriptions.sql`)
+
+- **الجداول:** `subscription_plans` (لموقع واحد، سعران شهري/سنوي شاملان الضريبة، `vehicles_included` 1…5، `active`/`retired` مع `replaces_plan_id`/`replaced_by_plan_id`)، `subscriptions` (السعر والسيارات منسوخة من الباقة، المرساة `cycle_anchor_at` و`periods_paid`، الفترة الحالية، `cancel_at_period_end`، بطاقة التجديد، السماح، السعر التالي المعلن، التجميد وأسبابه، الإنهاء وسببه، `version`)، `subscription_vehicles` (المشمولة، تُزال ولا تُحذف)، `subscription_periods` (فترة مدفوعة لكل دفعة). **اشتراك حي واحد لكل حساب وموقع** (`uq_subscriptions_live`)، والقيود مسطحة مسماة `ck_subscriptions_*`.
+- **الآلة (DEC-532):** كما في الجدول أعلاه، و`SUBSCRIPTION_TRANSITIONS` في `@point/shared` هي المرجع الوحيد:
+
+| من | الحدث | إلى | كما بُني |
+|---|---|---|---|
+| — | `POST /v1/customer/subscriptions` | `pending_payment` | مع دفعته الأولى؛ `job.pending_payment_expire` بعد 30 دقيقة ← `canceled` (`pending_expired`) |
+| `pending_payment` | الدفعة `paid` | `active` | المرساة والفترة من وقت الخادم عند الدفع؛ يبدأ `frozen` إن كان المشغل معلّقًا أو الموقع مغلقًا |
+| `pending_payment` | «إلغاء الطلب» | `canceled` | `abandoned` |
+| `active` | النهاية − 3 أيام | `active` | `job.subscription_renewal_notice`: الإشعار، والسعر الجديد إن استُبدلت الباقة (DEC-531) |
+| `active` | النهاية: تجديد ناجح | `active` | `job.subscription_renew` يخصم البطاقة الافتراضية المحفوظة؛ فترة جديدة من النهاية |
+| `active` | النهاية: فشل | `past_due` | السماح حتى النهاية + 3 أيام؛ إعادة المحاولة بعد يوم وثلاثة أيام؛ إشعار «فشل الدفع» |
+| `past_due` | دفعة ناجحة (محاولة أو «ادفع الآن») | `active` | الفترة من النهاية الأصلية |
+| `past_due` | الفشل الثالث أو `job.subscription_grace_expire` | `expired` | `grace_expired`؛ إشعار الانتهاء |
+| `past_due` | «إلغاء» | `canceled` | `past_due_canceled` فورًا |
+| `active`/`frozen` | «إلغاء التجديد» / «استئناف» | (نفسها) | `cancel_at_period_end`؛ عند النهاية ← `canceled` (`period_end`) بلا خصم |
+| `active` | تعليق المشغل / إخراج الموقع | `frozen` | `operator_suspended` / `venue_inactive` (DEC-536) |
+| `frozen` | إعادة التفعيل / عودة الموقع | `active` | النهاية والمرساة تتقدمان بزمن التجميد |
+| أي حية | إنهاء المشغل | `canceled` | `operator_terminated` + استرداد نسبي آلي للفترة المدفوعة (`subscription_prorated`) |
+| أي حية | حذف الحساب | `canceled` | `account_deleted`، بلا استرداد |
+| `active`/`frozen` | استرداد كامل يدوي (P-06) | `canceled` | `refunded` |
+
+- **كل انتقال** في معاملة واحدة على صف مقفول: `platform_audit_log` (`subscription.<event>`، سجل بوينت لا سجل المشغل) و`customer_audit_log` و`subscription.updated` على قناة العميل، والمؤقتات في `outbox_events` بمفاتيح تكرار تحمل نهاية الفترة (فترة نقلها التجميد تُسقط مؤقتاتها القديمة). الأقفال: صف الدفعة ثم الاشتراك؛ صف المؤسسة/الموقع ثم اشتراكاته؛ التذكرة (L5) ثم الاشتراك `FOR SHARE`.
+- **التجديد (DEC-533):** `chargeSavedMethod` للبطاقة الافتراضية المحفوظة للحساب، `given_id` لكل (اشتراك، فترة، محاولة) فلا يُخصم مرتين، الشبكة خارج المعاملة (`external`)؛ طلب 3-D Secure في تجديد لا يجيبه أحد = محاولة فاشلة. دفعة تصل لفترة مدفوعة أو اشتراك منتهٍ تُسترد كاملة آليًا (`double_payment`/`not_due`).
+- **ما يقرؤه مسار الفواتير والتسوية (DEC-538):** التذكرة المشمولة `entitlement = 'subscription'` بـ`subscription_id` و`payment_status = 'not_required'` ورسوم 0 (نهائية عند «إتمام التسجيل»)؛ دفعة الاشتراك `online_payments.purpose = 'subscription'` بـ`subscription_id` و`subscription_period_seq` و`venue_id`، وفترتها صف `subscription_periods` بـ`online_payment_id` فريد؛ الاستردادات في `refunds` (`system`: `double_payment`، `not_due`، `subscription_prorated`؛ و`manual`). الفاتورة والتسوية لم تُبنيا (DEC-539).
+
 ## 2. الأهلية عند الاستلام
 
 > **المنفَّذ قبل الاشتراكات (V2-014، DEC-502):** تُحدد الأهلية عند إنشاء كل تذكرة (ورقية وواتساب وتطبيق): `event_included` لحفل `included` وإلا `none`؛ القاعدة 1 تنتظر V4 و`app_paid` تنتظر V3.
+>
+> **القاعدة 1 مبنية (V2-033، DEC-535):** في كل القنوات — مسح البطاقة، واتساب، والورقي — وتُحسم من جديد عند «إتمام التسجيل» باللوحة والعميل النهائيين: الحساب هو المرتبط بصف `customers` للتذكرة، والسيارة مشمولة (`customer_vehicle_id` للتطبيق وإلا اللوحة المطبّعة)، والاشتراك `active` في الموقع، ولا تذكرة مفتوحة أخرى يغطيها. التذكرة تحمل `subscription_id` وأهلية `subscription` ورسومًا 0 (`payment_status = not_required`)، وشاشات الاستلام والاسترجاع والتسليم وصفحة التذكرة تعرض «مشترك {العلامة}»، و«مشترك — هذه السيارة غير مشمولة» لسيارة أخرى (زيارة مدفوعة). الاشتراك غير النشط (`past_due`، `frozen`، منتهٍ) لا يغطي.
 
 عند مسح بطاقة الدخول (O-01) يحدد الخادم `tickets.entitlement` داخل أمر الاستلام نفسه:
 1. اشتراك `active` للحساب في هذا الموقع، والسيارة مشمولة، ولا تذكرة مفتوحة أخرى لها ← `subscription`.

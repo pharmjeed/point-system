@@ -458,7 +458,7 @@
 | `PASS_INVALID` | `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500): رمز ليس بصيغة `P1.…`، أو توقيع لا يطابق سر الحساب الحالي ولا السابق في مهلته، أو حساب `suspended`/`deleted` أو بلا بطاقة (`account_unavailable` لا يميّز المعلّق من المحذوف) | `reason`: `malformed` / `bad_signature` / `account_unavailable` | تحت زر «مسح بطاقة العميل» في D-05 مع «امسح مجددًا»؛ يبقى الاستلام اليدوي متاحًا | info · — |
 | `PASS_EXPIRED` | الخطوة خارج الخطوة الحالية ± 1 (30 ث لكل خطوة) على ساعة الخادم، أو خطوة لا تزيد على آخر خطوة استُعملت في استلام (لقطة شاشة معادة) | `reason`: `stale` / `future` / `already_used` | «امسح البطاقة الظاهرة الآن» ثم إعادة المسح | info · — |
 
-### 4.18 واجهة العميل `/v1/customer/*` (الإصدار الثاني، V2-010)
+### 4.18 واجهة العميل `/v1/customer/*` (الإصدار الثاني، V2-010؛ والاشتراكات V2-032)
 
 رموز تطبيق العميل خارج كتالوج canon §8 عمدًا: مصدرها `CUSTOMER_ERROR_CATALOG` في `packages/shared/src/customer/errors.ts` (DEC-482)، ويرميها الخادم بـ`AppError` نفسه (`ApiErrorCode`، DEC-495) على مسارات العميل وحدها، بالغلاف نفسه (§1). ومعها رموز §4 التي تعيدها هذه المسارات كما هي (`CUSTOMER_REUSED_ERROR_CODES`، ومنها `AUTH_ACCOUNT_DISABLED` لحساب معلّق). الجدولان بستة أعمدة لأن الكتالوج ليس canon §8.
 
@@ -478,6 +478,11 @@
 | `CUSTOMER_VISIT_NOT_DELIVERED` | 409 | لا | يمكنك تقييم الزيارة بعد استلام سيارتك. | You can rate the visit after you collect your car. | `POST …/rating` قبل التسليم؛ `ticket_status` (DEC-518) |
 | `CUSTOMER_VISIT_ALREADY_RATED` | 409 | لا | قيّمت هذه الزيارة مسبقًا. | You already rated this visit. | تقييم ثانٍ للزيارة نفسها بمفتاح آخر (DEC-518) |
 | `CUSTOMER_REAUTH_REQUIRED` | 403 | لا | أكّد أولًا برمز تحقق جديد. | Confirm with a new verification code first. | `DELETE /v1/customer/me` بلا دليل إعادة التحقق أو بدليل ليس الحي لهذه الجلسة أو منتهٍ؛ `reason`: `missing` / `invalid` / `expired` (403 لا 401 فلا يخرج التطبيق، DEC-507) |
+| `SUBSCRIPTION_ALREADY_EXISTS` | 409 | لا | لديك اشتراك في هذا الموقع. | You already have a subscription at this location. | `POST /v1/customer/subscriptions` وللحساب اشتراك حي في الموقع (`uq_subscriptions_live`)؛ `subscription_id`، `status` (V2-032، DEC-534) |
+| `SUBSCRIPTION_NOT_ACTIVE` | 409 | لا | لا يمكن تعديل هذا الاشتراك في حالته الحالية. | This subscription cannot be changed in its current status. | أمر من C-14 لا يقبله الاشتراك في حالته (04 §1)؛ `subscription_id`، `current_status`، `command` (DEC-532) |
+| `SUBSCRIPTION_PLAN_UNAVAILABLE` | 409 | لا | هذه الباقة لم تعد متاحة. اختر باقة أخرى. | This plan is not available any more. Choose another one. | باقة مقاعدة أو لا تبيع الدورة أو موقع لا يبيع الاشتراك؛ `reason`: `retired` / `cycle` / `not_sold` (DEC-531) |
+| `SUBSCRIPTION_VEHICLES_LOCKED` | 409 | لا | غيّرت السيارة المشمولة في هذه الفترة. يمكنك التغيير في الفترة القادمة. | You already changed the covered vehicle this period. | `PUT …/subscriptions/{id}/vehicles` مرة ثانية في الفترة (01 R6)؛ `available_at` (DEC-534) |
+| `SUBSCRIPTION_CARD_REQUIRED` | 422 | لا | ادفع ببطاقة تُحفظ للتجديد التلقائي. | Pay with a card kept for the automatic renewal. | دفع اشتراك بـApple Pay أو ببطاقة لا تُحفظ (`save_card` غائب)؛ `source_type` (DEC-534) |
 
 | الحالة | الرمز | `details` | الواجهة (تطبيق العميل) | السجل | ملاحظة |
 |---|---|---|---|---|---|
@@ -493,6 +498,8 @@
 | «اطلب السيارة» ودورة مفتوحة أو طلب مبكر قائم / سيارة مُسلَّمة | `RETRIEVAL_ALREADY_ACTIVE` / `TICKET_CLOSED` (409) | `ticket_status` (و`pending_retrieval_at`) | «طلبت سيارتك مسبقًا» / «سُلّمت» | info | رموز 08 كما هي (DEC-516) |
 | رمز التسليم قبل الجاهزية | `HANDOVER_NOT_READY` (409) | `ticket_status` | لا بطاقة رمز | info | (DEC-517) |
 | رمز خاطئ أو منتهٍ أو قفل في إعادة التحقق `POST /v1/customer/auth/reauth/verify` | `CUSTOMER_OTP_INVALID` / `CUSTOMER_OTP_EXPIRED` / `CUSTOMER_OTP_LOCKED` | كالدخول | `C-20` كـ`C-03` | info | المحاولات والقفل على الرقم نفسه مشتركة مع الدخول (DEC-507) |
+| رفض بطاقة الاشتراك (أول دفعة أو «ادفع الآن») | `PAYMENT_FAILED` (402) | `online_payment_id`، `failure_code`، `subscription_id` | «تعذّر الدفع» والاشتراك ينتظر بطاقة أخرى في `C-14` | info | الاشتراك `pending_payment` حتى 30 دقيقة (V2-032، DEC-534) |
+| «ادفع الآن» ودفعة الفترة نفسها تنتظر 3-D Secure | `PAYMENT_IN_PROGRESS` (409) | `online_payment_id`، `retry_after_s` | «الدفع قيد التنفيذ» | info | كالزيارة (DEC-521) |
 
 
 ### 4.19 الدفع الإلكتروني (الإصدار الثاني، V2-020 / V2-021)

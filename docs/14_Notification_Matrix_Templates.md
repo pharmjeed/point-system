@@ -252,7 +252,17 @@
 | `ticket.ready` | `car_ready` | سيارتك جاهزة عند البوابة | Your car is ready at the gate |
 | `alert.raised` (`ready_not_collected`) | `pickup_reminder` | سيارتك ما زالت بانتظارك | Your car is still waiting for you |
 
-العنوان اسم علامة العميل بلغة الحساب، و`data` = `{ type: 'visit', kind, visit_id }` فقط — بلا لوحة ولا موقف ولا مفتاح ولا رمز تسليم ولا اسم ولا جوال (DEC-23). إشعار لم يعد صحيحًا عند الإرسال (`stale`) يُتخطى؛ ورمز يرده المزود `DeviceNotRegistered` يُسقط. أنواع الاشتراك محجوزة حتى V4.
+العنوان اسم علامة العميل بلغة الحساب، و`data` = `{ type: 'visit', kind, visit_id }` فقط — بلا لوحة ولا موقف ولا مفتاح ولا رمز تسليم ولا اسم ولا جوال (DEC-23). إشعار لم يعد صحيحًا عند الإرسال (`stale`) يُتخطى؛ ورمز يرده المزود `DeviceNotRegistered` يُسقط. ~~أنواع الاشتراك محجوزة حتى V4.~~
+
+**إشعارات الاشتراك (V2-031، DEC-533، DEC-535)** لكل حساب نشط مشترك، مرة لكل فترة ونوع (صف `customer_push_messages` بـ`subscription_id`، مفتاح تكرار بالفترة):
+
+| الحدث | النوع | النص (ar) | النص (en) |
+|---|---|---|---|
+| `job.subscription_renewal_notice` (النهاية − 3 أيام، اشتراك `active` غير ملغى في النهاية) | `subscription_renewal` | يتجدد اشتراكك في {اسم الموقع} يوم {YYYY-MM-DD} — ويُضاف « بالسعر الجديد {X} ريال» حين يعلن الإشعار سعرًا جديدًا (DEC-531) | Your subscription at {venue} renews on {YYYY-MM-DD} (+ " at the new price of SAR {X}") |
+| أول فشل تجديد للفترة (`active` ← `past_due`) | `subscription_payment_failed` | تعذّر تجديد اشتراكك في {اسم الموقع}. حدّث وسيلة الدفع | We could not renew your subscription at {venue}. Update your payment method |
+| انتهاء السماح (`past_due` ← `expired`) | `subscription_expired` | انتهى اشتراكك في {اسم الموقع} | Your subscription at {venue} has ended |
+
+العنوان اسم علامة العميل، والتاريخ يوم الرياض، و`data` = `{ type: 'subscription', kind, subscription_id }` فقط — بلا لوحة ولا بطاقة ولا جوال، والنقر يفتح `C-14`. يُفحص قبل الإرسال أن الإشعار ما زال صحيحًا (إشعار تجديد لاشتراك أُلغي بعده، أو فشل لاشتراك دُفع، يُتخطى `stale`).
 
 ## 6. Web Push
 
