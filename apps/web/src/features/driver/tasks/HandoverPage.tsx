@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { useBrand } from '@/hooks/useMe';
 import { CircleCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
@@ -112,6 +113,7 @@ function HandoverForm({
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const brand = useBrand(); // V2-033: «مشترك {brand}»
   // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065); no handover
   // without the server's check (02 D-11)
   const gate = useCommandGate();
@@ -127,6 +129,7 @@ function HandoverForm({
   const badge = entitlementBadgeOf(
     card.ticket.entitlement ?? ticket.entitlement,
     due ? { amountHalalas: amount } : null,
+    brand.staffNameAr,
   );
   const methods: PaymentMethod[] = card.payment_due?.allowed_methods?.length
     ? card.payment_due.allowed_methods

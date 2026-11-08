@@ -21,12 +21,15 @@ export type PlatformPermission =
   | 'platform.customer_read'
   | 'platform.customer_manage'
   | 'platform.payment_read'
-  | 'platform.refund_issue';
+  | 'platform.refund_issue'
+  | 'platform.plan_manage'
+  | 'platform.subscription_read';
 
 export const platformCan = (me: PlatformMe, permission: PlatformPermission) =>
   me.permissions.includes(permission);
 
-export type PlatformDestination = 'overview' | 'operators' | 'venues' | 'customers' | 'payments';
+export type PlatformDestination =
+  'overview' | 'operators' | 'venues' | 'customers' | 'payments' | 'plans' | 'subscriptions';
 
 /**
  * The console's destinations for this account (P-02 / P-03 need `platform.operator_read`, P-04
@@ -39,6 +42,9 @@ export function platformNav(me: PlatformMe): PlatformDestination[] {
     ...(platformCan(me, 'platform.venue_review') ? (['venues'] as const) : []),
     ...(platformCan(me, 'platform.customer_read') ? (['customers'] as const) : []),
     ...(platformCan(me, 'platform.payment_read') ? (['payments'] as const) : []),
+    // V2-030 / V2-035: P-05 `platform.plan_manage`, P-07 `platform.subscription_read`
+    ...(platformCan(me, 'platform.plan_manage') ? (['plans'] as const) : []),
+    ...(platformCan(me, 'platform.subscription_read') ? (['subscriptions'] as const) : []),
   ];
 }
 

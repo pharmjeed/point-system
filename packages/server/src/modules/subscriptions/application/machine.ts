@@ -18,11 +18,7 @@ import { InvariantViolation } from '../../../core/errors/app-error.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
 import { publishRealtime } from '../../../core/realtime/realtime-publisher.js';
 import { planCustomerPush } from '../../customer-accounts/index.js';
-import {
-  issueSystemRefund,
-  paymentById,
-  type OnlinePaymentRow,
-} from '../../payments-online/index.js';
+import { issueSystemRefund, paymentById, type OnlinePaymentRow } from '../../payments-online/index.js';
 import {
   PENDING_PAYMENT_EXPIRE_JOB,
   SUBSCRIPTION_GRACE_EXPIRE_JOB,
@@ -37,7 +33,13 @@ const { grace_days, retry_offsets_days, renewal_notice_days, grace_expire_margin
 
 /** Who moved a subscription (the audit rows of the transition). */
 export type SubActor =
-  | { type: 'customer'; accountId: string; requestId?: string | null; ip?: string | null; userAgent?: string | null }
+  | {
+      type: 'customer';
+      accountId: string;
+      requestId?: string | null;
+      ip?: string | null;
+      userAgent?: string | null;
+    }
   | { type: 'platform'; userId: string; role: string; requestId?: string | null }
   | { type: 'system'; name: string; requestId?: string | null };
 
@@ -151,11 +153,16 @@ export async function scheduleCycleTimers(tx: Tx, sub: SubscriptionRow): Promise
   const seq = sub.periods_paid + 1;
   const key = `${sub.id}:${seq}:${end.getTime()}`;
   const payload = { subscription_id: sub.id, seq, period_end: end.toISOString() };
-  await schedule(tx, SUBSCRIPTION_RENEWAL_NOTICE_JOB, later(tx, end.getTime() - renewal_notice_days * DAY_MS), {
-    ...timerRow(sub),
-    dedupeKey: `subscription_renewal_notice:${key}`,
-    payload,
-  });
+  await schedule(
+    tx,
+    SUBSCRIPTION_RENEWAL_NOTICE_JOB,
+    later(tx, end.getTime() - renewal_notice_days * DAY_MS),
+    {
+      ...timerRow(sub),
+      dedupeKey: `subscription_renewal_notice:${key}`,
+      payload,
+    },
+  );
   await schedule(tx, SUBSCRIPTION_RENEW_JOB, later(tx, end.getTime()), {
     ...timerRow(sub),
     dedupeKey: `subscription_renew:${key}:0`,
@@ -207,7 +214,8 @@ async function freezeReasonNow(
     [sub.venue_id, sub.org_id],
   );
   if (r.operator_status === 'terminated') return 'terminated';
-  if ((OPERATOR_BLOCKED_STATUSES as readonly string[]).includes(r.operator_status)) return 'operator_suspended';
+  if ((OPERATOR_BLOCKED_STATUSES as readonly string[]).includes(r.operator_status))
+    return 'operator_suspended';
   if (r.venue_status !== 'active') return 'venue_inactive';
   return null;
 }
@@ -463,9 +471,16 @@ export async function freeze(
   reason: SubscriptionFrozenReason,
   actor: SubActor,
 ): Promise<SubscriptionRow> {
-  return transition(tx, sub, 'freeze', { status: 'frozen', frozen_at: tx.now, frozen_reason: reason }, actor, {
-    reason,
-  });
+  return transition(
+    tx,
+    sub,
+    'freeze',
+    { status: 'frozen', frozen_at: tx.now, frozen_reason: reason },
+    actor,
+    {
+      reason,
+    },
+  );
 }
 
 /**
@@ -532,7 +547,10 @@ export async function terminate(tx: Tx, sub: SubscriptionRow, actor: SubActor): 
             payment,
             'subscription_prorated',
             { subscription_id: sub.id, seq: period.seq },
-            { amountHalalas: Math.min(amount, payment.amount_halalas - payment.refunded_halalas), alert: false },
+            {
+              amountHalalas: Math.min(amount, payment.amount_halalas - payment.refunded_halalas),
+              alert: false,
+            },
           ),
         };
     }

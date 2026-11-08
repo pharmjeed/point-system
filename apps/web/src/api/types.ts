@@ -639,7 +639,13 @@ export interface LinkCodeQr {
  */
 export interface IntakePassResult {
   ticket: TicketDetail;
-  customer: { first_name: string | null; phone_masked: string | null; vehicle_prefilled: boolean };
+  customer: {
+    first_name: string | null;
+    phone_masked: string | null;
+    vehicle_prefilled: boolean;
+    /** V2-033 (DEC-535): the account's subscription at this venue for the scanned vehicle (01 §4) */
+    subscription?: 'covered' | 'vehicle_not_covered' | 'open_ticket' | null;
+  };
   task?: Task;
   driver_state?: DriverStateResult['driver_state'];
 }

@@ -546,7 +546,10 @@ export const d06 = {
 export const entitlementBadge = {
   label: 'الأهلية',
   included: 'مشمول',
-  subscription: 'مشمول بالاشتراك',
+  /** V2-033 (O-02, DEC-535): the brand filled with `fmt` + `useBrand()` (canon §1: never a literal) */
+  subscription: 'مشترك {brand}',
+  /** V2-033 (01 §4): the scanned customer subscribes here, for another vehicle */
+  subscriptionNotCovered: 'مشترك — هذه السيارة غير مشمولة',
   appPaid: 'مدفوع في التطبيق',
   pays: 'يدفع {amount}',
   /** the intake driver does not see the fee (09 §5.1): the due state only */

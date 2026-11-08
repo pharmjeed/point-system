@@ -4,8 +4,8 @@ import { fmt } from '@/i18n/fmt';
 import { formatHalalas } from '@/lib/format';
 
 /**
- * O-02 (V2-014, DEC-502): the entitlement badge of a ticket — «مشمول» (the event is included), «مشمول بالاشتراك»
- * (phase V4), «مدفوع في التطبيق» (phase V3), or «يدفع X» while the fee is due at the handover (V1's cash/POS, DEC-210)
+ * O-02 (V2-014, DEC-502): the entitlement badge of a ticket — «مشمول» (the event is included), «مشترك {brand}»
+ * (V2-033: a subscription covers the visit, the staff brand filled in), «مدفوع في التطبيق» (phase V3), or «يدفع X» while the fee is due at the handover (V1's cash/POS, DEC-210)
  * — «يدفع عند التسليم» for a viewer who does not see the fee (the intake driver, 09 §5.1). Nothing for a ticket with
  * nothing to say (a fee already collected or waived). Pure: unit-tested.
  */
@@ -20,12 +20,13 @@ export type FeeDue = { amountHalalas: number | null } | null;
 export function entitlementBadgeOf(
   entitlement: TicketEntitlement | undefined,
   due: FeeDue,
+  brand = '',
 ): EntitlementBadge | null {
   switch (entitlement) {
     case 'event_included':
       return { tone: 'included', text: entitlementBadge.included };
     case 'subscription':
-      return { tone: 'included', text: entitlementBadge.subscription };
+      return { tone: 'included', text: fmt(entitlementBadge.subscription, { brand }).trim() };
     case 'app_paid':
       return { tone: 'included', text: entitlementBadge.appPaid };
     default:

@@ -114,19 +114,22 @@ export class PlatformPlansService {
         ).rows
       : [];
     return {
-      data: {
-        items: page.map((v) => ({
-          ...v,
-          subscriptions_allowed: RECURRING.has(v.category),
-          plans: plans.filter((p) => p.venue_id === v.venue_id).map(planView),
-        })),
-      },
+      data: page.map((v) => ({
+        ...v,
+        subscriptions_allowed: RECURRING.has(v.category),
+        plans: plans.filter((p) => p.venue_id === v.venue_id).map(planView),
+      })),
       next_cursor: venues.length > q.limit ? encodeCursor(offset + q.limit) : null,
     };
   }
 
   async create(tx: Tx, actor: PlatformActorContext, body: PlatformPlanCreateBody, client: ClientInfo) {
-    const venue = await tx.maybeOne<{ id: string; org_id: string; category: string; subscriptions_enabled: boolean }>(
+    const venue = await tx.maybeOne<{
+      id: string;
+      org_id: string;
+      category: string;
+      subscriptions_enabled: boolean;
+    }>(
       `SELECT v.id, v.org_id, vp.category, vp.subscriptions_enabled
          FROM venues v JOIN venue_public_profiles vp ON vp.venue_id = v.id AND vp.org_id = v.org_id
         WHERE v.id = $1 FOR NO KEY UPDATE OF vp`,
@@ -139,7 +142,9 @@ export class PlatformPlansService {
         fields: [{ field: 'venue_id', issue: 'not_recurring_venue', category: venue.category }],
       });
     if (!venue.subscriptions_enabled)
-      throw new AppError('VALIDATION_FAILED', { fields: [{ field: 'venue_id', issue: 'subscriptions_disabled' }] });
+      throw new AppError('VALIDATION_FAILED', {
+        fields: [{ field: 'venue_id', issue: 'subscriptions_disabled' }],
+      });
     let replaced: PlanRow | null = null;
     if (body.replaces_plan_id) {
       replaced = await planById(tx, body.replaces_plan_id, true);
@@ -191,7 +196,13 @@ export class PlatformPlansService {
     return planView({ ...plan, live_subscriptions: 0 });
   }
 
-  async retire(tx: Tx, actor: PlatformActorContext, planId: string, body: PlatformPlanRetireBody, client: ClientInfo) {
+  async retire(
+    tx: Tx,
+    actor: PlatformActorContext,
+    planId: string,
+    body: PlatformPlanRetireBody,
+    client: ClientInfo,
+  ) {
     const reason = (body.reason ?? '').trim();
     if (reason.length < PLATFORM_REASON_MIN)
       throw new AppError('REASON_REQUIRED', { field: 'reason', min_length: PLATFORM_REASON_MIN });
@@ -231,7 +242,9 @@ export class PlatformPlansService {
   }
 
   private async view(q: Q, id: string): Promise<PlatformPlan> {
-    const r = await q.query<PlanRow & { live_subscriptions: number }>(`${PLAN_WITH_COUNT} WHERE p.id = $1`, [id]);
+    const r = await q.query<PlanRow & { live_subscriptions: number }>(`${PLAN_WITH_COUNT} WHERE p.id = $1`, [
+      id,
+    ]);
     return planView(r.rows[0]!);
   }
 

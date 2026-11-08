@@ -2,7 +2,14 @@ import type { PlatformSubscriptionsQuery, PlatformSubscriptionsReportQuery } fro
 import type { Database } from '../../../core/db/database.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { maskPhone } from '../../../core/logging/redact.js';
-import { iso, PERIOD_COLUMNS, SUBSCRIPTION_COLUMNS, UUID, type PeriodRow, type SubscriptionRow } from './rows.js';
+import {
+  iso,
+  PERIOD_COLUMNS,
+  SUBSCRIPTION_COLUMNS,
+  UUID,
+  type PeriodRow,
+  type SubscriptionRow,
+} from './rows.js';
 
 const DAY_MS = 86_400_000;
 
@@ -109,13 +116,15 @@ export class PlatformSubscriptionsService {
       )
     ).rows;
     return {
-      data: { items: rows.slice(0, q.limit).map(listView) },
+      data: rows.slice(0, q.limit).map(listView),
       next_cursor: rows.length > q.limit ? encodeCursor(offset + q.limit) : null,
     };
   }
 
   async detail(id: string) {
-    const r = UUID.test(id) ? (await this.db.query<ListRow>(`${LIST_SELECT} WHERE s.id = $1`, [id])).rows[0] : null;
+    const r = UUID.test(id)
+      ? (await this.db.query<ListRow>(`${LIST_SELECT} WHERE s.id = $1`, [id])).rows[0]
+      : null;
     if (!r) throw new AppError('RESOURCE_NOT_FOUND', { resource: 'subscription' });
     const periods = (
       await this.db.query<PeriodRow>(
@@ -144,7 +153,12 @@ export class PlatformSubscriptionsService {
       )
     ).rows;
     const timeline = (
-      await this.db.query<{ action: string; occurred_at: Date; actor_type: string; metadata: Record<string, unknown> }>(
+      await this.db.query<{
+        action: string;
+        occurred_at: Date;
+        actor_type: string;
+        metadata: Record<string, unknown>;
+      }>(
         `SELECT action, occurred_at, actor_type, metadata FROM platform_audit_log
           WHERE entity_type = 'subscription' AND entity_id = $1 ORDER BY occurred_at, id`,
         [id],
@@ -247,8 +261,16 @@ export class PlatformSubscriptionsService {
     const churned = churn.reduce((a, c) => a + c.n, 0);
     const byVenue = new Map<
       string,
-      { venue_id: string; venue_name_ar: string; org_id: string; operator_name_ar: string; active: number;
-        frozen: number; past_due: number; mrr_halalas: number }
+      {
+        venue_id: string;
+        venue_name_ar: string;
+        org_id: string;
+        operator_name_ar: string;
+        active: number;
+        frozen: number;
+        past_due: number;
+        mrr_halalas: number;
+      }
     >();
     for (const s of live) {
       const v = byVenue.get(s.venue_id) ?? {
@@ -282,7 +304,9 @@ export class PlatformSubscriptionsService {
         since: from.toISOString(),
       },
       new_subscriptions: fresh.n,
-      venues: [...byVenue.values()].sort((a, b) => b.active - a.active || a.venue_id.localeCompare(b.venue_id)),
+      venues: [...byVenue.values()].sort(
+        (a, b) => b.active - a.active || a.venue_id.localeCompare(b.venue_id),
+      ),
     };
   }
 }

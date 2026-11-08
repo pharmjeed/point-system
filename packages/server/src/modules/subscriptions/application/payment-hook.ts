@@ -47,9 +47,10 @@ export const subscriptionPaymentEffects: SubscriptionPaymentHook = {
     const sub = await lockOf(tx, p);
     if (!sub || p.subscription_period_seq !== sub.periods_paid) return;
     if (sub.status !== 'active' && sub.status !== 'frozen') return;
-    const system = await tx.maybeOne(`SELECT 1 FROM refunds WHERE online_payment_id = $1 AND kind = 'system'`, [
-      p.id,
-    ]);
+    const system = await tx.maybeOne(
+      `SELECT 1 FROM refunds WHERE online_payment_id = $1 AND kind = 'system'`,
+      [p.id],
+    );
     if (system) return;
     await transition(
       tx,

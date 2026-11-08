@@ -23,6 +23,10 @@ export function renewalGivenId(subscriptionId: string, seq: number, attempt: num
 }
 
 /** The given_id of a customer's checkout (subscribe or pay): the account and the command's Idempotency-Key. */
-export function checkoutGivenId(kind: 'subscribe' | 'pay', accountId: string, idempotencyKey: string): string {
+export function checkoutGivenId(
+  kind: 'subscribe' | 'pay',
+  accountId: string,
+  idempotencyKey: string,
+): string {
   return uuidOfDigest(`point-subscription-${kind}:v1:${accountId}:${idempotencyKey}`);
 }

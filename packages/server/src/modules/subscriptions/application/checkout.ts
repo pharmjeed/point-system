@@ -82,7 +82,8 @@ async function sourceOf(
   source: CustomerPaymentSource,
   saveCard: boolean | undefined,
 ): Promise<Source> {
-  if (source.type === 'applepay') throw new AppError('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'applepay' });
+  if (source.type === 'applepay')
+    throw new AppError('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'applepay' });
   if (source.type === 'token') {
     if (!saveCard) throw new AppError('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'token' });
     return source;
@@ -232,7 +233,9 @@ export class SubscriptionCheckout {
       save_card?: boolean | undefined;
     },
     w: { givenId: string; paymentId: string; card: GatewayToken | null; requestId: string | null },
-  ): Promise<{ twin: string; subscriptionId: string } | { source: Source; amount: number; subscriptionId: string }> {
+  ): Promise<
+    { twin: string; subscriptionId: string } | { source: Source; amount: number; subscriptionId: string }
+  > {
     await lockAccount(tx, accountId);
     const twin = await tx.maybeOne<{ id: string; subscription_id: string }>(
       `SELECT id, subscription_id FROM online_payments WHERE given_id = $1`,
@@ -256,7 +259,8 @@ export class SubscriptionCheckout {
     if (!sale.listed) throw new AppError('VENUE_NOT_LISTED');
     if (!sale.subscriptions_enabled || sale.category === 'hall')
       throw new AppError('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'not_sold' });
-    if (sale.plan_status !== 'active') throw new AppError('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'retired' });
+    if (sale.plan_status !== 'active')
+      throw new AppError('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'retired' });
     const price = planPrice(sale, body.billing_cycle);
     if (price === null) throw new AppError('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'cycle' });
     if (body.vehicle_ids.length > sale.vehicles_included)
@@ -270,7 +274,8 @@ export class SubscriptionCheckout {
           AND status IN ('pending_payment','active','past_due','frozen')`,
       [accountId, sale.venue_id, sale.org_id],
     );
-    if (live) throw new AppError('SUBSCRIPTION_ALREADY_EXISTS', { subscription_id: live.id, status: live.status });
+    if (live)
+      throw new AppError('SUBSCRIPTION_ALREADY_EXISTS', { subscription_id: live.id, status: live.status });
     const source = await sourceOf(tx, accountId, body.source, body.save_card);
     const subId = newId();
     const sub = await tx.one<SubscriptionRow>(
@@ -298,16 +303,28 @@ export class SubscriptionCheckout {
          VALUES ($1, $2, $3, $4)`,
         [subId, accountId, v, tx.now],
       );
-    await this.beginPayment(tx, accountId, sub, { ...w, source, amount: price, seq: 1, saveCard: body.save_card });
-    await auditTransition(tx, sub, 'subscription.subscribe', { type: 'customer', accountId, requestId: w.requestId }, {
-      from_status: null,
-      to_status: 'pending_payment',
-      plan_id: plan.id,
-      billing_cycle: body.billing_cycle,
-      price_halalas: price,
-      vehicles: body.vehicle_ids.length,
-      online_payment_id: w.paymentId,
+    await this.beginPayment(tx, accountId, sub, {
+      ...w,
+      source,
+      amount: price,
+      seq: 1,
+      saveCard: body.save_card,
     });
+    await auditTransition(
+      tx,
+      sub,
+      'subscription.subscribe',
+      { type: 'customer', accountId, requestId: w.requestId },
+      {
+        from_status: null,
+        to_status: 'pending_payment',
+        plan_id: plan.id,
+        billing_cycle: body.billing_cycle,
+        price_halalas: price,
+        vehicles: body.vehicle_ids.length,
+        online_payment_id: w.paymentId,
+      },
+    );
     await schedulePendingExpiry(tx, sub);
     await publishSubscriptionUpdated(tx, sub);
     return { source, amount: price, subscriptionId: subId };
@@ -319,11 +336,16 @@ export class SubscriptionCheckout {
     subscriptionId: string,
     body: { source: CustomerPaymentSource; save_card?: boolean | undefined },
     w: { givenId: string; paymentId: string; card: GatewayToken | null; requestId: string | null },
-  ): Promise<{ twin: string; subscriptionId: string } | { source: Source; amount: number; subscriptionId: string }> {
+  ): Promise<
+    { twin: string; subscriptionId: string } | { source: Source; amount: number; subscriptionId: string }
+  > {
     await lockAccount(tx, accountId);
     const sub = await subscriptionById(tx, subscriptionId, true);
-    if (!sub || sub.account_id !== accountId) throw new AppError('RESOURCE_NOT_FOUND', { resource: 'subscription' });
-    const twin = await tx.maybeOne<{ id: string }>(`SELECT id FROM online_payments WHERE given_id = $1`, [w.givenId]);
+    if (!sub || sub.account_id !== accountId)
+      throw new AppError('RESOURCE_NOT_FOUND', { resource: 'subscription' });
+    const twin = await tx.maybeOne<{ id: string }>(`SELECT id FROM online_payments WHERE given_id = $1`, [
+      w.givenId,
+    ]);
     if (twin) return { twin: twin.id, subscriptionId };
     if (sub.status !== 'pending_payment' && sub.status !== 'past_due')
       throw new AppError('SUBSCRIPTION_NOT_ACTIVE', {
@@ -345,7 +367,9 @@ export class SubscriptionCheckout {
         retry_after_s: Math.max(
           1,
           Math.ceil(
-            (new Date(pending.created_at).getTime() + this.env.VISIT_PAYMENT_PENDING_S * 1000 - tx.now.getTime()) /
+            (new Date(pending.created_at).getTime() +
+              this.env.VISIT_PAYMENT_PENDING_S * 1000 -
+              tx.now.getTime()) /
               1000,
           ),
         ),
@@ -453,7 +477,8 @@ const payment = (subscriptionId: string, paymentId: string, transactionUrl: stri
 
 /** The covered vehicles are the account's own, not removed (else RESOURCE_NOT_FOUND customer_vehicle). */
 export async function assertOwnVehicles(tx: Tx, accountId: string, ids: readonly string[]): Promise<void> {
-  if (ids.some((id) => !UUID.test(id))) throw new AppError('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
+  if (ids.some((id) => !UUID.test(id)))
+    throw new AppError('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
   const r = await tx.one<{ n: number }>(
     `SELECT count(*)::int AS n FROM customer_vehicles WHERE id = ANY($1) AND account_id = $2 AND removed_at IS NULL`,
     [ids, accountId],

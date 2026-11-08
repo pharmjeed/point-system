@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useBrand } from '@/hooks/useMe';
 import { Camera, FileExclamationPoint, Ellipsis } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -119,11 +120,12 @@ function TicketView({
   onBack: () => void;
 }) {
   const online = useOnline(); // offline only: a resync does not hold staff commands (DEC-380)
+  const brand = useBrand(); // V2-033: «مشترك {brand}»
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<TicketTab>('timeline');
   const [menuOpen, setMenuOpen] = useState(false);
   const available = ticketActions(me, ticket);
-  const entitlement = entitlementBadgeOf(ticket.entitlement, dueOf(ticket));
+  const entitlement = entitlementBadgeOf(ticket.entitlement, dueOf(ticket), brand.staffNameAr);
   const actions = ACTION_ORDER.filter((a) => available.includes(a));
   const requested = params.get('action') as TicketAction | null;
   const [active, setActive] = useState<TicketAction | null>(null);

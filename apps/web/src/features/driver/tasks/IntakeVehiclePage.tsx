@@ -142,7 +142,7 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   };
   const scanError =
     scan.error instanceof ApiError ? scan.error.message_ar : scan.error ? displayMessage(scan.error) : null;
-  const badge = entitlementBadgeOf(ticket.entitlement, dueOf(ticket));
+  const badge = entitlementBadgeOf(ticket.entitlement, dueOf(ticket), brand.staffNameAr);
   const appTicket = link.channel === 'app';
   const save = useCommand(
     (body: IntakePatch, key: string) => patchIntake(ticket.id, body, key),
@@ -275,6 +275,11 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
             {passCustomer ? (
               <p className="m-0 text-text-muted">
                 {passCustomer.vehicle_prefilled ? d05.pass.vehicleFilled : d05.pass.vehicleManual}
+              </p>
+            ) : null}
+            {passCustomer?.subscription === 'vehicle_not_covered' ? (
+              <p className="m-0 font-bold" data-testid="d05-subscription-not-covered">
+                {entitlementBadge.subscriptionNotCovered}
               </p>
             ) : null}
             <p className="m-0 text-text-muted">{d05.pass.noWhatsapp}</p>

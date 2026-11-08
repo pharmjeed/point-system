@@ -52,7 +52,11 @@ export async function subscriptionCoverage(tx: Tx, t: EntitlementTicket): Promis
     [account.account_id, t.venue_id, t.org_id],
   );
   if (!sub) return { covered: false, reason: 'no_subscription' };
-  const vehicle = await tx.maybeOne<{ id: string; plate_digits: string | null; plate_letters_ar: string | null }>(
+  const vehicle = await tx.maybeOne<{
+    id: string;
+    plate_digits: string | null;
+    plate_letters_ar: string | null;
+  }>(
     t.customer_vehicle_id
       ? `SELECT cv.id, cv.plate_digits, cv.plate_letters_ar
            FROM subscription_vehicles sv JOIN customer_vehicles cv ON cv.id = sv.customer_vehicle_id
@@ -113,7 +117,11 @@ export async function applySubscriptionEntitlement(
         WHERE id = $1 AND org_id = $3`,
       [t.id, result.coverage.subscriptionId, t.org_id],
     );
-    return { entitlement: 'subscription', subscription_id: result.coverage.subscriptionId, before: t.entitlement };
+    return {
+      entitlement: 'subscription',
+      subscription_id: result.coverage.subscriptionId,
+      before: t.entitlement,
+    };
   }
   if (t.entitlement !== 'subscription') return null;
   const ev = await tx.one<{ pricing_mode: string; fee_halalas: number }>(

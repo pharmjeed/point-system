@@ -169,6 +169,8 @@ export class OperatorsService {
       venues_active: number;
       drivers_on_duty: number;
       tickets_today: number;
+      subscribers_active: number;
+      mrr_halalas: number;
       day: string;
     }>(
       `SELECT (SELECT jsonb_object_agg(s.operator_status, s.n)
@@ -179,6 +181,10 @@ export class OperatorsService {
               (SELECT count(*)::int FROM duty_sessions WHERE status <> 'ended') AS drivers_on_duty,
               (SELECT count(*)::int FROM tickets
                 WHERE created_at >= (${TODAY}::timestamp AT TIME ZONE 'Asia/Riyadh')) AS tickets_today,
+              (SELECT count(*)::int FROM subscriptions WHERE status = 'active') AS subscribers_active,
+              (SELECT COALESCE(sum(CASE WHEN billing_cycle = 'yearly' THEN round(price_halalas / 12.0)
+                                        ELSE price_halalas END), 0)::float8
+                 FROM subscriptions WHERE status = 'active') AS mrr_halalas,
               ${TODAY}::text AS day`,
       [now],
     );
@@ -191,6 +197,8 @@ export class OperatorsService {
       venues: { total: r?.venues_total ?? 0, active: r?.venues_active ?? 0 },
       drivers_on_duty: r?.drivers_on_duty ?? 0,
       tickets_today: r?.tickets_today ?? 0,
+      // V2-035 (02 §2 P-01, DEC-537): the active subscribers and MRR across operators (P-07 has the report)
+      subscriptions: { active: r?.subscribers_active ?? 0, mrr_halalas: r?.mrr_halalas ?? 0 },
       day: r?.day ?? null,
       generated_at: now.toISOString(),
     };

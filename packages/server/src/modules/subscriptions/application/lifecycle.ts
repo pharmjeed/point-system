@@ -43,9 +43,10 @@ async function venueInactive(tx: Tx, sub: Pick<SubscriptionRow, 'venue_id' | 'or
 }
 
 async function operatorBlocked(tx: Tx, orgId: string): Promise<boolean> {
-  const r = await tx.one<{ operator_status: string }>(`SELECT operator_status FROM organizations WHERE id = $1`, [
-    orgId,
-  ]);
+  const r = await tx.one<{ operator_status: string }>(
+    `SELECT operator_status FROM organizations WHERE id = $1`,
+    [orgId],
+  );
   return blocked(r.operator_status);
 }
 
@@ -53,7 +54,12 @@ async function operatorBlocked(tx: Tx, orgId: string): Promise<boolean> {
  * A frozen subscription whose own reason is gone: unfrozen with its days added (DEC-536) — unless the other reason
  * holds (a venue closed while its operator was suspended, or the reverse), then it stays frozen under that one.
  */
-async function release(tx: Tx, sub: SubscriptionRow, other: SubscriptionFrozenReason | null, actor: SubActor) {
+async function release(
+  tx: Tx,
+  sub: SubscriptionRow,
+  other: SubscriptionFrozenReason | null,
+  actor: SubActor,
+) {
   if (other) {
     await tx.query(`UPDATE subscriptions SET frozen_reason = $2, version = version + 1 WHERE id = $1`, [
       sub.id,
@@ -86,7 +92,8 @@ export const subscriptionLifecycleEffects: SubscriptionLifecycleHook = {
       return;
     }
     if (blocked(to) && !blocked(from)) {
-      for (const sub of await lockLive(tx, { orgId }, ['active'])) await freeze(tx, sub, 'operator_suspended', actor);
+      for (const sub of await lockLive(tx, { orgId }, ['active']))
+        await freeze(tx, sub, 'operator_suspended', actor);
       return;
     }
     if (!blocked(to) && blocked(from)) {
@@ -114,7 +121,12 @@ export const subscriptionLifecycleEffects: SubscriptionLifecycleHook = {
   },
 
   async onAccountDeleted(tx, { accountId, requestId }) {
-    const subs = await lockLive(tx, { orgId: '', accountId }, ['pending_payment', 'active', 'past_due', 'frozen']);
+    const subs = await lockLive(tx, { orgId: '', accountId }, [
+      'pending_payment',
+      'active',
+      'past_due',
+      'frozen',
+    ]);
     for (const sub of subs)
       await transition(
         tx,

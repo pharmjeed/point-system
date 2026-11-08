@@ -168,7 +168,7 @@ export class IntakePassUseCase {
     );
     await markPassUsed(tx, pass.accountId, pass.step);
     // V2-033 (docs/v2/04 §2 rule 1, DEC-535): the account's active subscription at this venue covering the scanned
-    // vehicle makes the visit the subscription's («مشترك بوينت», nothing due at the handover); «إتمام التسجيل»
+    // vehicle makes the visit the subscription's (the badge «مشترك {brand}», nothing due at the handover); «إتمام التسجيل»
     // decides again with the final plate. The driver learns only covered / not covered (01 §4), never the plan.
     const coverage = await subscriptionCoverage(tx, updated);
     const entitlementChange = await applySubscriptionEntitlement(tx, updated);

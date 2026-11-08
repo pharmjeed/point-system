@@ -1,17 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
-import { Building2, CarFront, MapPin, Ticket } from 'lucide-react';
+import { Building2, CarFront, MapPin, Repeat, Ticket } from 'lucide-react';
 import { platformApi, platformKeys } from '@/api/platform';
 import { Card, KpiStrip } from '@/components';
 import { QueryError } from '@/features/supervisor/ui';
 import { p01 } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
-import { formatDate, formatTime } from '@/lib/format';
+import { formatDate, formatHalalas, formatTime } from '@/lib/format';
 import { usePlatformAccount } from './PlatformLayout';
 
 /**
  * P-01 «النظرة العامة» (V2-003, docs/v2/02 §2): counts only across every operator — operators by status, venues,
- * drivers on an open duty, tickets since midnight in Riyadh. Every platform role sees it. Subscribers and MRR join in
- * V4 (V2-035).
+ * drivers on an open duty, tickets since midnight in Riyadh, and (V2-035) the active subscribers with the MRR. Every
+ * platform role sees it.
  */
 export function PlatformOverviewPage() {
   const me = usePlatformAccount();
@@ -59,6 +59,15 @@ export function PlatformOverviewPage() {
               icon: Ticket,
               value: o?.tickets_today ?? 0,
               meta: o ? fmt(p01.dayMeta, { day: formatDate(`${o.day}T12:00:00Z`) }) : undefined,
+            },
+            // V2-035 (02 §2 P-01): the active subscribers and MRR
+            {
+              label: p01.subscribers,
+              icon: Repeat,
+              value: o?.subscriptions?.active ?? 0,
+              meta: o?.subscriptions
+                ? fmt(p01.mrrMeta, { amount: formatHalalas(o.subscriptions.mrr_halalas) })
+                : undefined,
             },
           ]}
         />

@@ -81,7 +81,9 @@ describe('entitlementBadgeOf (O-02)', () => {
       tone: 'included',
       text: entitlementBadge.included,
     });
-    expect(entitlementBadgeOf('subscription', null)?.text).toBe(entitlementBadge.subscription);
+    // V2-033: «مشترك بوينت» with the staff brand filled in (canon §1: never a literal in the code)
+    expect(entitlementBadgeOf('subscription', null, 'X')?.text).toBe('مشترك X');
+    expect(entitlementBadge.subscription).toContain('{brand}');
     expect(entitlementBadgeOf('app_paid', { amountHalalas: 2000 })?.text).toBe(entitlementBadge.appPaid);
     // V2-022 (O-03, DEC-522): a visit paid in the app is `collected` with `app_paid`: D-11 shows «مدفوع في
     // التطبيق» and asks for no cash (nothing is due)

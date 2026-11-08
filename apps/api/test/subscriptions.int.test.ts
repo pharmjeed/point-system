@@ -17,7 +17,6 @@ import {
   CustomerHomeSchema,
   CustomerLocationDetailSchema,
   CustomerSubscriptionCheckoutSchema,
-  CustomerSubscriptionListSchema,
   CustomerSubscriptionSchema,
   successEnvelopeSchema,
 } from '@point/shared/customer';
@@ -110,13 +109,14 @@ async function vehicle(a: Account): Promise<string> {
 }
 
 const bearer = (a: Account) => ({ Authorization: `Bearer ${a.access}` });
-const cmd = (a: Account, method: 'post' | 'put', path: string, body: unknown, key: string = newKey()) =>
-  t
-    .http()
-    [method](path)
+const cmd = (a: Account, method: 'post' | 'put', path: string, body: unknown, key: string = newKey()) => {
+  const server = t.http();
+  const req = method === 'post' ? server.post(path) : server.put(path);
+  return req
     .set(bearer(a))
     .set('Idempotency-Key', key)
     .send(body as object);
+};
 const token = (card: { number: string }) => sim.client.tokenize(card.number);
 const subscribeBody = async (o: {
   vehicles: string[];
@@ -302,7 +302,7 @@ describe('V2-030 — P-05 plans (platform.plan_manage)', () => {
       if (!allowed) expect(r.body.error.code).toBe('PERMISSION_DENIED');
     }
     const r = await platformGet(`/v1/platform/plans?venue_id=${RMS}`, 'platform_owner');
-    const venue = r.body.data.items[0];
+    const venue = r.body.data[0];
     expect(venue).toMatchObject({ venue_id: RMS, subscriptions_enabled: true, subscriptions_allowed: true });
     expect(venue.plans.map((p: any) => p.plan_id)).toContain(planId);
     expect(r.headers['cache-control']).toContain('no-store');
@@ -374,7 +374,7 @@ describe('V2-030 — P-05 plans (platform.plan_manage)', () => {
       monthly_price_halalas: 55_000,
     });
     const list = await platformGet(`/v1/platform/plans?venue_id=${RMS}`);
-    const retired = list.body.data.items[0].plans.find((p: any) => p.plan_id === old);
+    const retired = list.body.data[0].plans.find((p: any) => p.plan_id === old);
     expect(retired).toMatchObject({ status: 'retired', replaced_by_plan_id: next.body.data.plan_id });
     const again = await platformPost(`/v1/platform/plans/${old}/retire`, 'platform_finance', {
       reason: 'مرة ثانية',
@@ -826,7 +826,7 @@ describe('V2-035 — P-07 subscriptions and report (platform.subscription_read)'
     const id = checkout(await subscribe(a, { vehicles: [v] })).subscription.subscription_id;
     const list = await platformGet(`/v1/platform/subscriptions?status=active&venue_id=${RMS}&limit=100`);
     expect(list.status, JSON.stringify(list.body)).toBe(200);
-    const item = list.body.data.items.find((x: any) => x.subscription_id === id);
+    const item = list.body.data.find((x: any) => x.subscription_id === id);
     expect(item).toMatchObject({ status: 'active', venue_id: RMS, price_halalas: MONTHLY });
     expect(item.phone_masked).not.toContain(a.phone.slice(-7, -3));
     expect(JSON.stringify(list.body)).not.toContain(a.phone);
@@ -855,9 +855,7 @@ describe('V2-035 — P-07 subscriptions and report (platform.subscription_read)'
     const due = await platformGet(
       `/v1/platform/subscriptions?renews_before=${encodeURIComponent(new Date(t.clock.now().getTime() + 40 * DAY).toISOString())}`,
     );
-    expect(due.body.data.items.every((x: any) => x.status === 'active' && !x.cancel_at_period_end)).toBe(
-      true,
-    );
+    expect(due.body.data.every((x: any) => x.status === 'active' && !x.cancel_at_period_end)).toBe(true);
   });
 });
 

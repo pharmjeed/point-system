@@ -39,6 +39,10 @@ type RuntimeOption = PaymentsRuntime | (() => PaymentsRuntime);
 export function subscriptionsJobs(opts: { runtime?: RuntimeOption } = {}): JobHandler[] {
   const given = opts.runtime;
   const runtime =
-    given instanceof PaymentsRuntime ? () => given : typeof given === 'function' ? given : defaultPaymentsRuntime;
+    given instanceof PaymentsRuntime
+      ? () => given
+      : typeof given === 'function'
+        ? given
+        : defaultPaymentsRuntime;
   return subscriptionJobs(runtime);
 }

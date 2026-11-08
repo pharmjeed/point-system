@@ -202,6 +202,27 @@ export const routes: RouteObject[] = [
               Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformPaymentPage,
             }),
           },
+          // P-05 and P-07 (V2-030, V2-035)
+          {
+            path: paths.platformPlans,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPlansPage')).PlatformPlansPage,
+            }),
+          },
+          {
+            path: paths.platformSubscriptions,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformSubscriptionsPage'))
+                .PlatformSubscriptionsPage,
+            }),
+          },
+          {
+            path: `${paths.platformSubscriptions}/:subscriptionId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformSubscriptionsPage'))
+                .PlatformSubscriptionPage,
+            }),
+          },
         ],
       },
       ...galleryRoutes,

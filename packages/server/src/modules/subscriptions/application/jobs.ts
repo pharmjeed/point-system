@@ -78,8 +78,22 @@ export const graceExpireJob: JobHandler = {
 
 type Prepared =
   | { kind: 'done'; stale: boolean }
-  | { kind: 'charge'; paymentId: string; token: string; amount: number; subscriptionId: string; attempt: number }
-  | { kind: 'resend'; paymentId: string; token: string; amount: number; subscriptionId: string; attempt: number };
+  | {
+      kind: 'charge';
+      paymentId: string;
+      token: string;
+      amount: number;
+      subscriptionId: string;
+      attempt: number;
+    }
+  | {
+      kind: 'resend';
+      paymentId: string;
+      token: string;
+      amount: number;
+      subscriptionId: string;
+      attempt: number;
+    };
 
 /**
  * `job.subscription_renew` (external; DEC-533): the renewal at the end of a period and its grace retries (day 1, day 3).
@@ -102,25 +116,23 @@ export function subscriptionRenewJob(runtime: () => PaymentsRuntime): JobHandler
       const prepared = await ctx.db.transaction((tx) => prepare(tx, rt, ctx));
       if (prepared.kind === 'done') return prepared.stale ? STALE_TIMER : undefined;
       const payments = new OnlinePayments(ctx.db, rt);
-      let actionUrl: string | null = null;
-      let status: string | null = null;
+      let sent: Awaited<ReturnType<OnlinePayments['sendInitiated']>>;
       try {
-        const sent = await payments.sendInitiated(prepared.paymentId, {
+        sent = await payments.sendInitiated(prepared.paymentId, {
           source: { type: 'saved', paymentMethodId: '', token: prepared.token },
           callbackUrl: rt.env.CUSTOMER_PAY_CALLBACK_URL,
           amountHalalas: prepared.amount,
           purpose: 'subscription',
           subscriptionId: prepared.subscriptionId,
         });
-        actionUrl = sent.actionUrl;
-        status = sent.payment.status;
       } catch (e) {
         if (e instanceof AppError && e.code === 'PAYMENT_FAILED') return; // the hook counted the failure
         if (e instanceof AppError && (e.code === 'DEPENDENCY_TIMEOUT' || e.code === 'SERVICE_UNAVAILABLE'))
           throw new RetryableJobError(e.code, backoffMs(ctx.row.attempts + 1));
         throw e;
       }
-      if (status === 'initiated' || status === 'authorized') {
+      const { actionUrl } = sent;
+      if (sent.payment.status === 'initiated' || sent.payment.status === 'authorized') {
         await ctx.db.transaction(async (tx) => {
           const sub = await subscriptionById(tx, prepared.subscriptionId, true);
           if (!sub) return;
@@ -166,7 +178,14 @@ async function prepare(tx: Tx, rt: PaymentsRuntime, ctx: JobContext): Promise<Pr
   if (prior) {
     // this attempt ran already: resent only if it never reached the gateway, else its outcome is the hook's
     if (prior.status === 'initiated' && !prior.gateway_payment_id && card?.token)
-      return { kind: 'resend', paymentId: prior.id, token: card.token, amount, subscriptionId: sub.id, attempt };
+      return {
+        kind: 'resend',
+        paymentId: prior.id,
+        token: card.token,
+        amount,
+        subscriptionId: sub.id,
+        attempt,
+      };
     return { kind: 'done', stale: true };
   }
   if (!card || card.account_status !== 'active' || !card.id) {

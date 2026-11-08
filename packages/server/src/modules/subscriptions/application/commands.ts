@@ -5,7 +5,13 @@ import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import type { ClientInfo } from '../../identity-access/application/auth-service.js';
 import { assertOwnVehicles, lockAccount } from './checkout.js';
-import { auditTransition, endPatch, publishSubscriptionUpdated, transition, type SubActor } from './machine.js';
+import {
+  auditTransition,
+  endPatch,
+  publishSubscriptionUpdated,
+  transition,
+  type SubActor,
+} from './machine.js';
 import { subscriptionById, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from './rows.js';
 import { customerSubscriptions } from './views.js';
 
@@ -48,7 +54,8 @@ export class SubscriptionCommands {
   async cancel(tx: Tx, actor: CustomerActorContext, id: string, client: ClientInfo) {
     const sub = await ownLocked(tx, actor, id);
     const who = actorOf(actor, client);
-    if (sub.status === 'pending_payment') await transition(tx, sub, 'abandon', endPatch(tx, sub, 'abandoned'), who);
+    if (sub.status === 'pending_payment')
+      await transition(tx, sub, 'abandon', endPatch(tx, sub, 'abandoned'), who);
     else if (sub.status === 'past_due')
       await transition(tx, sub, 'past_due_cancel', endPatch(tx, sub, 'past_due_canceled'), who);
     else if (sub.status === 'active' || sub.status === 'frozen') {
@@ -64,7 +71,10 @@ export class SubscriptionCommands {
         });
         await publishSubscriptionUpdated(tx, updated);
       } else
-        await auditTransition(tx, sub, 'subscription.cancel_at_period_end', who, { status: sub.status, noop: true });
+        await auditTransition(tx, sub, 'subscription.cancel_at_period_end', who, {
+          status: sub.status,
+          noop: true,
+        });
     } else throw notActive(sub, 'subscription.cancel');
     return view(tx, this.env, actor.accountId, sub.id);
   }
@@ -110,7 +120,11 @@ export class SubscriptionCommands {
       return view(tx, this.env, actor.accountId, sub.id);
     }
     // once per period (01 R6: «تغيير السيارة المشمولة مرة كل دورة»)
-    if (sub.vehicles_changed_at && sub.current_period_start && sub.vehicles_changed_at >= sub.current_period_start)
+    if (
+      sub.vehicles_changed_at &&
+      sub.current_period_start &&
+      sub.vehicles_changed_at >= sub.current_period_start
+    )
       throw new AppError('SUBSCRIPTION_VEHICLES_LOCKED', {
         subscription_id: sub.id,
         available_at: sub.current_period_end?.toISOString() ?? null,

@@ -93,6 +93,8 @@ export interface PlatformOverview {
   venues: { total: number; active: number };
   drivers_on_duty: number;
   tickets_today: number;
+  /** V2-035: active subscribers and MRR (older servers omit it) */
+  subscriptions?: { active: number; mrr_halalas: number };
   day: string;
   generated_at: string;
 }
