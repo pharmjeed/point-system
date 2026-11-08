@@ -1,9 +1,10 @@
 /**
- * Web stand-in for expo-secure-store, used only by the e2e web export (V2-018, DEC-551): metro.config.js maps
- * `expo-secure-store` here for `platform === 'web'`; iOS and Android keep the Keychain / Keystore module untouched.
- * expo-secure-store has no web implementation (every call throws), and the e2e harness must not put tokens in web
- * storage either, so values live in memory for the page's lifetime — the same lifetime as the in-memory fake backend
- * the export runs against (a reload starts a fresh install, as reinstalling the app does).
+ * Web stand-in for expo-secure-store, used only by the one web export (`export:web`: the e2e suite V2-018 and the
+ * store screenshots V2-052; DEC-551 as unified in DEC-568): metro.config.js maps `expo-secure-store` here for
+ * `platform === 'web'`; iOS and Android keep the Keychain / Keystore module untouched, and ../session/secureStore.ts
+ * stays the one place of the keys. expo-secure-store has no web implementation (every call throws), and nothing may
+ * go to localStorage, sessionStorage or cookies either, so values live in memory for the page's lifetime — the same
+ * lifetime as the in-memory fake backend the export runs against (a reload starts a fresh install).
  */
 export type SecureStoreOptions = { keychainAccessible?: number; keychainService?: string };
 

@@ -294,6 +294,8 @@ WA_VERIFY_TOKEN=                     # webhook GET verification
 # Send pacing is NOT configured here: org settings wa.global_mps, wa.pair_bucket_capacity, wa.pair_refill_s (Canon §12, file 12 §5)
 WA_HTTP_TIMEOUT_MS=10000
 WA_TEST_RECIPIENT_ALLOWLIST=         # staging: comma separated E.164 numbers; others are refused
+WA_TEMPLATE_SET=v1                   # V2-050 (DEC-555): live customer template set v1 (masaf_*_v1) | v2 (point_*_v2) once Meta approved all of v2
+CUSTOMER_APP_LINK=https://point.example/app  # V2-050 (DEC-556): https app page in the WhatsApp replies W-09/W-10; empty = none; placeholder refused in production
 
 # ---------- Web Push (VAPID) ----------
 VAPID_PUBLIC_KEY=

@@ -1,4 +1,4 @@
-import { waTemplateById, type WaMessageId } from '@point/shared';
+import type { WaMessageId } from '@point/shared';
 import { lockTickets } from '../../../core/db/locks.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
@@ -11,6 +11,7 @@ import { activeChannel, type ChannelRow } from '../infra/channel.js';
 import { publishTicketUpdated } from '../infra/realtime.js';
 import { revokeActionTokens } from './action-tokens.js';
 import { newLinkCode, waMeLink, type LinkCodeRow } from './link-codes.js';
+import { liveWaCatalog } from './live-catalog.js';
 import type { LinkCodeContext, LinkCodeResult } from './seams.js';
 import { templateStatus } from './templates.js';
 import { changeWaLinkStatus, recordWaLinkChange } from './ticket-link.js';
@@ -35,9 +36,12 @@ export interface LinkCodeQr {
   qr_text: string;
 }
 
-/** WA_TEMPLATE_NOT_APPROVED — the early check of 08 §4.13 (submit-intake, whatsapp-link, handover-code/resend). */
+/**
+ * WA_TEMPLATE_NOT_APPROVED — the early check of 08 §4.13 (submit-intake, whatsapp-link, handover-code/resend), on the
+ * template of the live set the sender will use (DEC-555).
+ */
 export async function assertTemplateApproved(tx: Tx, orgId: string, purpose: WaMessageId): Promise<void> {
-  const def = waTemplateById(purpose);
+  const def = liveWaCatalog().byId(purpose);
   if (def.kind !== 'template') return;
   const status = await templateStatus(tx, orgId, def.name);
   if (status !== 'approved')
@@ -49,7 +53,7 @@ export async function assertTemplateApproved(tx: Tx, orgId: string, purpose: WaM
  * customer's service window is closed (TC-WA-06).
  */
 export async function assertCodeMessageSendable(tx: Tx, orgId: string, customerId: string): Promise<void> {
-  const def = waTemplateById('W-05');
+  const def = liveWaCatalog().byId('W-05');
   const status = await templateStatus(tx, orgId, def.name);
   if (status === 'approved') return;
   const c = await tx.maybeOne<{ last_inbound_at: Date | null }>(

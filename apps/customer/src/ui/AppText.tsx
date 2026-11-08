@@ -1,7 +1,7 @@
 /**
  * Text with the type scale of 03 §2.3 and IBM Plex (brand §5). Each weight is its own font family (no
  * `fontWeight` with custom fonts on Android). `textAlign: 'left'` means «start»: React Native swaps it in RTL
- * (`textStart`: `'start'` on the e2e web export, DEC-551).
+ * (`textStart`: unset on the web export, so the browser's start follows the text, DEC-551).
  */
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, type StyleProp, type TextStyle } from 'react-native';

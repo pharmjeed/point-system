@@ -10,7 +10,13 @@ import {
   WA_TEMPLATES,
   WA_TEMPLATE_DEFINITIONS,
   WA_TEMPLATE_SOURCES,
+  WA_TEMPLATE_SOURCES_V2,
   WA_TEMPLATE_NAMES,
+  WA_TEMPLATE_NAMES_V2,
+  WA_TEMPLATES_V2,
+  WA_TEMPLATE_DEFINITIONS_V2,
+  WA_APP_LINE_TOKEN,
+  waTemplateParams,
   WaSendJobPayloadSchema,
   customerOtpMessage,
   lintWaCatalog,
@@ -77,6 +83,7 @@ describe('PNT-039 — W-01 … W-12 texts equal 14 §4 word for word', () => {
     ) as {
       templates: {
         purpose: string;
+        set: string;
         name: string;
         language: string;
         category: string;
@@ -84,9 +91,11 @@ describe('PNT-039 — W-01 … W-12 texts equal 14 §4 word for word', () => {
         buttons: unknown[];
       }[];
     };
+    // both template sets, v1 then v2 (DEC-555)
     expect(
       fixture.templates.map((t) => ({
         id: t.purpose,
+        set: t.set,
         name: t.name,
         language: t.language,
         category: t.category,
@@ -94,14 +103,17 @@ describe('PNT-039 — W-01 … W-12 texts equal 14 §4 word for word', () => {
         buttons: t.buttons,
       })),
     ).toEqual(
-      WA_TEMPLATE_SOURCES.filter((t) => t.kind === 'template').map((t) => ({
-        id: t.id,
-        name: t.name,
-        language: 'ar',
-        category: 'UTILITY',
-        body: t.body_ar,
-        buttons: t.button ? [{ type: 'QUICK_REPLY', text: t.button.text }] : [],
-      })),
+      [...WA_TEMPLATE_SOURCES, ...WA_TEMPLATE_SOURCES_V2]
+        .filter((t) => t.kind === 'template')
+        .map((t) => ({
+          id: t.id,
+          set: t.set,
+          name: t.name,
+          language: 'ar',
+          category: 'UTILITY',
+          body: t.body_ar,
+          buttons: t.button ? [{ type: 'QUICK_REPLY', text: t.button.text }] : [],
+        })),
     );
   });
 });
@@ -321,5 +333,149 @@ describe('V2-010 — the customer app sign-in template (AUTHENTICATION, DEC-460,
         buttons: [{ type: 'OTP', text: c.customerOtp.button.text[language] }],
       })),
     );
+  });
+});
+
+describe('V2-050 — the v2 template set, the live-set switch and the app line (DEC-555 … DEC-558)', () => {
+  const doc14v2 = section(doc14, '## 4ب.');
+  const v2 = waCatalog('BRAND_X', { set: 'v2' });
+  const link = 'https://apps.example.org/point';
+  const brands = { customer: ['BRAND_X'], staff: ['STAFF_X'] };
+
+  it('the v2 bodies equal 14 §4ب word for word (default brand), with the session replies of §4', () => {
+    const fromDoc = tableRows(doc14v2)
+      .filter((r) => /^W-\d\d$/.test(r[0] ?? ''))
+      .map((r) => ({ id: r[0], name: backticks(r[1] ?? '')[0], text: br(r[2] ?? '') }));
+    expect(
+      WA_TEMPLATES_V2.filter((t) => t.kind === 'template').map((t) => ({
+        id: t.id,
+        name: t.name,
+        text: t.body_ar,
+      })),
+    ).toEqual(fromDoc);
+    expect(WA_TEMPLATES_V2.filter((t) => t.kind === 'template').map((t) => t.name)).toEqual([
+      ...WA_TEMPLATE_NAMES_V2,
+    ]);
+    // W-09 … W-12 are one set: the same texts in v1 and v2
+    expect(WA_TEMPLATES_V2.filter((t) => t.kind === 'session')).toEqual(
+      WA_TEMPLATES.filter((t) => t.kind === 'session'),
+    );
+  });
+
+  it('the v2 set is valid for the linter: one button «طلب السيارة», UTILITY, no links, ≤ 1024, examples', () => {
+    expect(lintWaCatalog(WA_TEMPLATES_V2)).toEqual([]);
+    expect(lintWaCatalog(v2.templates, brands)).toEqual([]);
+    expect(v2.templates.filter((t) => t.button).map((t) => t.id)).toEqual(['W-01']);
+    for (const t of v2.templates.filter((x) => x.kind === 'template')) {
+      expect(t).toMatchObject({ set: 'v2', category: 'UTILITY', language: 'ar' });
+      expect(t.body_ar.length).toBeLessThanOrEqual(1024);
+    }
+    // a v2 name in a v1 catalog (mixed sets) is refused
+    const mixed = WA_TEMPLATES.map((t) => (t.id === 'W-02' ? WA_TEMPLATES_V2[1]! : t));
+    expect(lintWaCatalog(mixed)).toContainEqual(expect.stringContaining('differ from canon'));
+  });
+
+  it('every message names its venue; W-01 adds the operator line and keeps opening with the brand', () => {
+    for (const t of WA_TEMPLATE_SOURCES_V2.filter((x) => x.kind === 'template'))
+      expect(t.variable_names).toContain('venue_name');
+    expect(v2.byId('W-01').body_ar.startsWith('BRAND_X — {{1}} — تذكرة {{2}}\nتشغيل: {{3}}')).toBe(true);
+    expect(v2.byId('W-06').body_ar).toBe('تم تسليم سيارتك رقم {{1}} في {{2}}. شكرًا لاختيارك BRAND_X.');
+  });
+
+  it('the sender fills each set from the same named facts (waTemplateParams)', () => {
+    const facts = {
+      venue_name: 'قاعة ريماس',
+      display_number: '125',
+      operator_name: 'شركة ريماس للضيافة',
+      vehicle_description: 'تويوتا كامري بيضاء — لوحة 4821',
+      claim_code: '482731',
+    };
+    expect(waTemplateParams(waCatalog().byId('W-01'), facts)).toEqual([
+      'قاعة ريماس',
+      '125',
+      'تويوتا كامري بيضاء — لوحة 4821',
+    ]);
+    expect(waTemplateParams(v2.byId('W-01'), facts)).toEqual([
+      'قاعة ريماس',
+      '125',
+      'شركة ريماس للضيافة',
+      'تويوتا كامري بيضاء — لوحة 4821',
+    ]);
+    expect(waTemplateParams(waCatalog().byId('W-05'), facts)).toEqual(['125', '482731']);
+    expect(waTemplateParams(v2.byId('W-05'), facts)).toEqual(['125', 'قاعة ريماس', '482731']);
+    expect(renderWaText(v2.byId('W-05').body_ar, waTemplateParams(v2.byId('W-05'), facts))).toContain(
+      'في قاعة ريماس.\nرمز التسليم: 482731',
+    );
+    // the Meta examples are the same facts in the same order
+    for (const t of WA_TEMPLATES_V2.filter((x) => x.kind === 'template'))
+      expect(t.example).toEqual(waTemplateParams(t, facts));
+  });
+
+  it('the live set chooses names, texts and definitions; the sync follows the live set and every later one', () => {
+    const v1 = waCatalog('BRAND_X');
+    expect(v1.templateSet).toBe('v1');
+    expect(v1.templateNames).toEqual([...WA_TEMPLATE_NAMES]);
+    expect(v1.syncDefinitions.map((d) => d.name)).toEqual([...WA_TEMPLATE_NAMES, ...WA_TEMPLATE_NAMES_V2]);
+    expect(v1.isLiveTemplate('masaf_ticket_issued_v1')).toBe(true);
+    expect(v1.isLiveTemplate('point_ticket_issued_v2')).toBe(false);
+    expect(v2.templateNames).toEqual([...WA_TEMPLATE_NAMES_V2]);
+    expect(v2.definitions.map((d) => d.name)).toEqual([...WA_TEMPLATE_NAMES_V2]);
+    expect(v2.syncDefinitions).toEqual(v2.definitions);
+    expect(v2.isLiveTemplate('point_vehicle_ready_v2')).toBe(true);
+    // the v2 definitions synced by a v1 server carry the configured brand too
+    const synced = v1.syncDefinitions.find((d) => d.name === 'point_ticket_issued_v2')!;
+    expect((synced.components[0] as { text: string }).text).toBe(v2.byId('W-01').body_ar);
+    // W-01 keeps its single QUICK_REPLY in both sets
+    expect(v2.definitions[0]!.components[1]).toEqual({
+      type: 'BUTTONS',
+      buttons: [{ type: 'QUICK_REPLY', text: 'طلب السيارة' }],
+    });
+    // the sign-in template is the same in both sets (DEC-557)
+    expect(v2.authDefinitions).toEqual(v1.authDefinitions);
+    expect(WA_TEMPLATE_DEFINITIONS_V2.map((d) => d.name)).toEqual([...WA_TEMPLATE_NAMES_V2]);
+    expect(waCatalog('BRAND_X', { set: 'v2' })).toBe(v2);
+  });
+
+  it('the app line: only in W-09 «delivered» and W-10, only with CUSTOMER_APP_LINK, never in a template', () => {
+    const withLink = waCatalog('BRAND_X', { set: 'v2', appLink: link });
+    const line = `\n\nلطلب سيارتك ومتابعتها في زيارتك القادمة، حمّل تطبيق BRAND_X: ${link}`;
+    expect(withLink.appLink).toBe(link);
+    expect(withLink.messageText('W-09', 'delivered')).toBe(
+      `تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك BRAND_X.${line}`,
+    );
+    expect(withLink.messageText('W-10')).toBe(`${v2.messageText('W-10')}${line}`);
+    const carrying = withLink.templates.flatMap((t) =>
+      [t.body_ar, ...Object.values(t.variants ?? {})].filter((x) => x.includes(link)).map(() => t.id),
+    );
+    expect(carrying).toEqual(['W-09', 'W-10']);
+    expect(withLink.definitions).toEqual(v2.definitions);
+    expect(JSON.stringify(withLink.authDefinitions)).not.toContain(link);
+    // no link → the texts of 14 §4 exactly, and no token is left
+    expect(v2.messageText('W-09', 'delivered')).toBe('تم تسليم سيارتك رقم {{1}}. شكرًا لاختيارك BRAND_X.');
+    expect(JSON.stringify(withLink.templates)).not.toContain(WA_APP_LINE_TOKEN);
+    expect(JSON.stringify(v2.templates)).not.toContain(WA_APP_LINE_TOKEN);
+    // the linter allows the configured link in a session reply only, and only as https
+    expect(lintWaCatalog(withLink.templates, brands, { appLink: link })).toEqual([]);
+    expect(lintWaCatalog(withLink.templates, brands)).toContainEqual(expect.stringContaining('links'));
+    expect(
+      lintWaCatalog(
+        withLink.templates.map((t) => (t.id === 'W-06' ? { ...t, body_ar: `${t.body_ar} ${link}` } : t)),
+        brands,
+        { appLink: link },
+      ),
+    ).toContainEqual('W-06: links are not allowed');
+    expect(lintWaCatalog(v2.templates, brands, { appLink: 'sa.point.app://home' })).toContainEqual(
+      'the app link must be an https URL',
+    );
+    expect(waCatalog('BRAND_X', { set: 'v2', appLink: '  ' })).toBe(v2);
+  });
+
+  it('the Meta submission sheet docs/whatsapp-templates-v2.md carries the code definitions verbatim (DEC-559)', () => {
+    const sheet = readDoc('whatsapp-templates-v2.md');
+    const blocks = [...sheet.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => JSON.parse(m[1]!) as unknown);
+    const d = waCatalog(undefined, { set: 'v2' });
+    expect(blocks).toEqual([...d.definitions, ...d.authDefinitions]);
+    const bodies = [...sheet.matchAll(/المتن \(Body\):\n\n```text\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+    expect(bodies).toEqual(d.templates.filter((t) => t.kind === 'template').map((t) => t.body_ar));
   });
 });

@@ -90,6 +90,15 @@ export async function expectRtlPhone(page: Page): Promise<void> {
     return { width, wide: wide.slice(0, 5) };
   });
   expect(overflow.wide, `elements outside a ${overflow.width}px screen`).toEqual([]);
+  // Arabic text starts on the right: never pinned to the left edge (DEC-551, `textStart`)
+  const leftArabic = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('#root [dir="auto"]'))
+      .filter((el) => el.getBoundingClientRect().width > 0 && /^[؀-ۿ]/.test(el.textContent ?? ''))
+      .filter((el) => getComputedStyle(el).textAlign === 'left')
+      .map((el) => (el.textContent ?? '').slice(0, 30))
+      .slice(0, 5),
+  );
+  expect(leftArabic, 'Arabic text aligned to the left').toEqual([]);
 }
 
 /**

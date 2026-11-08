@@ -13,7 +13,9 @@
     "test": "vitest run --root ../.. --project customer-unit",
     "test:e2e": "playwright test",
     "export": "expo export --platform ios --platform android --output-dir dist",
-    "export:web": "CUSTOMER_E2E_WEB=1 CUSTOMER_API_MODE=fake expo export --platform web --output-dir dist-web --clear",
+    "export:web": "CUSTOMER_WEB_EXPORT=1 CUSTOMER_API_MODE=fake expo export --platform web --output-dir dist-web --clear",
+    "store:screenshots": "node scripts/store-screenshots.mjs",
+    "store:icon": "node scripts/store-icon.mjs",
     "doctor": "npx --yes expo-doctor"
   },
   "dependencies": {

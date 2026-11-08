@@ -13,7 +13,7 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 ```
 
 - **Expo Go:** امسح رمز QR من الطرفية بتطبيق Expo Go (آيفون أو أندرويد) بنسخة SDK 58. كل الحزم المستعملة مضمّنة في Expo Go.
-- **Dev build** (لاختبار اسم التطبيق بالعربية والأيقونة وشاشة البداية واتجاه RTL الأصلي): `npx expo prebuild` ثم `npx expo run:ios` / `npx expo run:android` محليًا. المجلدان `ios/` و`android/` مولّدان ولا يُحفظان في المستودع. لا يوجد مشروع EAS ولا بيانات متجر في المستودع.
+- **Dev build** (لاختبار اسم التطبيق بالعربية والأيقونة وشاشة البداية واتجاه RTL الأصلي): `npx expo prebuild` ثم `npx expo run:ios` / `npx expo run:android` محليًا. المجلدان `ios/` و`android/` مولّدان ولا يُحفظان في المستودع. بناء EAS والنشر في «المتاجر» أدناه.
 - **حزمة الإنتاج للتحقق:** `pnpm --filter @point/customer run export` (يصدّر حزمتي iOS وأندرويد إلى `dist/`).
 
 ## الإعداد (متغيرات بيئة يقرؤها `app.config.ts`)
@@ -23,9 +23,13 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 | `CUSTOMER_API_MODE` | `fake` إن لم يُعط عنوان | `fake` الخادم الوهمي، `http` الخادم الحقيقي |
 | `CUSTOMER_API_BASE_URL` | — | أصل الـAPI (`https://…`)؛ وجوده يعني `http` |
 | `BRAND_CUSTOMER_APP_NAME_AR` / `_EN` | من `CUSTOMER_APP_BRAND_DEFAULTS` | اسم العلامة للعميل (V2-D01، DEC-480) — لا يُكتب الاسم في الكود |
-| `CUSTOMER_IOS_BUNDLE_ID` / `CUSTOMER_ANDROID_PACKAGE` | `sa.point.app` | معرّفا التطبيق |
+| `CUSTOMER_IOS_BUNDLE_ID` / `CUSTOMER_ANDROID_PACKAGE` | `sa.point.app` | معرّفا التطبيق؛ لا يتغيران بعد أول رفع للمتجر (DEC-565) |
 | `CUSTOMER_URL_SCHEME` | معرّف الحزمة | مخطط الروابط العميقة |
 | `CUSTOMER_FORCE_LOCALE` | — | `ar` أو `en` لفرض اللغة في التطوير |
+| `EAS_PROJECT_ID` (أو `CUSTOMER_EAS_PROJECT_ID`) / `EXPO_OWNER` | — | مشروع EAS ومالكه (الإشعارات والبناء، DEC-566)؛ لا يُحفظان في المستودع |
+| `GOOGLE_SERVICES_JSON` | — | مسار `google-services.json` (FCM لإشعارات أندرويد)، متغير ملف في EAS |
+| `CUSTOMER_LINK_DOMAIN` | `pointsa.net` | نطاق روابط التطبيق `https://{domain}/app…` (DEC-566) |
+| `CUSTOMER_WEB_EXPORT` | — | `1` يضيف هدف الويب لتصدير الويب الواحد (`export:web`): مجموعة e2e ولقطات المتجر وحدهما، ولا يُنشر (DEC-550، DEC-568) |
 | `CUSTOMER_ANDROID_GOOGLE_MAPS_API_KEY` | — | مفتاح Google Maps لأندرويد (خريطة `C-07`)؛ يُعطى للبناء من البيئة ولا يُحفظ في المستودع. بلا مفتاح تختفي الخريطة على أندرويد وتبقى القائمة بروابط «فتح في الخرائط»؛ iOS يرسم Apple Maps بلا مفتاح (DEC-506) |
 | `CUSTOMER_SUPPORT_WHATSAPP` / `CUSTOMER_SUPPORT_EMAIL` | — | «تواصل معنا» في `C-19`: رقم واتساب الدعم (أرقام E.164 بلا `+`) وبريده؛ بلا إعداد تظهر «قنوات الدعم تُضاف قريبًا» (DEC-509) |
 | `CUSTOMER_MOYASAR_PUBLISHABLE_KEY` | — | مفتاح Moyasar **العام** (`pk_…`) لترميز البطاقة على الجهاز (`C-10`، `C-18`)؛ مفتاح سري `sk_` يُرفض، و`pk_test_` يُرفض في بناء الإصدار ما لم يُعط `CUSTOMER_MOYASAR_ALLOW_TEST_KEY=true`. بلا مفتاح لا تُعرض إضافة البطاقة (DEC-524) |
@@ -91,7 +95,9 @@ CUSTOMER_LIVE_API_URL=http://127.0.0.1:3000 WA_SIMULATOR_URL=http://127.0.0.1:40
 ## البنية
 
 ```
-app.config.ts        Expo: العلامة من الإعداد، الألوان من brand/tokens، الأيقونة وشاشة البداية من brand/
+app.config.ts        Expo: العلامة من الإعداد، الألوان من brand/tokens، الأيقونة وشاشة البداية من brand/، الخصوصية والروابط (V2-052)
+eas.json             ملفات بناء EAS (V2-052)
+scripts/             لقطات المتجر، الأيقونة 1024، ملفا .well-known (V2-052)
 metro.config.js      @point/shared من مصادره (شرط @point/source، و‎./x.js ← ./x.ts)
 assets/brand/        نسخ كما هي من brand/app-icons و brand/logo/point/png
 src/app/             الشاشات (Expo Router): welcome C-01، phone C-02، otp C-03، profile C-04،
@@ -113,7 +119,15 @@ e2e/                 Playwright على تصدير الويب (V2-018)، و`e2e/m
 
 ## الإشعارات (V2-016، DEC-519)
 
-يحتاج رمز Expo معرّف مشروع EAS: `CUSTOMER_EAS_PROJECT_ID` ← `extra.eas.projectId` (لا يُحفظ في المستودع، DEC-483). بدونه تقول `C-19` «الإشعارات غير متاحة في هذه النسخة» ولا تظهر بطاقة الإذن في `C-12`. الخادم يرسل عبر Expo Push API في الإنتاج وحده (`CUSTOMER_PUSH_MODE=live`)، وفي التطوير يسجّل المحاكي ما كان سيُرسل بلا اتصال. الإذن يُطلب في `C-12` مرة حين توجد زيارة جارية، أو من `C-19`، لا عند الإقلاع.
+يحتاج رمز Expo معرّف مشروع EAS: `EAS_PROJECT_ID` (أو `CUSTOMER_EAS_PROJECT_ID`) ← `extra.eas.projectId` (لا يُحفظ في المستودع، DEC-483). بدونه تقول `C-19` «الإشعارات غير متاحة في هذه النسخة» ولا تظهر بطاقة الإذن في `C-12`. الخادم يرسل عبر Expo Push API في الإنتاج وحده (`CUSTOMER_PUSH_MODE=live`)، وفي التطوير يسجّل المحاكي ما كان سيُرسل بلا اتصال. الإذن يُطلب في `C-12` مرة حين توجد زيارة جارية، أو من `C-19`، لا عند الإقلاع.
+
+## المتاجر (V2-052)
+
+- `eas.json`: الملفات `development` (محاكي iOS / APK على الخادم الوهمي)، `preview` (داخلي على خادم التجريب)، `production` (المتجر؛ رقم البناء يزيد عند EAS، والإصدار `CUSTOMER_APP_VERSION` في `app.config.ts` يُرفع يدويًا). القيم في متغيرات بيئة EAS بالأسماء الموثقة.
+- `pnpm --filter @point/customer run store:screenshots`: لقطات المتجر بالعربية والإنجليزية بكل المقاسات إلى `store-screenshots/` (مستثنى)، من تصدير ويب على الخادم الوهمي (DEC-568).
+- `pnpm --filter @point/customer run store:icon [-- --check]`: الأيقونة 1024 من متجه العلامة (DEC-567).
+- `node scripts/well-known.mjs`: ملفا `apple-app-site-association` و`assetlinks.json` من `APPLE_TEAM_ID` و`ANDROID_CERT_SHA256` (DEC-566).
+- كل الخطوات وما يلزم المالك: `docs/v2/store/RELEASE_CHECKLIST.md`؛ نصوص المتجر `LISTING.md`، والخصوصية `PRIVACY_LABELS.md`، واللقطات `SCREENSHOTS.md`.
 
 ## الفحوص
 
@@ -140,7 +154,7 @@ E2E_REUSE_EXPORT=1 pnpm --filter @point/customer test:e2e --project=phone-390   
 - **ما يُختبر:** الشيفرة نفسها مصدّرة للويب (`react-native-web`) على الخادم الوهمي داخل الصفحة، بمقاسات 360 و390 و430 (`ar-SA`، `Asia/Riyadh`، لمس). كل رحلة تتحقق من `<html dir="rtl" lang="ar">` والنصوص من `src/i18n/ar.ts` (لا نصوص منسوخة في الاختبارات) وألا عنصر يخرج عن عرض الشاشة.
 - **الرحلات** (`e2e/*.spec.ts`): R1 الدخول برمز واتساب `C-01…C-05` وقواعد `C-02/C-03`؛ `C-07` البحث والتصفية و`C-08`؛ `C-15`؛ `C-11` الرمز المتغير واختيار السيارة؛ `C-12` الطلب والحالة الحية ورمز التسليم ثم `C-13` و`C-16`؛ الدفع للزيارة ثم `C-18` و`C-17`؛ الاشتراك `C-09/C-10/C-14` وإدارته؛ `C-18` و`C-17`؛ `C-19` اللغة والخروج؛ `C-20` الحذف.
 - السائق الوهمي يتحرك بساعة المتصفح (`page.clock`)، ورمز الدخول من لافتة «وضع التطوير».
-- **منصة الويب للاختبار وحده:** `CUSTOMER_E2E_WEB=1` يضيف `web` إلى المنصات؛ التطبيق المشحون iOS وأندرويد. ما لا يعمل على الويب له بديل صغير على الويب فقط (`src/shims/`، `*.web.ts(x)`، DEC-551) ولا يتغير السلوك الأصلي.
+- **منصة الويب للاختبار ولقطات المتجر وحدهما:** `CUSTOMER_WEB_EXPORT=1` يضيف `web` إلى المنصات (التصدير نفسه تستعمله `store:screenshots`)؛ التطبيق المشحون iOS وأندرويد. ما لا يعمل على الويب له بديل صغير على الويب فقط (`src/shims/`، `*.web.ts(x)`، DEC-551) ولا يتغير السلوك الأصلي.
 
 ### على الأجهزة (البوابة H2): Maestro
 

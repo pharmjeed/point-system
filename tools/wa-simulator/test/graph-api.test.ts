@@ -249,6 +249,15 @@ describe('other Graph routes', () => {
       'masaf_vehicle_delivered_v1',
       'masaf_request_canceled_v1',
       'masaf_returned_to_parking_v1',
+      // the v2 set (V2-050, DEC-555): the simulator answers whichever set the server sends
+      'point_ticket_issued_v2',
+      'point_request_received_v2',
+      'point_request_reserved_v2',
+      'point_retrieval_started_v2',
+      'point_vehicle_ready_v2',
+      'point_vehicle_delivered_v2',
+      'point_request_canceled_v2',
+      'point_returned_to_parking_v2',
       // the customer app's sign-in template, Arabic and English (V2-010, DEC-496)
       'point_customer_otp_v1',
       'point_customer_otp_v1',
@@ -263,7 +272,13 @@ describe('other Graph routes', () => {
       ],
     });
     for (const t of list.data.slice(1, 8)) expect(t.components).toHaveLength(1);
-    for (const t of list.data.slice(8))
+    // the v2 W-01 keeps the single «طلب السيارة» button; the other v2 templates have none
+    expect(list.data[8].components[1]).toEqual({
+      type: 'BUTTONS',
+      buttons: [{ type: 'QUICK_REPLY', text: 'طلب السيارة' }],
+    });
+    for (const t of list.data.slice(9, 16)) expect(t.components).toHaveLength(1);
+    for (const t of list.data.slice(16))
       expect(t).toMatchObject({
         status: 'APPROVED',
         category: 'AUTHENTICATION',

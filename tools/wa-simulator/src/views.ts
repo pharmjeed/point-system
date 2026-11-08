@@ -12,9 +12,13 @@ import type {
 const CODE_IN_TEXT = /رمز التسليم\s*[:：]?\s*([0-9]{4,8})/;
 const TICKET_IN_TEXT = /رقم\s+([0-9]+)/;
 
-/** The handover code a customer sees in a W-05 message (template parameter {{2}} or the session-text fallback). */
+/**
+ * The handover code a customer sees in a W-05 message: read from the rendered text («رمز التسليم: …») — `{{2}}` of
+ * `masaf_vehicle_ready_v1`, `{{3}}` of `point_vehicle_ready_v2` (DEC-555) — or from the session-text fallback.
+ */
 export function claimCodeOf(msg: OutboundMessage): string | null {
-  if (msg.type === 'template' && msg.purpose === 'W-05') return msg.bodyParams[1] ?? null;
+  if (msg.type === 'template' && msg.purpose === 'W-05')
+    return CODE_IN_TEXT.exec(msg.renderedText ?? '')?.[1] ?? msg.bodyParams[1] ?? null;
   if (msg.type === 'text' && msg.text) return CODE_IN_TEXT.exec(msg.text)?.[1] ?? null;
   return null;
 }

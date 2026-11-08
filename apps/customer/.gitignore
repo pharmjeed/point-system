@@ -14,3 +14,5 @@ playwright-report/
 *.p12
 *.key
 *.mobileprovision
+# store screenshots (V2-052, scripts/store-screenshots.mjs): reviewed by the owner, uploaded by hand, never committed
+store-screenshots/

@@ -149,6 +149,8 @@ jobs:
         run: pnpm --filter @point/customer run export
         env:
           CI: '1'
+      - name: Store icon matches the brand vector (V2-052, DEC-567)
+        run: pnpm --filter @point/customer run store:icon -- --check
 
   customer-e2e:
     # V2-018 (DEC-550 … DEC-554): the customer app's journeys without devices — the web export of the same code on the
