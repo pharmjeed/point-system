@@ -1,6 +1,7 @@
 import type { GatewayWebhookOutcome } from '@point/shared';
 import { PAYMENT_WEBHOOK_PROCESS_JOB } from '../domain/jobs.js';
 import { raisePlatformAlert } from '../../../core/alerts/platform-alerts.js';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import { sha256Hex } from '../../../core/crypto/crypto.js';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
@@ -192,6 +193,8 @@ export function paymentWebhookJob(runtime: () => PaymentsRuntime): JobHandler {
         });
         return finish(tx, ev.id, r.outcome, payment.id);
       });
+      // V2-051 (DEC-561, KP-6): the event is processed and committed, the outbox row not yet `done`
+      killPoint('payment_webhook_after_commit_before_done');
     },
   };
 }

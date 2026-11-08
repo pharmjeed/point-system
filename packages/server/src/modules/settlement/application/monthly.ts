@@ -2,6 +2,7 @@ import type { PlatformActorContext } from '../../../core/actor-context/platform-
 import type { Clock } from '../../../core/clock/clock.js';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import type { JobHandler } from '../../../core/outbox/dispatcher.js';
 import { schedule } from '../../../core/outbox/outbox-writer.js';
@@ -151,6 +152,8 @@ export async function runMonthly(db: Database, clock: Clock, period: string, vat
     if (o.outcome === 'created') created++;
     else if (o.outcome === 'recomputed') recomputed++;
     else skipped++;
+    // V2-051 (DEC-561, KP-9): one operator's statement committed, the others not computed yet
+    if (o.outcome !== 'skipped') killPoint('settlement_after_operator_commit');
   }
   return { operators: orgs.length, created, recomputed, skipped };
 }

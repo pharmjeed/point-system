@@ -374,6 +374,30 @@ export class WhatsappInboundProcessor {
   // Statuses (12 §6.8, 11 §6.8)
   // ---------------------------------------------------------------------------------------------
 
+  /**
+   * V2-051 (DEC-564): a status of a sign-in code (C-02, `job.customer_otp_send`) — the code has no whatsapp_messages
+   * row by design (DEC-38), its challenge keeps the provider's message id. Known, so never an orphan: acknowledged at
+   * once (it was retried five times and counted as an orphan before); a `failed` status marks the delivery failed with
+   * the provider's code (support reads it), nothing else changes.
+   */
+  private async signInCodeStatus(tx: Tx, channel: ChannelRow, wamid: string, s: Json): Promise<boolean> {
+    const c = await tx.maybeOne<{ id: string }>(
+      `SELECT id FROM customer_otp_challenges WHERE wa_message_id = $1 AND wa_channel_id = $2`,
+      [wamid, channel.id],
+    );
+    if (!c) return false;
+    if (s?.status === 'failed') {
+      const code =
+        Array.isArray(s.errors) && s.errors[0]?.code != null ? String(s.errors[0].code).slice(0, 32) : null;
+      await tx.query(
+        `UPDATE customer_otp_challenges SET delivery_status = 'failed', delivery_error_code = COALESCE($2, 'failed')
+          WHERE id = $1 AND delivery_status = 'sent'`,
+        [c.id, code],
+      );
+    }
+    return true;
+  }
+
   /** Returns false when no message matches (orphan). */
   private async status(channel: ChannelRow, s: Json): Promise<boolean> {
     const wamid = typeof s?.id === 'string' ? s.id : null;
@@ -395,7 +419,7 @@ export class WhatsappInboundProcessor {
     };
     return this.db.transaction(async (tx) => {
       const peek = await find(tx, false);
-      if (!peek) return false;
+      if (!peek) return wamid ? this.signInCodeStatus(tx, channel, wamid, s) : false;
       // canon order: a failed W-01 changes the ticket (L5) — lock it before the message row
       if (s.status === 'failed' && peek.purpose === 'W-01' && peek.ticket_id)
         await lockTickets(tx, [peek.ticket_id]);

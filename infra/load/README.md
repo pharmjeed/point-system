@@ -75,3 +75,28 @@ The harness is self-contained (its own database, processes and simulator). To me
 production (17 §11: staging), run it on that host with `HARNESS_ADMIN_DATABASE_URL` pointing at a PostgreSQL 16 where it
 may create `point_load_*` databases — never the staging database itself: the seed refuses staging and production
 (`SeedRefusedError`) and the harness refuses any database not named `point_load*`/`point_chaos*`.
+
+## The V2 profile — `pnpm ops:load:v2` (V2-051, 17 H-08ب, DEC-563)
+
+`infra/load/v2.mjs` measures the customer side of V2 on the same kind of throwaway database (`point_load_v2_<run>`,
+dropped unless `--keep-db`) with the production build of the api and the worker, the WhatsApp simulator as the Point
+number and the payment simulator (`tools/payment-simulator`) as Moyasar, on ports 4600–4699 (refused if one is taken).
+
+```bash
+PATH=/opt/node24/bin:$PATH pnpm ops:load:v2                                           # 200 customers, 100 visits, 100 subscriptions
+pnpm ops:load:v2 --customers 40 --visits 20 --subs 20 --drivers 6 --signin-window 15   # the reduced run (~1 min)
+pnpm ops:load:v2 --visit-window 10 --no-build                                         # the visits as a burst
+```
+
+| Phase | What happens |
+|---|---|
+| sign-in | `--customers` customers arrive over `--signin-window` s: `POST /v1/customer/auth/otp`, the code read from the simulator as the customer reads it, `POST /v1/customer/auth/verify`; a vehicle, `GET /pass`, `/home`, `/me`, the socket on `/customer` |
+| intake | the drivers of the first venue scan the pass of `--visits` customers (`POST /v1/tickets/intake-pass`, O-01) and park; the visit's fee is due |
+| visits | over `--visit-window` s each customer pays in the app (90 % frictionless card, 10 % 3-D Secure answered at the simulator, then C-12 polled until `paid`), polls C-12 every `--poll` s and requests the car; driver bots accept, retrieve and hand over with the code the customer reads in C-12 |
+| subscriptions | `--subs` customers subscribe (C-09/C-10, a card saved for the renewals) and wait until `active` |
+| renewal batch | the worker process is stopped; the production worker (`apps/worker/dist`, every handler and projector) runs inside the harness on a `FakeClock` one minute past the last period end and drains until nothing is due at that clock; every job is timed by type |
+| checks | the targets of 17 H-08ب, server errors, stuck outbox rows at the injected clock, the consistency queries, `pnpm db:invariants`, and every line of `api.log` and `worker.log` scanned for a full phone number, a sign-in code or a handover code (`scanLogText`) |
+
+Results: `results.json` and `report.md` in the output directory; exit 1 when a target fails. The same rate-limit
+reasoning as above applies: the run raises the per-address `auth` class and the per-user classes, because every
+customer and driver signs in from one host.

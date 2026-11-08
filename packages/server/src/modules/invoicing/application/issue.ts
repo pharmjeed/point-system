@@ -13,6 +13,7 @@ import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import { enqueue } from '../../../core/outbox/outbox-writer.js';
 import {
   platformOrgId,
@@ -264,6 +265,8 @@ export async function issueDocument(tx: Tx, input: IssueInput): Promise<InvoiceR
       tx.now,
     ],
   );
+  // V2-051 (DEC-561, KP-8): the process dies with the chain's next row written and not committed
+  killPoint('invoice_issued_before_commit');
   const queueOrg = await platformOrgId(tx);
   if (!queueOrg) throw new AppError('SERVICE_UNAVAILABLE');
   await enqueue(tx, {

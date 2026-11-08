@@ -25,7 +25,7 @@ export {
 export { decodeTlv, encodeTlv, zatcaQr } from './domain/qr.js';
 export { EINVOICE_SUBMIT_JOB, INVOICE_PDF_RENDER_JOB } from './domain/jobs.js';
 export { SimulatorEInvoicingProvider, UnconfiguredLiveProvider } from './infra/simulator.js';
-export { bidiRuns, renderInvoicePdf } from './infra/pdf.js';
+export { bidiRuns, renderInvoicePdf, woffToSfnt } from './infra/pdf.js';
 export {
   ensureCustomerInvoice,
   inclusiveLine,

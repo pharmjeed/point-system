@@ -14,6 +14,13 @@ export const CUSTOMER_OTP_RESEND_AFTER_S = 60;
 /** C-03: five wrong codes, then a 15-minute lock. */
 export const CUSTOMER_OTP_MAX_ATTEMPTS = 5;
 export const CUSTOMER_OTP_LOCK_MINUTES = 15;
+/**
+ * V2-051 (DEC-560): the lock that ends a number's third 15-minute lock within 24 hours lasts 24 hours, so a number
+ * can be guessed at most 3 × 5 = 15 times a day (without it the attempts came back with every expired lock: about 20
+ * an hour, 480 a day against a one-in-a-million code).
+ */
+export const CUSTOMER_OTP_DAILY_LOCKS = 3;
+export const CUSTOMER_OTP_DAILY_LOCK_HOURS = 24;
 /** Lifetime of one code (DEC-482). */
 export const CUSTOMER_OTP_TTL_S = 300;
 /** Access token lifetime (DEC-482); the refresh token lives 60 days and rotates on every refresh. */
