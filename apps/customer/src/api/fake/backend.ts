@@ -2,7 +2,8 @@
  * In-memory fake of the customer API (V2-011, DEC-482) — the `/v1/customer/*` routes of `CUSTOMER_ROUTES` with the
  * server's rules, so the app's flows run before V2-010 exists: WhatsApp-only codes with a 60 s resend wait, 5
  * attempts then a 15-minute lock, rotating refresh tokens (reuse revokes the session), versioned consents,
- * Saudi plate normalisation, the 5-vehicle limit, `Idempotency-Key` replay, and the 08 error envelope.
+ * Saudi plate normalisation, the 5-vehicle limit, `Idempotency-Key` replay, and the 08 error envelope; and since
+ * V2-012/V2-017 the vehicle removal (C-15), the re-verification proof and the account deletion (C-20).
  *
  * The WhatsApp message is not sent anywhere: it lands in `inbox` (the role of tools/wa-simulator), and the app
  * shows the code on C-03 in development only. Never used by a release build unless explicitly configured
@@ -16,6 +17,7 @@ import {
   CUSTOMER_OTP_MAX_ATTEMPTS,
   CUSTOMER_OTP_RESEND_AFTER_S,
   CUSTOMER_OTP_TTL_S,
+  CUSTOMER_REAUTH_TTL_S,
   CUSTOMER_REFRESH_TTL_DAYS,
   CUSTOMER_ROUTES,
   CUSTOMER_VEHICLES_MAX,
@@ -87,6 +89,8 @@ interface Session {
   /** Refresh tokens already rotated away: presenting one again revokes the session. */
   retired: Set<string>;
   revoked: boolean;
+  /** C-20's single-use re-verification proof of this session (DEC-507). */
+  reauth: { token: string; expiresAt: number } | null;
 }
 
 interface StoredReply {
@@ -220,11 +224,24 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     const entry = accessTokens.get(token);
     if (!entry) throw new Reject('AUTH_UNAUTHENTICATED');
     const session = sessions.get(entry.sessionId);
+    // a deleted account (C-20) answers its own tokens with ACCOUNT_DELETED, before the revocation (DEC-508)
+    if (session && !accounts.has(session.accountId)) throw new Reject('ACCOUNT_DELETED');
     if (!session || session.revoked) throw new Reject('AUTH_SESSION_REVOKED');
     if (entry.expiresAt <= now()) throw new Reject('AUTH_SESSION_EXPIRED');
-    const account = accounts.get(session.accountId);
-    if (!account) throw new Reject('ACCOUNT_DELETED');
-    return account;
+    return accounts.get(session.accountId) as Account;
+  }
+
+  /** The session of an authenticated request (C-20's proof is bound to it). */
+  function sessionOf(req: HttpRequest): Session {
+    const header = req.headers.Authorization ?? '';
+    const entry = accessTokens.get(header.startsWith('Bearer ') ? header.slice(7) : '');
+    return sessions.get(entry?.sessionId ?? '') as Session;
+  }
+
+  /** `in_active_visit` (C-15): the demo visit of `demoVisitPhones` holds the account's first car. */
+  function vehiclesView(account: Account): CustomerVehicle[] {
+    const inVisit = demoPhones.has(account.phone);
+    return account.vehicles.map((v, i) => ({ ...v, in_active_visit: inVisit && i === 0 }));
   }
 
   function parse<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
@@ -233,6 +250,24 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     throw new Reject('VALIDATION_FAILED', {
       fields: r.error.issues.map((i) => ({ field: i.path.map(String).join('.'), issue: i.code })),
     });
+  }
+
+  /** The code check shared by the sign-in and C-20's re-verification: attempts, lock, expiry; consumed on success. */
+  function consumeCode(phone: string, code: string) {
+    assertNotLocked(phone);
+    const challenge = challenges.get(phone);
+    if (!challenge || challenge.expiresAt <= now()) throw new Reject('CUSTOMER_OTP_EXPIRED');
+    if (challenge.code !== code) {
+      challenge.attemptsLeft -= 1;
+      if (challenge.attemptsLeft <= 0) {
+        const until = now() + CUSTOMER_OTP_LOCK_MINUTES * 60_000;
+        locks.set(phone, until);
+        challenges.delete(phone);
+        throw new Reject('CUSTOMER_OTP_LOCKED', { locked_until: iso(until) });
+      }
+      throw new Reject('CUSTOMER_OTP_INVALID', { attempts_left: challenge.attemptsLeft });
+    }
+    challenges.delete(phone);
   }
 
   /** Locked phone? (survives new code requests, C-03 «5 محاولات ثم إيقاف 15 دقيقة»). */
@@ -283,20 +318,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     otpVerify(req) {
       const body = parse(CUSTOMER_ROUTES.otpVerify.body, req.body);
       const phone = body.phone_e164;
-      assertNotLocked(phone);
-      const challenge = challenges.get(phone);
-      if (!challenge || challenge.expiresAt <= now()) throw new Reject('CUSTOMER_OTP_EXPIRED');
-      if (challenge.code !== body.code) {
-        challenge.attemptsLeft -= 1;
-        if (challenge.attemptsLeft <= 0) {
-          const until = now() + CUSTOMER_OTP_LOCK_MINUTES * 60_000;
-          locks.set(phone, until);
-          challenges.delete(phone);
-          throw new Reject('CUSTOMER_OTP_LOCKED', { locked_until: iso(until) });
-        }
-        throw new Reject('CUSTOMER_OTP_INVALID', { attempts_left: challenge.attemptsLeft });
-      }
-      challenges.delete(phone);
+      consumeCode(phone, body.code);
       let accountId = accountByPhone.get(phone);
       const isNew = accountId === undefined;
       if (accountId === undefined) {
@@ -320,6 +342,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         refreshExpiresAt: now() + CUSTOMER_REFRESH_TTL_DAYS * 86_400_000,
         retired: new Set(),
         revoked: false,
+        reauth: null,
       };
       sessions.set(session.id, session);
       const account = accounts.get(accountId) as Account;
@@ -334,6 +357,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           throw new Reject('AUTH_SESSION_REVOKED');
         }
         if (session.refreshToken === body.refresh_token) {
+          if (!accounts.has(session.accountId)) throw new Reject('ACCOUNT_DELETED');
           if (session.revoked || session.refreshExpiresAt <= now() || session.deviceId !== body.device_id) {
             throw new Reject('AUTH_SESSION_REVOKED');
           }
@@ -388,7 +412,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     },
 
     vehicles(req) {
-      return { items: authenticate(req).vehicles };
+      return { items: vehiclesView(authenticate(req)) };
     },
 
     vehicleCreate(req) {
@@ -475,6 +499,48 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         vehicles_count: account.vehicles.length,
       };
       return home;
+    },
+
+    // ---- V2-012 (C-15) and V2-017 (C-20), the server's rules (DEC-505, DEC-507, DEC-508)
+
+    vehicleDelete(req, { params }) {
+      const account = authenticate(req);
+      const at = vehiclesView(account).find((v) => v.id === params.vehicleId);
+      if (!at) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
+      if (at.in_active_visit) throw new Reject('CUSTOMER_VEHICLE_IN_ACTIVE_VISIT');
+      account.vehicles = account.vehicles.filter((v) => v.id !== at.id);
+      return { vehicle_id: at.id, removed_at: iso(now()) };
+    },
+
+    reauthVerify(req) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.reauthVerify.body, req.body);
+      consumeCode(account.phone, body.code);
+      const session = sessionOf(req);
+      session.reauth = { token: `pcv.${hex(24)}`, expiresAt: now() + CUSTOMER_REAUTH_TTL_S * 1000 };
+      return { reauth_token: session.reauth.token, expires_at: iso(session.reauth.expiresAt) };
+    },
+
+    meDelete(req) {
+      const account = authenticate(req);
+      const raw = (req.body ?? {}) as { reauth_token?: unknown };
+      if (raw.reauth_token === undefined || raw.reauth_token === null || raw.reauth_token === '')
+        throw new Reject('CUSTOMER_REAUTH_REQUIRED', { reason: 'missing' });
+      const body = parse(CUSTOMER_ROUTES.meDelete.body, req.body);
+      const session = sessionOf(req);
+      if (!session.reauth || session.reauth.token !== body.reauth_token)
+        throw new Reject('CUSTOMER_REAUTH_REQUIRED', { reason: 'invalid' });
+      if (session.reauth.expiresAt <= now())
+        throw new Reject('CUSTOMER_REAUTH_REQUIRED', { reason: 'expired' });
+      if (demoPhones.has(account.phone)) throw new Reject('CUSTOMER_ACCOUNT_VISIT_ACTIVE');
+      accounts.delete(account.id);
+      accountByPhone.delete(account.phone);
+      for (const s of sessions.values())
+        if (s.accountId === account.id) {
+          s.revoked = true;
+          s.reauth = null;
+        }
+      return { deleted: true, deleted_at: iso(now()) };
     },
   };
 

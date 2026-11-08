@@ -1,6 +1,6 @@
 # تطبيق العميل — `apps/customer` (V2-011)
 
-تطبيق الجوال للعميل (V2-D10): React Native بـ**Expo SDK 58** وExpo Router وTypeScript strict، عربي أولًا (RTL) مع الإنجليزية، أرقام لاتينية وتوقيت الرياض. الرحلة R1 كاملة (`C-01…C-06`، `docs/v2/01_Customer_App.md`) تعمل على **خادم وهمي داخل التطبيق** في التطوير، وعلى الخادم الحقيقي (V2-010) بضبط `CUSTOMER_API_BASE_URL` («الخادم الحقيقي» أدناه). القرارات: DEC-480…DEC-484.
+تطبيق الجوال للعميل (V2-D10): React Native بـ**Expo SDK 58** وExpo Router وTypeScript strict، عربي أولًا (RTL) مع الإنجليزية، أرقام لاتينية وتوقيت الرياض. الرحلة R1 كاملة (`C-01…C-06`، `docs/v2/01_Customer_App.md`)، ومعها المواقع والخريطة `C-07/C-08` وسياراتي `C-15` (V2-012) والإعدادات `C-19` وحذف الحساب `C-20` (V2-017)، تعمل على **خادم وهمي داخل التطبيق** في التطوير، وعلى الخادم الحقيقي (V2-010) بضبط `CUSTOMER_API_BASE_URL` («الخادم الحقيقي» أدناه). القرارات: DEC-480…DEC-484 وDEC-505…DEC-509.
 
 ## التشغيل
 
@@ -26,6 +26,8 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 | `CUSTOMER_IOS_BUNDLE_ID` / `CUSTOMER_ANDROID_PACKAGE` | `sa.point.app` | معرّفا التطبيق |
 | `CUSTOMER_URL_SCHEME` | معرّف الحزمة | مخطط الروابط العميقة |
 | `CUSTOMER_FORCE_LOCALE` | — | `ar` أو `en` لفرض اللغة في التطوير |
+| `CUSTOMER_ANDROID_GOOGLE_MAPS_API_KEY` | — | مفتاح Google Maps لأندرويد (خريطة `C-07`)؛ يُعطى للبناء من البيئة ولا يُحفظ في المستودع. بلا مفتاح تختفي الخريطة على أندرويد وتبقى القائمة بروابط «فتح في الخرائط»؛ iOS يرسم Apple Maps بلا مفتاح (DEC-506) |
+| `CUSTOMER_SUPPORT_WHATSAPP` / `CUSTOMER_SUPPORT_EMAIL` | — | «تواصل معنا» في `C-19`: رقم واتساب الدعم (أرقام E.164 بلا `+`) وبريده؛ بلا إعداد تظهر «قنوات الدعم تُضاف قريبًا» (DEC-509) |
 
 نسخة الإصدار (`__DEV__ = false`) ترفض الخادم الوهمي ما لم يُطلب صراحة بـ`CUSTOMER_API_MODE=fake`، وترفض عنوان API بغير `https` (`src/configModel.ts`).
 
@@ -34,7 +36,8 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 `src/api/fake/backend.ts` يطبق عقود `@point/shared/customer` بقواعد الخادم: رمز 6 أرقام **على واتساب فقط** (DEC-460) يصلح 5 دقائق، إعادة الإرسال بعد 60 ث، 5 محاولات ثم قفل 15 دقيقة، رمز وصول 15 دقيقة ورمز تحديث يُدوَّر، الموافقات بالإصدار، تطبيع اللوحة، حد 5 سيارات، `Idempotency-Key`، وأغلفة الأخطاء. البيانات في الذاكرة وتضيع عند إعادة تشغيل التطبيق.
 
 - لا تُرسل رسالة حقيقية: الرمز يذهب إلى صندوق محاكاة ويظهر في `C-03` تحت لافتة «وضع التطوير».
-- الرقم `0500000099` يحصل على زيارة جارية نموذجية لرؤية بطاقتها في `C-06`.
+- الرقم `0500000099` يحصل على زيارة جارية نموذجية لرؤية بطاقتها في `C-06`؛ أول سيارة له «في زيارة جارية» في `C-15` فلا تُحذف، وحذف حسابه في `C-20` يُرفض (`CUSTOMER_ACCOUNT_VISIT_ACTIVE`).
+- حذف الحساب في `C-20` يطلب رمز تأكيد جديدًا يظهر تحت لافتة «وضع التطوير» كالدخول، ثم يعود التطبيق إلى `C-01`؛ والرقم نفسه يسجّل بعدها حسابًا جديدًا.
 - ستة مواقع خيالية في الرياض (`src/api/fake/seed.ts`).
 
 ## الخادم الحقيقي (V2-010)
@@ -67,7 +70,8 @@ app.config.ts        Expo: العلامة من الإعداد، الألوان �
 metro.config.js      @point/shared من مصادره (شرط @point/source، و‎./x.js ← ./x.ts)
 assets/brand/        نسخ كما هي من brand/app-icons و brand/logo/point/png
 src/app/             الشاشات (Expo Router): welcome C-01، phone C-02، otp C-03، profile C-04،
-                     vehicle C-05، home C-06، pass (C-11 مؤقتة حتى V2-013)
+                     vehicle C-05، home C-06، pass (C-11 مؤقتة حتى V2-013)، locations C-07،
+                     location/[venueId] C-08، vehicles C-15، settings C-19، delete-account C-20
 src/api/             العميل المطبوع (client.ts)، النقل (transport.ts)، الخادم الوهمي (fake/)
 src/session/         الرموز في expo-secure-store، مزوّد الجلسة
 src/features/        منطق الشاشات النقي (التوجيه، الجوال، الرمز، الموافقات، السيارة، الرئيسية)
