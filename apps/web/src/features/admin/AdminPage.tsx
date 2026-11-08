@@ -1,6 +1,8 @@
 import {
   Archive,
+  FileText,
   History,
+  Scale,
   MapPin,
   MessageCircle,
   ScrollText,
@@ -17,6 +19,7 @@ import { staffPaths } from '@/features/supervisor/staffPaths';
 import { ForbiddenPage, ForbiddenState, NotFoundState } from '@/features/supervisor/ui';
 import { s13 } from '@/i18n/ar.staff';
 import { AuditLogSection } from './AuditLogSection';
+import { SettlementsSection, SubscriptionSection } from './BillingSections';
 import { ListingSection } from './ListingSection';
 import { OrgSettingsSection } from './OrgSettingsSection';
 import { OutboxSection } from './OutboxSection';
@@ -34,6 +37,8 @@ const ICONS: Record<AdminSection, typeof History> = {
   audit: History,
   retention: ShieldCheck,
   org: Settings,
+  settlements: Scale,
+  subscription: FileText,
 };
 
 /**
@@ -95,6 +100,10 @@ export function AdminSectionPage() {
         <TemplatesSection me={me} />
       ) : id === 'retention' ? (
         <RetentionSection me={me} />
+      ) : id === 'settlements' ? (
+        <SettlementsSection me={me} />
+      ) : id === 'subscription' ? (
+        <SubscriptionSection />
       ) : (
         <OrgSettingsSection />
       )}

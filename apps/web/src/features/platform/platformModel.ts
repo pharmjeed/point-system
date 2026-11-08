@@ -21,12 +21,15 @@ export type PlatformPermission =
   | 'platform.customer_read'
   | 'platform.customer_manage'
   | 'platform.payment_read'
-  | 'platform.refund_issue';
+  | 'platform.refund_issue'
+  | 'platform.settlement_manage'
+  | 'platform.invoice_read';
 
 export const platformCan = (me: PlatformMe, permission: PlatformPermission) =>
   me.permissions.includes(permission);
 
-export type PlatformDestination = 'overview' | 'operators' | 'venues' | 'customers' | 'payments';
+export type PlatformDestination =
+  'overview' | 'operators' | 'venues' | 'customers' | 'payments' | 'settlements' | 'invoices';
 
 /**
  * The console's destinations for this account (P-02 / P-03 need `platform.operator_read`, P-04
@@ -39,6 +42,9 @@ export function platformNav(me: PlatformMe): PlatformDestination[] {
     ...(platformCan(me, 'platform.venue_review') ? (['venues'] as const) : []),
     ...(platformCan(me, 'platform.customer_read') ? (['customers'] as const) : []),
     ...(platformCan(me, 'platform.payment_read') ? (['payments'] as const) : []),
+    // V2-041 / V2-040: P-09 with `platform.settlement_manage`, P-10 with `platform.invoice_read`
+    ...(platformCan(me, 'platform.settlement_manage') ? (['settlements'] as const) : []),
+    ...(platformCan(me, 'platform.invoice_read') ? (['invoices'] as const) : []),
   ];
 }
 

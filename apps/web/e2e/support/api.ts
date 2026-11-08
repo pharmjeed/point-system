@@ -323,6 +323,8 @@ export const ROLE_PERMISSIONS: Record<'owner' | 'admin' | 'supervisor', string[]
     'retention.manage',
     'org.settings_manage',
     'telemetry.write',
+    'settlement.read',
+    'settlement.dispute',
   ],
   admin: [
     'auth.self',
@@ -357,6 +359,8 @@ export const ROLE_PERMISSIONS: Record<'owner' | 'admin' | 'supervisor', string[]
     'wa.templates_manage',
     'outbox.manage',
     'telemetry.write',
+    'settlement.read',
+    'settlement.dispute',
   ],
   supervisor: [
     'auth.self',
