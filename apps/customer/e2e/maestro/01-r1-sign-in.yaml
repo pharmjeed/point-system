@@ -1,0 +1,18 @@
+# R1 on a device (mirrors e2e/r1-sign-in.spec.ts): C-01 → C-02 → C-03 (code from the dev banner) → C-04 → C-05 →
+# C-06. On the device also: the Arabic app name under the icon, the native RTL layout, the numeric keypads.
+appId: sa.point.app
+name: R1 — sign in, first vehicle, home
+tags: [h2, r1]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340001'
+- runFlow: subflows/add-vehicle.yaml
+- extendedWaitUntil:
+    visible:
+      id: home-pass
+    timeout: 10000
+- assertVisible: 'مرحبًا سارة'
+- assertVisible: 'بطاقة الدخول'
+- takeScreenshot: r1-home

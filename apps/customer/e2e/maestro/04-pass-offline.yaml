@@ -1,0 +1,34 @@
+# C-11 on a device (mirrors e2e/locations-vehicles-pass.spec.ts). Native only: the screen goes to full brightness
+# while the code shows («زد السطوع» تلقائيًا, check by eye on the screenshot), and the pass keeps working offline once
+# cached (V2-D14): airplane mode is switched by Maestro on Android; on iPhone switch it by hand at the pause.
+appId: sa.point.app
+name: C-11 — entry pass, rotation, offline
+tags: [h2, r3]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340004'
+- runFlow: subflows/add-vehicle.yaml
+- tapOn:
+    id: home-pass
+- assertVisible:
+    id: pass-qr
+- assertVisible: 'يتغير الرمز بعد.*'
+- takeScreenshot: c11-pass
+- tapOn: 'رجوع'
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - setAirplaneMode: enabled
+- tapOn:
+    id: home-pass
+- assertVisible:
+    id: pass-qr
+- takeScreenshot: c11-pass-offline
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - setAirplaneMode: disabled

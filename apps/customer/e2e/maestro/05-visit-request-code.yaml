@@ -1,0 +1,46 @@
+# R3 on a device (mirrors e2e/visit-pay.spec.ts): the demo number gets a parked car (README «الخادم الوهمي»); the fake
+# driver accepts after 15 s, is on the way at 45 s, at the gate at 90 s and hands over 3 min later — real time here.
+# Native only: the request confirmation is the native Alert; the push offer appears only in a build with an EAS
+# project (CUSTOMER_EAS_PROJECT_ID) and then shows the OS permission dialog.
+appId: sa.point.app
+name: C-12/C-13 — request the car, handover code, rating
+tags: [h2, r3]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '500000099'
+- tapOn: 'تخطَّ الآن'
+- tapOn:
+    id: home-visit
+- assertVisible: 'سيارتي الآن'
+- runFlow:
+    when:
+      visible: 'نخبرك حين تجهز سيارتك'
+    commands:
+      - tapOn: 'فعّل الإشعارات'
+      - tapOn:
+          text: 'Allow|السماح'
+          optional: true
+- tapOn:
+    id: visit-request
+- assertVisible: 'اطلب سيارتك الآن؟'
+- tapOn: 'نعم، اطلبها'
+- assertVisible: 'سجّلنا طلبك.'
+- extendedWaitUntil:
+    visible: 'قُبل طلبك، وسائقنا في طريقه إلى سيارتك.'
+    timeout: 40000
+- extendedWaitUntil:
+    visible: 'سيارتك جاهزة عند البوابة.'
+    timeout: 120000
+- tapOn:
+    id: visit-show-code
+- assertVisible: '.?[0-9]{6}.?'
+- takeScreenshot: c12-handover-code
+- tapOn: 'إخفاء الرمز'
+- extendedWaitUntil:
+    visible: 'تقييمك يساعد الموقع على تحسين الخدمة.'
+    timeout: 240000
+- tapOn: '5 من 5'
+- tapOn: 'إرسال التقييم'
+- assertVisible: 'شكرًا لتقييمك.'

@@ -1,0 +1,29 @@
+# C-15 on a device (mirrors e2e/locations-vehicles-pass.spec.ts): a second car, then delete one through the native
+# Alert («حذف السيارة؟» → «حذف»).
+appId: sa.point.app
+name: C-15 — add and delete a car
+tags: [h2, r6]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340003'
+- runFlow: subflows/add-vehicle.yaml
+- tapOn:
+    id: home-vehicles
+- assertVisible: 'سياراتي'
+- tapOn: 'أضف سيارة'
+- runFlow:
+    file: subflows/add-vehicle.yaml
+    env:
+      DIGITS: '2222'
+      L1: 'ر R'
+      L2: 'س S'
+      L3: 'ط T'
+- assertVisible: '.*2222.*'
+- tapOn:
+    text: 'حذف'
+    index: 0
+- assertVisible: 'حذف السيارة؟'
+- tapOn: 'حذف'
+- assertVisible: 'حُذفت السيارة.'

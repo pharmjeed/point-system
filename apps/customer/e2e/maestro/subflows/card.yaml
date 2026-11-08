@@ -1,0 +1,18 @@
+# C-10 / C-18 card fields (tokenized on the device; the fake backend accepts the simulator cards, README).
+appId: sa.point.app
+env:
+  CARD: '4111111111111111'
+---
+- tapOn:
+    id: card-number
+- inputText: ${CARD}
+- tapOn:
+    id: card-expiry
+- inputText: '12/30'
+- tapOn:
+    id: card-cvc
+- inputText: '123'
+- tapOn:
+    id: card-name
+- inputText: 'SARA A'
+- hideKeyboard
