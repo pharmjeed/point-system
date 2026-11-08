@@ -234,6 +234,13 @@ STORAGE_ORIGIN=
 | `WA_ACCESS_TOKEN` / `WA_APP_SECRET` / `WA_VERIFY_TOKEN` | — | قيم الأسرار التي تشير إليها المراجع |
 | `WA_HTTP_TIMEOUT_MS` | `10000` | مهلة Graph API |
 | `WA_TEST_RECIPIENT_ALLOWLIST` | — | إلزامي في staging الحي: أرقام الفريق فقط |
+| `MOYASAR_MODE` | `simulator` | الإصدار الثاني (V2-020، DEC-510): `live` إلزامي في production ومرفوض في غيرها (local وtest وstaging تدفع عبر `tools/payment-simulator` فقط، فلا خصم حقيقي خارج الإنتاج) |
+| `MOYASAR_BASE_URL` | `http://localhost:4020` | `https://api.moyasar.com` حيًا (https إلزامي)؛ في وضع `simulator` يُرفض أي مضيف `moyasar.com` |
+| `MOYASAR_SECRET_KEY_REF` / `MOYASAR_WEBHOOK_SECRET_REF` | `env://MOYASAR_SECRET_KEY` / `env://MOYASAR_WEBHOOK_SECRET` | مراجع الأسرار (لا قيم)، `sm://` في الإنتاج كأسرار واتساب |
+| `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` | — | أثناء تدوير سر الـWebhook فقط (يُقبل السران) ثم يُحذف |
+| `MOYASAR_SECRET_KEY` / `MOYASAR_WEBHOOK_SECRET` | — | المفتاح السري (`sk_live_…` في الإنتاج وحده؛ المحوّل يرفض إرسال مفتاح حي خارج الإنتاج) وسر الـWebhook المشترك الذي يُضبط في لوحة Moyasar |
+| `MOYASAR_HTTP_TIMEOUT_MS` | `10000` | مهلة كل استدعاء للبوابة |
+| `PAYMENTS_RECONCILE_CRON_UTC` | `30 0 * * *` | المطابقة اليومية مع البوابة (03:30 بتوقيت الرياض) لليوم السابق (DEC-514) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | — / — / `mailto:ops@example.com` | Web Push؛ اجعل `VAPID_SUBJECT` بريد المشغّل |
 | `S3_ENDPOINT`، `S3_REGION`، `S3_BUCKET_MEDIA`، `S3_BUCKET_EXPORTS`، `S3_ACCESS_KEY_ID`، `S3_SECRET_ACCESS_KEY`، `S3_FORCE_PATH_STYLE` | — / `us-east-1` / `point-media` / `point-exports` / — / — / `true` | §4؛ في staging/production يُستخدم S3 دائمًا (DEC-108) |
 | `MEDIA_UPLOAD_URL_TTL_S` / `MEDIA_READ_URL_TTL_S` / `MEDIA_MAX_BYTES` / `EXPORT_URL_TTL_S` | `300` / `300` / `10485760` / `300` | مدد الروابط الموقعة وحد الصورة |
@@ -253,7 +260,7 @@ STORAGE_ORIGIN=
 | `OTEL_SERVICE_NAME` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_TRACES_SAMPLER_ARG` | يضبطه compose / — / `0.2` | التتبع غير موصول بعد (ملاحظات PNT-094) |
 | `METRICS_ENABLED` / `METRICS_PORT` | `true` / `9464` | المقاييس على `METRICS_PORT` (api) و`METRICS_PORT + 1` (worker)، شبكة داخلية فقط (DEC-61)؛ فحص صحة حاوية العامل يقرأ منفذه، فأبقِ `METRICS_ENABLED=true` |
 
-قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة.
+قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة؛ والإصدار الثاني: `MOYASAR_MODE` غير `live` في production أو `live` خارجها، و`MOYASAR_BASE_URL` بـhttps حين `live`، ومضيف `moyasar.com` في وضع `simulator` (DEC-510).
 
 متغيرات compose (للاستبدال في ملفات compose، من الملف نفسه عبر `--env-file`):
 
@@ -333,6 +340,12 @@ WA_APP_SECRET=<openssl rand -hex 24>   WA_VERIFY_TOKEN=<openssl rand -hex 24>   
 2. اشتراك Webhook في تطبيق Meta على `https://app.<domain>/webhooks/whatsapp` بالحقل `messages` (والحقول الاختيارية في 12 §3.6) ورمز التحقق نفسه؛ التحقق يمر عبر `GET` ويُقارن بزمن ثابت.
 3. صف القناة بوضع `live` (S-13 «قناة واتساب» أو `PUT /v1/admin/whatsapp/channel`)، ثم مزامنة القوالب (`POST /v1/admin/whatsapp/templates/sync`)، ثم إرسال تجريبي لأرقام داخلية.
 4. تدوير سر التطبيق: ضع الجديد في `WA_APP_SECRET` والقديم في متغير آخر يشير إليه `WA_APP_SECRET_PREVIOUS_REF` لمدة 24 ساعة ثم احذفه.
+
+### 8.1 بوابة الدفع (الإصدار الثاني، V2-020 / V2-021)
+
+**التطوير والاختبار وstaging:** `MOYASAR_MODE=simulator` و`MOYASAR_BASE_URL` على `tools/payment-simulator` (`pnpm dev` يشغّله على 4020 بمفتاحه `sk_test_point_simulator_secret` وسره `point-simulator-webhook-secret`)؛ المحاكي يرفض العمل في الإنتاج ويرفض أي مفتاح حي، والمحوّل يرفض إرسال `sk_live_…` خارج الإنتاج، والإقلاع يرفض `live` خارج الإنتاج — فلا خصم حقيقي ممكن خارجه (DEC-510).
+
+**الإنتاج:** `MOYASAR_MODE=live`، `MOYASAR_BASE_URL=https://api.moyasar.com`، المفتاح السري `sk_live_…` (من مدير الأسرار) في `MOYASAR_SECRET_KEY`، وفي لوحة Moyasar: Webhook على `https://app.<domain>/webhooks/payments/moyasar` (POST) لأحداث الدفع، بسر مشترك عشوائي (`openssl rand -hex 32`) هو `MOYASAR_WEBHOOK_SECRET`. التدوير: السر الجديد في اللوحة وفي `MOYASAR_WEBHOOK_SECRET`، والقديم في متغير يشير إليه `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` حتى تنقضي إعادة المحاولات، ثم يُحذف. المطابقة اليومية تفتح تنبيهات `platform_alerts` لكل فرق (P-08).
 
 ---
 

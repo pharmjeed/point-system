@@ -47,6 +47,8 @@ const SECRET_NAMES = [
   'WA_ACCESS_TOKEN',
   'WA_APP_SECRET',
   'WA_VERIFY_TOKEN',
+  'MOYASAR_SECRET_KEY', // V2-020 (DEC-510): the payment gateway's secret key and webhook secret
+  'MOYASAR_WEBHOOK_SECRET',
   'VAPID_PRIVATE_KEY',
   'S3_SECRET_ACCESS_KEY',
   'BACKUP_PASSPHRASE',
@@ -66,7 +68,13 @@ const ALLOWED_VALUES = [
 ];
 
 /** Server-only variable names that must not reach the browser bundle (05 §7.7). */
-const SERVER_ONLY_NAMES = [...SECRET_NAMES, 'DATABASE_URL', 'S3_ACCESS_KEY_ID', 'WA_APP_SECRET_REF'];
+const SERVER_ONLY_NAMES = [
+  ...SECRET_NAMES,
+  'DATABASE_URL',
+  'S3_ACCESS_KEY_ID',
+  'WA_APP_SECRET_REF',
+  'MOYASAR_SECRET_KEY_REF',
+];
 
 const BINARY_EXT =
   /\.(png|jpe?g|gif|webp|avif|ico|pdf|woff2?|ttf|otf|eot|mp3|mp4|wav|ogg|zip|gz|tgz|br|zst)$/i;

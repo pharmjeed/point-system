@@ -8,6 +8,8 @@ describe('deployment configuration guards', () => {
     APP_ENV: 'production',
     WA_MODE: 'live',
     WA_GRAPH_BASE_URL: 'https://graph.facebook.com',
+    MOYASAR_MODE: 'live',
+    MOYASAR_BASE_URL: 'https://api.moyasar.com',
     APP_BASE_URL: 'https://app.example.test',
     API_BASE_URL: 'https://app.example.test',
     SESSION_COOKIE_NAME: '__Host-point_sid',
@@ -49,13 +51,34 @@ describe('deployment configuration guards', () => {
   });
 
   it('staging follows the same rules and needs the recipient allow-list when live', () => {
-    expect(problems({ APP_ENV: 'staging' })).toEqual([
+    // staging pays through the payment simulator only (DEC-510)
+    const staging = {
+      APP_ENV: 'staging',
+      MOYASAR_MODE: 'simulator',
+      MOYASAR_BASE_URL: 'http://payment-sim:4020',
+    };
+    expect(problems(staging)).toEqual([
       'WA_TEST_RECIPIENT_ALLOWLIST is required in staging with WA_MODE=live (05 §9 rule 2)',
     ]);
-    expect(problems({ APP_ENV: 'staging', WA_TEST_RECIPIENT_ALLOWLIST: '+966500000001' })).toEqual([]);
-    expect(
-      problems({ APP_ENV: 'staging', WA_MODE: 'simulator', WA_GRAPH_BASE_URL: 'http://sim:4010' }),
-    ).toEqual([]);
+    expect(problems({ ...staging, WA_TEST_RECIPIENT_ALLOWLIST: '+966500000001' })).toEqual([]);
+    expect(problems({ ...staging, WA_MODE: 'simulator', WA_GRAPH_BASE_URL: 'http://sim:4010' })).toEqual([]);
+  });
+
+  it('V2-020 (DEC-510): the payment gateway is live in production only, over https, never the simulator there', () => {
+    expect(() =>
+      testEnv({ ...production, MOYASAR_MODE: 'simulator', MOYASAR_BASE_URL: 'http://sim:4020' }),
+    ).toThrow('MOYASAR_MODE must be live in production');
+    for (const APP_ENV of ['local', 'test', 'staging'])
+      expect(() =>
+        testEnv({ APP_ENV, MOYASAR_MODE: 'live', MOYASAR_BASE_URL: 'https://api.moyasar.com' }),
+      ).toThrow('MOYASAR_MODE=live is only allowed in production');
+    // simulator mode may not point at the gateway itself
+    expect(() => testEnv({ MOYASAR_BASE_URL: 'https://api.moyasar.com' })).toThrow(
+      'MOYASAR_BASE_URL must be the payment simulator when MOYASAR_MODE=simulator',
+    );
+    expect(problems({ MOYASAR_BASE_URL: 'http://api.moyasar.example' })).toEqual([
+      'MOYASAR_BASE_URL must be https when MOYASAR_MODE=live',
+    ]);
   });
 
   it('a __Host- cookie without Secure is refused in every environment (browsers drop it)', () => {

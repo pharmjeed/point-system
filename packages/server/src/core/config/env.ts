@@ -71,6 +71,17 @@ export const envSchema = z.object({
   WA_HTTP_TIMEOUT_MS: int(10000),
   WA_TEST_RECIPIENT_ALLOWLIST: z.string().default(''),
 
+  // V2-020 online payments (DEC-510, DEC-511): the gateway (Moyasar) or its simulator (tools/payment-simulator);
+  // `live` in production only — dev, tests, CI and staging can never charge a card
+  MOYASAR_MODE: z.enum(['live', 'simulator']).default('simulator'),
+  MOYASAR_BASE_URL: z.url().default('http://localhost:4020'), // https://api.moyasar.com when live
+  MOYASAR_SECRET_KEY_REF: z.string().default('env://MOYASAR_SECRET_KEY'),
+  MOYASAR_WEBHOOK_SECRET_REF: z.string().default('env://MOYASAR_WEBHOOK_SECRET'),
+  MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF: z.string().default(''), // the secret being rotated out, accepted meanwhile
+  MOYASAR_HTTP_TIMEOUT_MS: int(10000),
+  // job.payments_reconcile: daily, after the Asia/Riyadh day it compares has ended (00:30 UTC = 03:30 Riyadh)
+  PAYMENTS_RECONCILE_CRON_UTC: z.string().default('30 0 * * *'),
+
   VAPID_PUBLIC_KEY: z.string().default(''),
   VAPID_PRIVATE_KEY: z.string().default(''),
   VAPID_SUBJECT: z.string().default('mailto:ops@example.com'),
@@ -168,6 +179,19 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       'WA_MODE=live is only allowed in staging (with WA_TEST_RECIPIENT_ALLOWLIST) or production',
     ]);
   }
+  // V2-020 (DEC-510): no real charge outside production — the gateway's live API is production's only, and
+  // production never runs on the simulator
+  if (env.APP_ENV === 'production' && env.MOYASAR_MODE !== 'live') {
+    throw new EnvError(['MOYASAR_MODE must be live in production']);
+  }
+  if (env.APP_ENV !== 'production' && env.MOYASAR_MODE === 'live') {
+    throw new EnvError([
+      'MOYASAR_MODE=live is only allowed in production (dev, test and staging use the simulator)',
+    ]);
+  }
+  if (env.MOYASAR_MODE === 'simulator' && isGatewayHost(env.MOYASAR_BASE_URL)) {
+    throw new EnvError(['MOYASAR_BASE_URL must be the payment simulator when MOYASAR_MODE=simulator']);
+  }
   // Web Push (05 §8, 14 §6): both VAPID keys or none (none = the dev sender, or Push disabled outside local)
   if (!!env.VAPID_PUBLIC_KEY !== !!env.VAPID_PRIVATE_KEY) {
     throw new EnvError(['VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together']);
@@ -213,6 +237,9 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
   if (env.WA_MODE === 'live' && new URL(env.WA_GRAPH_BASE_URL).protocol !== 'https:') {
     out.push('WA_GRAPH_BASE_URL must be https when WA_MODE=live');
   }
+  if (env.MOYASAR_MODE === 'live' && new URL(env.MOYASAR_BASE_URL).protocol !== 'https:') {
+    out.push('MOYASAR_BASE_URL must be https when MOYASAR_MODE=live');
+  }
   if (env.APP_ENV === 'staging' && env.WA_MODE === 'live' && !env.WA_TEST_RECIPIENT_ALLOWLIST.trim()) {
     out.push('WA_TEST_RECIPIENT_ALLOWLIST is required in staging with WA_MODE=live (05 §9 rule 2)');
   }
@@ -241,6 +268,12 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
     if (unknown.length) out.push(`CHAOS_KILL_AT names unknown kill points: ${unknown.join(', ')} (17 H-03)`);
   }
   return out;
+}
+
+/** The payment gateway's own hosts (moyasar.com and its subdomains): never the target of simulator mode. */
+export function isGatewayHost(url: string): boolean {
+  const host = new URL(url).hostname.toLowerCase();
+  return host === 'moyasar.com' || host.endsWith('.moyasar.com');
 }
 
 /** `trust proxy` for Express: a hop count ("1") or Express's own list syntax ("loopback, 10.0.0.0/8"). */

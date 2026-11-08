@@ -29,4 +29,6 @@ export * from './modules/venue-profiles/index.js';
 
 export * from './modules/customer-accounts/index.js';
 
+export * from './modules/payments-online/index.js';
+
 export * from './use-cases/index.js';

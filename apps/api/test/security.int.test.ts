@@ -220,6 +220,8 @@ describe('session cookie of a production configuration (09 §9.3, 17 §10)', () 
         APP_ENV: 'production',
         WA_MODE: 'live',
         WA_GRAPH_BASE_URL: 'https://graph.example.test',
+        MOYASAR_MODE: 'live',
+        MOYASAR_BASE_URL: 'https://payments.example.test',
         APP_BASE_URL: origin,
         SESSION_COOKIE_NAME: '__Host-point_sid',
         SESSION_COOKIE_SECURE: 'true',
