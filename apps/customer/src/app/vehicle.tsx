@@ -84,7 +84,13 @@ export default function Vehicle() {
     <Screen
       footer={
         <>
-          <Button label={t.vehicle.submit} loading={busy} loadingLabel={t.common.saving} onPress={submit} />
+          <Button
+            label={t.vehicle.submit}
+            loading={busy}
+            loadingLabel={t.common.saving}
+            onPress={submit}
+            testID="vehicle-submit"
+          />
           <Button
             label={fromList ? t.vehicles.cancel : t.vehicle.skip}
             variant="ghost"
