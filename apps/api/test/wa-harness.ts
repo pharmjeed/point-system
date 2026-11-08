@@ -12,6 +12,7 @@ import {
   parseEncryptionKey,
   resetWhatsappSeams,
   whatsappJobs,
+  type Logger,
   type Tx,
 } from '@point/server';
 import { startSimulator, type RunningSimulator } from '../../../tools/wa-simulator/src/index.js';
@@ -47,7 +48,9 @@ export interface WaTestApp extends TestApp {
   syncTemplates(): Promise<void>;
 }
 
-export async function createWaTestApp(opts: { env?: Record<string, string> } = {}): Promise<WaTestApp> {
+export async function createWaTestApp(
+  opts: { env?: Record<string, string>; logger?: Logger } = {},
+): Promise<WaTestApp> {
   Object.assign(process.env, WA_TEST_SECRETS);
   const sim = await startSimulator({
     appSecret: WA_TEST_SECRETS.WA_APP_SECRET,
@@ -59,6 +62,7 @@ export async function createWaTestApp(opts: { env?: Record<string, string> } = {
   });
   const t = await createTestApp({
     env: { WA_GRAPH_BASE_URL: sim.url, WA_HTTP_TIMEOUT_MS: '3000', ...(opts.env ?? {}) },
+    ...(opts.logger ? { logger: opts.logger } : {}),
   });
   await t.app.listen(0, '127.0.0.1');
   const apiUrl = `http://127.0.0.1:${(t.app.getHttpServer().address() as AddressInfo).port}`;

@@ -12,6 +12,7 @@ import {
   metrics,
   type Clock,
   type Env,
+  type Logger,
 } from '@point/server';
 
 export interface CoreModuleOptions {
@@ -20,6 +21,8 @@ export interface CoreModuleOptions {
   database?: Database;
   /** extra modules for tests */
   extraModules?: Type[];
+  /** tests: the process logger (V2-051 reads every line the api writes, looking for a phone or a code) */
+  logger?: Logger;
 }
 
 /** Process-wide singletons: configuration, clock, database pool, logger, secret resolver. */
@@ -43,7 +46,7 @@ export class CoreModule {
         clock,
       );
     database.onRetry = (sqlstate) => metrics.dbTxRetries.inc({ sqlstate });
-    const logger = createLogger({ level: opts.env.LOG_LEVEL, name: 'point-api' });
+    const logger = opts.logger ?? createLogger({ level: opts.env.LOG_LEVEL, name: 'point-api' });
     database.onIdleError = (err) =>
       logger.warn({ err }, 'idle database connection failed; it will be replaced');
     return {

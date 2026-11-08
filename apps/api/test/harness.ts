@@ -1,6 +1,6 @@
 import { SEED_CREDENTIALS, SEED_IDS, seed } from '@point/db/seed';
 import { createTestDatabase, type TestDatabase } from '@point/db/testing';
-import { Database, FakeClock, type DatabaseConfig, type Env } from '@point/server';
+import { Database, FakeClock, type DatabaseConfig, type Env, type Logger } from '@point/server';
 import { createSessionCookie, setSupervisorMfaRequired } from '@point/server/testing';
 import pg from 'pg';
 import request from 'supertest';
@@ -46,6 +46,8 @@ export async function createTestApp(
     supervisorMfa?: boolean;
     /** the app's pool settings (e.g. a connection through startFreezeProxy); the seed connects directly */
     dbConfig?: (url: string) => Partial<DatabaseConfig>;
+    /** the api's logger (V2-051: the security suite reads its lines) */
+    logger?: Logger;
   } = {},
 ): Promise<TestApp> {
   const tdb = await createTestDatabase();
@@ -67,7 +69,13 @@ export async function createTestApp(
     }
     if (!(opts.supervisorMfa ?? false)) await setSupervisorMfaRequired(db, SEED_IDS.org, false);
   }
-  const app = await createApp({ env, database: db, clock, extraModules: opts.extraModules });
+  const app = await createApp({
+    env,
+    database: db,
+    clock,
+    extraModules: opts.extraModules,
+    ...(opts.logger ? { logger: opts.logger } : {}),
+  });
   await app.init();
   const cookies = new Map<string, string>();
   const sessionFor = async (user: string) => {
