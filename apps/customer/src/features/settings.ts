@@ -1,6 +1,6 @@
 /**
  * C-19 الإعدادات (V2-017, docs/v2/01 R6): language (Arabic / English, kept on the device and sent to the account so
- * WhatsApp and push follow it), notifications (a placeholder until push arrives with V2-016), «تواصل معنا» from the
+ * WhatsApp and push follow it), notifications (V2-016, ./push.ts), «تواصل معنا» from the
  * configuration, the terms and privacy pages the API names (`consents.*.document_url`), the app version, sign out
  * and «حذف الحساب» (C-20). Pure.
  */

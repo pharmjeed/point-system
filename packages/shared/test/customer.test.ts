@@ -43,6 +43,10 @@ describe('docs/v2/05 §1: every customer route of the contracts is documented', 
       'vehicleCreate',
       'vehicleDelete',
       'meDelete',
+      // V2-015 / V2-016
+      'visitRequest',
+      'visitRating',
+      'devices',
       // V2-022 / V2-023 (DEC-521, DEC-524)
       'visitPay',
       'paymentMethodCreate',

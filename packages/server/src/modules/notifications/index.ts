@@ -69,9 +69,11 @@ export {
 } from './domain/realtime-rules.js';
 export {
   registerTicketSummaryProjection,
+  registerTicketUpdateListener,
   requestTicketUpdate,
   type TicketSummaryProjection,
   type TicketSummaryView,
+  type TicketUpdateListener,
   type TicketUpdateOptions,
 } from './application/ticket-updates.js';
 export {

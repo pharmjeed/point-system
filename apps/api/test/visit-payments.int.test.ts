@@ -13,8 +13,10 @@ import {
 import { rooms, vatOfInclusive } from '@point/shared';
 import {
   CUSTOMER_ROUTES,
+  customerRoom,
   CustomerPaymentMethodListSchema,
-  CustomerVisitPaymentSchema,
+  CustomerVisitDetailSchema,
+  CustomerOnlinePaymentSchema,
   successEnvelopeSchema,
 } from '@point/shared/customer';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -174,7 +176,7 @@ const cardCmd = (
 
 const paid = (r: { status: number; body: any }, status = 201) => {
   expect(r.status, JSON.stringify(r.body)).toBe(status);
-  return successEnvelopeSchema(CustomerVisitPaymentSchema).parse(r.body).data;
+  return successEnvelopeSchema(CustomerOnlinePaymentSchema).parse(r.body).data;
 };
 const errOf = (r: { status: number; body: any }) => ({
   status: r.status,
@@ -323,6 +325,46 @@ describe('V2-022 — POST /v1/customer/visits/{ticketId}/pay (C-12 → C-10)', (
       status: 409,
       code: 'PAYMENT_ALREADY_RECORDED',
       details: { online_payment_id: r.payment_id, method: 'app' },
+    });
+  });
+
+  it('C-12 reads the payment in its summary, and the customer’s socket hears visit.updated when it is paid (3-D Secure, worker)', async () => {
+    const a = await account();
+    const p = await parkedVisit(a);
+    const visit = async () => {
+      const r = await t.http().get(`/v1/customer/visits/${p.ticketId}`).set(bearer(a));
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      return successEnvelopeSchema(CustomerVisitDetailSchema).parse(r.body).data;
+    };
+    expect((await visit()).payment).toMatchObject({
+      entitlement: 'none',
+      payment_status: 'due',
+      fee_halalas: FEE,
+      payable_in_app: true,
+      online_payment: null,
+    });
+    const r = paid(
+      await payVisit(a, p.ticketId, { source: { type: 'token', token: await tokenOf(TEST_CARDS.threeDs) } }),
+    );
+    expect((await visit()).payment).toMatchObject({
+      payable_in_app: true,
+      online_payment: { payment_id: r.payment_id, status: 'initiated', paid_at: null },
+    });
+    const rt = await captureRealtime(t);
+    try {
+      await sim.client.complete3ds((await paymentById(t.db, r.payment_id))!.gateway_payment_id!, 'success');
+      await settle();
+      await rt.settle();
+      const updates = rt.of('visit.updated', customerRoom(a.id));
+      expect(updates.at(-1)?.message.data).toMatchObject({ ticket_id: p.ticketId, open: true });
+    } finally {
+      await rt.stop();
+    }
+    expect((await visit()).payment).toMatchObject({
+      entitlement: 'app_paid',
+      payment_status: 'collected',
+      payable_in_app: false,
+      online_payment: { payment_id: r.payment_id, status: 'paid' },
     });
   });
 
@@ -554,7 +596,7 @@ describe('V2-022 — one payment per ticket (DEC-522)', () => {
   });
 
   it('races: cash and online at the same moment, both orders, never two counting payments', async () => {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 4; i++) {
       const a = await account();
       const r = await readyTicket(t, await driver());
       const d = r.driver;

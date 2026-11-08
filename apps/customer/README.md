@@ -69,7 +69,7 @@ CUSTOMER_LIVE_API_URL=http://127.0.0.1:3000 WA_SIMULATOR_URL=http://127.0.0.1:40
 
 ## الدفع للزيارة والبطاقات المحفوظة (V2-022، V2-023)
 
-- **منطقة الدفع في `C-12`:** مكوّن منفصل `src/features/pay/` يُركَّب في شاشة الزيارة الجارية (مسار آخر يبنيها) بسطر واحد حين تكون رسوم الزيارة مستحقة (أهلية `none`، لم تُسلَّم):
+- **منطقة الدفع في `C-12`:** مكوّن منفصل `src/features/pay/` مركّب في `src/ui/VisitPaymentSlot.tsx` حين يقول الخادم `payment.payable_in_app` (الرسوم مستحقة، أهلية `none`، لم تُسلَّم):
 
   ```tsx
   import { PayDue } from '../features/pay';
@@ -87,9 +87,12 @@ app.config.ts        Expo: العلامة من الإعداد، الألوان �
 metro.config.js      @point/shared من مصادره (شرط @point/source، و‎./x.js ← ./x.ts)
 assets/brand/        نسخ كما هي من brand/app-icons و brand/logo/point/png
 src/app/             الشاشات (Expo Router): welcome C-01، phone C-02، otp C-03، profile C-04،
-                     vehicle C-05، home C-06، pass (C-11 مؤقتة حتى V2-013)، locations C-07،
-                     location/[venueId] C-08، vehicles C-15، settings C-19، delete-account C-20
-src/api/             العميل المطبوع (client.ts)، النقل (transport.ts)، الخادم الوهمي (fake/)
+                     vehicle C-05، home C-06، pass C-11، locations C-07، location/[venueId] C-08،
+                     visit/[ticketId] C-12 (+ C-13)، visits C-16، vehicles C-15، settings C-19،
+                     delete-account C-20
+src/api/             العميل المطبوع (client.ts)، النقل (transport.ts)، الخادم الوهمي (fake/، والزيارات fake/visits.ts)
+src/realtime/        الاتصال الفوري: Socket.IO namespace /customer بترويسة Bearer، أو أحداث الخادم الوهمي (V2-015)
+src/push/            الإشعارات (expo-notifications): الإذن، رمز Expo، النقر يفتح C-12 (V2-016)
 src/session/         الرموز في expo-secure-store، مزوّد الجلسة
 src/features/        منطق الشاشات النقي (التوجيه، الجوال، الرمز، الموافقات، السيارة، الرئيسية)
 src/i18n/            ar.ts (المرجع) و en.ts، التنسيق بأرقام لاتينية وتوقيت الرياض
@@ -97,6 +100,10 @@ src/theme/tokens.ts  القيم من brand/tokens/tokens.json فقط
 src/ui/              المكونات (Button، Field، CodeInput، PlateInput، Checkbox، Banner، Logo …)
 test/                Vitest (المشروع customer-unit)
 ```
+
+## الإشعارات (V2-016، DEC-519)
+
+يحتاج رمز Expo معرّف مشروع EAS: `CUSTOMER_EAS_PROJECT_ID` ← `extra.eas.projectId` (لا يُحفظ في المستودع، DEC-483). بدونه تقول `C-19` «الإشعارات غير متاحة في هذه النسخة» ولا تظهر بطاقة الإذن في `C-12`. الخادم يرسل عبر Expo Push API في الإنتاج وحده (`CUSTOMER_PUSH_MODE=live`)، وفي التطوير يسجّل المحاكي ما كان سيُرسل بلا اتصال. الإذن يُطلب في `C-12` مرة حين توجد زيارة جارية، أو من `C-19`، لا عند الإقلاع.
 
 ## الفحوص
 

@@ -2,8 +2,8 @@
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
 -- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, 0009 the customer accounts,
--- V2-010, 0010 the entry pass and the app tickets, V2-013/V2-014, 0011 their deletion, V2-017, and 0012 the online
--- payments, V2-020 / V2-021):
+-- V2-010, 0010 the entry pass and the app tickets, V2-013/V2-014, 0011 their deletion, V2-017, 0012 the online payments,
+-- V2-020 / V2-021, and 0013 the customer visits and pushes, V2-015 / V2-016):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -277,4 +277,29 @@ SELECT expect_fail('ticket naming a vehicle that is not a customer vehicle',
 UPDATE tickets SET channel='app', customer_id='00000000-0000-0000-0000-000000000c51',
   customer_vehicle_id='00000000-0000-0000-0000-00000000cb01', entitlement='event_included'
  WHERE id='00000000-0000-0000-0000-0000000000e2';
+-- V2-015 / V2-016 (0013_customer_visits_push.sql, DEC-516 … DEC-520): the request from the app, the rating, the pushes
+SELECT expect_fail('retrieval request source outside whatsapp/staff/app',
+ $q$INSERT INTO retrieval_cycles(org_id,venue_id,ticket_id,cycle_no,requested_at,request_source,requested_by_customer_id) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000e2',7,now(),'sms','00000000-0000-0000-0000-000000000c51')$q$);
+SELECT expect_fail('app request without the requesting customer',
+ $q$INSERT INTO retrieval_cycles(org_id,venue_id,ticket_id,cycle_no,requested_at,request_source) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000e2',7,now(),'app')$q$);
+SELECT expect_fail('early request source outside whatsapp/app',
+ $q$UPDATE tickets SET pending_retrieval_at=now(), pending_retrieval_source='staff' WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+INSERT INTO customer_visit_ratings(org_id,venue_id,ticket_id,account_id,stars) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000e2','00000000-0000-0000-0000-00000000ca01',5);
+SELECT expect_fail('second rating of the same visit',
+ $q$INSERT INTO customer_visit_ratings(org_id,venue_id,ticket_id,account_id,stars) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000e2','00000000-0000-0000-0000-00000000ca01',4)$q$);
+SELECT expect_fail('rating below one star',
+ $q$INSERT INTO customer_visit_ratings(org_id,venue_id,ticket_id,account_id,stars) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-00000000ca01',0)$q$);
+SELECT expect_fail('rating above five stars',
+ $q$INSERT INTO customer_visit_ratings(org_id,venue_id,ticket_id,account_id,stars) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-00000000ca01',6)$q$);
+SELECT expect_fail('push token without its provider',
+ $q$UPDATE customer_account_sessions SET push_token='ExponentPushToken[a]', push_registered_at=now() WHERE refresh_hash='rh1'$q$);
+UPDATE customer_account_sessions SET push_token='ExponentPushToken[a]', push_provider='expo', push_registered_at=now() WHERE refresh_hash='rh1';
+SELECT expect_fail('revoked customer session that keeps its push token',
+ $q$UPDATE customer_account_sessions SET revoked_at=now(), revoked_reason='logout' WHERE refresh_hash='rh1'$q$);
+SELECT expect_fail('one push token on two sessions',
+ $q$INSERT INTO customer_account_sessions(account_id,device_id,platform,refresh_hash,access_hash,access_expires_at,refresh_expires_at,push_token,push_provider,push_registered_at) VALUES ('00000000-0000-0000-0000-00000000ca01','device-0009','ios','rh9','ah9',now()+interval '15 minutes',now()+interval '60 days','ExponentPushToken[a]','expo',now())$q$);
+SELECT expect_fail('skipped customer push without a reason',
+ $q$INSERT INTO customer_push_messages(account_id,session_id,kind,dedupe_key,status) SELECT '00000000-0000-0000-0000-00000000ca01',id,'car_ready','push:x','skipped' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
+SELECT expect_fail('unknown customer push kind',
+ $q$INSERT INTO customer_push_messages(account_id,session_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'marketing','push:y' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
 SELECT 'ALL INVARIANT TESTS PASSED';

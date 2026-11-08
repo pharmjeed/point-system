@@ -209,9 +209,10 @@ export class MovementUseCase {
       `UPDATE tickets SET status = 'ready', version = version + 1 WHERE id = $1 RETURNING *`,
       [ticket.id],
     );
-    // PNT-047: claim code (hash + the only encrypted copy for W-05) and its expiry timer; none in S2
+    // PNT-047: claim code (hash + the only encrypted copy for W-05) and its expiry timer; none in S2. V2-015
+    // (DEC-517): an app ticket gets its code the same way — delivered by C-12 (and the «جاهزة» push) instead of W-05
     const code =
-      cycle && tk.channel === 'whatsapp' && tk.wa_link_status === 'linked'
+      cycle && ((tk.channel === 'whatsapp' && tk.wa_link_status === 'linked') || tk.channel === 'app')
         ? await claimCodeHook().issueAtReady(tx, { ticket: tk, cycle: { ...cycle, ready_at: tx.now }, actor })
         : null;
     const expected = code ? 'code' : tk.paper_serial ? 'paper_stub' : 'supervisor_exception';

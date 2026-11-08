@@ -54,7 +54,8 @@ export async function issueCustomerSession(
   device: { id: string; platform: CustomerDevicePlatform },
 ): Promise<{ sessionId: string; tokens: CustomerTokens }> {
   await tx.query(
-    `UPDATE customer_account_sessions SET revoked_at = $3, revoked_reason = 'signed_in_again'
+    `UPDATE customer_account_sessions SET revoked_at = $3, revoked_reason = 'signed_in_again',
+            push_token = NULL, push_provider = NULL, push_registered_at = NULL
       WHERE account_id = $1 AND device_id = $2 AND revoked_at IS NULL`,
     [accountId, device.id, tx.now],
   );
@@ -112,7 +113,8 @@ export async function refreshCustomerSession(
   if (reuse || s.device_id !== body.device_id) {
     const reason = reuse ? 'refresh_reuse' : 'device_mismatch';
     await tx.query(
-      `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = $3 WHERE id = $1 AND revoked_at IS NULL`,
+      `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = $3,
+              push_token = NULL, push_provider = NULL, push_registered_at = NULL WHERE id = $1 AND revoked_at IS NULL`,
       [s.id, tx.now, reason],
     );
     await customerAudit(tx, {
@@ -155,7 +157,8 @@ export async function logoutCustomer(
   const own = customerTokenSession('refresh', body.refresh_token) === actor.sessionId;
   const r = own
     ? await tx.query(
-        `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = 'logout'
+        `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = 'logout',
+                push_token = NULL, push_provider = NULL, push_registered_at = NULL
           WHERE id = $1 AND revoked_at IS NULL AND refresh_hash = $3`,
         [actor.sessionId, tx.now, customerTokenHash(body.refresh_token)],
       )

@@ -112,12 +112,13 @@ export async function deleteCustomerAccount(
     cards.rows.map((c) => c.id),
   );
   const sessions = await tx.query(
-    `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = 'account_closed'
+    `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = 'account_closed',
+            push_token = NULL, push_provider = NULL, push_registered_at = NULL
       WHERE account_id = $1 AND revoked_at IS NULL`,
     [actor.accountId, tx.now],
   );
   await tx.query(
-    `UPDATE customer_account_sessions SET push_token = NULL, reauth_hash = NULL, reauth_expires_at = NULL
+    `UPDATE customer_account_sessions SET push_token = NULL, push_provider = NULL, push_registered_at = NULL, reauth_hash = NULL, reauth_expires_at = NULL
       WHERE account_id = $1 AND (push_token IS NOT NULL OR reauth_hash IS NOT NULL)`,
     [actor.accountId],
   );
@@ -131,6 +132,16 @@ export async function deleteCustomerAccount(
   await tx.query(`DELETE FROM customer_idempotency_keys WHERE account_id = $1 AND status = 'completed'`, [
     actor.accountId,
   ]);
+  // V2-015 (DEC-518): the stars of C-13 stay with the operator's visit, the free-text note is the customer's own
+  await tx.query(`UPDATE customer_visit_ratings SET note = NULL WHERE account_id = $1 AND note IS NOT NULL`, [
+    actor.accountId,
+  ]);
+  // V2-016 (DEC-519): nothing more is pushed to the account's devices
+  await tx.query(
+    `UPDATE customer_push_messages SET status = 'skipped', skipped_reason = 'account_unavailable', updated_at = $2
+      WHERE account_id = $1 AND status = 'pending'`,
+    [actor.accountId, tx.now],
+  );
   const linked = await tx.one<{ n: number }>(
     `SELECT count(*)::int AS n FROM customers c WHERE c.customer_account_id = $1`,
     [actor.accountId],

@@ -10,16 +10,36 @@ import { IBMPlexSansArabic_500Medium } from '@expo-google-fonts/ibm-plex-sans-ar
 import { IBMPlexSansArabic_600SemiBold } from '@expo-google-fonts/ibm-plex-sans-arabic/600SemiBold';
 import { IBMPlexSansArabic_700Bold } from '@expo-google-fonts/ibm-plex-sans-arabic/700Bold';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nProvider } from '../i18n/I18nProvider';
-import { SessionProvider } from '../session/SessionProvider';
+import { pushRoute } from '../features/push';
+import { onNotificationTap } from '../push/notifications';
+import { SessionProvider, useSession } from '../session/SessionProvider';
 import { color } from '../theme/tokens';
 
 void SplashScreen.preventAutoHideAsync();
+
+/**
+ * V2-016 (DEC-520): a tapped notification opens C-12 of its visit — from `data` only (opaque ids); signed out, the app
+ * stays where R1 sends it.
+ */
+function PushDeepLinks() {
+  const router = useRouter();
+  const session = useSession();
+  const signedIn = session.me !== null;
+  useEffect(() => {
+    if (!signedIn) return;
+    return onNotificationTap((data) => {
+      const route = pushRoute(data);
+      if (route) router.push(route);
+    });
+  }, [router, signedIn]);
+  return null;
+}
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -42,6 +62,7 @@ export default function RootLayout() {
       <I18nProvider>
         <SessionProvider>
           <StatusBar style="dark" />
+          <PushDeepLinks />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }} />
         </SessionProvider>
       </I18nProvider>

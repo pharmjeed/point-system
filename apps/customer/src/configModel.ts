@@ -17,6 +17,11 @@ export interface AppConfig {
   /** The app version shown on C-19 (app.config.ts `version`). */
   version: string;
   /**
+   * V2-016 (DEC-519): the EAS project id an Expo push token is issued for (`extra.eas.projectId`, from
+   * `CUSTOMER_EAS_PROJECT_ID`); without one the build cannot receive pushes and C-19 says so.
+   */
+  push: { projectId: string | null };
+  /**
    * V2-022 / V2-023 (DEC-524): the card is tokenized on the device with Moyasar's **publishable** key (`pk_…`, never
    * a secret key) at `baseUrl` (`https://api.moyasar.com`, or tools/payment-simulator in development); without a key
    * card entry is unavailable (fake mode tokenizes locally). Apple Pay needs the merchant id of POINT's certificate
@@ -44,6 +49,7 @@ export function parseAppConfig(extra: unknown, isDev: boolean, version?: string 
   const api = (e.api ?? {}) as Record<string, unknown>;
   const maps = (e.maps ?? {}) as Record<string, unknown>;
   const support = (e.support ?? {}) as Record<string, unknown>;
+  const eas = (e.eas ?? {}) as Record<string, unknown>;
   const nameAr = str(brand.nameAr);
   const nameEn = str(brand.nameEn);
   if (!nameAr || !nameEn) throw new ConfigError('extra.brand.nameAr/nameEn are required (app.config.ts)');
@@ -71,6 +77,7 @@ export function parseAppConfig(extra: unknown, isDev: boolean, version?: string 
       email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null,
     },
     version: str(version) ?? '0.0.0',
+    push: { projectId: str(eas.projectId) },
     payments: parsePayments(e.payments, isDev),
   };
 }

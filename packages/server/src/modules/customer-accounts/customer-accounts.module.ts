@@ -1,4 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, type OnModuleInit } from '@nestjs/common';
+import { startCustomerPushPlanner } from './application/customer-push.js';
+import { startCustomerRealtime } from './application/customer-realtime.js';
 import { MediaHttpModule } from '../media/index.js';
 import { CustomerController } from './http/customer.controller.js';
 
@@ -11,4 +13,10 @@ import { CustomerController } from './http/customer.controller.js';
   imports: [MediaHttpModule],
   controllers: [CustomerController],
 })
-export class CustomerAccountsHttpModule {}
+export class CustomerAccountsHttpModule implements OnModuleInit {
+  /** V2-015 / V2-016: commands of the api plan the customer pushes and `visit.updated` in their transaction. */
+  onModuleInit(): void {
+    startCustomerPushPlanner();
+    startCustomerRealtime();
+  }
+}

@@ -129,3 +129,30 @@ export async function touchCustomerSession(q: Q, sessionId: string, now: Date): 
     [sessionId, now],
   );
 }
+
+/**
+ * V2-015 (DEC-520): whether a customer socket's session may stay connected — re-checked every minute. The socket was
+ * opened with a valid access token (loadCustomerActor); afterwards the 15-minute access lifetime does not end it
+ * (the app does not reconnect at every refresh), the session itself does: revoked (logout, theft detection, the
+ * account deleted, signed in again), past its refresh lifetime, or the account no longer active. Throws the same
+ * codes as loadCustomerActor.
+ */
+export async function checkCustomerSocketSession(q: Q, sessionId: string, now: Date): Promise<void> {
+  const r = await q.query<{
+    revoked_at: Date | null;
+    revoked_reason: string | null;
+    refresh_expires_at: Date;
+    status: string;
+  }>(
+    `SELECT s.revoked_at, s.revoked_reason, s.refresh_expires_at, a.status
+       FROM customer_account_sessions s JOIN customer_accounts a ON a.id = s.account_id WHERE s.id = $1`,
+    [sessionId],
+  );
+  const s = r.rows[0];
+  if (!s) throw new AppError('AUTH_UNAUTHENTICATED');
+  if (s.status === 'deleted') throw new AppError('ACCOUNT_DELETED');
+  if (s.revoked_at) throw new AppError('AUTH_SESSION_REVOKED', { reason: s.revoked_reason ?? 'logout' });
+  if (s.refresh_expires_at.getTime() <= now.getTime())
+    throw new AppError('AUTH_SESSION_REVOKED', { reason: 'expired' });
+  if (s.status !== 'active') throw new AppError('AUTH_ACCOUNT_DISABLED');
+}

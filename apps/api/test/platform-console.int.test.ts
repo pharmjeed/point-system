@@ -49,9 +49,12 @@ async function session(accountId: string, push: string | null = null) {
   const access = newCustomerToken('access', sid);
   const refresh = newCustomerToken('refresh', sid);
   await t.db.query(
+    // V2-016 (0013): a push token comes with its provider and registration time (ck_customer_sessions_push_pair)
     `INSERT INTO customer_account_sessions (id, account_id, device_id, platform, refresh_hash, access_hash, push_token,
-            access_expires_at, refresh_expires_at, created_at)
-     VALUES ($1, $2, $3, 'ios', $4, $5, $6, $7::timestamptz + interval '15 minutes', $7::timestamptz + interval '60 days', $7)`,
+            push_provider, push_registered_at, access_expires_at, refresh_expires_at, created_at)
+     VALUES ($1, $2, $3, 'ios', $4, $5, $6, CASE WHEN $6::text IS NULL THEN NULL ELSE 'expo' END,
+             CASE WHEN $6::text IS NULL THEN NULL ELSE $7::timestamptz END,
+             $7::timestamptz + interval '15 minutes', $7::timestamptz + interval '60 days', $7)`,
     [sid, accountId, `device-${sid}`, sha256Hex(refresh), sha256Hex(access), push, t.clock.now()],
   );
   return { access, refresh };

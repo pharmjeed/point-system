@@ -12468,6 +12468,375 @@ paths:
       x-rate-limit-class: read
       x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
   # --- end V2-013 ---
+  # --- V2-015 / V2-016 (C-12, C-16, C-13, push; DEC-516 … DEC-520) ---
+  /v1/customer/visits:
+    get:
+      operationId: customerVisits
+      summary: زياراتي C-16
+      tags: [Customer]
+      description: |-
+        زيارات الحساب عبر المشغلين، الأحدث أولًا (listAccountVisits، DEC-504): الموقع والمشغل والحالة واللوحة ووقتا الاستلام والتسليم والمدة والأهلية وحالة الدفع وهل قُيّمت — بلا خانة مفتاح ولا موقف ولا موظفين ولا رمز (V2-015، DEC-516). صفحات بمؤشر meta.next_cursor المعتم.
+      parameters:
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitListEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+  /v1/customer/visits/{ticketId}:
+    get:
+      operationId: customerVisit
+      summary: سيارتي الآن C-12
+      tags: [Customer]
+      description: |-
+        الزيارة الحية (V2-015، DEC-516/DEC-517): الحالة والخط الزمني للدورة الحالية، وما يفعله «اطلب السيارة» الآن (can_request، pending_early)، وطريقة التسليم وهل يظهر الرمز الآن (handover.code_available)، وصور فحص الاستلام روابط موقّعة ≤ 300 ث، وملخص الأهلية والدفع، والتقييم. لا خانة مفتاح ولا موقف ولا رمز. زيارة حساب آخر أو تذكرة ملغاة أو معرّف مجهول ← RESOURCE_NOT_FOUND (resource: customer_visit). الرد Cache-Control: no-store.
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, RESOURCE_NOT_FOUND]
+  /v1/customer/visits/{ticketId}/request:
+    post:
+      operationId: customerVisitRequest
+      summary: اطلب السيارة من C-12
+      tags: [Customer]
+      description: |-
+        أمر طلب العميل نفسه في 10 §7.2/§7.3 (زر «طلب السيارة» في واتساب، TT-06a/TT-07) بمصدر app وفاعل العميل وجلسته دليلًا (V2-015، DEC-516): L1 مجموعة التذكرة ثم L5 التذكرة؛ parked بلا دورة ← دورة ومهمة إحضار وتمرير فوري (requested)؛ received/parking/reparking بلا طلب ← طلب مبكر يُحوَّل عند الصف بوقته الأصلي (requested_early، DEC-13)؛ دورة مفتوحة أو طلب مبكر قائم ← RETRIEVAL_ALREADY_ACTIVE؛ مُسلَّمة ← TICKET_CLOSED؛ زيارة حساب آخر أو ملغاة ← RESOURCE_NOT_FOUND.
+
+        الأثر: retrieval_cycles + tasks (أو tickets.pending_retrieval_at) + ticket_events + audit_log (retrieval.request، فاعل customer) + customer_audit_log + outbox
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitRequestEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: RETRIEVAL_ALREADY_ACTIVE | TICKET_CLOSED | IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND, RETRIEVAL_ALREADY_ACTIVE, TICKET_CLOSED]
+  /v1/customer/visits/{ticketId}/handover-code:
+    get:
+      operationId: customerVisitHandoverCode
+      summary: رمز التسليم في C-12
+      tags: [Customer]
+      description: |-
+        رمز التسليم لتذكرة تطبيق جاهزة فقط (DEC-38، DEC-517): يُفك من النسخة المشفرة الوحيدة claim_codes.code_ciphertext لجلسة الحساب نفسه، ويقوله العميل للسائق فيتحقق منه D-11 كما في W-05. غير جاهزة ← HANDOVER_NOT_READY؛ جاهزة بلا رمز يُعرض هنا ← HANDOVER_CODE_UNAVAILABLE بالسبب (whatsapp: يصل في W-05؛ staff: لا رمز للزيارة؛ locked: محاولات خاطئة كثيرة — المشرف؛ expired: يصدر السائق رمزًا جديدًا؛ none). لا يُسجَّل الرمز ولا يُخزَّن في حدث أو تدقيق، والرد Cache-Control: no-store.
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerHandoverCodeEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: HANDOVER_NOT_READY | HANDOVER_CODE_UNAVAILABLE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, HANDOVER_CODE_UNAVAILABLE, HANDOVER_NOT_READY, RESOURCE_NOT_FOUND]
+  /v1/customer/visits/{ticketId}/rating:
+    post:
+      operationId: customerVisitRating
+      summary: قيّم الزيارة C-13
+      tags: [Customer]
+      description: |-
+        مرة واحدة لكل زيارة بعد التسليم (V2-015، DEC-518): 1–5 نجوم وملاحظة اختيارية حتى 500 حرف. قبل التسليم ← CUSTOMER_VISIT_NOT_DELIVERED؛ تقييم ثانٍ ← CUSTOMER_VISIT_ALREADY_RATED.
+
+        الأثر: customer_visit_ratings + customer_audit_log (customer.visit.rated، بلا نص الملاحظة)
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stars:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                note:
+                  type: [string, 'null']
+                  maxLength: 500
+              required: [stars]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitRatingEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_VISIT_NOT_DELIVERED | CUSTOMER_VISIT_ALREADY_RATED | IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_VISIT_ALREADY_RATED, CUSTOMER_VISIT_NOT_DELIVERED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND]
+  /v1/customer/devices:
+    post:
+      operationId: customerDevices
+      summary: رمز الإشعارات للجهاز
+      tags: [Customer]
+      description: |-
+        رمز Expo للإشعارات لجلسة الجهاز المستدعي (V2-016، DEC-519): push_token يسجّل أو يستبدل، وnull يزيله (C-19). الرمز لجلسة حية واحدة: إن حمله جلسة أخرى انتقل إلى هذه. يُسقطه الخروج وحذف الحساب، ولا يُعاد في الرد ولا يُسجَّل.
+
+        الأثر: customer_account_sessions.push_token + customer_audit_log
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider:
+                  type: string
+                  enum: [expo]
+                push_token:
+                  type: [string, 'null']
+                  pattern: '^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]{8,160}\]$'
+              required: [provider, push_token]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDeviceEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED]
+  # --- end V2-015 / V2-016 ---
   # --- V2-022 / V2-023 (DEC-521 … DEC-525): paying a visit (C-10/C-12) and the saved cards (C-18) ---
   /v1/customer/visits/{ticketId}/pay:
     post:
@@ -12525,7 +12894,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CustomerVisitPaymentEnvelope'
+                $ref: '#/components/schemas/CustomerOnlinePaymentEnvelope'
         '401':
           $ref: '#/components/responses/CustomerError'
           description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
@@ -12591,7 +12960,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CustomerVisitPaymentEnvelope'
+                $ref: '#/components/schemas/CustomerOnlinePaymentEnvelope'
         '401':
           $ref: '#/components/responses/CustomerError'
           description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
@@ -13521,7 +13890,7 @@ components:
       description: custody_events.reason
     RequestSource:
       type: string
-      enum: [whatsapp, staff]
+      enum: [whatsapp, staff, app]
       description: retrieval_cycles.request_source
     CycleOutcome:
       type: string
@@ -19374,6 +19743,231 @@ components:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]
     # --- end V2-013 ---
+    # --- V2-015 / V2-016 (DEC-516 … DEC-520) ---
+    CustomerVisitSummary:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        venue_id:
+          type: string
+          format: uuid
+        venue_name_ar:
+          type: string
+        venue_name_en:
+          type: [string, 'null']
+        operator_name_ar:
+          type: string
+        operator_name_en:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        open:
+          type: boolean
+        channel:
+          type: string
+          enum: [whatsapp, paper, app]
+        plate_display:
+          type: [string, 'null']
+        received_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: [string, 'null']
+          format: date-time
+        duration_min:
+          type: [integer, 'null']
+          minimum: 0
+        payment:
+          type: object
+          properties:
+            entitlement:
+              type: string
+              enum: [none, subscription, app_paid, event_included]
+            payment_status:
+              type: string
+              enum: [not_required, due, collected, waived]
+            fee_halalas:
+              type: integer
+              minimum: 0
+          required: [entitlement, payment_status, fee_halalas]
+        rated:
+          type: boolean
+      required: [ticket_id, venue_id, venue_name_ar, venue_name_en, operator_name_ar, operator_name_en, status, open, channel, plate_display, received_at, delivered_at, duration_min, payment, rated]
+    CustomerVisitListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomerVisitSummary'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerVisitDetail:
+      allOf:
+      - $ref: '#/components/schemas/CustomerVisitSummary'
+      - type: object
+        properties:
+          timeline:
+            type: array
+            items:
+              type: object
+              properties:
+                step:
+                  type: string
+                  enum: [received, parked, requested, accepted, on_the_way, ready, delivered]
+                at:
+                  type: [string, 'null']
+                  format: date-time
+              required: [step, at]
+          request:
+            type: object
+            properties:
+              can_request:
+                type: boolean
+              pending_early:
+                type: boolean
+              requested_at:
+                type: [string, 'null']
+                format: date-time
+            required: [can_request, pending_early, requested_at]
+          handover:
+            type: object
+            properties:
+              method:
+                type: string
+                enum: [app_code, whatsapp, staff]
+              code_available:
+                type: boolean
+              code_expires_at:
+                type: [string, 'null']
+                format: date-time
+            required: [method, code_available, code_expires_at]
+          photos:
+            type: array
+            items:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum: [photo_front, photo_rear, photo_left, photo_right, photo_extra, photo_damage]
+                url:
+                  type: string
+                  format: uri
+                expires_at:
+                  type: string
+                  format: date-time
+              required: [kind, url, expires_at]
+          rating:
+            oneOf:
+            - $ref: '#/components/schemas/CustomerVisitRating'
+            - type: 'null'
+          can_rate:
+            type: boolean
+          vehicle_make:
+            type: [string, 'null']
+          vehicle_color:
+            type: [string, 'null']
+        required: [timeline, request, handover, photos, rating, can_rate, vehicle_make, vehicle_color]
+    CustomerVisitDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerVisitDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerVisitRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            outcome:
+              type: string
+              enum: [requested, requested_early]
+            visit:
+              $ref: '#/components/schemas/CustomerVisitDetail'
+          required: [outcome, visit]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerHandoverCode:
+      type: object
+      description: رمز التسليم للعميل وحده (DEC-38)؛ لا يُعرض للموظفين ولا يُسجَّل
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+        expires_at:
+          type: string
+          format: date-time
+        attempts_left:
+          type: integer
+          minimum: 0
+      required: [ticket_id, code, expires_at, attempts_left]
+    CustomerHandoverCodeEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerHandoverCode'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerVisitRating:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        note:
+          type: [string, 'null']
+        rated_at:
+          type: string
+          format: date-time
+      required: [ticket_id, stars, note, rated_at]
+    CustomerVisitRatingEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerVisitRating'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerDevice:
+      type: object
+      properties:
+        push_registered:
+          type: boolean
+        provider:
+          type: [string, 'null']
+          enum: [expo, null]
+        registered_at:
+          type: [string, 'null']
+          format: date-time
+      required: [push_registered, provider, registered_at]
+    CustomerDeviceEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerDevice'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    # --- end V2-015 / V2-016 ---
     # ---- V2-012 / V2-017 (DEC-505, DEC-507)
     CustomerVehicleRemovedEnvelope:
       type: object
@@ -19445,7 +20039,7 @@ components:
         card_brand: {type: [string, 'null']}
         card_last4: {type: [string, 'null']}
       required: [payment_id, issued_at, seller_name_ar, seller_name_en, venue_name_ar, venue_name_en, operator_name_ar, operator_name_en, description, amount_halalas, net_halalas, vat_halalas, vat_rate_bp, refunded_halalas, currency, card_brand, card_last4]
-    CustomerVisitPaymentEnvelope:
+    CustomerOnlinePaymentEnvelope:
       type: object
       properties:
         data:

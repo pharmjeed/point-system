@@ -31,6 +31,7 @@ import {
   PRICING_MODES,
   PUSH_NOTIFICATION_TYPES,
   REQUEST_SOURCES,
+  PENDING_RETRIEVAL_SOURCES,
   TASK_STATUSES,
   TASK_TYPES,
   TICKET_CHANNELS,
@@ -182,7 +183,7 @@ export const SERVER_ANALYTICS_PROPERTIES = {
     ingest_latency_ms: p.int(),
   },
   'ticket.retrieval_requested_early': {
-    request_source: p.one(['whatsapp']),
+    request_source: p.one(PENDING_RETRIEVAL_SOURCES),
     status_at_request: p.one(['received', 'parking', 'reparking']),
   },
   'ticket.assigned': { wait_s: p.int(), offer_mode: p.one(OFFER_MODES), offer_round_no: p.int() },

@@ -71,7 +71,7 @@ export type CustomerReceipt = z.infer<typeof CustomerReceiptSchema>;
  * is the gateway's 3-D Secure page while the payment waits for it; the app opens it in an in-app browser and
  * stops when the browser reaches `callback_url`.
  */
-export const CustomerVisitPaymentSchema = z.object({
+export const CustomerOnlinePaymentSchema = z.object({
   payment_id: z.uuid(),
   ticket_id: z.uuid(),
   status: OnlinePaymentStatusSchema,
@@ -88,7 +88,7 @@ export const CustomerVisitPaymentSchema = z.object({
   saved_payment_method_id: z.uuid().nullable(),
   receipt: CustomerReceiptSchema.nullable(),
 });
-export type CustomerVisitPayment = z.infer<typeof CustomerVisitPaymentSchema>;
+export type CustomerOnlinePayment = z.infer<typeof CustomerOnlinePaymentSchema>;
 
 // ---- C-18 saved cards (V2-023) ----
 

@@ -434,7 +434,8 @@ export class PlatformCustomersService {
     } else {
       const r = await tx.query(
         `UPDATE customer_account_sessions
-            SET revoked_at = $2, revoked_reason = $3, push_token = NULL, reauth_hash = NULL, reauth_expires_at = NULL
+            SET revoked_at = $2, revoked_reason = $3, push_token = NULL, push_provider = NULL, push_registered_at = NULL,
+                reauth_hash = NULL, reauth_expires_at = NULL
           WHERE account_id = $1 AND revoked_at IS NULL`,
         [accountId, tx.now, PLATFORM_REVOKED_SESSION_REASON],
       );

@@ -11,7 +11,7 @@ import {
   type CustomerPaymentMethodCreateBody,
   type CustomerPaymentMethodRemoved,
   type CustomerVisitPayBody,
-  type CustomerVisitPayment,
+  type CustomerOnlinePayment,
 } from '@point/shared/customer';
 import type { CustomerActorContext } from '../core/actor-context/customer-actor.js';
 import { customerAudit } from '../core/audit/customer-audit.js';
@@ -126,7 +126,7 @@ function paymentView(
   env: Env,
   r: PaymentViewRow,
   extra: { transactionUrl?: string | null } = {},
-): CustomerVisitPayment {
+): CustomerOnlinePayment {
   const paidAt = iso(r.paid_at);
   const receipt =
     paidAt && r.venue_name_ar && r.operator_name_ar
@@ -174,7 +174,7 @@ export async function getCustomerPayment(
   env: Env,
   accountId: string,
   paymentId: string,
-): Promise<CustomerVisitPayment> {
+): Promise<CustomerOnlinePayment> {
   const r = UUID.test(paymentId) ? await paymentViewRow(db, paymentId) : null;
   if (!r || r.account_id !== accountId)
     throw new AppError('RESOURCE_NOT_FOUND', { resource: 'online_payment' });
@@ -418,7 +418,7 @@ export class VisitPayUseCase {
     actor: CustomerActorContext,
     plan: VisitPayPlan | undefined,
     client: ClientInfo,
-  ): Promise<CustomerVisitPayment> {
+  ): Promise<CustomerOnlinePayment> {
     if (!plan) throw new AppError('SERVICE_UNAVAILABLE');
     if (plan.kind === 'error') throw plan.error;
     const r = await paymentViewRow(tx, plan.paymentId);

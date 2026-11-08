@@ -10,6 +10,7 @@ describe('deployment configuration guards', () => {
     WA_GRAPH_BASE_URL: 'https://graph.facebook.com',
     MOYASAR_MODE: 'live',
     MOYASAR_BASE_URL: 'https://api.moyasar.com',
+    CUSTOMER_PUSH_MODE: 'live',
     APP_BASE_URL: 'https://app.example.test',
     API_BASE_URL: 'https://app.example.test',
     SESSION_COOKIE_NAME: '__Host-point_sid',
@@ -56,6 +57,7 @@ describe('deployment configuration guards', () => {
       APP_ENV: 'staging',
       MOYASAR_MODE: 'simulator',
       MOYASAR_BASE_URL: 'http://payment-sim:4020',
+      CUSTOMER_PUSH_MODE: 'simulator', // and pushes to the simulator only (DEC-519)
     };
     expect(problems(staging)).toEqual([
       'WA_TEST_RECIPIENT_ALLOWLIST is required in staging with WA_MODE=live (05 §9 rule 2)',
@@ -81,6 +83,18 @@ describe('deployment configuration guards', () => {
     ]);
   });
 
+  it('V2-016 (DEC-519): customer pushes reach real devices from production only, never simulated there', () => {
+    expect(() => testEnv({ ...production, CUSTOMER_PUSH_MODE: 'simulator' })).toThrow(
+      'CUSTOMER_PUSH_MODE must be live in production',
+    );
+    for (const APP_ENV of ['local', 'test', 'staging'])
+      expect(() => testEnv({ APP_ENV, CUSTOMER_PUSH_MODE: 'live' })).toThrow(
+        'CUSTOMER_PUSH_MODE=live is only allowed in production',
+      );
+    expect(testEnv({}).CUSTOMER_PUSH_MODE).toBe('simulator');
+    expect(testEnv(production).CUSTOMER_PUSH_MODE).toBe('live');
+  });
+
   it("V2-020 (DEC-510): MOYASAR_MODE=test — the gateway's test API from local or staging only, over https", () => {
     const test = { MOYASAR_MODE: 'test', MOYASAR_BASE_URL: 'https://api.moyasar.com' };
     for (const APP_ENV of ['local', 'staging'])
@@ -91,7 +105,11 @@ describe('deployment configuration guards', () => {
           ? 'MOYASAR_MODE must be live in production'
           : 'MOYASAR_MODE=test is only allowed',
       );
-    const staging = { APP_ENV: 'staging', WA_TEST_RECIPIENT_ALLOWLIST: '+966500000001' };
+    const staging = {
+      APP_ENV: 'staging',
+      WA_TEST_RECIPIENT_ALLOWLIST: '+966500000001',
+      CUSTOMER_PUSH_MODE: 'simulator',
+    };
     expect(problems({ ...staging, ...test })).toEqual([]);
     expect(problems({ ...staging, ...test, MOYASAR_BASE_URL: 'http://api.moyasar.example' })).toEqual([
       'MOYASAR_BASE_URL must be https when MOYASAR_MODE=test',

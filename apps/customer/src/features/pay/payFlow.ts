@@ -9,14 +9,14 @@
  * 3. the return itself proves nothing (DEC-512): the app polls `GET /v1/customer/payments/{id}` until the server —
  *    told by the gateway's webhook — says `paid` or `failed`, or gives up and shows «قيد التأكيد».
  */
-import type { CustomerPaymentSource, CustomerVisitPayment } from '@point/shared/customer';
+import type { CustomerPaymentSource, CustomerOnlinePayment } from '@point/shared/customer';
 import { ApiError } from '../../api/errors';
 import type { CustomerApi } from '../../api/client';
 
 export type PayOutcome =
-  | { kind: 'paid'; payment: CustomerVisitPayment }
-  | { kind: 'failed'; payment: CustomerVisitPayment | null; code: string | null }
-  | { kind: 'pending'; payment: CustomerVisitPayment }
+  | { kind: 'paid'; payment: CustomerOnlinePayment }
+  | { kind: 'failed'; payment: CustomerOnlinePayment | null; code: string | null }
+  | { kind: 'pending'; payment: CustomerOnlinePayment }
   | { kind: 'already_paid' }
   | { kind: 'in_progress'; retryAfterS: number | null }
   | { kind: 'consent'; currentVersion: string | null }
@@ -48,7 +48,7 @@ export async function payVisit(
 ): Promise<PayOutcome> {
   const pollMs = opts.pollMs ?? 1500;
   const timeoutMs = opts.timeoutMs ?? 90_000;
-  let payment: CustomerVisitPayment;
+  let payment: CustomerOnlinePayment;
   try {
     payment = await deps.api.payVisit(
       req.ticketId,
@@ -90,7 +90,7 @@ export async function checkPayment(deps: Pick<PayDeps, 'api'>, paymentId: string
   }
 }
 
-function paymentOutcome(payment: CustomerVisitPayment): PayOutcome {
+function paymentOutcome(payment: CustomerOnlinePayment): PayOutcome {
   if (payment.status === 'failed') return { kind: 'failed', payment, code: payment.failure_code };
   if (LIVE.has(payment.status)) return { kind: 'pending', payment };
   return { kind: 'paid', payment };

@@ -720,7 +720,11 @@ export const tickets = pgTable(
       'tickets_payment_status_check',
       sql`payment_status = ANY (ARRAY['not_required'::text, 'due'::text, 'collected'::text, 'waived'::text])`,
     ),
-    check('tickets_pending_retrieval_source_check', sql`pending_retrieval_source = 'whatsapp'::text`),
+    // V2-015 (0013, DEC-516): an early request from the app; replaces tickets_pending_retrieval_source_check
+    check(
+      'ck_tickets_pending_retrieval_source',
+      sql`pending_retrieval_source = ANY (ARRAY['whatsapp'::text, 'app'::text])`,
+    ),
     check('tickets_plate_digits_check', sql`plate_digits ~ '^[0-9]{1,4}$'::text`),
     check(
       'tickets_status_check',
@@ -989,9 +993,14 @@ export const retrieval_cycles = pgTable(
       'retrieval_cycles_outcome_check',
       sql`outcome = ANY (ARRAY['delivered'::text, 'canceled'::text, 'reparked'::text])`,
     ),
+    // V2-015 (0013, DEC-516): the request from the customer app; replaces retrieval_cycles_request_source_check
     check(
-      'retrieval_cycles_request_source_check',
-      sql`request_source = ANY (ARRAY['whatsapp'::text, 'staff'::text])`,
+      'ck_cycles_request_source',
+      sql`request_source = ANY (ARRAY['whatsapp'::text, 'staff'::text, 'app'::text])`,
+    ),
+    check(
+      'ck_cycles_app_requester',
+      sql`(request_source <> 'app'::text) OR (requested_by_customer_id IS NOT NULL)`,
     ),
   ],
 );
@@ -2325,6 +2334,9 @@ export const customer_account_sessions = pgTable(
     // V2-017 (0011): the single-use re-verification proof of C-20
     reauth_hash: text(),
     reauth_expires_at: timestamp({ withTimezone: true, mode: 'string' }),
+    // V2-016 (0013): the Expo push registration of the session (DEC-519)
+    push_provider: text(),
+    push_registered_at: timestamp({ withTimezone: true, mode: 'string' }),
   },
   (table) => [
     index('ix_customer_sessions_account')
@@ -2356,6 +2368,15 @@ export const customer_account_sessions = pgTable(
     ),
     check('ck_customer_sessions_rotation', sql`rotation_count >= 0`),
     check('ck_customer_sessions_reauth', sql`(reauth_hash IS NULL) = (reauth_expires_at IS NULL)`),
+    // V2-016 (0013, DEC-519)
+    uniqueIndex('uq_customer_sessions_push_token')
+      .using('btree', table.push_token.asc().nullsLast().op('text_ops'))
+      .where(sql`(push_token IS NOT NULL)`),
+    check('ck_customer_sessions_push_provider', sql`push_provider = 'expo'::text`),
+    check('ck_customer_sessions_push_pair', sql`(push_token IS NULL) = (push_provider IS NULL)`),
+    check('ck_customer_sessions_push_registered', sql`(push_token IS NULL) = (push_registered_at IS NULL)`),
+    check('ck_customer_sessions_push_token_len', sql`char_length(push_token) <= 200`),
+    check('ck_customer_sessions_revoked_push', sql`(revoked_at IS NULL) OR (push_token IS NULL)`),
   ],
 );
 
@@ -2923,5 +2944,93 @@ export const platform_alerts = pgTable(
       'ck_platform_alerts_type',
       sql`type = ANY (ARRAY['payment_unknown'::text, 'payment_mismatch'::text, 'payment_refund_failed'::text, 'payment_reconcile_failed'::text])`,
     ),
+  ],
+);
+
+// ---- V2-015 / V2-016 (0013_customer_visits_push.sql, DEC-516 … DEC-520)
+
+export const customer_visit_ratings = pgTable(
+  'customer_visit_ratings',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    ticket_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    stars: integer().notNull(),
+    note: text(),
+    request_id: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_visit_ratings_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_customer_visit_ratings_venue').using(
+      'btree',
+      table.venue_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    unique('uq_customer_visit_ratings_ticket').on(table.ticket_id),
+    check('ck_customer_visit_ratings_stars_min', sql`stars >= 1`),
+    check('ck_customer_visit_ratings_stars_max', sql`stars <= 5`),
+    check('ck_customer_visit_ratings_note', sql`char_length(note) <= 500`),
+  ],
+);
+
+export const customer_push_messages = pgTable(
+  'customer_push_messages',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    session_id: uuid().notNull(),
+    org_id: uuid(),
+    ticket_id: uuid(),
+    kind: text().notNull(),
+    dedupe_key: text().notNull(),
+    source_outbox_id: uuid(),
+    status: text().default('pending').notNull(),
+    skipped_reason: text(),
+    provider: text(),
+    provider_receipt_id: text(),
+    receipt_status: text(),
+    error_code: text(),
+    attempts: integer().default(0).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }),
+    receipt_checked_at: timestamp({ withTimezone: true, mode: 'string' }),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_push_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_customer_push_receipts_due')
+      .using('btree', table.sent_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(
+        sql`((status = 'sent'::text) AND (provider_receipt_id IS NOT NULL) AND (receipt_checked_at IS NULL))`,
+      ),
+    unique('uq_customer_push_dedupe').on(table.dedupe_key),
+    check(
+      'ck_customer_push_kind',
+      sql`kind = ANY (ARRAY['car_received'::text, 'request_accepted'::text, 'car_ready'::text, 'pickup_reminder'::text, 'subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text])`,
+    ),
+    check(
+      'ck_customer_push_status',
+      sql`status = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'skipped'::text])`,
+    ),
+    check(
+      'ck_customer_push_skipped_reason',
+      sql`skipped_reason = ANY (ARRAY['no_token'::text, 'session_revoked'::text, 'account_unavailable'::text, 'stale'::text, 'token_moved'::text])`,
+    ),
+    check('ck_customer_push_skipped', sql`(status = 'skipped'::text) = (skipped_reason IS NOT NULL)`),
+    check('ck_customer_push_provider', sql`provider = ANY (ARRAY['expo'::text, 'simulator'::text])`),
+    check('ck_customer_push_sent_provider', sql`(sent_at IS NULL) OR (provider IS NOT NULL)`),
+    check('ck_customer_push_receipt_status', sql`receipt_status = ANY (ARRAY['ok'::text, 'error'::text])`),
+    check('ck_customer_push_attempts', sql`attempts >= 0`),
+    check('ck_customer_push_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
   ],
 );

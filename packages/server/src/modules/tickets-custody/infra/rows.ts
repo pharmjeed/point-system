@@ -34,7 +34,7 @@ export interface TicketRow {
   key_holder_type: 'customer' | 'driver' | 'key_slot' | 'supervisor' | 'unknown';
   key_holder_id: string | null;
   pending_retrieval_at: Date | null;
-  pending_retrieval_source: 'whatsapp' | null;
+  pending_retrieval_source: 'whatsapp' | 'app' | null;
   active_cycle_id: string | null;
   last_requested_at: Date | null;
   payment_status: 'not_required' | 'due' | 'collected' | 'waived';
@@ -68,7 +68,7 @@ export interface CycleRow {
   ticket_id: string;
   cycle_no: number;
   requested_at: Date;
-  request_source: 'whatsapp' | 'staff';
+  request_source: 'whatsapp' | 'staff' | 'app';
   requested_by_user_id: string | null;
   requested_by_customer_id: string | null;
   request_reason: string | null;

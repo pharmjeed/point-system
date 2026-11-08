@@ -25,6 +25,16 @@ import {
 import { CustomerHomeSchema } from './home.js';
 import { CustomerLocationDetailSchema, CustomerLocationListSchema } from './locations.js';
 import { CustomerPassSchema } from './pass-contract.js';
+import { CustomerDeviceBodySchema, CustomerDeviceSchema } from './notifications.js';
+import {
+  CustomerHandoverCodeSchema,
+  CustomerVisitDetailSchema,
+  CustomerVisitListSchema,
+  CustomerVisitRatingBodySchema,
+  CustomerVisitRatingSchema,
+  CustomerVisitRequestBodySchema,
+  CustomerVisitRequestResultSchema,
+} from './visits.js';
 import {
   CustomerPaymentMethodCreateBodySchema,
   CustomerPaymentMethodListSchema,
@@ -32,7 +42,7 @@ import {
   CustomerPaymentMethodRemovedSchema,
   CustomerPaymentMethodSchema,
   CustomerVisitPayBodySchema,
-  CustomerVisitPaymentSchema,
+  CustomerOnlinePaymentSchema,
 } from './payments.js';
 import {
   CustomerVehicleCreateBodySchema,
@@ -198,6 +208,59 @@ export const CUSTOMER_ROUTES = {
     data: CustomerPassSchema,
   },
   // --- end V2-013 ---
+  // --- V2-015 (C-12, C-16, C-13) and V2-016 (push): DEC-516 … DEC-520 ---
+  visits: {
+    method: 'GET',
+    path: '/v1/customer/visits',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerVisitListSchema,
+  },
+  visit: {
+    method: 'GET',
+    path: '/v1/customer/visits/{ticketId}',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerVisitDetailSchema,
+  },
+  visitRequest: {
+    method: 'POST',
+    path: '/v1/customer/visits/{ticketId}/request',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerVisitRequestBodySchema,
+    data: CustomerVisitRequestResultSchema,
+  },
+  visitHandoverCode: {
+    method: 'GET',
+    path: '/v1/customer/visits/{ticketId}/handover-code',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerHandoverCodeSchema,
+  },
+  visitRating: {
+    method: 'POST',
+    path: '/v1/customer/visits/{ticketId}/rating',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerVisitRatingBodySchema,
+    data: CustomerVisitRatingSchema,
+  },
+  devices: {
+    method: 'POST',
+    path: '/v1/customer/devices',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerDeviceBodySchema,
+    data: CustomerDeviceSchema,
+  },
+  // --- end V2-015 / V2-016 ---
   // --- V2-022 / V2-023 (DEC-521 … DEC-525): paying a visit (C-10/C-12) and the saved cards (C-18) ---
   visitPay: {
     method: 'POST',
@@ -206,7 +269,7 @@ export const CUSTOMER_ROUTES = {
     idempotency: 'required',
     rateLimitClass: 'write',
     body: CustomerVisitPayBodySchema,
-    data: CustomerVisitPaymentSchema,
+    data: CustomerOnlinePaymentSchema,
   },
   payment: {
     method: 'GET',
@@ -214,7 +277,7 @@ export const CUSTOMER_ROUTES = {
     auth: 'customer',
     idempotency: 'none',
     rateLimitClass: 'read',
-    data: CustomerVisitPaymentSchema,
+    data: CustomerOnlinePaymentSchema,
   },
   paymentMethods: {
     method: 'GET',

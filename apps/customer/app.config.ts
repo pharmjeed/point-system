@@ -74,6 +74,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-router',
       'expo-secure-store',
       'expo-web-browser',
+      // V2-016 (DEC-519): pushes through Expo (APNs / FCM); the Android small icon is the white mark of brand/
+      [
+        'expo-notifications',
+        { icon: './assets/brand/point-mark-white-512.png', color: primary, defaultChannel: 'visits' },
+      ],
       ['expo-localization', { supportsRTL: true, supportedLocales: ['ar', 'en'] }],
       [
         'expo-splash-screen',
@@ -91,6 +96,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         whatsapp: env('CUSTOMER_SUPPORT_WHATSAPP') ?? null,
         email: env('CUSTOMER_SUPPORT_EMAIL') ?? null,
       },
+      // V2-016 (DEC-519): the EAS project the Expo push tokens belong to; no project linked → no push (DEC-483)
+      ...(env('CUSTOMER_EAS_PROJECT_ID') ? { eas: { projectId: env('CUSTOMER_EAS_PROJECT_ID') } } : {}),
       // V2-022 / V2-023 (DEC-524): the device tokenizes the card with the publishable key only (never a secret key)
       payments: {
         moyasarPublishableKey: env('CUSTOMER_MOYASAR_PUBLISHABLE_KEY') ?? null,

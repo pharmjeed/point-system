@@ -15,8 +15,9 @@ describe('worker handlers', () => {
   it('no canon job is left without a handler (server sweep: canon §7.2)', () => {
     const types = new Set(allHandlers().map((h) => h.type));
     expect(JOB_TYPES.filter((t) => !types.has(t))).toEqual([]);
-    // + job.customer_otp_send (V2-010), the 3 payment jobs (V2-021), the saved-card token deletion (V2-023)
-    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 1);
+    // + job.customer_otp_send (V2-010), the 3 payment jobs (V2-021), the 2 customer push jobs (V2-016), the
+    // saved-card token deletion (V2-023)
+    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 2 + 1);
   });
 
   it('the network jobs run outside a transaction (mode external, 04 §6.4)', () => {
