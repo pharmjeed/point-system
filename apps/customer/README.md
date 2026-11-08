@@ -29,7 +29,7 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 | `EAS_PROJECT_ID` (أو `CUSTOMER_EAS_PROJECT_ID`) / `EXPO_OWNER` | — | مشروع EAS ومالكه (الإشعارات والبناء، DEC-566)؛ لا يُحفظان في المستودع |
 | `GOOGLE_SERVICES_JSON` | — | مسار `google-services.json` (FCM لإشعارات أندرويد)، متغير ملف في EAS |
 | `CUSTOMER_LINK_DOMAIN` | `pointsa.net` | نطاق روابط التطبيق `https://{domain}/app…` (DEC-566) |
-| `CUSTOMER_STORE_SCREENSHOTS` | — | `1` يضيف هدف الويب للقطات المتجر وحدها (DEC-568) |
+| `CUSTOMER_WEB_EXPORT` | — | `1` يضيف هدف الويب لتصدير الويب الواحد (`export:web`): مجموعة e2e ولقطات المتجر وحدهما، ولا يُنشر (DEC-550، DEC-568) |
 | `CUSTOMER_ANDROID_GOOGLE_MAPS_API_KEY` | — | مفتاح Google Maps لأندرويد (خريطة `C-07`)؛ يُعطى للبناء من البيئة ولا يُحفظ في المستودع. بلا مفتاح تختفي الخريطة على أندرويد وتبقى القائمة بروابط «فتح في الخرائط»؛ iOS يرسم Apple Maps بلا مفتاح (DEC-506) |
 | `CUSTOMER_SUPPORT_WHATSAPP` / `CUSTOMER_SUPPORT_EMAIL` | — | «تواصل معنا» في `C-19`: رقم واتساب الدعم (أرقام E.164 بلا `+`) وبريده؛ بلا إعداد تظهر «قنوات الدعم تُضاف قريبًا» (DEC-509) |
 | `CUSTOMER_MOYASAR_PUBLISHABLE_KEY` | — | مفتاح Moyasar **العام** (`pk_…`) لترميز البطاقة على الجهاز (`C-10`، `C-18`)؛ مفتاح سري `sk_` يُرفض، و`pk_test_` يُرفض في بناء الإصدار ما لم يُعط `CUSTOMER_MOYASAR_ALLOW_TEST_KEY=true`. بلا مفتاح لا تُعرض إضافة البطاقة (DEC-524) |
@@ -112,7 +112,9 @@ src/features/        منطق الشاشات النقي (التوجيه، الج
 src/i18n/            ar.ts (المرجع) و en.ts، التنسيق بأرقام لاتينية وتوقيت الرياض
 src/theme/tokens.ts  القيم من brand/tokens/tokens.json فقط
 src/ui/              المكونات (Button، Field، CodeInput، PlateInput، Checkbox، Banner، Logo …)
+src/shims/           حشوات الويب لمجموعة e2e وحدها (DEC-551)؛ والملفات `*.web.ts(x)` بجانب أصولها
 test/                Vitest (المشروع customer-unit)
+e2e/                 Playwright على تصدير الويب (V2-018)، و`e2e/maestro/` تدفقات الأجهزة (H2)
 ```
 
 ## الإشعارات (V2-016، DEC-519)
@@ -134,7 +136,34 @@ pnpm --filter @point/customer test        # = vitest --project customer-unit (ي
 pnpm --filter @point/customer typecheck   # ضمن pnpm typecheck
 pnpm lint                                 # ESLint وPrettier وفحص العلامة يغطي التطبيق
 pnpm --filter @point/customer run export  # حزمتا iOS وأندرويد (وظيفة CI customer-app)
+pnpm --filter @point/customer test:e2e    # e2e: تصدير الويب + Playwright بثلاثة مقاسات (وظيفة CI customer-e2e)
 pnpm --filter @point/customer run doctor  # expo-doctor
 ```
 
-الاختبارات على الوحدات النقية (العميل مقابل الخادم الوهمي، نماذج الشاشات، القاموس، الرموز، الإعداد)، والشاشات رقيقة فوقها؛ اختبارات التصيير على الأجهزة لـV2-018.
+الاختبارات على الوحدات النقية (العميل مقابل الخادم الوهمي، نماذج الشاشات، القاموس، الرموز، الإعداد)، والشاشات رقيقة فوقها؛ والرحلات كاملة في e2e أدناه.
+
+## e2e (V2-018، DEC-550 … DEC-554)
+
+### على الويب، في CI وبلا أجهزة
+
+```bash
+pnpm --filter @point/customer test:e2e                  # يبني تصدير الويب (export:web) ثم Playwright
+E2E_REUSE_EXPORT=1 pnpm --filter @point/customer test:e2e --project=phone-390   # بلا إعادة بناء، مقاس واحد
+```
+
+- **ما يُختبر:** الشيفرة نفسها مصدّرة للويب (`react-native-web`) على الخادم الوهمي داخل الصفحة، بمقاسات 360 و390 و430 (`ar-SA`، `Asia/Riyadh`، لمس). كل رحلة تتحقق من `<html dir="rtl" lang="ar">` والنصوص من `src/i18n/ar.ts` (لا نصوص منسوخة في الاختبارات) وألا عنصر يخرج عن عرض الشاشة.
+- **الرحلات** (`e2e/*.spec.ts`): R1 الدخول برمز واتساب `C-01…C-05` وقواعد `C-02/C-03`؛ `C-07` البحث والتصفية و`C-08`؛ `C-15`؛ `C-11` الرمز المتغير واختيار السيارة؛ `C-12` الطلب والحالة الحية ورمز التسليم ثم `C-13` و`C-16`؛ الدفع للزيارة ثم `C-18` و`C-17`؛ الاشتراك `C-09/C-10/C-14` وإدارته؛ `C-18` و`C-17`؛ `C-19` اللغة والخروج؛ `C-20` الحذف.
+- السائق الوهمي يتحرك بساعة المتصفح (`page.clock`)، ورمز الدخول من لافتة «وضع التطوير».
+- **منصة الويب للاختبار ولقطات المتجر وحدهما:** `CUSTOMER_WEB_EXPORT=1` يضيف `web` إلى المنصات (التصدير نفسه تستعمله `store:screenshots`)؛ التطبيق المشحون iOS وأندرويد. ما لا يعمل على الويب له بديل صغير على الويب فقط (`src/shims/`، `*.web.ts(x)`، DEC-551) ولا يتغير السلوك الأصلي.
+
+### على الأجهزة (البوابة H2): Maestro
+
+`e2e/maestro/` يكرر الرحلات نفسها على آيفون وأندرويد ([Maestro](https://maestro.dev)، لا يعمل في CI):
+
+```bash
+npx expo run:ios   # أو run:android — نسخة تطوير على الخادم الوهمي، ولغة الجهاز العربية
+maestro test e2e/maestro                     # كل التدفقات (config.yaml)
+maestro test e2e/maestro/05-visit-request-code.yaml
+```
+
+يُفحص هناك ما هو أصلي فقط: الجلسة في Keychain/Keystore، اسم التطبيق العربي والأيقونة وشاشة البداية، اتجاه RTL الأصلي وتبدله بعد إعادة الفتح، الخريطة و«فتح في الخرائط»، السطوع وبطاقة الدخول بلا إنترنت، حوارات التأكيد الأصلية، إذن الإشعارات (بمشروع EAS). 3-D Secure وApple Pay على الخادم الحقيقي ومحاكي الدفع (البوابة H3). التدفقات تستخدم معرّفات `testID` (`welcome-start`، `phone-input`، `code-input`، `card-number` …) والنصوص العربية.

@@ -1,0 +1,8 @@
+# Maestro workspace of the customer app (V2-018, DEC-553): the journeys of the Playwright web suite (e2e/*.spec.ts)
+# on real devices for gate H2 — iPhone and Android, Arabic device language, the development build of the app on the
+# in-app fake backend (`CUSTOMER_API_MODE=fake`). Run from apps/customer: `maestro test e2e/maestro`.
+# Sub-flows under subflows/ are only run from the flows below.
+flows:
+  - '*.yaml'
+executionOrder:
+  continueOnFailure: true

@@ -1,0 +1,25 @@
+# C-05: plate digits + three letters (the keys read «ا A»), make and colour; ends where the form returns.
+appId: sa.point.app
+env:
+  DIGITS: '1234'
+  L1: 'ا A'
+  L2: 'ب B'
+  L3: 'د D'
+---
+- assertVisible: 'أضف سيارتك'
+- tapOn:
+    id: plate-digits
+- inputText: ${DIGITS}
+- hideKeyboard
+- tapOn: ${L1}
+- tapOn: ${L2}
+- tapOn: ${L3}
+- scrollUntilVisible:
+    element: 'تويوتا'
+    direction: DOWN
+- tapOn: 'تويوتا'
+- scrollUntilVisible:
+    element: 'أبيض'
+    direction: DOWN
+- tapOn: 'أبيض'
+- tapOn: 'حفظ السيارة'

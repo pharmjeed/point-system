@@ -9,9 +9,11 @@
     "start:fake": "CUSTOMER_API_MODE=fake expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p e2e",
     "test": "vitest run --root ../.. --project customer-unit",
+    "test:e2e": "playwright test",
     "export": "expo export --platform ios --platform android --output-dir dist",
+    "export:web": "CUSTOMER_WEB_EXPORT=1 CUSTOMER_API_MODE=fake expo export --platform web --output-dir dist-web --clear",
     "store:screenshots": "node scripts/store-screenshots.mjs",
     "store:icon": "node scripts/store-icon.mjs",
     "doctor": "npx --yes expo-doctor"
@@ -46,6 +48,7 @@
   },
   "devDependencies": {
     "@expo/metro-runtime": "~58.0.17",
+    "@playwright/test": "^1.64.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "~19.3.0",
     "react-native-web": "~0.21.4",

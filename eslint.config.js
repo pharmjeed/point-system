@@ -16,6 +16,9 @@ export default tseslint.config(
       '**/.expo/**',
       'apps/customer/ios/**',
       'apps/customer/android/**',
+      // V2-018: the e2e web export and Playwright output of the customer app
+      'apps/customer/dist-web/**',
+      '**/test-results/**',
       // agent worktrees are separate checkouts with their own config (ESLint looks configs up per file)
       '.claude/**',
     ],

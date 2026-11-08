@@ -19,6 +19,8 @@ import { I18nProvider } from '../i18n/I18nProvider';
 import { pushRoute } from '../features/push';
 import { onNotificationTap } from '../push/notifications';
 import { SessionProvider, useSession } from '../session/SessionProvider';
+// empty on iOS/Android; the browser dialog behind Alert.alert in the e2e web export (V2-018, DEC-551)
+import '../shims/alert';
 import { color } from '../theme/tokens';
 
 void SplashScreen.preventAutoHideAsync();

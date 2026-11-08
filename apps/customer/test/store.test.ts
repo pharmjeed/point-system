@@ -10,7 +10,7 @@ import appConfig, {
 import { linkPath, systemPathFor } from '../src/features/links';
 
 const ENV_KEYS = [
-  'CUSTOMER_STORE_SCREENSHOTS',
+  'CUSTOMER_WEB_EXPORT',
   'CUSTOMER_LINK_DOMAIN',
   'EAS_PROJECT_ID',
   'CUSTOMER_EAS_PROJECT_ID',
@@ -30,10 +30,10 @@ afterEach(() => {
 const build = () => appConfig({ config: {} } as Parameters<typeof appConfig>[0]);
 
 describe('store config (DEC-565 … DEC-567)', () => {
-  it('ships iOS and Android only; the web target exists for the screenshot export alone', () => {
+  it('ships iOS and Android only; the web target exists for the one web export (e2e + screenshots) alone', () => {
     for (const k of ENV_KEYS) delete process.env[k];
     expect(build().platforms).toEqual(['ios', 'android']);
-    process.env.CUSTOMER_STORE_SCREENSHOTS = '1';
+    process.env.CUSTOMER_WEB_EXPORT = '1';
     expect(build().platforms).toEqual(['ios', 'android', 'web']);
   });
 

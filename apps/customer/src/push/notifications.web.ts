@@ -1,7 +1,9 @@
 /**
- * Web stand-in of ./notifications.ts, used ONLY by the store-screenshot export (V2-052, DEC-568): the customer app
- * ships on iOS and Android only, and expo-notifications has no web implementation of what the app uses. No push
- * is ever registered from here.
+ * Web stand-in of ./notifications.ts for the one web export (`export:web`, DEC-550 / DEC-551 as unified in DEC-568):
+ * the e2e suite (V2-018) and the store screenshots (V2-052). The customer app ships on iOS and Android only, and
+ * expo-notifications throws on web. Without an EAS project (the web export has none) the app behaves as such a build
+ * does — «الإشعارات غير متاحة في هذه النسخة» on C-19, no offer on C-12 — and no push is ever registered or tapped
+ * here. Push on devices stays with the Maestro flows (e2e/maestro, DEC-553).
  */
 import type { CustomerApi } from '../api/client';
 import type { PushPermission } from '../features/push';

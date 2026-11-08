@@ -1,0 +1,37 @@
+# R4 on a device (mirrors e2e/visit-pay.spec.ts): «ادفع X ريال» → the sheet → a new card saved with consent →
+# «مدفوع في التطبيق»; then C-18 and C-17. 3-D Secure (the in-app browser) and Apple Pay need the dev build against the
+# real API and tools/payment-simulator (gate H3), not the fake backend.
+appId: sa.point.app
+name: C-12 → C-10 — pay the visit, C-18, C-17
+tags: [h2, r4]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '500000099'
+- tapOn: 'تخطَّ الآن'
+- tapOn:
+    id: home-visit
+- tapOn:
+    id: pay-due-open
+- runFlow: subflows/card.yaml
+- tapOn: 'حفظ البطاقة للمدفوعات القادمة'
+- tapOn:
+    id: pay-sheet-submit
+- extendedWaitUntil:
+    visible: 'مدفوع في التطبيق'
+    timeout: 20000
+- tapOn: 'رجوع'
+- tapOn:
+    id: home-settings
+- tapOn:
+    id: settings-payment-methods
+- assertVisible: '.*•••• .?1111.?'
+- tapOn: 'رجوع'
+- tapOn:
+    id: settings-invoices
+- tapOn:
+    id: invoice-row
+- assertVisible:
+    id: invoice-qr
+- takeScreenshot: c17-invoice

@@ -5,6 +5,10 @@ ios/
 android/
 dist/
 web-build/
+# V2-018 (DEC-550): the e2e web export and Playwright output
+dist-web/
+test-results/
+playwright-report/
 *.jks
 *.p8
 *.p12

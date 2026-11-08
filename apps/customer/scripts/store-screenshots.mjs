@@ -5,15 +5,15 @@
  *   pnpm --filter @point/customer run store:screenshots            # export + capture, both languages
  *   pnpm --filter @point/customer run store:screenshots -- --skip-export --locale ar --device iphone-6.9
  *
- * 1. Exports the app for web against the in-app fake backend (`CUSTOMER_API_MODE=fake`,
- *    `CUSTOMER_STORE_SCREENSHOTS=1` adds the web target that exists only for this; dist/store-web is gitignored).
+ * 1. Builds the one web export of the app (`pnpm run export:web`: `CUSTOMER_WEB_EXPORT=1`, the in-app fake backend,
+ *    `--clear`; the same build the e2e suite runs, DEC-550 / DEC-568) into dist-web/ (gitignored).
  * 2. Serves it on 127.0.0.1 and drives journey R1 with Playwright on the demo phone of the fake backend
  *    (0500000099: a visit in progress), then the screens of the plan, in Arabic and English.
  * 3. Writes PNGs at the exact pixel sizes of the stores to apps/customer/store-screenshots/<locale>/<device>/
  *    (gitignored: the owner reviews them before any upload).
  *
  * Nothing leaves the machine: the fake backend runs in the page, nothing is sent to WhatsApp, Moyasar or Expo.
- * Playwright is resolved from the global install or from apps/web (@playwright/test); the browser is
+ * Playwright is this app's @playwright/test (the e2e suite's), else a global install or apps/web's; the browser is
  * PW_CHROMIUM_PATH, /opt/pw-browsers/chromium, or Playwright's own (never installed by this script).
  * The pictures are web renderings of the React Native screens (same components, fonts and tokens), without the
  * native status bar: docs/v2/store/SCREENSHOTS.md says when real-device captures should replace them.
@@ -26,7 +26,7 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const webDir = join(appDir, 'dist', 'store-web');
+const webDir = join(appDir, 'dist-web');
 const outDir = join(appDir, 'store-screenshots');
 
 /**
@@ -65,15 +65,11 @@ function args(argv) {
 
 function exportWeb() {
   rmSync(webDir, { recursive: true, force: true });
-  const env = { ...process.env, CUSTOMER_API_MODE: 'fake', CUSTOMER_STORE_SCREENSHOTS: '1' };
+  const env = { ...process.env };
   delete env.CUSTOMER_API_BASE_URL;
   delete env.CUSTOMER_FORCE_LOCALE;
-  const r = spawnSync('npx', ['expo', 'export', '--clear', '--platform', 'web', '--output-dir', webDir], {
-    cwd: appDir,
-    env,
-    stdio: 'inherit',
-  });
-  if (r.status !== 0) throw new Error('expo export --platform web failed');
+  const r = spawnSync('pnpm', ['run', 'export:web'], { cwd: appDir, env, stdio: 'inherit' });
+  if (r.status !== 0) throw new Error('pnpm run export:web failed');
 }
 
 const TYPES = {
@@ -102,6 +98,7 @@ function serve(root) {
 
 async function loadPlaywright() {
   const candidates = [
+    () => createRequire(join(appDir, 'package.json'))('@playwright/test'),
     () => import('playwright'),
     () => createRequire(join(appDir, '..', 'web', 'package.json'))('@playwright/test'),
     () => createRequire(join(process.env.NODE_PATH ?? '/usr/lib/node_modules', 'x'))('playwright'),

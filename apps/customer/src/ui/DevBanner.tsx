@@ -5,8 +5,8 @@ import { Banner } from './Controls';
 
 /**
  * Marks the fake backend so nobody mistakes sample data for the real service (development only). Not drawn on
- * web: the web target exists only for the store-screenshot export (V2-052, DEC-568), whose pictures show the
- * sample data of the fake backend as store art.
+ * web: the web target exists only for the one web export (`export:web`, DEC-568) — the store screenshots show the
+ * fake backend's sample data as store art, and the e2e suite (V2-018) needs no banner (C-03's code line is apart).
  */
 export function DevBanner() {
   const { fake } = useSession();

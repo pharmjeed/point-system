@@ -45,6 +45,7 @@ export function PlateInput({
       </View>
       <Field
         label={text.digits}
+        testID="plate-digits"
         value={digits}
         onChangeText={onDigits}
         keyboardType="number-pad"

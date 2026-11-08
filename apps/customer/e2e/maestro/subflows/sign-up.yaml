@@ -1,0 +1,55 @@
+# R1 C-01 … C-04 on a fresh install. PHONE: the 9 digits after 0 (5XXXXXXXX). The sign-in code is read from the
+# «وضع التطوير» banner of C-03 (the fake backend's simulated WhatsApp inbox; never a real message).
+appId: sa.point.app
+env:
+  PHONE: '512345678'
+  NAME: 'سارة'
+---
+- clearKeychain
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: unset
+- extendedWaitUntil:
+    visible:
+      id: welcome-start
+    timeout: 20000
+- assertVisible: 'اركن بلا انتظار'
+- tapOn:
+    id: welcome-start
+# C-02
+- tapOn:
+    id: phone-input
+- inputText: ${PHONE}
+- hideKeyboard
+- tapOn:
+    id: phone-submit
+# C-03
+- extendedWaitUntil:
+    visible: 'رمز المحاكاة.*'
+    timeout: 10000
+- copyTextFrom:
+    text: 'رمز المحاكاة.*'
+- evalScript: ${output.otp = maestro.copiedText.replace(/[^0-9]/g, '').slice(-6)}
+- tapOn:
+    id: code-input
+- inputText: ${output.otp}
+- hideKeyboard
+- tapOn:
+    id: otp-submit
+# C-04
+- extendedWaitUntil:
+    visible:
+      id: profile-name
+    timeout: 10000
+- tapOn:
+    id: profile-name
+- inputText: ${NAME}
+- hideKeyboard
+- tapOn: 'أوافق على الشروط والأحكام'
+- tapOn: 'أوافق على سياسة الخصوصية'
+- tapOn:
+    id: profile-submit
+- extendedWaitUntil:
+    visible: 'أضف سيارتك'
+    timeout: 10000

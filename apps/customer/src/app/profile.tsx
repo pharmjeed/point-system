@@ -114,6 +114,7 @@ export default function Profile() {
       </AppText>
       <Field
         label={t.profile.nameLabel}
+        testID="profile-name"
         value={form.name}
         onChangeText={(name) => set({ name })}
         placeholder={t.profile.namePlaceholder}

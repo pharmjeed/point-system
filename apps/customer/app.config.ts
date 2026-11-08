@@ -147,8 +147,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     scheme: env('CUSTOMER_URL_SCHEME') ?? bundleId,
     version: CUSTOMER_APP_VERSION,
     orientation: 'portrait',
-    // The web target exists only for the store-screenshot export (V2-052, DEC-568): never a product surface.
-    platforms: env('CUSTOMER_STORE_SCREENSHOTS') === '1' ? ['ios', 'android', 'web'] : ['ios', 'android'],
+    // The shipped app is iOS + Android only. `web` is added by CUSTOMER_WEB_EXPORT=1 for the one web export
+    // (`pnpm run export:web`, DEC-550 as unified in DEC-568): the e2e suite (V2-018) and the store screenshots
+    // (V2-052) use it; never deployed — the customer never opens a web page (canon §1).
+    platforms: env('CUSTOMER_WEB_EXPORT') === '1' ? ['ios', 'android', 'web'] : ['ios', 'android'],
     // 1024 × 1024 without alpha, exported from brand/app-icons/icon-maskable.svg (scripts/store-icon.mjs, DEC-567)
     icon: './assets/brand/icon-1024.png',
     userInterfaceStyle: 'light',

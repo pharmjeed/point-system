@@ -1,6 +1,8 @@
 /**
- * Web stand-in of ./LocationsMap.tsx for the store-screenshot export only (V2-052, DEC-568): react-native-maps has
- * no web build, and `mapAvailable` is false on web, so C-07 shows its list (the accessible path, DEC-506).
+ * Web stand-in of ./LocationsMap.tsx for the one web export (`export:web`: the e2e suite V2-018 and the store
+ * screenshots V2-052; DEC-551 as unified in DEC-568): react-native-maps has no web build (it throws when imported),
+ * and `mapAvailable('web', …)` is false, so C-07 never mounts a map there and keeps its list — the accessible path
+ * to every location (DEC-506). The map itself is checked on devices (Maestro, DEC-553).
  */
 import type { MapPin } from '../features/locations';
 

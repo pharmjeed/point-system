@@ -152,6 +152,33 @@ jobs:
       - name: Store icon matches the brand vector (V2-052, DEC-567)
         run: pnpm --filter @point/customer run store:icon -- --check
 
+  customer-e2e:
+    # V2-018 (DEC-550 … DEC-554): the customer app's journeys without devices — the web export of the same code on the
+    # in-app fake backend, driven by Playwright at 360/390/430 px, RTL asserted. The device-only checks are the
+    # Maestro flows of apps/customer/e2e/maestro (gate H2), not run here.
+    name: customer app — e2e (web export, Playwright 360/390/430, RTL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          # pnpm comes from corepack in the next step: no automatic package-manager cache here
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @point/customer exec playwright install --with-deps chromium
+      - name: Playwright (builds the web export first)
+        run: pnpm --filter @point/customer test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: customer-playwright-report
+          path: apps/customer/playwright-report
+          retention-days: 7
+
   e2e:
     name: e2e (Playwright 360/390/430, RTL · G1 on the real API)
     runs-on: ubuntu-latest
