@@ -7,9 +7,12 @@ import type { Tx } from '../../../core/db/tx.js';
 import type { GatewayPayment } from '../domain/gateway.js';
 import { decideSync } from '../domain/status.js';
 import { confirmPendingCard, dropPendingCard } from './card-tokens.js';
+import { paymentDocumentsHook } from './document-hook.js';
 import { visitPaymentHook } from './visit-hook.js';
 
 const COUNTING = new Set<OnlinePaymentStatus>(['paid', 'partially_refunded']);
+/** the statuses in which the gateway took the customer's money (some of it may have gone back since) */
+const CAPTURED = new Set<OnlinePaymentStatus>(['paid', 'partially_refunded', 'refunded']);
 
 type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
 
@@ -212,6 +215,9 @@ export async function applyGatewayPayment(
   }
   if (to === 'failed') await dropPendingCard(tx, updated);
   if (to === 'refunded' && COUNTING.has(row.status) && visitHook) await visitHook.afterRefunded(tx, updated);
+  // V2-040 (DEC-543): the simplified tax invoice of the money taken, in this same transaction
+  const documents = paymentDocumentsHook();
+  if (documents && CAPTURED.has(to) && !CAPTURED.has(row.status)) await documents.afterCaptured(tx, updated);
   return { outcome: 'applied', payment: updated };
 }
 

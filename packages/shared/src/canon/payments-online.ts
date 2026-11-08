@@ -89,6 +89,9 @@ export const PLATFORM_ALERT_TYPES = [
   'payment_reconcile_failed',
   // V2-022 (DEC-523): an online visit payment that succeeded for a ticket already paid, refunded by the platform
   'payment_double',
+  // V2-040 (DEC-543): the e-invoicing provider rejected a document, or its submission keeps failing
+  'einvoice_rejected',
+  'einvoice_submit_failed',
 ] as const;
 export type PlatformAlertType = (typeof PLATFORM_ALERT_TYPES)[number];
 export const PlatformAlertTypeSchema = z.enum(PLATFORM_ALERT_TYPES);
@@ -99,6 +102,8 @@ export const PLATFORM_ALERT_SEVERITY: Record<PlatformAlertType, 'info' | 'warnin
   payment_refund_failed: 'warning',
   payment_reconcile_failed: 'warning',
   payment_double: 'warning',
+  einvoice_rejected: 'critical',
+  einvoice_submit_failed: 'warning',
 };
 
 /** The tables of migration 0012_online_payments.sql (outside canon §6, which lists the V1 tables). */

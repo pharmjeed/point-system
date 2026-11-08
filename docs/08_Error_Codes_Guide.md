@@ -513,6 +513,18 @@
 | `REFUND_AMOUNT_EXCEEDS_PAID` | الاسترداد المطلوب (أو الكامل حين يُترك المبلغ) أكبر من المدفوع ناقص المسترد وما ينتظر الإرسال | `online_payment_id`، `requested_halalas`، `refundable_halalas` | P-08: خطأ حقل المبلغ مع المتبقي | info · — |
 | `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | `POST /webhooks/payments/moyasar` بلا `secret_token` أو بسر لا يطابق `MOYASAR_WEBHOOK_SECRET_REF` (ولا السابق أثناء التدوير) أو بجسم ليس JSON؛ لا يُحفظ شيء (DEC-511) | — | لا واجهة (المستهلك البوابة) | warn · — |
 
+### 4.20 الفواتير والتسوية (الإصدار الثاني، V2-040 … V2-042)
+
+الفاتورة الإلكترونية وكشوف التسوية (DEC-540 … DEC-549). أوامر التسوية في P-09 وO-05 تستعمل رموزًا قائمة: `RESOURCE_NOT_FOUND` (`resource: settlement_statement` أو `invoice` أو `operator`) لكشف أو فاتورة خارج النطاق أو غير موجودة — والمسودة للمشغل كغير الموجودة؛ `VERSION_CONFLICT` لـ`expected_version` قديم؛ `INVALID_STATE_TRANSITION` (`command`، `current_status`) لأمر لا تقبله الحالة (تسوية لكشف صادر، اعتراض على غير صادر، إلغاء كشف مدفوع)؛ `REASON_REQUIRED` لسبب أو ملاحظة أو مرجع تحويل أقل من 3 محارف؛ و`VALIDATION_FAILED` لشهر لم ينتهِ بتوقيت الرياض (`period`: `not_closed`) أو لمشغل بلا اسم قانوني عند إصدار فاتورته الضريبية (`operator.legal_name`: `required_for_tax_invoice`). رفض مزود الفوترة لا يرد على أي طلب: يبقى المستند في السلسلة بحالة `rejected` وينبه المالية (`einvoice_rejected`)، والتصحيح بإشعار دائن.
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` |
+|---|---|---|---|---|
+| `EINVOICE_WEBHOOK_SIGNATURE_INVALID` | 401 | لا | — | Invalid e-invoicing callback signature. |
+
+| الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
+|---|---|---|---|---|
+| `EINVOICE_WEBHOOK_SIGNATURE_INVALID` | `POST /webhooks/einvoicing` بلا `X-Einvoice-Signature` أو بتوقيع HMAC-SHA256 لا يطابق `EINVOICE_WEBHOOK_SECRET_REF`، أو بجسم ليس إشعارًا صالحًا؛ لا يُطبق شيء (DEC-543) | — | لا واجهة (المستهلك المزود) | warn · — |
+
 ---
 
 ## 5. ربط قيود قاعدة البيانات بالرموز

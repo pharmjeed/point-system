@@ -19,6 +19,8 @@ export * from './visits.js';
 export * from './notifications.js';
 // V2-022 / V2-023: paying a visit in the app (C-10/C-12) and the saved cards (C-18)
 export * from './payments.js';
+// V2-040: C-17 invoices and credit notes
+export * from './invoices.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,

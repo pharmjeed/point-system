@@ -49,6 +49,7 @@ import {
   type CustomerOnlinePayment,
   type CustomerTokens,
   type CustomerVehicle,
+  type CustomerInvoiceDetail,
 } from '@point/shared/customer';
 import type { z } from 'zod';
 import type { HttpRequest, HttpResponse, Transport } from '../transport';
@@ -187,6 +188,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   });
   const DEMO_TICKET_ID = '3c9d6e2a-7b1f-4c8d-9e0a-1b2c3d4e5f60';
   const payments = new Map<string, FakePayment>();
+  const invoices = new Map<string, { accountId: string; detail: CustomerInvoiceDetail }>();
 
   const base64Url = (bytes: number) => {
     const b = Array.from({ length: bytes }, () => Math.floor(random() * 256));
@@ -414,7 +416,62 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       p.paidAt = now();
       const account = accounts.get(p.accountId);
       if (account && p.saveCard) p.savedCardId = keepCard(account, p.saveCard, 'ok').id;
+      issueInvoice(p);
     }
+  }
+
+  /** V2-040 (C-17): the simplified invoice of a paid payment, numbered like the server (`PS-00000001`). */
+  function issueInvoice(p: FakePayment) {
+    const venue = FAKE_LOCATIONS[0] as CustomerLocationDetail;
+    const amount = FAKE_VISIT_FEE_HALALAS;
+    const vat = amount - Math.round((amount * 10_000) / 11_500);
+    const number = `PS-${String(invoices.size + 1).padStart(8, '0')}`;
+    const issuedAt = iso(p.paidAt ?? now());
+    invoices.set(uuid(), {
+      accountId: p.accountId,
+      detail: {
+        id: '',
+        number,
+        kind: 'customer_simplified',
+        issued_at: issuedAt,
+        total_halalas: amount,
+        vat_halalas: vat,
+        currency: 'SAR',
+        status: 'reported',
+        venue_name_ar: venue.name_ar,
+        venue_name_en: venue.name_en,
+        original_number: null,
+        type_code: 388,
+        uuid: uuid(),
+        subtotal_halalas: amount - vat,
+        vat_rate_bp: 1500,
+        seller: {
+          legal_name_ar: options.brand?.nameAr ?? '—',
+          legal_name_en: options.brand?.nameEn ?? '—',
+          vat_number: '399999999900003',
+          cr_number: '0000000000',
+          address_ar: 'الرياض',
+        },
+        lines: [
+          {
+            description_ar: `خدمة صف السيارات — ${venue.name_ar}`,
+            description_en: `Valet parking — ${venue.name_en ?? venue.name_ar}`,
+            quantity: 1,
+            unit_price_halalas: amount - vat,
+            net_halalas: amount - vat,
+            vat_rate_bp: 1500,
+            vat_halalas: vat,
+            total_halalas: amount,
+          },
+        ],
+        credit_reason: null,
+        online_payment_id: p.id,
+        // tags 1–5 of a fake document (the server builds the real ones)
+        qr: 'ARfYtNix2YPYqSDYqtis2LHZitio2YrYqQIPMzk5OTk5OTk5OTAwMDAzAxQyMDI2LTExLTA4VDEyOjAwOjAwWgQFMjAuMDAFBDIuNjE=',
+        pdf_url: null,
+        pdf_url_expires_at: null,
+      },
+    });
   }
 
   function paymentView(p: FakePayment, transactionUrl: string | null = null): CustomerOnlinePayment {
@@ -828,6 +885,38 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       // the customer answered the 3-D Secure page in the in-app browser (the webhook, on the server)
       if (p.status === 'initiated' && now() - p.createdAt >= FAKE_3DS_MS) settlePayment(p);
       return paymentView(p);
+    },
+
+    invoices(req) {
+      const account = authenticate(req);
+      const items = [...invoices.entries()]
+        .filter(([, v]) => v.accountId === account.id)
+        .map(([id, v]) => ({ ...v.detail, id }))
+        .sort((a, b) => b.number.localeCompare(a.number))
+        .map(
+          ({
+            type_code: _t,
+            uuid: _u,
+            subtotal_halalas: _s,
+            vat_rate_bp: _r,
+            seller: _seller,
+            lines: _l,
+            credit_reason: _c,
+            online_payment_id: _p,
+            qr: _q,
+            pdf_url: _url,
+            pdf_url_expires_at: _e,
+            ...summary
+          }) => summary,
+        );
+      return { items };
+    },
+
+    invoice(req, { params }) {
+      const account = authenticate(req);
+      const v = invoices.get(params.invoiceId ?? '');
+      if (!v || v.accountId !== account.id) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'invoice' });
+      return { ...v.detail, id: params.invoiceId as string };
     },
 
     paymentMethods(req) {

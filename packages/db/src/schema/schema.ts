@@ -3034,3 +3034,386 @@ export const customer_push_messages = pgTable(
     check('ck_customer_push_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
   ],
 );
+
+// ---- V2-040 … V2-042 (0017_invoices_settlement.sql, DEC-540 … DEC-549)
+
+export const invoice_series = pgTable(
+  'invoice_series',
+  {
+    series: text().primaryKey().notNull(),
+    prefix: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    last_icv: bigint({ mode: 'number' }).default(0).notNull(),
+    last_hash: text().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('uq_invoice_series_prefix').on(table.prefix),
+    check('ck_invoice_series_hash', sql`last_hash ~ '^[A-Za-z0-9+/]{40,120}={0,2}$'::text`),
+    check('ck_invoice_series_icv', sql`last_icv >= 0`),
+    check('ck_invoice_series_prefix', sql`prefix ~ '^[A-Z]{2,4}$'::text`),
+    check('ck_invoice_series_series', sql`series = ANY (ARRAY['simplified'::text, 'standard'::text])`),
+  ],
+);
+
+export const settlement_statements = pgTable(
+  'settlement_statements',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    period_start: date().notNull(),
+    period_end: date().notNull(),
+    status: text().default('draft').notNull(),
+    currency: text().default('SAR').notNull(),
+    subscriber_visit_count: integer().default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    subscriber_payout_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    app_payment_count: integer().default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_gross_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_commission_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_refund_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_refund_commission_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    saas_fee_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    saas_vat_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    adjustments_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    net_payable_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    computed_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    computed_by: uuid(),
+    issued_at: timestamp({ withTimezone: true, mode: 'string' }),
+    issued_by: uuid(),
+    disputed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    disputed_by: uuid(),
+    dispute_reason: text(),
+    dispute_resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
+    dispute_resolved_by: uuid(),
+    dispute_resolution: text(),
+    paid_at: timestamp({ withTimezone: true, mode: 'string' }),
+    paid_on: date(),
+    paid_reference: text(),
+    paid_recorded_by: uuid(),
+    voided_at: timestamp({ withTimezone: true, mode: 'string' }),
+    voided_by: uuid(),
+    void_reason: text(),
+    saas_invoice_id: uuid(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_settlement_statements_period').using(
+      'btree',
+      table.period_start.asc().nullsLast().op('date_ops'),
+      table.org_id.asc().nullsLast().op('uuid_ops'),
+    ),
+    uniqueIndex('uq_settlement_statements_period')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('uuid_ops'),
+        table.period_start.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(status <> 'void'::text)`),
+
+    check(
+      'ck_settlement_net',
+      sql`net_payable_halalas = (((((((subscriber_payout_halalas + app_gross_halalas) - app_commission_halalas) - app_refund_halalas) + app_refund_commission_halalas) - saas_fee_halalas) - saas_vat_halalas) + adjustments_halalas)`,
+    ),
+    check('ck_settlement_statements_commission', sql`app_commission_halalas >= 0`),
+    check('ck_settlement_statements_counts', sql`(subscriber_visit_count >= 0) AND (app_payment_count >= 0)`),
+    check('ck_settlement_statements_currency', sql`currency = 'SAR'::text`),
+    check(
+      'ck_settlement_statements_dispute_reason',
+      sql`(disputed_at IS NULL) OR (dispute_reason IS NOT NULL)`,
+    ),
+    check('ck_settlement_statements_dispute_reason_length', sql`char_length(dispute_reason) >= 3`),
+    check(
+      'ck_settlement_statements_disputed',
+      sql`(status <> 'disputed'::text) OR (disputed_at IS NOT NULL)`,
+    ),
+    check('ck_settlement_statements_gross', sql`app_gross_halalas >= 0`),
+    check(
+      'ck_settlement_statements_issued',
+      sql`(status = 'draft'::text) OR (status = 'void'::text) OR (issued_at IS NOT NULL)`,
+    ),
+    check('ck_settlement_statements_month_start', sql`EXTRACT(day FROM period_start) = (1)::numeric`),
+    check('ck_settlement_statements_no_pan', sql`paid_reference !~ '[0-9]{13,}'::text`),
+    check('ck_settlement_statements_paid', sql`(status <> 'paid'::text) OR (paid_at IS NOT NULL)`),
+    check('ck_settlement_statements_paid_reference', sql`(paid_at IS NULL) OR (paid_reference IS NOT NULL)`),
+    check('ck_settlement_statements_paid_reference_length', sql`char_length(paid_reference) >= 3`),
+    check('ck_settlement_statements_payout', sql`subscriber_payout_halalas >= 0`),
+    check('ck_settlement_statements_period', sql`period_end > period_start`),
+    check('ck_settlement_statements_refund', sql`app_refund_halalas >= 0`),
+    check('ck_settlement_statements_refund_commission', sql`app_refund_commission_halalas >= 0`),
+    check('ck_settlement_statements_saas', sql`(saas_fee_halalas >= 0) AND (saas_vat_halalas >= 0)`),
+    check(
+      'ck_settlement_statements_status',
+      sql`status = ANY (ARRAY['draft'::text, 'issued'::text, 'disputed'::text, 'paid'::text, 'void'::text])`,
+    ),
+    check('ck_settlement_statements_void', sql`(status <> 'void'::text) OR (voided_at IS NOT NULL)`),
+    check('ck_settlement_statements_void_reason', sql`(voided_at IS NULL) OR (void_reason IS NOT NULL)`),
+    check('ck_settlement_statements_void_reason_length', sql`char_length(void_reason) >= 3`),
+  ],
+);
+
+export const settlement_lines = pgTable(
+  'settlement_lines',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    statement_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    kind: text().notNull(),
+    line_key: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    amount_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    base_halalas: bigint({ mode: 'number' }),
+    rate_bp: integer(),
+    quantity_days: integer(),
+    occurred_on: date().notNull(),
+    venue_id: uuid(),
+    ticket_id: uuid(),
+    online_payment_id: uuid(),
+    refund_id: uuid(),
+    contract_id: uuid(),
+    note: text(),
+    created_by: uuid(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    released_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_settlement_lines_statement')
+      .using(
+        'btree',
+        table.statement_id.asc().nullsLast().op('uuid_ops'),
+        table.kind.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(released_at IS NULL)`),
+    uniqueIndex('uq_settlement_lines_key')
+      .using('btree', table.line_key.asc().nullsLast().op('text_ops'))
+      .where(sql`(released_at IS NULL)`),
+    uniqueIndex('uq_settlement_ticket')
+      .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`((released_at IS NULL) AND (kind = 'subscriber_visit'::text))`),
+
+    check('ck_settlement_lines_adjustment', sql`(kind <> 'adjustment'::text) OR (amount_halalas <> 0)`),
+    check(
+      'ck_settlement_lines_adjustment_actor',
+      sql`(kind <> 'adjustment'::text) OR (created_by IS NOT NULL)`,
+    ),
+    check('ck_settlement_lines_adjustment_note', sql`(kind <> 'adjustment'::text) OR (note IS NOT NULL)`),
+    check('ck_settlement_lines_days', sql`(quantity_days IS NULL) OR (quantity_days >= 1)`),
+    check('ck_settlement_lines_key', sql`line_key ~ '^[a-z_]+:[A-Za-z0-9:_-]{1,200}$'::text`),
+    check(
+      'ck_settlement_lines_kind',
+      sql`kind = ANY (ARRAY['subscriber_visit'::text, 'app_payment'::text, 'app_commission'::text, 'app_refund'::text, 'app_refund_commission'::text, 'saas_fee'::text, 'saas_vat'::text, 'adjustment'::text])`,
+    ),
+    check(
+      'ck_settlement_lines_negative',
+      sql`(kind <> ALL (ARRAY['app_commission'::text, 'app_refund'::text, 'saas_fee'::text, 'saas_vat'::text])) OR (amount_halalas <= 0)`,
+    ),
+    check('ck_settlement_lines_no_pan', sql`note !~ '[0-9]{13,}'::text`),
+    check('ck_settlement_lines_note_length', sql`char_length(note) >= 3`),
+    check(
+      'ck_settlement_lines_payment',
+      sql`(kind <> ALL (ARRAY['app_payment'::text, 'app_commission'::text])) OR (online_payment_id IS NOT NULL)`,
+    ),
+    check(
+      'ck_settlement_lines_positive',
+      sql`(kind <> ALL (ARRAY['subscriber_visit'::text, 'app_payment'::text, 'app_refund_commission'::text])) OR (amount_halalas >= 0)`,
+    ),
+    check('ck_settlement_lines_rate', sql`(rate_bp IS NULL) OR (rate_bp >= 0)`),
+    check('ck_settlement_lines_rate_max', sql`(rate_bp IS NULL) OR (rate_bp <= 10000)`),
+    check(
+      'ck_settlement_lines_refund',
+      sql`(kind <> ALL (ARRAY['app_refund'::text, 'app_refund_commission'::text])) OR (refund_id IS NOT NULL)`,
+    ),
+    check('ck_settlement_lines_visit', sql`(kind <> 'subscriber_visit'::text) OR (ticket_id IS NOT NULL)`),
+  ],
+);
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    series: text().notNull(),
+    kind: text().notNull(),
+    type_code: integer().notNull(),
+    number: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    icv: bigint({ mode: 'number' }).notNull(),
+    zatca_uuid: uuid().notNull(),
+    previous_hash: text().notNull(),
+    invoice_hash: text().notNull(),
+    issued_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    supply_date: date().notNull(),
+    period_start: date(),
+    period_end: date(),
+    account_id: uuid(),
+    org_id: uuid(),
+    online_payment_id: uuid(),
+    refund_id: uuid(),
+    settlement_statement_id: uuid(),
+    original_invoice_id: uuid(),
+    credit_reason: text(),
+    currency: text().default('SAR').notNull(),
+    vat_rate_bp: integer().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    subtotal_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    vat_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    total_halalas: bigint({ mode: 'number' }).notNull(),
+    seller: jsonb().notNull(),
+    buyer: jsonb().default({}).notNull(),
+    lines: jsonb().notNull(),
+    qr_payload: text().notNull(),
+    provider: text().notNull(),
+    zatca_status: text().default('pending').notNull(),
+    provider_reference: text(),
+    provider_hash: text(),
+    provider_qr: text(),
+    provider_codes: jsonb().default([]).notNull(),
+    submitted_at: timestamp({ withTimezone: true, mode: 'string' }),
+    status_at: timestamp({ withTimezone: true, mode: 'string' }),
+    pdf_storage_key: text(),
+    pdf_rendered_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_invoices_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('timestamptz_ops'),
+        table.issued_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(account_id IS NOT NULL)`),
+    index('ix_invoices_issued').using('btree', table.issued_at.asc().nullsLast().op('timestamptz_ops')),
+    index('ix_invoices_org')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('timestamptz_ops'),
+        table.issued_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(org_id IS NOT NULL)`),
+    index('ix_invoices_pending')
+      .using('btree', table.issued_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(zatca_status = 'pending'::text)`),
+    uniqueIndex('uq_invoices_full_credit')
+      .using('btree', table.original_invoice_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`((kind = 'credit_note'::text) AND (refund_id IS NULL))`),
+    uniqueIndex('uq_invoices_payment')
+      .using('btree', table.online_payment_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(kind = 'customer_simplified'::text)`),
+    uniqueIndex('uq_invoices_refund')
+      .using('btree', table.refund_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(refund_id IS NOT NULL)`),
+    uniqueIndex('uq_invoices_statement')
+      .using('btree', table.settlement_statement_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(kind = 'operator_standard'::text)`),
+
+    unique('uq_invoices_series_icv').on(table.series, table.icv),
+    unique('uq_invoices_number').on(table.number),
+    unique('uq_invoices_zatca_uuid').on(table.zatca_uuid),
+    check('ck_invoices_amounts', sql`(subtotal_halalas >= 0) AND (vat_halalas >= 0)`),
+    check('ck_invoices_codes_no_pan', sql`(provider_codes)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_invoices_credit_original',
+      sql`(kind <> 'credit_note'::text) OR (original_invoice_id IS NOT NULL)`,
+    ),
+    check('ck_invoices_credit_reason', sql`(kind <> 'credit_note'::text) OR (credit_reason IS NOT NULL)`),
+    check('ck_invoices_credit_reason_length', sql`char_length(credit_reason) >= 3`),
+    check('ck_invoices_credit_type', sql`(kind = 'credit_note'::text) = (type_code = 381)`),
+    check('ck_invoices_currency', sql`currency = 'SAR'::text`),
+    check(
+      'ck_invoices_customer_payment',
+      sql`(kind <> 'customer_simplified'::text) OR (online_payment_id IS NOT NULL)`,
+    ),
+    check('ck_invoices_hash', sql`invoice_hash ~ '^[A-Za-z0-9+/]{40,120}={0,2}$'::text`),
+    check('ck_invoices_icv', sql`icv >= 1`),
+    check(
+      'ck_invoices_invoice_no_original',
+      sql`(kind = 'credit_note'::text) OR (original_invoice_id IS NULL)`,
+    ),
+    check(
+      'ck_invoices_kind',
+      sql`kind = ANY (ARRAY['customer_simplified'::text, 'operator_standard'::text, 'credit_note'::text])`,
+    ),
+    check('ck_invoices_no_pan', sql`(lines)::text !~ '[0-9]{13,}'::text`),
+    check('ck_invoices_number', sql`number ~ '^[A-Z]{2,4}-[0-9]{8,}$'::text`),
+    check(
+      'ck_invoices_operator_statement',
+      sql`(kind <> 'operator_standard'::text) OR (settlement_statement_id IS NOT NULL)`,
+    ),
+    check('ck_invoices_pdf', sql`(pdf_storage_key IS NULL) = (pdf_rendered_at IS NULL)`),
+    check('ck_invoices_period', sql`(period_end IS NULL) OR (period_end > period_start)`),
+    check('ck_invoices_provider', sql`provider ~ '^[a-z][a-z0-9_]{1,31}$'::text`),
+    check('ck_invoices_simplified_buyer', sql`(series <> 'simplified'::text) OR (account_id IS NOT NULL)`),
+    check('ck_invoices_simplified_no_org', sql`(series <> 'simplified'::text) OR (org_id IS NULL)`),
+    check(
+      'ck_invoices_simplified_series',
+      sql`(kind <> 'customer_simplified'::text) OR (series = 'simplified'::text)`,
+    ),
+    check('ck_invoices_standard_buyer', sql`(series <> 'standard'::text) OR (org_id IS NOT NULL)`),
+    check('ck_invoices_standard_no_account', sql`(series <> 'standard'::text) OR (account_id IS NULL)`),
+    check(
+      'ck_invoices_standard_series',
+      sql`(kind <> 'operator_standard'::text) OR (series = 'standard'::text)`,
+    ),
+    check(
+      'ck_invoices_status',
+      sql`zatca_status = ANY (ARRAY['pending'::text, 'reported'::text, 'cleared'::text, 'rejected'::text])`,
+    ),
+    check('ck_invoices_status_at', sql`(zatca_status = 'pending'::text) OR (status_at IS NOT NULL)`),
+    check('ck_invoices_total', sql`total_halalas = (subtotal_halalas + vat_halalas)`),
+    check('ck_invoices_type_code', sql`type_code = ANY (ARRAY[388, 381])`),
+    check('ck_invoices_vat_rate', sql`(vat_rate_bp >= 0) AND (vat_rate_bp <= 10000)`),
+  ],
+);
+
+export const invoice_provider_events = pgTable(
+  'invoice_provider_events',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' })
+      .primaryKey()
+      .generatedAlwaysAsIdentity({
+        name: 'invoice_provider_events_id_seq',
+        startWith: 1,
+        increment: 1,
+        minValue: 1,
+        maxValue: 9223372036854775807,
+        cache: 1,
+      }),
+    invoice_id: uuid().notNull(),
+    kind: text().notNull(),
+    outcome: text().notNull(),
+    zatca_status: text(),
+    codes: jsonb().default([]).notNull(),
+    occurred_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_invoice_provider_events_invoice').using(
+      'btree',
+      table.invoice_id.asc().nullsLast().op('timestamptz_ops'),
+      table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    check('ck_invoice_provider_events_kind', sql`kind = ANY (ARRAY['submit'::text, 'callback'::text])`),
+    check('ck_invoice_provider_events_no_pan', sql`(codes)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_invoice_provider_events_outcome',
+      sql`outcome = ANY (ARRAY['accepted'::text, 'rejected'::text, 'error'::text, 'ignored'::text])`,
+    ),
+    check(
+      'ck_invoice_provider_events_status',
+      sql`zatca_status = ANY (ARRAY['pending'::text, 'reported'::text, 'cleared'::text, 'rejected'::text])`,
+    ),
+  ],
+);

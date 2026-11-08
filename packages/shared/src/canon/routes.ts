@@ -207,12 +207,20 @@ const ROWS: readonly Row[] = [
   ['GET', '/v1/admin/org-settings', 'org.settings_manage', 'none', '9.7'],
   ['PUT', '/v1/admin/org-settings', 'org.settings_manage', 'required', '9.7'],
   ['POST', '/v1/telemetry', 'telemetry.write', 'none', '9.7'],
+  // V2-041 / V2-042 (DEC-547): the operator's settlement statements (O-05) and system subscription (O-06)
+  ['GET', '/v1/settlement-statements', 'settlement.read', 'none', '9.7'],
+  ['GET', '/v1/settlement-statements/{statementId}', 'settlement.read', 'none', '9.7'],
+  ['POST', '/v1/settlement-statements/{statementId}/dispute', 'settlement.dispute', 'required', '9.7'],
+  ['GET', '/v1/system-subscription', 'settlement.read', 'none', '9.7'],
+  ['GET', '/v1/system-subscription/invoices/{invoiceId}', 'settlement.read', 'none', '9.7'],
 
   // §9.8 Webhooks and health (outside /v1)
   ['GET', '/webhooks/whatsapp', 'webhook', 'none', '9.8'], // hub.verify_token
   ['POST', '/webhooks/whatsapp', 'webhook', 'none', '9.8'], // X-Hub-Signature-256 over the raw body
   // V2-021 (DEC-511, DEC-512): the payment gateway's webhook — the shared secret inside the raw body
   ['POST', '/webhooks/payments/moyasar', 'webhook', 'none', '9.8'],
+  // V2-040 (DEC-543): the e-invoicing provider's status callback, HMAC over the raw body
+  ['POST', '/webhooks/einvoicing', 'webhook', 'none', '9.8'],
   ['GET', '/health/live', 'public', 'none', '9.8'], // no data
   ['GET', '/health/ready', 'public', 'none', '9.8'], // no data
   ['GET', '/metrics', 'internal', 'none', '9.8'], // internal network only
@@ -238,6 +246,7 @@ const RATE_LIMIT_CLASS_OF: Readonly<Record<string, RateLimitClass>> = {
   'GET /webhooks/whatsapp': 'webhook',
   'POST /webhooks/whatsapp': 'webhook',
   'POST /webhooks/payments/moyasar': 'webhook',
+  'POST /webhooks/einvoicing': 'webhook',
   'GET /health/live': 'health',
   'GET /health/ready': 'health',
   'GET /metrics': 'health',

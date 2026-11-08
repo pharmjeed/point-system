@@ -1,11 +1,16 @@
 import { SEED_IDS, seedKeySlotId, seedSpotId, type SeedUserKey } from '@point/db/seed';
 import {
   incidentsProjectors,
+  InvoicingRuntime,
+  invoicingJobs,
+  issueDocument,
+  OBJECT_STORAGE,
   paymentsReportsJobs,
   raiseAlert,
   EXPORTS_STORAGE,
   type Database,
   type InMemoryObjectStorage,
+  type ObjectStorage,
 } from '@point/server';
 import { expect } from 'vitest';
 import { createCustomerApp, press, settle, type CustomerApp } from './customer-harness.js';
@@ -164,6 +169,13 @@ export async function createOperatorsApp(): Promise<OperatorsApp> {
   const w = await createCustomerApp();
   const storage = w.app.get<InMemoryObjectStorage>(EXPORTS_STORAGE);
   for (const h of paymentsReportsJobs({ storage })) w.dispatcher.register(h);
+  // V2-040 / V2-041: each operator's settlement statement and system-subscription invoice (O-05 / O-06)
+  const invoicing = new InvoicingRuntime({
+    env: w.env,
+    clock: w.clock,
+    storage: w.app.get<ObjectStorage>(OBJECT_STORAGE, { strict: false }),
+  });
+  for (const h of invoicingJobs({ runtime: invoicing })) w.dispatcher.register(h);
   for (const p of incidentsProjectors()) w.dispatcher.registerProjector(p);
   await w.sim.client.configure({ phoneNumberId: null }); // both operators' numbers are served
   await seedOperatorB(w.db);
@@ -352,6 +364,44 @@ export async function populate(w: OperatorsApp, op: Operator): Promise<void> {
     }),
     201,
   ).id;
+  // V2-041 / V2-042 (O-05 / O-06): an issued statement of September and its system-subscription tax invoice
+  op.r.statement = await w.db.transaction(async (tx) => {
+    await tx.query(`UPDATE organizations SET legal_name = $2 WHERE id = $1`, [
+      op.org,
+      `شركة المشغل ${op.key}`,
+    ]);
+    const st = await tx.one<{ id: string }>(
+      `INSERT INTO settlement_statements (org_id, period_start, period_end, status, issued_at)
+       VALUES ($1, '2026-09-01', '2026-10-01', 'issued', $2) RETURNING id`,
+      [op.org, tx.now],
+    );
+    const inv = await issueDocument(tx, {
+      series: 'standard',
+      kind: 'operator_standard',
+      orgId: op.org,
+      statementId: st.id,
+      supplyDate: '2026-09-01',
+      periodStart: '2026-09-01',
+      periodEnd: '2026-10-01',
+      buyer: { kind: 'operator', legal_name_ar: `شركة المشغل ${op.key}` },
+      lines: [
+        {
+          description_ar: 'اشتراك نظام التشغيل',
+          description_en: 'Operating system subscription',
+          quantity: 1,
+          unit_price_halalas: 50_000,
+          net_halalas: 50_000,
+          vat_rate_bp: 1500,
+          vat_halalas: 7_500,
+          total_halalas: 57_500,
+        },
+      ],
+      vatRateBp: 1500,
+    });
+    await tx.query(`UPDATE settlement_statements SET saas_invoice_id = $2 WHERE id = $1`, [st.id, inv.id]);
+    op.r.invoice = inv.id;
+    return st.id;
+  });
   await w.drain();
   // rows the routes address that no command above returned
   const row = (sql: string) => one<{ id: string }>(w.db, sql, [op.org]).then((x) => x.id);

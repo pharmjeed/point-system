@@ -83,6 +83,22 @@ export const envSchema = z.object({
   // job.payments_reconcile: daily, after the Asia/Riyadh day it compares has ended (00:30 UTC = 03:30 Riyadh)
   PAYMENTS_RECONCILE_CRON_UTC: z.string().default('30 0 * * *'),
 
+  // V2-040 … V2-042 invoices and settlement (DEC-540 … DEC-549): the e-invoicing provider is not chosen yet
+  // (DEC-460) — `simulator` (no network, every environment but production) or `live` (production only; no adapter
+  // exists yet, so a live submission is refused and the invoice stays `pending` with a finance alert)
+  EINVOICE_MODE: z.enum(['simulator', 'live']).default('simulator'),
+  EINVOICE_WEBHOOK_SECRET_REF: z.string().default('env://EINVOICE_WEBHOOK_SECRET'),
+  // VAT of Saudi Arabia in basis points (04 §4: 15%); prices to customers include it, the SaaS fee excludes it
+  VAT_RATE_BP: int(1500),
+  // POINT as the seller of every invoice (docs/v2/04 §4): placeholders outside production, required there
+  INVOICE_SELLER_LEGAL_NAME_AR: z.string().default(''),
+  INVOICE_SELLER_LEGAL_NAME_EN: z.string().default(''),
+  INVOICE_SELLER_VAT_NUMBER: z.string().default(''),
+  INVOICE_SELLER_CR_NUMBER: z.string().default(''),
+  INVOICE_SELLER_ADDRESS_AR: z.string().default(''),
+  // job.settlement_monthly: the 1st of the month, after the Riyadh month has ended (00:15 UTC = 03:15 Riyadh)
+  SETTLEMENT_MONTHLY_CRON_UTC: z.string().default('15 0 1 * *'),
+
   // V2-016 customer app pushes (DEC-519): the Expo Push API (`live`, production only) or the in-process simulator
   // (dev, tests, CI and staging) — no real device receives a push outside production; the Expo access token is
   // optional (the project's push security) and given by reference only
@@ -213,6 +229,22 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   if (env.MOYASAR_MODE === 'simulator' && isGatewayHost(env.MOYASAR_BASE_URL)) {
     throw new EnvError(['MOYASAR_BASE_URL must be the payment simulator when MOYASAR_MODE=simulator']);
   }
+  // V2-040 (DEC-540): no invoice reaches ZATCA outside production, and production never simulates the provider
+  if (env.APP_ENV === 'production' && env.EINVOICE_MODE !== 'live') {
+    throw new EnvError(['EINVOICE_MODE must be live in production']);
+  }
+  if (env.APP_ENV !== 'production' && env.EINVOICE_MODE === 'live') {
+    throw new EnvError([
+      'EINVOICE_MODE=live is only allowed in production (dev, test and staging use the simulator)',
+    ]);
+  }
+  if (env.VAT_RATE_BP > 10_000) throw new EnvError(['VAT_RATE_BP must be between 0 and 10000']);
+  if (env.INVOICE_SELLER_VAT_NUMBER && !/^3[0-9]{13}3$/.test(env.INVOICE_SELLER_VAT_NUMBER)) {
+    throw new EnvError(['INVOICE_SELLER_VAT_NUMBER must be 15 digits starting and ending with 3']);
+  }
+  if (env.INVOICE_SELLER_CR_NUMBER && !/^[0-9]{10}$/.test(env.INVOICE_SELLER_CR_NUMBER)) {
+    throw new EnvError(['INVOICE_SELLER_CR_NUMBER must be 10 digits']);
+  }
   // V2-016 (DEC-519): customer pushes reach real devices from production only, and production never simulates
   if (env.APP_ENV === 'production' && env.CUSTOMER_PUSH_MODE !== 'live') {
     throw new EnvError(['CUSTOMER_PUSH_MODE must be live in production']);
@@ -254,6 +286,16 @@ export function loadDeployedEnv(source: Record<string, string | undefined> = pro
 export function deploymentProblems(env: Env, source: Record<string, string | undefined> = {}): string[] {
   const out: string[] = [];
   const hosted = env.APP_ENV === 'staging' || env.APP_ENV === 'production';
+  // V2-040 (DEC-540): every invoice names POINT's legal identity; production never prints a placeholder
+  if (env.APP_ENV === 'production') {
+    for (const k of [
+      'INVOICE_SELLER_LEGAL_NAME_AR',
+      'INVOICE_SELLER_VAT_NUMBER',
+      'INVOICE_SELLER_CR_NUMBER',
+      'INVOICE_SELLER_ADDRESS_AR',
+    ] as const)
+      if (!env[k].trim()) out.push(`${k} is required in production (the seller of every invoice)`);
+  }
   if (env.SESSION_COOKIE_NAME.startsWith('__Host-') && !env.SESSION_COOKIE_SECURE) {
     out.push(
       'SESSION_COOKIE_NAME with the __Host- prefix needs SESSION_COOKIE_SECURE=true (browsers drop it)',

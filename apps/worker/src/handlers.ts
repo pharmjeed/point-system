@@ -78,6 +78,13 @@ import { paymentsOnlineJobs, paymentsOnlineWorkerService } from '@point/server';
 handlers.push(...paymentsOnlineJobs());
 services.push((deps) => paymentsOnlineWorkerService(deps));
 
+import { invoicingJobs } from '@point/server';
+handlers.push(...invoicingJobs());
+
+import { settlementJobs, settlementWorkerService } from '@point/server';
+handlers.push(...settlementJobs());
+services.push((deps) => settlementWorkerService(deps));
+
 export function allHandlers(): JobHandler[] {
   return handlers;
 }

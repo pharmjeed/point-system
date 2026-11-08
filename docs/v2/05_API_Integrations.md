@@ -19,7 +19,7 @@
 | `POST /v1/customer/visits/{ticketId}/rating` | التقييم |
 | `POST /v1/customer/subscriptions` · `GET /v1/customer/subscriptions` · `POST …/{id}/cancel` · `POST …/{id}/resume` · `PUT …/{id}/vehicles` | الاشتراكات |
 | `GET/POST /v1/customer/payment-methods` · `PATCH/DELETE /v1/customer/payment-methods/{paymentMethodId}` | البطاقات المحفوظة (رموز البوابة، §1.5، V2-023) |
-| `GET /v1/customer/invoices[/{id}]` | الفواتير وPDF |
+| `GET /v1/customer/invoices` · `GET /v1/customer/invoices/{invoiceId}` | الفواتير المبسطة والإشعارات الدائنة، وPDF برابط خاص قصير (C-17، V2-040، DEC-548) |
 | `POST /v1/customer/devices` | رمز الإشعارات للجهاز |
 | `GET /v1/customer/home` | قراءة واحدة لشاشة `C-06`: الزيارة الجارية، الاشتراكات الحية، أقرب المواقع (DEC-482) |
 

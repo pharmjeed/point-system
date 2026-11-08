@@ -324,7 +324,7 @@
 
 ### 7.2 أنواع المهام المؤجلة (Jobs) في `outbox_events.type`
 
-`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.customer_push_send` · `job.customer_push_receipts` · `job.payment_method_token_delete`
+`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.customer_push_send` · `job.customer_push_receipts` · `job.payment_method_token_delete` · `job.einvoice_submit` · `job.invoice_pdf_render` · `job.settlement_monthly`
 
 > الإصدار الثاني (V2-010، DEC-496): `job.customer_otp_send` يرسل رمز دخول تطبيق العميل بقالب المصادقة على رقم بوينت بعد COMMIT (المعاملة تكتب الرمز مجزأً ونسخته المشفرة الوحيدة وصف outbox فقط).
 
@@ -332,6 +332,8 @@
 
 > الإصدار الثاني (V2-016، DEC-519): `job.customer_push_send` يرسل إشعار تطبيق العميل بعد COMMIT (المعاملة تكتب صف `customer_push_messages` بالمعرّفات فقط)؛ `job.customer_push_receipts` يقرأ إيصالات التسليم من المزود لاحقًا ويُسقط رمز الجهاز غير المسجل.
 > الإصدار الثاني (V2-022/V2-023، DEC-522، DEC-524): `payment.online_paid` دفعة إلكترونية لزيارة صارت `paid` فصارت التذكرة `collected` بأهلية `app_paid` (في معاملة انتقال الدفعة نفسها، يكتبها العامل بعد قراءة البوابة أو رد إنشاء بلا 3-D Secure)؛ `payment.online_refunded` استرداد كامل لتلك الدفعة قبل التسليم أعاد التذكرة `due` بأهلية `none`. `job.payment_method_token_delete` يحذف رمز بطاقة محفوظة لدى البوابة بعد COMMIT إزالتها (C-18 أو حذف الحساب).
+
+> الإصدار الثاني (V2-040 … V2-042، DEC-543، DEC-544): `job.einvoice_submit` يرسل فاتورة أو إشعارًا دائنًا لمزود الفوترة الإلكترونية بعد COMMIT (الإبلاغ للمبسطة والاعتماد للضريبية، بترتيب سلسلة كل نوع)؛ `job.invoice_pdf_render` يولّد ملف PDF الفاتورة بعد قبولها ويحفظه في المخزن الخاص؛ `job.settlement_monthly` يُعد مسودات كشوف التسوية لكل مشغل في الأول من الشهر (توقيت الرياض) للشهر السابق (`SETTLEMENT_MONTHLY_CRON_UTC`).
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.
 
@@ -462,6 +464,7 @@
 | `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | 401 | سر Webhook بوابة الدفع غير صالح |
 | `PASS_INVALID` | 422 | الإصدار الثاني: بطاقة الدخول الممسوحة ليست بطاقة بوينت صالحة (صيغة أو توقيع أو حساب غير نشط)، `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500) |
 | `PASS_EXPIRED` | 410 | الإصدار الثاني: بطاقة الدخول خارج نافذة الخطوة الحالية ± 1 (30 ث) أو استُعملت خطوتها لاستلام سابق (DEC-500) |
+| `EINVOICE_WEBHOOK_SIGNATURE_INVALID` | 401 | توقيع إشعار مزود الفوترة الإلكترونية غير صالح |
 
 ---
 
@@ -617,6 +620,13 @@
 | GET / PUT | `/v1/admin/retention-policy` | `audit.read` / `retention.manage` | ✓ (PUT) |
 | GET / PUT | `/v1/admin/org-settings` | `org.settings_manage` | ✓ (PUT) |
 | POST | `/v1/telemetry` | `telemetry.write` | — |
+| GET | `/v1/settlement-statements` | `settlement.read` | — |
+| GET | `/v1/settlement-statements/{statementId}` | `settlement.read` | — |
+| POST | `/v1/settlement-statements/{statementId}/dispute` | `settlement.dispute` | ✓ |
+| GET | `/v1/system-subscription` | `settlement.read` | — |
+| GET | `/v1/system-subscription/invoices/{invoiceId}` | `settlement.read` | — |
+
+> الإصدار الثاني (V2-041، V2-042، DEC-547): كشف التسوية O-05 واشتراك النظام O-06 لمالك المشغل وإدارته — كشوفه هو وحده بلا المسودات، والاعتراض بسبب على كشف صادر، وعقده الساري وفواتيره من بوينت برابط PDF خاص قصير.
 
 ### 9.8 Webhooks والصحة
 
@@ -625,6 +635,7 @@
 | GET | `/webhooks/whatsapp` | تحقق `hub.verify_token` |
 | POST | `/webhooks/whatsapp` | توقيع `X-Hub-Signature-256` على الجسم الخام |
 | POST | `/webhooks/payments/moyasar` | الإصدار الثاني (V2-021، DEC-511): سر الـWebhook المشترك (`secret_token`) في الجسم الخام، بمقارنة زمن ثابت |
+| POST | `/webhooks/einvoicing` | الإصدار الثاني (V2-040، DEC-543): توقيع HMAC-SHA256 للجسم الخام في `X-Einvoice-Signature` بسر `EINVOICE_WEBHOOK_SECRET_REF`، بمقارنة زمن ثابت |
 | GET | `/health/live` · `/health/ready` | عام (بلا بيانات) |
 | GET | `/metrics` | شبكة داخلية فقط |
 
@@ -694,6 +705,8 @@
 | `retention.manage` | ✓ | — | — | — | |
 | `org.settings_manage` | ✓ | — | — | — | إعدادات المؤسسة `security.*` و`heartbeat.*` |
 | `telemetry.write` | ✓ | ✓ | ✓ | ✓ | |
+| `settlement.read` | ✓ | ✓ | — | — | الإصدار الثاني (O-05، O-06، DEC-547): كشوف تسوية مؤسسته الصادرة واشتراك النظام وفواتيره، قراءة |
+| `settlement.dispute` | ✓ | ✓ | — | — | الإصدار الثاني (O-05، DEC-547): الاعتراض بسبب على كشف صادر لمؤسسته |
 
 ---
 
@@ -833,6 +846,8 @@
 **استثناء واحد مسموح:** معاملة تحمل L1 يجوز لها، بعد أن أخذت أقفال أمرها، أن تقفل صفوفًا إضافية من L4–L8 **لنفس المجموعة** لتمريرة التوزيع ولتسوية السائق بعد مهمته (`settleDriverAfterTask`). هذا آمن لأن كل من يقفل صفوف الطابور والعروض والمناوبات يحمل L1 أولًا، وأوامر تقدم الحركة لا تقفل إلا صفوف حركة نشطة (`accepted`/`in_progress` وتذكرتها ودورتها) لا تقفلها التمريرة. إعادة المحاولة: المعاملة كلها تُعاد حتى 3 مرات عند `40001`/`40P01` بتأخير عشوائي 20–80 ms؛ تجاوز `lock_timeout` (`55P03`) لا يُعاد على الخادم ويرد `IDEMPOTENCY_IN_PROGRESS` إن حدث عند L0 وإلا `SERVICE_UNAVAILABLE` (`retryable: true`).
 
 **صف المؤسسة (الإصدار الثاني، DEC-487):** الأوامر التي يمنعها تعليق المشغل (فتح الحفل والوردية، بدء المناوبة، بدء الاستلام) تقرأ صف `organizations` بـ`FOR SHARE` أول قفل لها قبل L1؛ وأوامر المنصة وإعدادات المؤسسة تقفله `FOR NO KEY UPDATE` وحده دون أي صف من L1–L10.
+
+**الفواتير والتسوية (الإصدار الثاني، DEC-541، DEC-544):** أوامر التسوية للمنصة تقفل صف `settlement_statements` `FOR NO KEY UPDATE` وحده (وإعداد الكشف يقفل صف `organizations` قبله)؛ وإصدار أي فاتورة أو إشعار دائن يقفل صف سلسلته في `invoice_series` `FOR NO KEY UPDATE` **آخر قفل في المعاملة** بعد أقفال الأمر كلها (الدفعة وتذكرتها، أو الكشف) وقبل إلحاقيات L10 — فلا تتسلسل إلا الفواتير نفسها، ولا فجوة في الترقيم ولا تفرّع في السلسلة (المشغّل `trg_invoices_chain` يعيد الفحص).
 
 **جداول الإعداد خارج L0–L10 (DEC-121):** صفوف `venues` و`parking_zones` و`parking_spots` و`key_slots` و`shifts` ليست في الجدول؛ يُقفل كل منها `FOR NO KEY UPDATE` وحده في أمر الإعداد الخاص به، أو (صف الوردية) بعد L1 لمجموعتها مباشرة، ولا يُقفل للتعديل بعد أي مستوى من L2 إلى L10. والأوامر التي تستعمل موقفًا أو خانة تقرأ الموقف ومنطقته (أو الخانة ولوحتها) `FOR SHARE` بعد أقفالها وتشترط أن يكونا نشطين، فيتسلسل التعطيل مع التخصيص.
 

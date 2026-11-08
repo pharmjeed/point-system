@@ -20,6 +20,7 @@ import type { ClientInfo } from '../../identity-access/application/auth-service.
 import { retryableFailure } from '../domain/gateway.js';
 import { PAN_LIKE } from '../domain/sanitize.js';
 import type { PaymentsRuntime } from '../runtime.js';
+import { paymentDocumentsHook } from './document-hook.js';
 import { applyGatewayPayment, paymentById, type OnlinePaymentRow } from './payment-sync.js';
 import { platformOrgId } from './platform-org.js';
 
@@ -273,6 +274,14 @@ async function finishRefund(
     accountId: payment.account_id,
     metadata,
   });
+  // V2-040 (DEC-543): the credit note of the money given back, in this same transaction
+  const documents = paymentDocumentsHook();
+  if (status === 'succeeded' && documents)
+    await documents.afterRefund(
+      tx,
+      { id: r.id, amount_halalas: r.amount_halalas, reason: r.reason, kind: r.kind },
+      payment,
+    );
   if (status === 'failed')
     await raisePlatformAlert(tx, {
       type: 'payment_refund_failed',

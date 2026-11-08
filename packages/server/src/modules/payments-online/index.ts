@@ -64,6 +64,14 @@ export {
 } from './application/card-tokens.js';
 export { issueSystemRefund, paymentSummary } from './application/refunds.js';
 export { normalizeToken } from './infra/moyasar.js';
+// V2-040 (DEC-543): the tax documents of every captured payment and succeeded refund (registered by invoicing)
+export {
+  paymentDocumentsHook,
+  registerPaymentDocumentsHook,
+  type PaymentDocumentsHook,
+  type SucceededRefund,
+} from './application/document-hook.js';
+export { ONLINE_PAYMENT_COLUMNS } from './application/payment-sync.js';
 export {
   PAYMENT_WEBHOOK_PROCESS_JOB,
   PAYMENT_REFUND_SEND_JOB,

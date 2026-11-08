@@ -54,6 +54,15 @@ export async function createApp(opts: CoreModuleOptions): Promise<NestExpressApp
       next();
     },
   );
+  // V2-040 (DEC-543): the e-invoicing provider's status callback is signed over its raw bytes
+  app.use(
+    '/webhooks/einvoicing',
+    express.raw({ type: () => true, limit: '256kb' }),
+    (req: Request & { rawBody?: Buffer }, _res: Response, next: NextFunction) => {
+      if (Buffer.isBuffer(req.body)) req.rawBody = req.body;
+      next();
+    },
+  );
   app.useBodyParser('json', { limit: '1mb' });
   app.disable('x-powered-by');
   // the client address (rate limits by IP, audit ip) comes from X-Forwarded-For of the reverse proxy (TRUST_PROXY hops)

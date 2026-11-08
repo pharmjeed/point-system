@@ -9,6 +9,7 @@ export * from './canon/permissions.js';
 export * from './canon/routes.js';
 export * from './canon/platform.js';
 export * from './canon/payments-online.js';
+export * from './canon/invoicing.js';
 export * from './canon/wa-templates.js';
 export * from './canon/sounds.js';
 export * from './canon/screens.js';

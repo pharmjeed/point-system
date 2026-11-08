@@ -70,7 +70,7 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
     expect(ops).toHaveLength(ROUTES.length + PLATFORM_ROUTES.length + CUSTOMER.length);
     expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(127);
     const v1 = ops.filter((o) => !o.path.startsWith('/v1/platform/') && !o.path.startsWith('/v1/customer/'));
-    expect(v1.filter((o) => o.requestBody)).toHaveLength(86); // + PUT public-profile, …/photos, …/submit (V2-004), intake-pass (V2-013), the payment webhook (V2-021)
+    expect(v1.filter((o) => o.requestBody)).toHaveLength(88); // + PUT public-profile, …/photos, …/submit (V2-004), intake-pass (V2-013), the payment webhook (V2-021), the O-05 dispute and the e-invoicing webhook (V2-040 / V2-041)
     // every customer write with a body in CUSTOMER_ROUTES documents it (V2-010; DELETE …/vehicles/{id} has none, V2-012)
     expect(ops.filter((o) => o.path.startsWith('/v1/customer/') && o.requestBody)).toHaveLength(
       CUSTOMER.filter((r) => 'body' in r).length,
@@ -81,7 +81,7 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
     // the body parsers run before any route: one without a requestBody still reads a body sent to it
     const writes = ops.filter((o) => o.method !== 'GET');
     expect(writes).toHaveLength(
-      95 + // + intake-pass (V2-013), the payment webhook (V2-021)
+      97 + // + intake-pass (V2-013), the payment webhook (V2-021), the O-05 dispute and the e-invoicing webhook (V2-041 / V2-040)
         PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length +
         Object.values(CUSTOMER_ROUTES).filter((r) => r.method !== 'GET').length,
     );
