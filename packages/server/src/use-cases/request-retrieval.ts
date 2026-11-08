@@ -40,7 +40,7 @@ export async function openRetrievalCycle(
   tx: Tx,
   ticket: TicketRow,
   m: {
-    source: 'whatsapp' | 'staff';
+    source: 'whatsapp' | 'staff' | 'app';
     requestedAt: Date;
     early: boolean;
     userId?: string | null;
@@ -152,15 +152,22 @@ export async function requestRetrievalForCustomer(
 export async function applyCustomerRequest(
   tx: Tx,
   t: TicketRow,
-  m: { customerId: string | null; requestedAt?: Date; ingestFrom?: Date | null },
+  m: {
+    customerId: string | null;
+    requestedAt?: Date;
+    ingestFrom?: Date | null;
+    /** the customer's channel: the WhatsApp button (default) or the customer app (V2-015, DEC-516) */
+    source?: 'whatsapp' | 'app';
+  },
 ): Promise<CustomerRequestResult> {
+  const channel = m.source ?? 'whatsapp';
   const actor: EventActor = m.customerId
     ? { type: 'customer', id: m.customerId }
     : { type: 'system', id: null };
   if (isClosedTicket(t.status)) return { kind: 'closed', ticketStatus: t.status };
   if (t.status === 'parked' && !t.active_cycle_id) {
     const r = await openRetrievalCycle(tx, t, {
-      source: 'whatsapp',
+      source: channel,
       requestedAt: m.requestedAt ?? tx.now,
       early: false,
       customerId: m.customerId ?? t.customer_id,
@@ -179,9 +186,9 @@ export async function applyCustomerRequest(
       };
     const at = m.requestedAt ?? tx.now;
     const updated = await tx.one<TicketRow>(
-      `UPDATE tickets SET pending_retrieval_at = $2, pending_retrieval_source = 'whatsapp', version = version + 1
+      `UPDATE tickets SET pending_retrieval_at = $2, pending_retrieval_source = $3, version = version + 1
         WHERE id = $1 RETURNING *`,
-      [t.id, at],
+      [t.id, at, channel],
     );
     // the open park/repark task, started or not: its driver gets the early-request banner
     const parking = await tx.maybeOne<{ assignee_id: string | null }>(
@@ -194,7 +201,7 @@ export async function applyCustomerRequest(
       payload: {
         ticket: ticketRef(updated),
         pending_retrieval_at: at.toISOString(),
-        request_source: 'whatsapp',
+        request_source: channel,
         requested_by_customer_id: m.customerId ?? t.customer_id,
         parking_task_assignee_id: parking?.assignee_id ?? null,
         status_at_request: t.status,

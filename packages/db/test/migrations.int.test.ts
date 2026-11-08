@@ -30,6 +30,9 @@ const CUSTOMER_TABLES = [
   'customer_audit_log',
   // 0010_customer_pass_and_app_intake.sql (V2-013, DEC-500)
   'customer_passes',
+  // 0013_customer_visits_push.sql (V2-015 / V2-016, DEC-518, DEC-519)
+  'customer_visit_ratings',
+  'customer_push_messages',
 ];
 
 /** The V2 online-payment tables of 0012_online_payments.sql (V2-020 / V2-021, docs/v2/03_Data_Model.md §4). */
@@ -76,7 +79,7 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 8 customer tables of 0009 (V2-010) and 0010 (V2-013) and the 6 online-payment tables of 0012 (V2-020)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016) and the 6 online-payment tables of 0012 (V2-020)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -150,6 +153,7 @@ describe('migrations', () => {
       '0007_alerts_manual_resolved_index.sql',
       '0009_customers_account_index.sql',
       '0010_tickets_customer_vehicle_index.sql',
+      '0013_customer_visits_push_token_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -170,6 +174,7 @@ describe('migrations', () => {
           'ix_tickets_customer_vehicle_open',
           'ix_whatsapp_inbound_org_received',
           'ix_whatsapp_messages_accepted',
+          'uq_customer_sessions_push_token',
           'uq_customers_org_account',
         ],
       ],
@@ -179,6 +184,7 @@ describe('migrations', () => {
       { name: 'ix_tickets_customer_vehicle_open', valid: true },
       { name: 'ix_whatsapp_inbound_org_received', valid: true },
       { name: 'ix_whatsapp_messages_accepted', valid: true },
+      { name: 'uq_customer_sessions_push_token', valid: true },
       { name: 'uq_customers_org_account', valid: true },
     ]);
   });

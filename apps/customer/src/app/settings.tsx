@@ -1,15 +1,17 @@
 /**
  * C-19 الإعدادات (V2-017): language (kept on the device and sent to the account, so WhatsApp and push follow it;
- * the direction follows on the next launch, DEC-509), notifications (placeholder until V2-016), «تواصل معنا» from
+ * the direction follows on the next launch, DEC-509), notifications (V2-016: on/off for this device, or why not), «تواصل معنا» from
  * the configuration, the terms and privacy pages the API names, the app version, sign out and «حذف الحساب» (C-20).
  */
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import { appConfig } from '../config';
 import { CommandKey } from '../features/commandKey';
 import { errorText } from '../features/errorText';
+import { pushSettingState } from '../features/push';
 import { settingsView, type LinkItem } from '../features/settings';
+import { usePush } from '../push/usePush';
 import { dictionaries, isolate, type AppLocale } from '../i18n';
 import { useI18n } from '../i18n/I18nProvider';
 import { newIdempotencyKey } from '../session/secureStore';
@@ -30,7 +32,9 @@ export default function Settings() {
   const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'warning'; text: string } | null>(
     null,
   );
-  const [busy, setBusy] = useState<'locale' | 'signout' | null>(null);
+  const [busy, setBusy] = useState<'locale' | 'signout' | 'push' | null>(null);
+  const push = usePush(t.visit.title);
+  const pushState = pushSettingState(push.state);
   const key = useRef(new CommandKey(newIdempotencyKey)).current;
   const view = settingsView(session.me, appConfig, t);
 
@@ -48,6 +52,30 @@ export default function Settings() {
       await session.setMe(me);
     } catch (e) {
       setMessage({ tone: 'warning', text: errorText(e, t, locale) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const togglePush = async () => {
+    setBusy('push');
+    setMessage(null);
+    try {
+      if (pushState === 'on') {
+        await push.disable();
+        setMessage({ tone: 'success', text: t.push.disabled });
+      } else {
+        const r = await push.enable();
+        setMessage(
+          r === 'enabled'
+            ? { tone: 'success', text: t.push.enabled }
+            : r === 'denied'
+              ? { tone: 'warning', text: t.push.blocked }
+              : { tone: 'warning', text: t.push.unavailable },
+        );
+      }
+    } catch (e) {
+      setMessage({ tone: 'warning', text: `${t.push.failed} ${errorText(e, t, locale)}` });
     } finally {
       setBusy(null);
     }
@@ -83,7 +111,26 @@ export default function Settings() {
         <AppText variant="cardTitle" accessibilityRole="header">
           {t.settings.notifications}
         </AppText>
-        <AppText tone="muted">{t.settings.notificationsSoon}</AppText>
+        <AppText tone="muted">{t.push[pushState]}</AppText>
+        {pushState === 'on' || pushState === 'off' ? (
+          <Button
+            label={pushState === 'on' ? t.push.disable : t.push.enable}
+            variant="secondary"
+            size="md"
+            loading={busy === 'push'}
+            loadingLabel={t.common.saving}
+            onPress={() => void togglePush()}
+            testID="settings-push"
+          />
+        ) : null}
+        {pushState === 'blocked' ? (
+          <Button
+            label={t.push.openSettings}
+            variant="ghost"
+            size="md"
+            onPress={() => void Linking.openSettings()}
+          />
+        ) : null}
       </Card>
 
       <Card>

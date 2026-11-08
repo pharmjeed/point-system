@@ -25,6 +25,19 @@ export function registerTicketSummaryProjection(p: TicketSummaryProjection | nul
   projection = p;
 }
 
+/**
+ * Another audience of a ticket's coalesced update (V2-015, DEC-520: the customer's own socket), told once per ticket
+ * and transaction, right before COMMIT, after the staff publications. Registered by its owner module (the
+ * customer-accounts module publishes `visit.updated` to the account's room); it only writes rows and NOTIFYs.
+ */
+export type TicketUpdateListener = (tx: Tx, ticketId: string, cause: string) => Promise<void>;
+const listeners = new Map<string, TicketUpdateListener>();
+
+export function registerTicketUpdateListener(name: string, fn: TicketUpdateListener | null): void {
+  if (fn) listeners.set(name, fn);
+  else listeners.delete(name);
+}
+
 export interface TicketUpdateOptions {
   cause: string;
   actor?: { type: 'user' | 'customer' | 'system'; id: string | null };
@@ -112,8 +125,12 @@ const DRIVER_MESSAGES = new Set(['W-01', 'W-05']);
 async function flushTicketUpdates(tx: Tx, s: TxState): Promise<void> {
   const items = [...s.byTicket.values()];
   s.byTicket.clear();
-  if (!projection) return;
+  if (!projection) {
+    for (const it of items) for (const fn of listeners.values()) await fn(tx, it.ticketId, it.cause);
+    return;
+  }
   for (const it of items) {
+    for (const fn of listeners.values()) await fn(tx, it.ticketId, it.cause);
     const summary = await projection(tx, it.ticketId);
     if (!summary) continue;
     const t = await tx.maybeOne<TicketTargets>(

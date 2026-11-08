@@ -1,12 +1,12 @@
 /**
- * C-06 الرئيسية: the big «بطاقة الدخول» button (its target C-11 is a stub until V2-013), the visit in progress
- * above everything when there is one (C-12 comes with V2-015), my subscriptions (C-14, V2-032: placeholder) and
+ * C-06 الرئيسية: the big «بطاقة الدخول» button (C-11), the visit in progress above everything when there is one —
+ * it opens C-12 and follows the customer socket (V2-015) — my subscriptions (C-14, V2-032: placeholder) and
  * the nearby locations from `GET /v1/customer/home`, each opening C-08, with «كل المواقع» (C-07), «سياراتي» (C-15)
- * and «الإعدادات» (C-19, where sign-out and C-20 live) since V2-012/V2-017.
+ * and «الإعدادات» (C-19, where sign-out and C-20 live) since V2-012/V2-017, and «زياراتي» (C-16, V2-015).
  */
 import type { CustomerHome } from '@point/shared/customer';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { errorText } from '../features/errorText';
@@ -46,6 +46,12 @@ export default function Home() {
     }, [load]),
   );
 
+  // V2-015: the visit card follows the customer socket (and every reconnection reads home again)
+  useEffect(
+    () => session.events.subscribe({ onVisit: () => void load(), onResync: () => void load() }),
+    [session.events, load],
+  );
+
   if (!session.me) return null;
 
   const section = (s: HomeSection) => {
@@ -53,15 +59,31 @@ export default function Home() {
     switch (s) {
       case 'visit': {
         const card = visitCard(home, t, locale);
-        return card ? (
-          <Card key={s} accent>
+        return card && home.current_visit ? (
+          <Pressable
+            key={s}
+            accessibilityRole="button"
+            accessibilityLabel={`${t.home.currentVisit} ${card.status}`}
+            accessibilityHint={t.home.openVisit}
+            onPress={() =>
+              router.push({
+                pathname: '/visit/[ticketId]',
+                params: { ticketId: home.current_visit!.ticket_id },
+              })
+            }
+            style={({ pressed }) => [styles.visitCard, pressed && styles.pressed]}
+            testID="home-visit"
+          >
             <AppText variant="small" tone="muted">
               {t.home.currentVisit}
             </AppText>
             <AppText variant="cardTitle">{card.status}</AppText>
             <AppText>{card.venue}</AppText>
             {card.plate ? <AppText style={styles.mono}>{card.plate}</AppText> : null}
-          </Card>
+            <AppText variant="small" tone="primary">
+              {t.home.openVisit}
+            </AppText>
+          </Pressable>
         ) : null;
       }
       case 'pass':
@@ -198,6 +220,15 @@ export default function Home() {
               testID="home-vehicles"
             />
           ) : null}
+          {home ? (
+            <Button
+              label={t.home.myVisits}
+              variant="secondary"
+              size="md"
+              onPress={() => router.push('/visits')}
+              testID="home-visits"
+            />
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -240,4 +271,12 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   pressed: { backgroundColor: color.primarySubtle },
+  visitCard: {
+    backgroundColor: color.surface,
+    borderRadius: radius.lg,
+    borderWidth: 2,
+    borderColor: color.primary,
+    padding: space[4],
+    gap: space[1],
+  },
 });

@@ -83,6 +83,15 @@ export const envSchema = z.object({
   // job.payments_reconcile: daily, after the Asia/Riyadh day it compares has ended (00:30 UTC = 03:30 Riyadh)
   PAYMENTS_RECONCILE_CRON_UTC: z.string().default('30 0 * * *'),
 
+  // V2-016 customer app pushes (DEC-519): the Expo Push API (`live`, production only) or the in-process simulator
+  // (dev, tests, CI and staging) — no real device receives a push outside production; the Expo access token is
+  // optional (the project's push security) and given by reference only
+  CUSTOMER_PUSH_MODE: z.enum(['live', 'simulator']).default('simulator'),
+  CUSTOMER_PUSH_ACCESS_TOKEN_REF: z.string().default('env://EXPO_ACCESS_TOKEN'),
+  CUSTOMER_PUSH_HTTP_TIMEOUT_MS: int(10000),
+  // the provider's delivery receipts are read this long after the send (Expo keeps them about a day)
+  CUSTOMER_PUSH_RECEIPT_DELAY_S: int(900),
+
   VAPID_PUBLIC_KEY: z.string().default(''),
   VAPID_PRIVATE_KEY: z.string().default(''),
   VAPID_SUBJECT: z.string().default('mailto:ops@example.com'),
@@ -197,6 +206,15 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   }
   if (env.MOYASAR_MODE === 'simulator' && isGatewayHost(env.MOYASAR_BASE_URL)) {
     throw new EnvError(['MOYASAR_BASE_URL must be the payment simulator when MOYASAR_MODE=simulator']);
+  }
+  // V2-016 (DEC-519): customer pushes reach real devices from production only, and production never simulates
+  if (env.APP_ENV === 'production' && env.CUSTOMER_PUSH_MODE !== 'live') {
+    throw new EnvError(['CUSTOMER_PUSH_MODE must be live in production']);
+  }
+  if (env.APP_ENV !== 'production' && env.CUSTOMER_PUSH_MODE === 'live') {
+    throw new EnvError([
+      'CUSTOMER_PUSH_MODE=live is only allowed in production (dev, test and staging use the simulator)',
+    ]);
   }
   // Web Push (05 §8, 14 §6): both VAPID keys or none (none = the dev sender, or Push disabled outside local)
   if (!!env.VAPID_PUBLIC_KEY !== !!env.VAPID_PRIVATE_KEY) {

@@ -474,6 +474,9 @@
 | `ACCOUNT_DELETED` | 410 | لا | حُذف هذا الحساب. | This account was deleted. | جلسة أو دخول لحساب `deleted`، ورمز الوصول أو التحديث الحالي لحساب حُذف (يسبق `AUTH_SESSION_REVOKED`، DEC-508) |
 | `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT` | 409 | لا | هذه السيارة في زيارة جارية. احذفها بعد انتهاء الزيارة. | This vehicle is in a visit in progress. Remove it after the visit ends. | `DELETE /v1/customer/vehicles/{vehicleId}` لسيارة `in_active_visit` (V2-012، DEC-505)؛ لا يُكتب شيء |
 | `CUSTOMER_ACCOUNT_VISIT_ACTIVE` | 409 | لا | لديك زيارة جارية. احذف الحساب بعد استلام سيارتك. | You have a visit in progress. Delete the account after you collect your car. | `DELETE /v1/customer/me` وللحساب تذكرة مفتوحة عبر صفوف `customers` المربوطة (V2-017، DEC-508) |
+| `HANDOVER_CODE_UNAVAILABLE` | 409 | لا | لا يمكن عرض رمز التسليم هنا. اطلب المساعدة من السائق أو المشرف عند البوابة. | The handover code cannot be shown here. Ask the driver or the supervisor at the gate. | `GET /v1/customer/visits/{ticketId}/handover-code` لسيارة جاهزة بلا رمز يُعرض في التطبيق؛ `reason`: `whatsapp` / `staff` / `locked` / `expired` / `none` (V2-015، DEC-517) |
+| `CUSTOMER_VISIT_NOT_DELIVERED` | 409 | لا | يمكنك تقييم الزيارة بعد استلام سيارتك. | You can rate the visit after you collect your car. | `POST …/rating` قبل التسليم؛ `ticket_status` (DEC-518) |
+| `CUSTOMER_VISIT_ALREADY_RATED` | 409 | لا | قيّمت هذه الزيارة مسبقًا. | You already rated this visit. | تقييم ثانٍ للزيارة نفسها بمفتاح آخر (DEC-518) |
 | `CUSTOMER_REAUTH_REQUIRED` | 403 | لا | أكّد أولًا برمز تحقق جديد. | Confirm with a new verification code first. | `DELETE /v1/customer/me` بلا دليل إعادة التحقق أو بدليل ليس الحي لهذه الجلسة أو منتهٍ؛ `reason`: `missing` / `invalid` / `expired` (403 لا 401 فلا يخرج التطبيق، DEC-507) |
 
 | الحالة | الرمز | `details` | الواجهة (تطبيق العميل) | السجل | ملاحظة |
@@ -486,6 +489,9 @@
 | رمز تحديث منتهٍ أو ملغى أو مستعمل سابقًا أو من جهاز آخر، أو جلسة ملغاة | `AUTH_SESSION_REVOKED` (401) | `reason` | الخروج | info | المستعمل سابقًا والجهاز الآخر يلغيان الجلسة كلها |
 | حساب `suspended` | `AUTH_ACCOUNT_DISABLED` (403) | — | رسالة الخادم | info | |
 | حذف سيارة لحساب آخر أو غير موجودة أو أُزيلت سابقًا | `RESOURCE_NOT_FOUND` (404) | `resource: customer_vehicle` | تحديث `C-15` | info | الرد نفسه للحالات الثلاث (V2-012، DEC-505) |
+| زيارة حساب آخر أو تذكرة ملغاة أو معرّف مجهول على `/v1/customer/visits/{ticketId}…` | `RESOURCE_NOT_FOUND` (404) | `resource: customer_visit` | «هذه الزيارة لم تعد متاحة» | info | الرد نفسه (V2-015، DEC-516) |
+| «اطلب السيارة» ودورة مفتوحة أو طلب مبكر قائم / سيارة مُسلَّمة | `RETRIEVAL_ALREADY_ACTIVE` / `TICKET_CLOSED` (409) | `ticket_status` (و`pending_retrieval_at`) | «طلبت سيارتك مسبقًا» / «سُلّمت» | info | رموز 08 كما هي (DEC-516) |
+| رمز التسليم قبل الجاهزية | `HANDOVER_NOT_READY` (409) | `ticket_status` | لا بطاقة رمز | info | (DEC-517) |
 | رمز خاطئ أو منتهٍ أو قفل في إعادة التحقق `POST /v1/customer/auth/reauth/verify` | `CUSTOMER_OTP_INVALID` / `CUSTOMER_OTP_EXPIRED` / `CUSTOMER_OTP_LOCKED` | كالدخول | `C-20` كـ`C-03` | info | المحاولات والقفل على الرقم نفسه مشتركة مع الدخول (DEC-507) |
 
 

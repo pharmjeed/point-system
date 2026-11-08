@@ -23,6 +23,10 @@ export const CUSTOMER_ERROR_CODES = [
   'CUSTOMER_VEHICLE_IN_ACTIVE_VISIT',
   'CUSTOMER_ACCOUNT_VISIT_ACTIVE',
   'CUSTOMER_REAUTH_REQUIRED',
+  // V2-015 (DEC-517, DEC-518): C-12's handover code, C-13's rating
+  'HANDOVER_CODE_UNAVAILABLE',
+  'CUSTOMER_VISIT_NOT_DELIVERED',
+  'CUSTOMER_VISIT_ALREADY_RATED',
 ] as const;
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[number];
 export const CustomerErrorCodeSchema = z.enum(CUSTOMER_ERROR_CODES);
@@ -42,6 +46,10 @@ export const CUSTOMER_REUSED_ERROR_CODES = [
   'IDEMPOTENCY_KEY_REUSED',
   'IDEMPOTENCY_IN_PROGRESS',
   'WA_CHANNEL_UNAVAILABLE',
+  // V2-015 (DEC-516, DEC-517): the request from C-12 answers as the staff request does
+  'TICKET_CLOSED',
+  'RETRIEVAL_ALREADY_ACTIVE',
+  'HANDOVER_NOT_READY',
   'RATE_LIMITED',
   'INTERNAL_ERROR',
   'SERVICE_UNAVAILABLE',
@@ -55,7 +63,8 @@ export type CustomerApiErrorCode = CustomerErrorCode | CustomerReusedErrorCode;
  * The V2 catalog, in the shape of 08 (`ErrorDef`). Arabic text is customer-facing (V2-D01). `details`:
  * `CUSTOMER_OTP_INVALID` → `{ attempts_left }`; `CUSTOMER_OTP_LOCKED` → `{ locked_until }`;
  * `CUSTOMER_VEHICLE_LIMIT` → `{ max }`; `RATE_LIMITED` on `POST /v1/customer/auth/otp` → `{ retry_after_s }`;
- * `CUSTOMER_REAUTH_REQUIRED` → `{ reason: 'missing' | 'invalid' | 'expired' }`.
+ * `CUSTOMER_REAUTH_REQUIRED` → `{ reason: 'missing' | 'invalid' | 'expired' }`;
+ * `HANDOVER_CODE_UNAVAILABLE` → `{ reason: 'whatsapp' | 'staff' | 'locked' | 'expired' | 'none' }` (V2-015).
  */
 export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<ErrorDef, 'alert'>>> = {
   CUSTOMER_OTP_INVALID: {
@@ -135,6 +144,29 @@ export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<Err
     log: 'info',
     message: 'Confirm with a new verification code first.',
     message_ar: 'أكّد أولًا برمز تحقق جديد.',
+  },
+  // V2-015 (DEC-517): the car is ready but no code can be shown here — sent on WhatsApp, none for this visit, locked
+  // after wrong attempts, or expired (the driver issues a new one)
+  HANDOVER_CODE_UNAVAILABLE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'The handover code cannot be shown here. Ask the driver or the supervisor at the gate.',
+    message_ar: 'لا يمكن عرض رمز التسليم هنا. اطلب المساعدة من السائق أو المشرف عند البوابة.',
+  },
+  CUSTOMER_VISIT_NOT_DELIVERED: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'You can rate the visit after you collect your car.',
+    message_ar: 'يمكنك تقييم الزيارة بعد استلام سيارتك.',
+  },
+  CUSTOMER_VISIT_ALREADY_RATED: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'You already rated this visit.',
+    message_ar: 'قيّمت هذه الزيارة مسبقًا.',
   },
 };
 

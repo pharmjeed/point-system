@@ -14,6 +14,9 @@ export * from './routes.js';
 // V2-013: the entry pass (C-11 / O-01)
 export * from './pass.js';
 export * from './pass-contract.js';
+// V2-015 / V2-016: the visits (C-12, C-16, C-13), push and the customer realtime namespace
+export * from './visits.js';
+export * from './notifications.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,

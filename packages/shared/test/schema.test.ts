@@ -25,6 +25,15 @@ const quoted = (list: string): string[] => [...list.matchAll(/'([^']*)'/g)].map(
  */
 const WIDENED: Record<string, { file: string; constraint: string }> = {
   'tickets.channel': { file: '0010_customer_pass_and_app_intake.sql', constraint: 'ck_tickets_channel' },
+  // V2-015 (DEC-516): the request from the customer app
+  'retrieval_cycles.request_source': {
+    file: '0013_customer_visits_push.sql',
+    constraint: 'ck_cycles_request_source',
+  },
+  'tickets.pending_retrieval_source': {
+    file: '0013_customer_visits_push.sql',
+    constraint: 'ck_tickets_pending_retrieval_source',
+  },
 };
 
 function checkEnums(): Record<string, string[]> {

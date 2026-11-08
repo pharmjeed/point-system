@@ -313,7 +313,10 @@ describe('V2-017 — C-20 delete the account (DEC-508)', () => {
     w.clock.advance(61_000);
     const second = await signIn(s.phone, otherDevice);
     await w.db.query(
-      `UPDATE customer_account_sessions SET push_token = 'fcm-token-x' WHERE account_id = $1`,
+      // one Expo token per live session (V2-016: uq_customer_sessions_push_token, ck_customer_sessions_push_pair)
+      `UPDATE customer_account_sessions SET push_token = 'ExponentPushToken[' || replace(id::text, '-', '') || ']',
+              push_provider = 'expo', push_registered_at = now()
+        WHERE account_id = $1 AND revoked_at IS NULL`,
       [s.account.id],
     );
     // an operator's own row of this customer (V2-D12), from a past visit, closed

@@ -73,6 +73,20 @@ export const SUPERSEDED_CONSTRAINTS: readonly {
     migration: '0010_customer_pass_and_app_intake.sql',
     decision: 'DEC-501',
   },
+  {
+    table: 'retrieval_cycles',
+    from: 'retrieval_cycles_request_source_check',
+    to: 'ck_cycles_request_source',
+    migration: '0013_customer_visits_push.sql',
+    decision: 'DEC-516',
+  },
+  {
+    table: 'tickets',
+    from: 'tickets_pending_retrieval_source_check',
+    to: 'ck_tickets_pending_retrieval_source',
+    migration: '0013_customer_visits_push.sql',
+    decision: 'DEC-516',
+  },
 ];
 
 const quotedValues = (def: string) => [...def.matchAll(/'([^']*)'/g)].map((m) => m[1]!);

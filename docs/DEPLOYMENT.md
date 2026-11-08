@@ -240,6 +240,9 @@ STORAGE_ORIGIN=
 | `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` | — | أثناء تدوير سر الـWebhook فقط (يُقبل السران) ثم يُحذف |
 | `MOYASAR_SECRET_KEY` / `MOYASAR_WEBHOOK_SECRET` | — | المفتاح السري (`sk_live_…` في الإنتاج وحده؛ المحوّل يرفض إرسال مفتاح حي خارج الإنتاج) وسر الـWebhook المشترك الذي يُضبط في لوحة Moyasar |
 | `MOYASAR_HTTP_TIMEOUT_MS` | `10000` | مهلة كل استدعاء للبوابة |
+| `CUSTOMER_PUSH_MODE` | `simulator` | الإصدار الثاني (V2-016، DEC-519): `live` (Expo Push API) إلزامي في production ومرفوض في غيرها؛ `simulator` لا يتصل بالشبكة — فلا جهاز حقيقي يتلقى إشعارًا خارج الإنتاج |
+| `CUSTOMER_PUSH_ACCESS_TOKEN_REF` / `EXPO_ACCESS_TOKEN` | `env://EXPO_ACCESS_TOKEN` / — | رمز وصول مشروع Expo إن فُعّل «push security» فيه (اختياري، بالمرجع، `sm://` في الإنتاج) |
+| `CUSTOMER_PUSH_HTTP_TIMEOUT_MS` / `CUSTOMER_PUSH_RECEIPT_DELAY_S` | `10000` / `900` | مهلة استدعاء Expo، ومتى تُقرأ إيصالات التسليم |
 | `PAYMENTS_RECONCILE_CRON_UTC` | `30 0 * * *` | المطابقة اليومية مع البوابة (03:30 بتوقيت الرياض) لليوم السابق (DEC-514) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | — / — / `mailto:ops@example.com` | Web Push؛ اجعل `VAPID_SUBJECT` بريد المشغّل |
 | `S3_ENDPOINT`، `S3_REGION`، `S3_BUCKET_MEDIA`، `S3_BUCKET_EXPORTS`، `S3_ACCESS_KEY_ID`، `S3_SECRET_ACCESS_KEY`، `S3_FORCE_PATH_STYLE` | — / `us-east-1` / `point-media` / `point-exports` / — / — / `true` | §4؛ في staging/production يُستخدم S3 دائمًا (DEC-108) |
@@ -260,7 +263,7 @@ STORAGE_ORIGIN=
 | `OTEL_SERVICE_NAME` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_TRACES_SAMPLER_ARG` | يضبطه compose / — / `0.2` | التتبع غير موصول بعد (ملاحظات PNT-094) |
 | `METRICS_ENABLED` / `METRICS_PORT` | `true` / `9464` | المقاييس على `METRICS_PORT` (api) و`METRICS_PORT + 1` (worker)، شبكة داخلية فقط (DEC-61)؛ فحص صحة حاوية العامل يقرأ منفذه، فأبقِ `METRICS_ENABLED=true` |
 
-قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة؛ والإصدار الثاني: `MOYASAR_MODE` غير `live` في production أو `live` خارجها، و`test` خارج local وstaging، و`MOYASAR_BASE_URL` بغير https حين `live` أو `test`، ومضيف `moyasar.com` في وضع `simulator` (DEC-510).
+قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة؛ والإصدار الثاني: `MOYASAR_MODE` غير `live` في production أو `live` خارجها، و`test` خارج local وstaging، و`MOYASAR_BASE_URL` بغير https حين `live` أو `test`، ومضيف `moyasar.com` في وضع `simulator` (DEC-510)؛ و`CUSTOMER_PUSH_MODE` غير `live` في production أو `live` خارجها (DEC-519).
 
 متغيرات compose (للاستبدال في ملفات compose، من الملف نفسه عبر `--env-file`):
 

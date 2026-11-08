@@ -241,6 +241,19 @@
 
 ---
 
+## 5ب. إشعارات تطبيق العميل (الإصدار الثاني، V2-016، DEC-519، DEC-520)
+
+لتذكرة التطبيق (`channel = app`) لحساب نشط، على كل جهاز سجّل رمزه (`POST /v1/customer/devices`)، عبر Expo Push API (APNs/FCM) في الإنتاج والمحاكي في غيره. تذكرة واتساب للحساب تبقى على W-xx بلا إشعار ثانٍ.
+
+| الحدث | النوع | النص (ar) | النص (en) |
+|---|---|---|---|
+| `ticket.intake_submitted` | `car_received` | استلمنا سيارتك في {اسم الموقع} | We have your car at {venue} |
+| أول `ticket.assigned` / `ticket.assigned_waiting` للدورة | `request_accepted` | سائقنا في طريقه إلى سيارتك | Our driver is on the way to your car |
+| `ticket.ready` | `car_ready` | سيارتك جاهزة عند البوابة | Your car is ready at the gate |
+| `alert.raised` (`ready_not_collected`) | `pickup_reminder` | سيارتك ما زالت بانتظارك | Your car is still waiting for you |
+
+العنوان اسم علامة العميل بلغة الحساب، و`data` = `{ type: 'visit', kind, visit_id }` فقط — بلا لوحة ولا موقف ولا مفتاح ولا رمز تسليم ولا اسم ولا جوال (DEC-23). إشعار لم يعد صحيحًا عند الإرسال (`stale`) يُتخطى؛ ورمز يرده المزود `DeviceNotRegistered` يُسقط. أنواع الاشتراك محجوزة حتى V4.
+
 ## 6. Web Push
 
 ### 6.1 متى يُرسل

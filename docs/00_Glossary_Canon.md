@@ -128,7 +128,10 @@
 
 ### 5.3 دورة الاسترجاع `retrieval_cycles`
 
-- `request_source`: `whatsapp` · `staff`
+- `request_source`: `whatsapp` · `staff` · `app`
+
+> في الإصدار الثاني `app` طلب العميل من تطبيقه (`C-12`، V2-015، DEC-516): أمر زر «طلب السيارة» نفسه بفاعل العميل ومصدر مختلف.
+
 - `outcome` (عند الإغلاق): `delivered` · `canceled` · `reparked`
 - الدورة مفتوحة طالما `closed_at IS NULL` (دورة مفتوحة واحدة لكل تذكرة).
 
@@ -213,7 +216,7 @@
 - `media_assets.delete_reason`: `retention` · `correction` · `admin`
 - `vehicle_inspections.kind`: `intake` · `handover` · `incident`
 - `whatsapp_inbound_events.status`: `pending` · `processed` · `failed` · `ignored`
-- `tickets.pending_retrieval_source`: `whatsapp` (الطلب المبكر من زر واتساب فقط، DEC-25)
+- `tickets.pending_retrieval_source`: `whatsapp` · `app` (الطلب المبكر من العميل فقط، DEC-25: زر واتساب، أو تطبيق العميل منذ V2-015، DEC-516)
 - `analytics_events.source`: `server` · `client`
 - `idempotency_keys.status`: `in_progress` · `completed`
 - `action_tokens.action`: `request_retrieval`
@@ -321,11 +324,13 @@
 
 ### 7.2 أنواع المهام المؤجلة (Jobs) في `outbox_events.type`
 
-`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile`
+`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.customer_push_send` · `job.customer_push_receipts`
 
 > الإصدار الثاني (V2-010، DEC-496): `job.customer_otp_send` يرسل رمز دخول تطبيق العميل بقالب المصادقة على رقم بوينت بعد COMMIT (المعاملة تكتب الرمز مجزأً ونسخته المشفرة الوحيدة وصف outbox فقط).
 
 > الإصدار الثاني (V2-021، DEC-512 … DEC-514): `job.payment_webhook_process` يعالج تسليم Webhook بوابة الدفع المخزَّن مرة واحدة (يقرأ الدفعة من البوابة خارج أي معاملة ثم يطبقها)؛ `job.payment_refund_send` يرسل الاسترداد للبوابة بعد COMMIT؛ `job.payments_reconcile` المطابقة اليومية مع البوابة (`PAYMENTS_RECONCILE_CRON_UTC`).
+
+> الإصدار الثاني (V2-016، DEC-519): `job.customer_push_send` يرسل إشعار تطبيق العميل بعد COMMIT (المعاملة تكتب صف `customer_push_messages` بالمعرّفات فقط)؛ `job.customer_push_receipts` يقرأ إيصالات التسليم من المزود لاحقًا ويُسقط رمز الجهاز غير المسجل.
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.
 

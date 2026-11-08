@@ -38,7 +38,7 @@
 - **`Idempotency-Key`** إلزامي على `PATCH /v1/customer/me` و`POST /v1/customer/consents` و`POST /v1/customer/vehicles`، والمفتاح المكرر لجسم مختلف `IDEMPOTENCY_KEY_REUSED`.
 - **الأخطاء في التطبيق:** يقرأ `code` نصًا حرًا (رمز يضيفه الخادم لاحقًا لا يكسر نسخة مثبتة) ويعرض نص القاموس للرموز المعروفة وإلا `message_ar`.
 
-الاتصال الفوري للعميل: Socket.IO على `/ws` بجلسة العميل، غرفة لكل حساب، والأحداث: `visit.updated`، `subscription.updated`. والإشعارات عبر APNs وFCM.
+الاتصال الفوري للعميل: Socket.IO على `/ws` بجلسة العميل، غرفة لكل حساب، والأحداث: `visit.updated`، `subscription.updated`. والإشعارات عبر APNs وFCM (من خلال Expo Push API، V2-016). المنفَّذ في §1.5.
 
 ### 1.2 المنفَّذ في الخادم (V2-010، DEC-495…DEC-499)
 
@@ -74,6 +74,23 @@
 
   الخادم يقبل التوقيع بالسر الحالي أو السابق في مهلته، ثم الخطوة الحالية ± 1 (`PASS_EXPIRED` بـ`stale`/`future` خارجها)، ثم خطوة أكبر من آخر خطوة استُعملت في استلام (`already_used`)؛ وغير ذلك `PASS_INVALID` (`malformed` / `bad_signature` / `account_unavailable` لحساب معلّق أو محذوف أو بلا بطاقة).
 - **زيارات الحساب** (V2-014، DEC-504): `listAccountVisits` على الخادم هي مصدر `current_visit` في `GET /v1/customer/home` وقراءات الزيارة الجارية للسيارة والحساب؛ مساراها `GET /v1/customer/visits[/{ticketId}]` مع `C-12`/`C-16` (V2-015، V2-017).
+
+### 1.5 الزيارة الحية والإشعارات (V2-015، V2-016، DEC-516 … DEC-520)
+
+ستة مسارات في `CUSTOMER_ROUTES` (مجموعة واحدة بعد بطاقة الدخول) وفي قسم `Customer` من `07_openapi.yaml`، يخدمها `CustomerVisitsController` في `packages/server/src/use-cases/http/`:
+
+- **`GET /v1/customer/visits?cursor&limit`** (`C-16`): `listAccountVisits` (DEC-504) الأحدث أولًا بمؤشر صفحات معتم (`meta.next_cursor`، حتى 50): `{ ticket_id, venue_*, operator_*, status, open, channel, plate_display, received_at, delivered_at, duration_min, payment: { entitlement, payment_status, fee_halalas }, rated }`.
+- **`GET /v1/customer/visits/{ticketId}`** (`C-12`، `Cache-Control: no-store`): الملخص ومعه `timeline` (`received`، `parked`، `requested`، `accepted`، `on_the_way`، `ready`، `delivered` من التذكرة ودورتها الحالية)، و`request: { can_request, pending_early, requested_at }`، و`handover: { method: app_code|whatsapp|staff, code_available, code_expires_at }`، و`photos` صور فحص الاستلام روابط موقّعة ≤ 300 ث (تُقرأ من جديد في كل عرض)، و`rating`/`can_rate`، والشركة واللون. **لا خانة مفتاح ولا موقف ولا رمز ولا موظفين** (V2-D12). زيارة حساب آخر أو تذكرة ملغاة أو معرّف مجهول ← `RESOURCE_NOT_FOUND` (`resource: customer_visit`) بالرد نفسه.
+- **`POST /v1/customer/visits/{ticketId}/request`** (`Idempotency-Key`، جسم فارغ، 201): أمر زر «طلب السيارة» نفسه (`applyCustomerRequest`، 10 §7.2/§7.3) بمصدر `app` (`retrieval_cycles.request_source` و`tickets.pending_retrieval_source`، ترحيل `0013`) وفاعل العميل: L1 ثم L5؛ `parked` بلا دورة ← `requested`؛ أثناء الصف ← `requested_early` (DEC-13، يُحوَّل عند الصف بوقته)؛ دورة مفتوحة أو طلب مبكر قائم ← `RETRIEVAL_ALREADY_ACTIVE`؛ مُسلَّمة ← `TICKET_CLOSED`. الرد `{ outcome, visit }`؛ التدقيق `retrieval.request` في `audit_log` المشغل و`customer.visit.requested` في `customer_audit_log`.
+- **`GET /v1/customer/visits/{ticketId}/handover-code`** (`no-store`): `{ ticket_id, code, expires_at, attempts_left }` لتذكرة تطبيق `ready` برمز حي فقط، من `claim_codes.code_ciphertext` (DEC-38، DEC-517)؛ غير جاهزة ← `HANDOVER_NOT_READY`؛ وإلا `HANDOVER_CODE_UNAVAILABLE` بـ`reason` (`whatsapp`، `staff`، `locked`، `expired`، `none`). يُدوَّن `customer.visit.handover_code_shown` بلا الرمز.
+- **`POST /v1/customer/visits/{ticketId}/rating`** (`C-13`، `Idempotency-Key`، 201) بـ`{ stars: 1..5, note? ≤ 500 }`: مرة لكل زيارة بعد التسليم (`customer_visit_ratings`)؛ قبله `CUSTOMER_VISIT_NOT_DELIVERED`، والثاني `CUSTOMER_VISIT_ALREADY_RATED`.
+- **`POST /v1/customer/devices`** (`Idempotency-Key`) بـ`{ provider: 'expo', push_token | null }`: رمز Expo لجلسة الجهاز (`customer_account_sessions.push_token`)؛ `null` يزيله؛ الرمز لجلسة حية واحدة (ينتقل من جلسة أخرى)؛ يُسقطه الخروج وحذف الحساب وكل إلغاء للجلسة (قيد `ck_customer_sessions_revoked_push`). الرد `{ push_registered, provider, registered_at }` بلا الرمز.
+
+**رمز التسليم لتذكرة التطبيق (DEC-517):** يصدر عند «جاهزة» بمنطق رمز التسليم نفسه (HMAC + نسخة مشفرة واحدة + مؤقت الانتهاء) ويظهر في `C-12` بدل W-05؛ نسخته المشفرة تُمحى عند الاستعمال أو الإلغاء أو الانتهاء؛ «إعادة الإرسال» في D-11 تدوّره لتذكرة التطبيق بلا رسالة؛ ويبقى استثناء المشرف بالتحقق من الهوية البديل.
+
+**الاتصال الفوري للعميل (DEC-520):** Socket.IO على `WS_PATH` نفسه، **namespace `/customer`**، والمصافحة بترويسة `Authorization: Bearer <access token>` وحدها (لا كوكي؛ جلسة موظف لا تفتحه ورمز عميل لا يفتح namespace الموظفين). يُضم المقبس إلى غرفة حسابه `customer:<accountId>` وحدها. `visit.updated` `{ ticket_id, status, open }` بغلاف `{ id, type, occurred_at, payload }` بلا معرّف مشغل أو موقع أو موظف، يُنشر مع كل `ticket.updated` لتذكرة صف `customers` مربوط بالحساب؛ و`subscription.updated` محجوز (V4)؛ و`session.revoked` عند إلغاء الجلسة. يُعاد فحص **الجلسة** (لا رمز الوصول ذي 15 دقيقة) كل دقيقة، والتطبيق يعيد قراءة الزيارة عند كل اتصال وإعادة اتصال (التسليم مرة واحدة على الأكثر، 11 §9.4).
+
+**الإشعارات (DEC-519، DEC-520):** `job.customer_push_send` بعد COMMIT من `customer_push_messages` (صف لكل إشعار وجلسة، بالمعرّفات فقط) يكتبه مخطط في معاملة الحدث: استلام السيارة (`ticket.intake_submitted` لتذكرة تطبيق)، قبول الطلب (أول `ticket.assigned`/`assigned_waiting` للدورة)، الجاهزية (`ticket.ready`)، التذكير (`alert.raised` من نوع `ready_not_collected`)؛ لتذاكر `app` فقط (تذكرة واتساب للحساب تبقى على W-xx). المرسل `CustomerPushSender`: محوّل Expo Push API (`CUSTOMER_PUSH_MODE=live` في الإنتاج وحده، رمز الوصول بالمرجع `CUSTOMER_PUSH_ACCESS_TOKEN_REF`، اختياري) أو المحاكي (كل بيئة أخرى، لا اتصال بالشبكة)؛ `job.customer_push_receipts` يقرأ الإيصالات بعد `CUSTOMER_PUSH_RECEIPT_DELAY_S`، و`DeviceNotRegistered` يُسقط الرمز. **الحمولة على شاشة القفل:** العنوان اسم علامة العميل، والنص جملة ثابتة لكل نوع (واسم الموقع في «استلمنا سيارتك» وحده كما في 01 §3)، و`data = { type: 'visit', kind, visit_id }` — بلا لوحة ولا موقف ولا مفتاح ولا رمز ولا اسم ولا جوال (DEC-23).
 
 ## 2. مسارات المشغل الجديدة (تحت `/v1` كما هي)
 
@@ -112,7 +129,7 @@
 
 رموز العميل المعتمدة في V2-011 بنصوصها ورمز HTTP في `CUSTOMER_ERROR_CATALOG` (`packages/shared/src/customer/errors.ts`، DEC-482)، ومعها رموز 08 التي يعيدها مسار العميل كما هي (`CUSTOMER_REUSED_ERROR_CODES`).
 
-`CUSTOMER_OTP_INVALID`، `CUSTOMER_OTP_EXPIRED`، `CUSTOMER_OTP_LOCKED`، `CUSTOMER_CONSENT_VERSION_STALE`، `CUSTOMER_VEHICLE_LIMIT`، `CUSTOMER_VEHICLE_DUPLICATE`، `PASS_INVALID`، `PASS_EXPIRED`، `SUBSCRIPTION_NOT_ACTIVE`، `SUBSCRIPTION_VEHICLE_NOT_COVERED`، `SUBSCRIPTION_ALREADY_EXISTS`، `PAYMENT_REQUIRED`، `PAYMENT_FAILED`، `PAYMENT_ALREADY_RECORDED`، `VENUE_NOT_LISTED`، `OPERATOR_SUSPENDED`، `ACCOUNT_DELETED`، `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT`، `CUSTOMER_ACCOUNT_VISIT_ACTIVE`، `CUSTOMER_REAUTH_REQUIRED` (V2-012/V2-017، §1.3).
+`CUSTOMER_OTP_INVALID`، `CUSTOMER_OTP_EXPIRED`، `CUSTOMER_OTP_LOCKED`، `CUSTOMER_CONSENT_VERSION_STALE`، `CUSTOMER_VEHICLE_LIMIT`، `CUSTOMER_VEHICLE_DUPLICATE`، `PASS_INVALID`، `PASS_EXPIRED`، `SUBSCRIPTION_NOT_ACTIVE`، `SUBSCRIPTION_VEHICLE_NOT_COVERED`، `SUBSCRIPTION_ALREADY_EXISTS`، `PAYMENT_REQUIRED`، `PAYMENT_FAILED`، `PAYMENT_ALREADY_RECORDED`، `VENUE_NOT_LISTED`، `OPERATOR_SUSPENDED`، `ACCOUNT_DELETED`، `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT`، `CUSTOMER_ACCOUNT_VISIT_ACTIVE`، `CUSTOMER_REAUTH_REQUIRED` (V2-012/V2-017، §1.3)، `HANDOVER_CODE_UNAVAILABLE`، `CUSTOMER_VISIT_NOT_DELIVERED`، `CUSTOMER_VISIT_ALREADY_RATED` (V2-015، §1.5)؛ ويعيد مسار العميل من 08 أيضًا `TICKET_CLOSED` و`RETRIEVAL_ALREADY_ACTIVE` و`HANDOVER_NOT_READY` (§1.5).
 
 ## 6. واتساب في الإصدار الثاني (V2-D02)
 
@@ -120,7 +137,7 @@
 - رابط اختياري لتحميل التطبيق في رسالة الترحيب.
 - قالب مصادقة لرمز التحقق: القناة الوحيدة لرمز الدخول، بلا SMS (DEC-460).
 - العميل الذي له حساب ويستخدم الواتساب: الرسائل تُربط بحسابه، وتظهر الزيارة في تطبيقه (`listAccountVisits` تقرأ صف المشغل المربوط بالحساب، DEC-504).
-- **تذكرة التطبيق (`channel = app`، DEC-503):** لا W-01 ولا أي قالب لاحق عليها؛ يتابعها العميل في `C-12` (V2-015) وإشعارات التطبيق (V2-016). ورمز التسليم لها يصدر ويظهر في `C-12` مع V2-015؛ قبله التسليم باستثناء المشرف.
+- **تذكرة التطبيق (`channel = app`، DEC-503):** لا W-01 ولا أي قالب لاحق عليها؛ يتابعها العميل في `C-12` (V2-015) وإشعارات التطبيق (V2-016). ورمز التسليم لها يصدر عند الجاهزية ويظهر في `C-12` (§1.5، DEC-517)، واستثناء المشرف يبقى البديل.
 
 ## 7. المتاجر
 

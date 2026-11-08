@@ -236,7 +236,7 @@ export const PROJECTIONS = {
     return {
       ...ticketBase(ctx),
       properties: {
-        request_source: pick(ctx.p.request_source ?? c?.request_source, ['whatsapp', 'staff']),
+        request_source: pick(ctx.p.request_source ?? c?.request_source, ['whatsapp', 'staff', 'app']),
         cycle_no: int(ctx.p.cycle_no) ?? int(c?.cycle_no),
         requested_early: bool(ctx.p.requested_early) ?? bool(c?.requested_early),
         queue_depth:
@@ -259,7 +259,7 @@ export const PROJECTIONS = {
     return {
       ...ticketBase(ctx),
       properties: {
-        request_source: pick(ctx.p.request_source ?? 'whatsapp', ['whatsapp']),
+        request_source: pick(ctx.p.request_source ?? 'whatsapp', ['whatsapp', 'app']),
         status_at_request: pick(ctx.p.status_at_request ?? t?.status, ['received', 'parking', 'reparking']),
       },
     };

@@ -15,6 +15,10 @@ const KEYS = {
   vehiclePrompt: (accountId: string) => `customer.vehicle_prompt.${accountId}`,
   /** C-11 (V2-013): the entry pass secret with the server's clock offset, so the QR draws offline */
   pass: 'customer.pass',
+  /** V2-016: C-12 offered the push permission once (per install) */
+  pushOffered: 'customer.push_offered',
+  /** V2-016: this install registered its push token for the signed-in session (cleared at sign-out) */
+  pushRegistered: 'customer.push_registered',
 } as const;
 
 const options: SecureStore.SecureStoreOptions = {
@@ -55,6 +59,14 @@ export const flags = {
   /** C-19: the language chosen in the app (V2-017), or null to follow the device (DEC-481). */
   locale: () => SecureStore.getItemAsync(KEYS.locale, options),
   setLocale: (locale: 'ar' | 'en') => SecureStore.setItemAsync(KEYS.locale, locale, options),
+  /** V2-016: C-12's push offer was shown (accepted or not) — never asked again there; C-19 still can. */
+  pushOffered: () => flag(KEYS.pushOffered),
+  setPushOffered: () => SecureStore.setItemAsync(KEYS.pushOffered, '1', options),
+  pushRegistered: () => flag(KEYS.pushRegistered),
+  setPushRegistered: (on: boolean) =>
+    on
+      ? SecureStore.setItemAsync(KEYS.pushRegistered, '1', options)
+      : SecureStore.deleteItemAsync(KEYS.pushRegistered, options),
 };
 
 export const newIdempotencyKey = (): string => Crypto.randomUUID();

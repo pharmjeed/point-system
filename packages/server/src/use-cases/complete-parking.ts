@@ -212,7 +212,8 @@ export class CompleteParkingUseCase {
     if (parked.pending_retrieval_at) {
       if (parked.customer_id) {
         const r = await openRetrievalCycle(tx, parked, {
-          source: 'whatsapp',
+          // the customer's channel of the early press: the WhatsApp button or the app (DEC-516)
+          source: parked.pending_retrieval_source ?? 'whatsapp',
           requestedAt: new Date(parked.pending_retrieval_at),
           early: true,
           customerId: parked.customer_id,
@@ -220,7 +221,7 @@ export class CompleteParkingUseCase {
         });
         converted = r.cycle.id;
       } else {
-        // a pending request always comes from a WhatsApp button (DEC-25), so a customer exists
+        // a pending request always comes from the customer (DEC-25, DEC-516), so a customer exists
         this.logger.warn({ ticket_id: t.id }, 'pending retrieval without customer left pending');
       }
     }

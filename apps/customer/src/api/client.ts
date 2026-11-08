@@ -33,6 +33,16 @@ import {
   type CustomerVehicle,
   type CustomerVehicleCreateBody,
   type CustomerVehicleRemoved,
+  // V2-015 / V2-016
+  type CustomerDevice,
+  type CustomerDeviceBody,
+  type CustomerHandoverCode,
+  type CustomerVisitDetail,
+  type CustomerVisitListQuery,
+  type CustomerVisitRating,
+  type CustomerVisitRatingBody,
+  type CustomerVisitRequestResult,
+  type CustomerVisitSummary,
 } from '@point/shared/customer';
 import type { StoredSession, TokenStore } from '../session/tokenStore';
 import { ApiError, BadResponseError, SignedOutError } from './errors';
@@ -187,6 +197,14 @@ export function createCustomerApi(opts: CustomerApiOptions) {
   }
 
   return {
+    /**
+     * The current access token (refreshed first when it is about to expire): the customer socket's handshake header
+     * (V2-015, DEC-520). Throws SignedOutError without a session.
+     */
+    async accessToken(): Promise<string> {
+      return (await bearer()).accessToken;
+    },
+
     /** True when tokens are stored (the server still decides whether they are valid). */
     async hasSession(): Promise<boolean> {
       return (await opts.tokens.load()) !== null;
@@ -276,6 +294,43 @@ export function createCustomerApi(opts: CustomerApiOptions) {
      */
     async reauthVerify(code: string): Promise<CustomerReauth> {
       return (await call('reauthVerify', { body: { code } })).data;
+    },
+
+    // ---- V2-015 (C-16, C-12, C-13) and V2-016 (push), DEC-516 … DEC-520
+
+    /** C-16: the account's visits, newest first. */
+    async visits(query: CustomerVisitListQuery = {}): Promise<Page<CustomerVisitSummary>> {
+      const { data, nextCursor } = await call('visits', { query: { ...query } });
+      return { items: data.items, nextCursor };
+    },
+
+    /** C-12: the live visit (re-read on every `visit.updated` and (re)connection; the server is the source). */
+    async visit(ticketId: string): Promise<CustomerVisitDetail> {
+      return (await call('visit', { params: { ticketId } })).data;
+    },
+
+    /** C-12 «اطلب السيارة»: the same command as the WhatsApp button (DEC-516). */
+    async requestVisit(ticketId: string, idempotencyKey?: string): Promise<CustomerVisitRequestResult> {
+      return (await call('visitRequest', { params: { ticketId }, body: {}, idempotencyKey })).data;
+    },
+
+    /** C-12: the handover code while the car is ready (DEC-38, DEC-517) — kept in memory only, never stored. */
+    async handoverCode(ticketId: string): Promise<CustomerHandoverCode> {
+      return (await call('visitHandoverCode', { params: { ticketId } })).data;
+    },
+
+    /** C-13: once per visit, after the delivery. */
+    async rateVisit(
+      ticketId: string,
+      body: CustomerVisitRatingBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerVisitRating> {
+      return (await call('visitRating', { params: { ticketId }, body, idempotencyKey })).data;
+    },
+
+    /** V2-016: the Expo push token of this device's session (`null` removes it, C-19). */
+    async registerDevice(body: CustomerDeviceBody, idempotencyKey?: string): Promise<CustomerDevice> {
+      return (await call('devices', { body, idempotencyKey })).data;
     },
 
     /**

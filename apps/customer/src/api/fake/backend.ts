@@ -3,7 +3,8 @@
  * server's rules, so the app's flows run before V2-010 exists: WhatsApp-only codes with a 60 s resend wait, 5
  * attempts then a 15-minute lock, rotating refresh tokens (reuse revokes the session), versioned consents,
  * Saudi plate normalisation, the 5-vehicle limit, `Idempotency-Key` replay, and the 08 error envelope; and since
- * V2-012/V2-017 the vehicle removal (C-15), the re-verification proof and the account deletion (C-20).
+ * V2-012/V2-017 the vehicle removal (C-15), the re-verification proof and the account deletion (C-20); since
+ * V2-015/V2-016 the visits (C-12, C-16, C-13, ./visits.ts) with their live updates, and the push registration.
  *
  * The WhatsApp message is not sent anywhere: it lands in `inbox` (the role of tools/wa-simulator), and the app
  * shows the code on C-03 in development only. Never used by a release build unless explicitly configured
@@ -23,6 +24,7 @@ import {
   CUSTOMER_VEHICLES_MAX,
   CustomerHomeQuerySchema,
   CustomerLocationListQuerySchema,
+  CustomerVisitListQuerySchema,
   customerErrorDef,
   maskPhone,
   normalizeSaudiMobile,
@@ -50,6 +52,7 @@ import type { z } from 'zod';
 import type { HttpRequest, HttpResponse, Transport } from '../transport';
 import { distanceMetres, isOpenAt } from './hours';
 import { FAKE_CONSENT_VERSIONS, FAKE_LOCATIONS } from './seed';
+import { createFakeVisits, FakeReject } from './visits';
 
 export interface FakeBackendOptions {
   now?: () => number;
@@ -98,6 +101,8 @@ interface Session {
   revoked: boolean;
   /** C-20's single-use re-verification proof of this session (DEC-507). */
   reauth: { token: string; expiresAt: number } | null;
+  /** V2-016: the Expo push token of the device (POST /v1/customer/devices) */
+  pushToken: string | null;
 }
 
 interface StoredReply {
@@ -140,6 +145,9 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   const replies = new Map<string, StoredReply>();
   const inbox: Array<{ phone: string; code: string; at: number }> = [];
   let requestSeq = 0;
+  // V2-015: the visits of the accounts (a demo visit for `demoVisitPhones`)
+  const visits = createFakeVisits({ now, random });
+  const DEMO_TICKET_ID = '3c9d6e2a-7b1f-4c8d-9e0a-1b2c3d4e5f60';
 
   const base64Url = (bytes: number) => {
     const b = Array.from({ length: bytes }, () => Math.floor(random() * 256));
@@ -257,9 +265,9 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     return sessions.get(entry?.sessionId ?? '') as Session;
   }
 
-  /** `in_active_visit` (C-15): the demo visit of `demoVisitPhones` holds the account's first car. */
+  /** `in_active_visit` (C-15): an open visit (the demo one of `demoVisitPhones`) holds the account's first car. */
   function vehiclesView(account: Account): CustomerVehicle[] {
-    const inVisit = demoPhones.has(account.phone);
+    const inVisit = visits.hasOpen(account.id);
     return account.vehicles.map((v, i) => ({ ...v, in_active_visit: inVisit && i === 0 }));
   }
 
@@ -353,6 +361,26 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           passSecret: null,
         });
         accountByPhone.set(phone, accountId);
+        if (demoPhones.has(phone)) {
+          const venue = FAKE_LOCATIONS[0] as CustomerLocationDetail;
+          visits.add({
+            ticketId: DEMO_TICKET_ID,
+            accountId,
+            venue,
+            status: 'parked',
+            plate: null,
+            vehicleMake: null,
+            vehicleColor: null,
+            receivedAt: now() - 45 * 60_000,
+            parkedAt: now() - 40 * 60_000,
+            parksAt: null,
+            requestedAt: null,
+            acceptedAt: null,
+            startedAt: null,
+            readyAt: null,
+            deliveredAt: null,
+          });
+        }
       }
       const session: Session = {
         id: uuid(),
@@ -363,6 +391,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         retired: new Set(),
         revoked: false,
         reauth: null,
+        pushToken: null,
       };
       sessions.set(session.id, session);
       const account = accounts.get(accountId) as Account;
@@ -393,7 +422,10 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       authenticate(req);
       const body = parse(CUSTOMER_ROUTES.logout.body, req.body);
       for (const session of sessions.values())
-        if (session.refreshToken === body.refresh_token) session.revoked = true;
+        if (session.refreshToken === body.refresh_token) {
+          session.revoked = true;
+          session.pushToken = null;
+        }
       return { logged_out: true };
     },
 
@@ -499,16 +531,16 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       const from = q.lat !== undefined && q.lng !== undefined ? { lat: q.lat, lng: q.lng } : undefined;
       const nearby = FAKE_LOCATIONS.map((l) => summary(l, from));
       if (from) nearby.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
-      const first = FAKE_LOCATIONS[0] as CustomerLocationDetail;
-      const visit: CustomerHomeVisit | null = demoPhones.has(account.phone)
+      const open = visits.open(account.id);
+      const visit: CustomerHomeVisit | null = open
         ? {
-            ticket_id: '3c9d6e2a-7b1f-4c8d-9e0a-1b2c3d4e5f60',
-            venue_id: first.venue_id,
-            venue_name_ar: first.name_ar,
-            venue_name_en: first.name_en,
-            status: 'parked',
-            plate_display: account.vehicles[0]?.plate.display ?? null,
-            received_at: iso(now() - 45 * 60_000),
+            ticket_id: open.ticketId,
+            venue_id: open.venue.venue_id,
+            venue_name_ar: open.venue.name_ar,
+            venue_name_en: open.venue.name_en,
+            status: open.status,
+            plate_display: open.plate ?? account.vehicles[0]?.plate.display ?? null,
+            received_at: iso(open.receivedAt),
           }
         : null;
       const home: CustomerHome = {
@@ -576,15 +608,63 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         throw new Reject('CUSTOMER_REAUTH_REQUIRED', { reason: 'invalid' });
       if (session.reauth.expiresAt <= now())
         throw new Reject('CUSTOMER_REAUTH_REQUIRED', { reason: 'expired' });
-      if (demoPhones.has(account.phone)) throw new Reject('CUSTOMER_ACCOUNT_VISIT_ACTIVE');
+      if (visits.hasOpen(account.id)) throw new Reject('CUSTOMER_ACCOUNT_VISIT_ACTIVE');
       accounts.delete(account.id);
+      visits.removeAccount(account.id);
       accountByPhone.delete(account.phone);
       for (const s of sessions.values())
         if (s.accountId === account.id) {
           s.revoked = true;
           s.reauth = null;
+          s.pushToken = null;
         }
       return { deleted: true, deleted_at: iso(now()) };
+    },
+
+    // ---- V2-015 (C-16, C-12, C-13) and V2-016 (push registration), the server's rules (DEC-516 … DEC-519)
+
+    visits(req, { query }) {
+      const account = authenticate(req);
+      const q = parse(CustomerVisitListQuerySchema, Object.fromEntries(query));
+      const all = visits.list(account.id);
+      const offset = q.cursor?.startsWith('o:') ? Number(q.cursor.slice(2)) || 0 : 0;
+      const page = all.slice(offset, offset + q.limit);
+      return new Paged({ items: page }, offset + q.limit < all.length ? `o:${offset + q.limit}` : null);
+    },
+
+    visit(req, { params }) {
+      return visits.detail(authenticate(req).id, params.ticketId as string);
+    },
+
+    visitRequest(req, { params }) {
+      const account = authenticate(req);
+      parse(CUSTOMER_ROUTES.visitRequest.body, req.body ?? {});
+      return visits.request(account.id, params.ticketId as string);
+    },
+
+    visitHandoverCode(req, { params }) {
+      return visits.code(authenticate(req).id, params.ticketId as string);
+    },
+
+    visitRating(req, { params }) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.visitRating.body, req.body);
+      return visits.rate(account.id, params.ticketId as string, body);
+    },
+
+    devices(req) {
+      authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.devices.body, req.body);
+      const session = sessionOf(req);
+      if (body.push_token)
+        for (const s of sessions.values())
+          if (s !== session && s.pushToken === body.push_token) s.pushToken = null;
+      session.pushToken = body.push_token;
+      return {
+        push_registered: body.push_token !== null,
+        provider: body.push_token ? 'expo' : null,
+        registered_at: body.push_token ? iso(now()) : null,
+      };
     },
   };
 
@@ -667,11 +747,15 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       const checked = route.data.safeParse(data);
       if (!checked.success)
         throw new Error(`fake backend broke the ${found.key} contract: ${checked.error.message}`);
-      const status = req.method === 'POST' && found.key === 'vehicleCreate' ? 201 : 200;
+      const status =
+        req.method === 'POST' && ['vehicleCreate', 'visitRequest', 'visitRating'].includes(found.key)
+          ? 201
+          : 200;
       if (replyKey) replies.set(replyKey, { fingerprint, status, data: checked.data });
       return { status, body: envelope(checked.data, next === undefined ? {} : { next_cursor: next }) };
     } catch (e) {
       if (e instanceof Reject) return errorResponse(e.code, e.details);
+      if (e instanceof FakeReject) return errorResponse(e.code as CustomerApiErrorCode, e.details);
       throw e;
     }
   }
@@ -698,6 +782,25 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     verifyPass(token: string, atMs = now()) {
       const secrets = [...accounts.values()].map((a) => a.passSecret).filter((s): s is string => !!s);
       return verifyPassToken({ token, secrets, nowMs: atMs });
+    },
+    /** V2-015: the visits — the live updates of an account (the fake realtime), the clock loop, the handover. */
+    visits: {
+      /** the listeners of the account an access token belongs to (the fake customer socket) */
+      subscribeByToken(accessToken: string, fn: Parameters<typeof visits.subscribe>[1]): () => void {
+        const entry = accessTokens.get(accessToken);
+        const session = entry ? sessions.get(entry.sessionId) : undefined;
+        return session ? visits.subscribe(session.accountId, fn) : () => undefined;
+      },
+      subscribe: visits.subscribe,
+      tick: visits.tick,
+      deliver: visits.deliver,
+      add: visits.add,
+    },
+    /** V2-016: the push token registered by a device's session (tests). */
+    pushTokens(): string[] {
+      return [...sessions.values()]
+        .filter((s) => !s.revoked && s.pushToken)
+        .map((s) => s.pushToken as string);
     },
     /** Every message «sent» (tests). */
     get inbox(): ReadonlyArray<{ phone: string; code: string; at: number }> {

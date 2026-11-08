@@ -141,8 +141,8 @@ export const CustodyHolderTypeSchema = z.enum(CUSTODY_HOLDER_TYPES);
 // §5.3 Retrieval cycle
 // ---------------------------------------------------------------------------------------------
 
-/** `retrieval_cycles.request_source` */
-export const REQUEST_SOURCES = ['whatsapp', 'staff'] as const;
+/** `retrieval_cycles.request_source` (`app`: the customer app, V2-015, DEC-516) */
+export const REQUEST_SOURCES = ['whatsapp', 'staff', 'app'] as const;
 export type RequestSource = (typeof REQUEST_SOURCES)[number];
 export const RequestSourceSchema = z.enum(REQUEST_SOURCES);
 
@@ -708,8 +708,11 @@ export const WA_INBOUND_EVENT_STATUSES = ['pending', 'processed', 'failed', 'ign
 export type WaInboundEventStatus = (typeof WA_INBOUND_EVENT_STATUSES)[number];
 export const WaInboundEventStatusSchema = z.enum(WA_INBOUND_EVENT_STATUSES);
 
-/** `tickets.pending_retrieval_source` — early request from the WhatsApp button only (DEC-25). */
-export const PENDING_RETRIEVAL_SOURCES = ['whatsapp'] as const;
+/**
+ * `tickets.pending_retrieval_source` — early request from the customer only (DEC-25): the WhatsApp button, or the
+ * customer app since V2-015 (DEC-516).
+ */
+export const PENDING_RETRIEVAL_SOURCES = ['whatsapp', 'app'] as const;
 export type PendingRetrievalSource = (typeof PENDING_RETRIEVAL_SOURCES)[number];
 export const PendingRetrievalSourceSchema = z.enum(PENDING_RETRIEVAL_SOURCES);
 

@@ -153,6 +153,9 @@ export const JOB_TYPES = [
   'job.payment_webhook_process',
   'job.payment_refund_send',
   'job.payments_reconcile',
+  // V2 (V2-016, DEC-519): the customer app's pushes sent after COMMIT, and the provider's delivery receipts
+  'job.customer_push_send',
+  'job.customer_push_receipts',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

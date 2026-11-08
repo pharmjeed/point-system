@@ -518,7 +518,7 @@ export interface RetrievalCycle {
   ticket_id: string;
   cycle_no: number;
   requested_at: string;
-  request_source: 'whatsapp' | 'staff';
+  request_source: 'whatsapp' | 'staff' | 'app';
   requested_early: boolean;
   accepted_by?: string | null;
   started_at?: string | null;
@@ -832,7 +832,7 @@ export interface UserRef {
 }
 
 export type PaymentRecordStatus = 'recorded' | 'reversed';
-export type RequestSource = 'whatsapp' | 'staff';
+export type RequestSource = 'whatsapp' | 'staff' | 'app';
 export type CycleOutcome = 'delivered' | 'canceled' | 'reparked';
 export type CustodySubject = 'vehicle' | 'key';
 export type CustodyHolderType = 'customer' | 'driver' | 'spot' | 'key_slot' | 'supervisor' | 'unknown';

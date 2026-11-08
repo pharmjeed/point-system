@@ -112,12 +112,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setVehiclePromptDone(true);
       },
       signOut: async () => {
+        // the server drops this session's push token with it (V2-016, DEC-519)
         await bundle.api.logout();
         await securePassStore.clear().catch(() => undefined);
+        await flags.setPushRegistered(false).catch(() => undefined);
+        bundle.events.close();
         setMeState(null);
       },
       forgetAccount: () => {
         void securePassStore.clear().catch(() => undefined);
+        void flags.setPushRegistered(false).catch(() => undefined);
+        bundle.events.close();
         setMeState(null);
       },
       destination: (next = {}) =>
