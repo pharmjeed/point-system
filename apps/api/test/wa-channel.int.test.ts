@@ -1,4 +1,4 @@
-import { WA_CUSTOMER_OTP_TEMPLATE_NAME, WA_TEMPLATE_NAMES } from '@point/shared';
+import { WA_CUSTOMER_OTP_TEMPLATE_NAME, WA_TEMPLATE_NAMES, WA_TEMPLATE_NAMES_V2 } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newKey } from './harness.js';
 import { ORG, createWaTestApp, type WaTestApp } from './wa-harness.js';
@@ -143,15 +143,18 @@ describe('WhatsApp channel and templates (canon §9.7)', () => {
     it('POST sync reads /{waba_id}/message_templates and stores W-01 … W-08 in catalog order', async () => {
       const r = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'ADM1' });
       expect(r.status).toBe(200);
-      // W-01 … W-08, then the customer app's sign-in template in its two languages (V2-010, DEC-496)
+      // W-01 … W-08 of the live set v1, then of the next set v2 so Meta approves it before the switch (V2-050,
+      // DEC-555), then the customer app's sign-in template in its two languages (V2-010, DEC-496)
       expect(r.body.data.map((t: { name: string; language: string }) => `${t.name}:${t.language}`)).toEqual([
         ...WA_TEMPLATE_NAMES.map((n) => `${n}:ar`),
+        ...WA_TEMPLATE_NAMES_V2.map((n) => `${n}:ar`),
         `${WA_CUSTOMER_OTP_TEMPLATE_NAME}:ar`,
         `${WA_CUSTOMER_OTP_TEMPLATE_NAME}:en`,
       ]);
-      for (const t of r.body.data.slice(0, WA_TEMPLATE_NAMES.length))
+      const utility = WA_TEMPLATE_NAMES.length + WA_TEMPLATE_NAMES_V2.length;
+      for (const t of r.body.data.slice(0, utility))
         expect(t).toMatchObject({ language: 'ar', category: 'UTILITY', status: 'approved', version: 1 });
-      for (const t of r.body.data.slice(WA_TEMPLATE_NAMES.length))
+      for (const t of r.body.data.slice(utility))
         expect(t).toMatchObject({ category: 'AUTHENTICATION', status: 'approved', version: 1 });
       // an approved sign-in template in its own category does not degrade the channel
       expect((await w.get('/v1/admin/whatsapp/channel', 'ADM1')).body.data.health_status).not.toBe(
@@ -163,7 +166,7 @@ describe('WhatsApp channel and templates (canon §9.7)', () => {
       // a second sync with nothing changed keeps the versions
       const again = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });
       expect(again.body.data.map((t: { version: number }) => t.version)).toEqual(
-        [...WA_TEMPLATE_NAMES, 'otp:ar', 'otp:en'].map(() => 1),
+        [...WA_TEMPLATE_NAMES, ...WA_TEMPLATE_NAMES_V2, 'otp:ar', 'otp:en'].map(() => 1),
       );
       const audits = await w.db.query(`SELECT 1 FROM audit_log WHERE action = 'wa.templates_manage'`);
       expect(audits.rowCount).toBe(2);
@@ -230,6 +233,23 @@ describe('WhatsApp channel and templates (canon §9.7)', () => {
         `UPDATE whatsapp_channel SET health_status = 'healthy' WHERE org_id = $1 AND is_active`,
         [ORG],
       );
+    });
+
+    it('a template of the next set (v2) paused or rejected at Meta changes nothing that is sent: the channel stays healthy (DEC-555)', async () => {
+      await w.sim.client.setTemplateStatus('point_request_reserved_v2', 'REJECTED', { emitWebhook: false });
+      try {
+        const r = await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });
+        expect(r.status).toBe(200);
+        expect(
+          r.body.data.find((t: { name: string }) => t.name === 'point_request_reserved_v2'),
+        ).toMatchObject({
+          status: 'rejected',
+        });
+        expect((await w.get('/v1/admin/whatsapp/channel', 'OWN1')).body.data.health_status).toBe('healthy');
+      } finally {
+        await w.sim.client.setTemplateStatus('point_request_reserved_v2', 'APPROVED', { emitWebhook: false });
+        await w.command('post', '/v1/admin/whatsapp/templates/sync', { as: 'OWN1' });
+      }
     });
 
     it('sync with the provider unreachable: WA_CHANNEL_UNAVAILABLE, nothing written; supervisors refused', async () => {

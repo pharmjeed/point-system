@@ -142,6 +142,27 @@ describe('deployment configuration guards', () => {
     ]);
   });
 
+  it('V2-050 (DEC-555, DEC-556): the live template set and the app link of the WhatsApp replies', () => {
+    expect(testEnv({}).WA_TEMPLATE_SET).toBe('v1');
+    expect(testEnv({ WA_TEMPLATE_SET: 'v2' }).WA_TEMPLATE_SET).toBe('v2');
+    expect(() => testEnv({ WA_TEMPLATE_SET: 'v3' })).toThrow('WA_TEMPLATE_SET');
+    expect(testEnv({}).CUSTOMER_APP_LINK).toBe('');
+    // WhatsApp shows a web link only: a custom-scheme deep link would reach the customer as plain text
+    expect(() => testEnv({ CUSTOMER_APP_LINK: 'sa.point.app://home' })).toThrow(
+      'CUSTOMER_APP_LINK must be an https URL',
+    );
+    expect(() => testEnv({ CUSTOMER_APP_LINK: 'http://get.point.sa/app' })).toThrow('https');
+    // the .env.example placeholder (a reserved domain) is fine outside production, refused in production
+    expect(testEnv({ CUSTOMER_APP_LINK: 'https://point.example/app' }).CUSTOMER_APP_LINK).toBe(
+      'https://point.example/app',
+    );
+    expect(problems({ CUSTOMER_APP_LINK: 'https://point.example/app' })).toEqual([
+      'CUSTOMER_APP_LINK is a placeholder in production: set the real app page or leave it empty',
+    ]);
+    expect(problems({ CUSTOMER_APP_LINK: 'https://get.pointsa.net/app' })).toEqual([]);
+    expect(problems({ CUSTOMER_APP_LINK: '' })).toEqual([]);
+  });
+
   it('a __Host- cookie without Secure is refused in every environment (browsers drop it)', () => {
     const local = {
       APP_ENV: 'local',

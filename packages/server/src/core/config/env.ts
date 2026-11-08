@@ -70,6 +70,12 @@ export const envSchema = z.object({
   WA_VERIFY_TOKEN_REF: z.string().default('env://WA_VERIFY_TOKEN'),
   WA_HTTP_TIMEOUT_MS: int(10000),
   WA_TEST_RECIPIENT_ALLOWLIST: z.string().default(''),
+  // V2-050 (DEC-555): the live set of the customer templates W-01 … W-08 — `v1` (`masaf_*_v1`) until Meta approved
+  // every `point_*_v2` template of the set, then `v2`; the template sync submits the live set and every later one
+  WA_TEMPLATE_SET: z.enum(['v1', 'v2']).default('v1'),
+  // V2-050 (DEC-556): the customer app's download / deep link page (https) in the session replies W-09 «delivered» and
+  // W-10; empty = no app line. Never in a Meta template nor the sign-in code. Production refuses a placeholder host
+  CUSTOMER_APP_LINK: z.string().default(''),
 
   // V2-020 online payments (DEC-510, DEC-511): the gateway (Moyasar) or its simulator (tools/payment-simulator);
   // `live` in production only, `test` (the gateway's test API, `sk_test_` keys only) in local/staging only — dev,
@@ -265,6 +271,10 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   for (const k of ['CUSTOMER_TERMS_URL', 'CUSTOMER_PRIVACY_URL', 'CUSTOMER_MARKETING_URL'] as const) {
     if (env[k] && !/^https?:\/\/[^\s]+$/.test(env[k])) throw new EnvError([`${k} must be an http(s) URL`]);
   }
+  // V2-050 (DEC-556): WhatsApp shows only a web link as a link — a custom-scheme deep link is plain text there
+  if (env.CUSTOMER_APP_LINK && !/^https:\/\/[^\s]+$/.test(env.CUSTOMER_APP_LINK)) {
+    throw new EnvError(['CUSTOMER_APP_LINK must be an https URL (or empty for no app line)']);
+  }
   return env;
 }
 
@@ -295,6 +305,10 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
       'INVOICE_SELLER_ADDRESS_AR',
     ] as const)
       if (!env[k].trim()) out.push(`${k} is required in production (the seller of every invoice)`);
+  }
+  // V2-050 (DEC-556): the .env.example placeholder (a reserved domain) never reaches a real customer
+  if (env.APP_ENV === 'production' && env.CUSTOMER_APP_LINK && isPlaceholderHost(env.CUSTOMER_APP_LINK)) {
+    out.push('CUSTOMER_APP_LINK is a placeholder in production: set the real app page or leave it empty');
   }
   if (env.SESSION_COOKIE_NAME.startsWith('__Host-') && !env.SESSION_COOKIE_SECURE) {
     out.push(
@@ -346,6 +360,21 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
 export function isGatewayHost(url: string): boolean {
   const host = new URL(url).hostname.toLowerCase();
   return host === 'moyasar.com' || host.endsWith('.moyasar.com');
+}
+
+/** A reserved test/documentation host (RFC 2606/6761: `.example`, `.invalid`, `.test`, `localhost`) — a placeholder. */
+export function isPlaceholderHost(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return true;
+  }
+  return (
+    host === 'localhost' ||
+    /(^|\.)(example|invalid|test|localhost)$/.test(host) ||
+    /^example\.(com|net|org)$/.test(host)
+  );
 }
 
 /** `trust proxy` for Express: a hop count ("1") or Express's own list syntax ("loopback, 10.0.0.0/8"). */

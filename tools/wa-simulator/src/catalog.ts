@@ -6,6 +6,8 @@ const FIXTURES = new URL('../fixtures/', import.meta.url);
 
 interface FixtureTemplate {
   purpose: string;
+  /** the template set of W-01 … W-08 (`v1`, `v2`; DEC-555); absent for the sign-in template */
+  set?: string;
   name: string;
   language: string;
   category: TemplateCategory;
@@ -57,7 +59,8 @@ export function renderBody(body: string, params: readonly string[]): string {
 let fixtureTemplates: FixtureTemplate[] | undefined;
 
 function fixtures(): FixtureTemplate[] {
-  // W-01 … W-08 and, since V2-010, the customer app's AUTHENTICATION sign-in template (DEC-496)
+  // W-01 … W-08 of every template set (DEC-555) and, since V2-010, the customer app's AUTHENTICATION sign-in
+  // template (DEC-496)
   if (!fixtureTemplates) {
     const f = readFixture<{ templates: FixtureTemplate[]; authTemplates?: FixtureTemplate[] }>(
       'templates.json',
@@ -79,7 +82,7 @@ export function templateKey(name: string, language: string): string {
   return `${name}:${language}`;
 }
 
-/** Fresh copy of the local catalog (W-01 … W-08 and the sign-in template), all APPROVED. */
+/** Fresh copy of the local catalog (W-01 … W-08 of both sets and the sign-in template), all APPROVED. */
 export function defaultTemplates(): TemplateInfo[] {
   return fixtures().map((t, i) => ({
     id: String(900000000000001 + i),

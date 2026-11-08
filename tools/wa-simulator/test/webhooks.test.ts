@@ -374,6 +374,55 @@ describe('claim codes, conversations, scenario files, UI', () => {
     });
   });
 
+  it('knows the v2 set: W-01 with the operator line and W-05 with its code in {{3}} (V2-050, DEC-555)', async () => {
+    const v2 = (name: string, params: string[], buttons: object[] = []) => ({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: CUS1,
+      type: 'template',
+      template: {
+        name,
+        language: { code: 'ar' },
+        components: [
+          { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },
+          ...buttons,
+        ],
+      },
+    });
+    const w01 = await graphSend(
+      sim.url,
+      v2(
+        'point_ticket_issued_v2',
+        ['قاعة ريماس', '125', 'شركة ريماس للضيافة', 'تويوتا كامري بيضاء — لوحة 4821'],
+        [
+          {
+            type: 'button',
+            sub_type: 'quick_reply',
+            index: '0',
+            parameters: [{ type: 'payload', payload: 'rq1.q8Zt3mVx0bW7nK2pLs9dEw' }],
+          },
+        ],
+      ),
+    );
+    expect(w01.status).toBe(200);
+    const sent = await sim.client.getMessage(w01.json.messages[0].id);
+    expect(sent.purpose).toBe('W-01');
+    expect(sent.renderedText).toContain('تشغيل: شركة ريماس للضيافة');
+    expect(sent.renderedText).toContain(`${brand().customerNameAr} — قاعة ريماس — تذكرة 125`);
+    // the v1 parameter count is refused for the v2 template (Meta: 132000)
+    expect((await graphSend(sim.url, v2('point_vehicle_ready_v2', ['125', '482731']))).json.error.code).toBe(
+      132000,
+    );
+    expect(
+      (await graphSend(sim.url, v2('point_vehicle_ready_v2', ['125', 'قاعة ريماس', '482731']))).status,
+    ).toBe(200);
+    expect(await sim.client.claimCodeDetails(CUS1)).toMatchObject({
+      code: '482731',
+      ticketNumber: '125',
+      source: 'template',
+    });
+  });
+
   it('builds the conversation as the customer sees it', async () => {
     await sendW01();
     await sim.client.tap(CUS1);

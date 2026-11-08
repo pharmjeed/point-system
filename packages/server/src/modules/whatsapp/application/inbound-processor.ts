@@ -532,9 +532,12 @@ export class WhatsappInboundProcessor {
 
   private async accountField(channel: ChannelRow, change: Json): Promise<boolean> {
     const v: Json = change?.value ?? {};
-    // W-01 … W-08 and the customer app's sign-in template (V2-010): each keeps its own category
+    // W-01 … W-08 of the synced sets (DEC-555) and the customer app's sign-in template (V2-010): each keeps its own
+    // category; only a template the sender uses (the live set, the sign-in one) degrades the channel
     const catalog = (name: unknown) =>
-      [...this.rt.catalog.definitions, ...this.rt.catalog.authDefinitions].find((d) => d.name === name);
+      [...this.rt.catalog.syncDefinitions, ...this.rt.catalog.authDefinitions].find((d) => d.name === name);
+    const used = (def: { name: string; category: string }) =>
+      def.category === 'AUTHENTICATION' || this.rt.catalog.isLiveTemplate(def.name);
     switch (change?.field) {
       case 'message_template_status_update': {
         const def = catalog(v.message_template_name);
@@ -560,7 +563,9 @@ export class WhatsappInboundProcessor {
               def.category,
             ],
           );
-          if (status !== 'approved' && status !== 'pending') {
+          if (status !== 'approved' && status !== 'pending' && !used(def)) {
+            this.logger.warn({ template: def.name, status }, 'whatsapp template of a later set not approved');
+          } else if (status !== 'approved' && status !== 'pending') {
             this.logger.error({ template: def.name, status }, 'whatsapp template left approved');
             await setChannelHealth(
               tx,
@@ -584,6 +589,7 @@ export class WhatsappInboundProcessor {
             [channel.org_id, def.name, cat === 'MARKETING' || cat === 'AUTHENTICATION' ? cat : 'UTILITY'],
           );
           this.logger.error({ template: def.name, category: cat }, 'whatsapp template recategorized');
+          if (!used(def)) return;
           await setChannelHealth(
             tx,
             channel.id,
