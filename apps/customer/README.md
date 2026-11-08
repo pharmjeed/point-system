@@ -30,7 +30,7 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 | `CUSTOMER_SUPPORT_WHATSAPP` / `CUSTOMER_SUPPORT_EMAIL` | — | «تواصل معنا» في `C-19`: رقم واتساب الدعم (أرقام E.164 بلا `+`) وبريده؛ بلا إعداد تظهر «قنوات الدعم تُضاف قريبًا» (DEC-509) |
 | `CUSTOMER_MOYASAR_PUBLISHABLE_KEY` | — | مفتاح Moyasar **العام** (`pk_…`) لترميز البطاقة على الجهاز (`C-10`، `C-18`)؛ مفتاح سري `sk_` يُرفض، و`pk_test_` يُرفض في بناء الإصدار ما لم يُعط `CUSTOMER_MOYASAR_ALLOW_TEST_KEY=true`. بلا مفتاح لا تُعرض إضافة البطاقة (DEC-524) |
 | `CUSTOMER_MOYASAR_BASE_URL` | `https://api.moyasar.com` | أصل الترميز (`tools/payment-simulator` في التطوير) |
-| `CUSTOMER_APPLE_PAY_MERCHANT_ID` | — | معرّف تاجر Apple Pay لبوينت؛ يُعرض Apple Pay فقط معه ومع موفّر PassKit أصلي (`ApplePayProvider`) في بناء التطوير |
+| `CUSTOMER_APPLE_PAY_MERCHANT_ID` | — | معرّف تاجر Apple Pay للمنصة؛ يُعرض Apple Pay فقط معه ومع موفّر PassKit أصلي (`ApplePayProvider`) في بناء التطوير |
 | `CUSTOMER_CARD_ON_FILE_VERSION` | `2026-11-01` | إصدار نص «حفظ البطاقة» (يطابق `CUSTOMER_CARD_ON_FILE_VERSION` في الخادم؛ الإصدار الأحدث يرده الخادم في الخطأ فيُعاد العرض) |
 
 نسخة الإصدار (`__DEV__ = false`) ترفض الخادم الوهمي ما لم يُطلب صراحة بـ`CUSTOMER_API_MODE=fake`، وترفض عنوان API بغير `https` (`src/configModel.ts`).

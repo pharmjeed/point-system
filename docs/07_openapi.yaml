@@ -18329,7 +18329,7 @@ components:
       required: [data, meta]
     PlatformAlertType:
       type: string
-      enum: [payment_unknown, payment_mismatch, payment_refund_failed, payment_reconcile_failed]
+      enum: [payment_unknown, payment_mismatch, payment_refund_failed, payment_reconcile_failed, payment_double]
       description: platform_alerts.type (DEC-514)
     PlatformNamedRef:
       type: object

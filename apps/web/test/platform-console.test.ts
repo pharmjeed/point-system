@@ -153,7 +153,14 @@ describe('platform console P-06 / P-08 (V2-024)', () => {
     expect(Object.keys(arStaff.p06.action).sort()).toEqual(['reactivate', 'revoke_sessions', 'suspend']);
     expect(Object.keys(arStaff.p06.confirm).sort()).toEqual(['reactivate', 'revoke_sessions', 'suspend']);
     expect(Object.keys(arStaff.onlinePaymentStatus)).toHaveLength(6);
-    expect(Object.keys(arStaff.p08.alertsTab.type)).toHaveLength(4);
+    // the four of V2-021 and payment_double of V2-022 (DEC-523)
+    expect(Object.keys(arStaff.p08.alertsTab.type).sort()).toEqual([
+      'payment_double',
+      'payment_mismatch',
+      'payment_reconcile_failed',
+      'payment_refund_failed',
+      'payment_unknown',
+    ]);
     expect(Object.keys(arStaff.p08.runs.kind)).toHaveLength(5);
     expect(arStaff.p06.revokedReason.platform_revoked).toBeTruthy();
     const all = JSON.stringify([arStaff.p06, arStaff.p08, arStaff.onlinePaymentStatus, arStaff.refundStatus]);
