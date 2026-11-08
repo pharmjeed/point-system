@@ -28,6 +28,7 @@
     "progress": "node tools/progress/build.mjs",
     "ops:restore-drill": "bash infra/backup/restore-drill.sh",
     "ops:load": "node infra/load/run.mjs",
+    "ops:load:v2": "node infra/load/v2.mjs",
     "ops:chaos": "node infra/chaos/run.mjs"
   },
   "devDependencies": {
