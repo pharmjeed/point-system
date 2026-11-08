@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { SEED_IDS } from '@point/db/seed';
 import {
+  hasVisitInProgress,
   listAccountVisits,
   newCustomerToken,
   parseEncryptionKey,
@@ -344,10 +345,13 @@ describe('V2-013 — POST /v1/tickets/intake-pass (O-01)', () => {
       code: 'PASS_INVALID',
       reason: 'account_unavailable',
     });
-    await w.db.query(`UPDATE customer_accounts SET status = 'deleted', deleted_at = $2 WHERE id = $1`, [
-      a.id,
-      w.clock.now(),
-    ]);
+    // a deleted account as DELETE /v1/customer/me leaves it (DEC-508): no number, no name, the keyed hash
+    await w.db.query(
+      `UPDATE customer_accounts SET status = 'deleted', deleted_at = $2, phone_e164 = NULL, display_name = NULL,
+              phone_hash = repeat('a', 64)
+        WHERE id = $1`,
+      [a.id, w.clock.now()],
+    );
     expect(errOf(await at(token(p, null)))).toEqual({
       status: 422,
       code: 'PASS_INVALID',
@@ -677,5 +681,14 @@ describe('V2-014 — entitlement at intake (docs/v2/04 §2) and the account’s 
       .get(CUSTOMER_ROUTES.vehicles.path)
       .set('Authorization', `Bearer ${a.access}`);
     expect(vehicles.body.data.items.find((x: { id: string }) => x.id === v).in_active_visit).toBe(true);
+    // C-15 / C-20 see the app-intake visit: the car cannot be removed, the account cannot be deleted (DEC-505, DEC-508)
+    const removal = await w
+      .http()
+      .delete(`/v1/customer/vehicles/${v}`)
+      .set('Authorization', `Bearer ${a.access}`)
+      .set('Idempotency-Key', newKey());
+    expect(removal.body.error?.code).toBe('CUSTOMER_VEHICLE_IN_ACTIVE_VISIT');
+    expect(await hasVisitInProgress(w.db, a.id)).toBe(true);
+    expect(await hasVisitInProgress(w.db, b.id)).toBe(false);
   });
 });
