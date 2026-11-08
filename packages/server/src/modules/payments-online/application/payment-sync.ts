@@ -7,6 +7,7 @@ import type { Tx } from '../../../core/db/tx.js';
 import type { GatewayPayment } from '../domain/gateway.js';
 import { decideSync } from '../domain/status.js';
 import { confirmPendingCard, dropPendingCard } from './card-tokens.js';
+import { subscriptionPaymentHook } from './subscription-hook.js';
 import { visitPaymentHook } from './visit-hook.js';
 
 const COUNTING = new Set<OnlinePaymentStatus>(['paid', 'partially_refunded']);
@@ -18,6 +19,8 @@ export interface OnlinePaymentRow {
   account_id: string;
   purpose: 'visit' | 'subscription';
   subscription_id: string | null;
+  /** V2-031 (0016): the period a subscription payment pays */
+  subscription_period_seq: number | null;
   ticket_id: string | null;
   org_id: string | null;
   venue_id: string | null;
@@ -45,7 +48,8 @@ export interface OnlinePaymentRow {
 }
 
 /** Every column, amounts as numbers (bigint halalas stay far below 2^53). */
-export const ONLINE_PAYMENT_COLUMNS = `p.id, p.account_id, p.purpose, p.subscription_id, p.ticket_id, p.org_id, p.venue_id,
+export const ONLINE_PAYMENT_COLUMNS = `p.id, p.account_id, p.purpose, p.subscription_id, p.subscription_period_seq,
+  p.ticket_id, p.org_id, p.venue_id,
   p.payment_method_id, p.amount_halalas::float8 AS amount_halalas, p.vat_halalas::float8 AS vat_halalas,
   p.refunded_halalas::float8 AS refunded_halalas, p.currency, p.gateway, p.given_id, p.gateway_payment_id,
   p.source_type, p.card_brand, p.card_last4, p.status, p.failure_code, p.authorized_at, p.paid_at, p.failed_at,
@@ -194,7 +198,8 @@ export async function applyGatewayPayment(
     action,
     entityType: 'online_payment',
     entityId: row.id,
-    orgId: row.org_id,
+    // a visit payment is also in its operator's audit_log; a subscription payment is POINT's alone (DEC-534)
+    orgId: row.purpose === 'visit' ? row.org_id : null,
     metadata,
   });
   await customerAudit(tx, {
@@ -206,12 +211,21 @@ export async function applyGatewayPayment(
     metadata,
   });
   // V2-022 / V2-023 (DEC-522, DEC-524): the ticket of a visit, and a card saved with this payment
+  // V2-031 (DEC-532): a subscription payment activates or renews its subscription, or moves it to past_due
+  const subHook = row.purpose === 'subscription' ? subscriptionPaymentHook() : null;
   if (startsCounting) {
     await confirmPendingCard(tx, updated);
     if (visitHook) await visitHook.afterPaid(tx, updated);
+    if (subHook) await subHook.afterPaid(tx, updated);
   }
-  if (to === 'failed') await dropPendingCard(tx, updated);
-  if (to === 'refunded' && COUNTING.has(row.status) && visitHook) await visitHook.afterRefunded(tx, updated);
+  if (to === 'failed') {
+    await dropPendingCard(tx, updated);
+    if (subHook) await subHook.afterFailed(tx, updated);
+  }
+  if (to === 'refunded' && COUNTING.has(row.status)) {
+    if (visitHook) await visitHook.afterRefunded(tx, updated);
+    if (subHook) await subHook.afterRefunded(tx, updated);
+  }
   return { outcome: 'applied', payment: updated };
 }
 

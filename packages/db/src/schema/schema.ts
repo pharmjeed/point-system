@@ -623,6 +623,7 @@ export const tickets = pgTable(
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     customer_vehicle_id: uuid(),
     entitlement: text().default('none').notNull(),
+    subscription_id: uuid(),
   },
   (table) => [
     index('ix_tickets_creator_draft')
@@ -638,7 +639,7 @@ export const tickets = pgTable(
       ),
     index('ix_tickets_event_status').using(
       'btree',
-      table.event_id.asc().nullsLast().op('uuid_ops'),
+      table.event_id.asc().nullsLast().op('text_ops'),
       table.status.asc().nullsLast().op('text_ops'),
     ),
     index('ix_tickets_key_holder_open')
@@ -649,10 +650,17 @@ export const tickets = pgTable(
     index('ix_tickets_plate_open')
       .using(
         'btree',
-        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
         table.plate_digits.asc().nullsLast().op('uuid_ops'),
       )
       .where(sql`(status <> ALL (ARRAY['delivered'::text, 'voided'::text]))`),
+    index('ix_tickets_subscription')
+      .using(
+        'btree',
+        table.subscription_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(subscription_id IS NOT NULL)`),
     index('ix_tickets_vehicle_holder_open')
       .using('btree', table.vehicle_holder_id.asc().nullsLast().op('uuid_ops'))
       .where(
@@ -662,7 +670,7 @@ export const tickets = pgTable(
       .using(
         'btree',
         table.venue_id.asc().nullsLast().op('uuid_ops'),
-        table.key_tag.asc().nullsLast().op('uuid_ops'),
+        table.key_tag.asc().nullsLast().op('text_ops'),
       )
       .where(sql`((key_tag IS NOT NULL) AND (status <> ALL (ARRAY['delivered'::text, 'voided'::text])))`),
     uniqueIndex('uq_tickets_paper_serial')
@@ -699,6 +707,22 @@ export const tickets = pgTable(
       sql`(status <> 'parked'::text) OR ((vehicle_holder_type = 'spot'::text) OR (vehicle_holder_type = 'unknown'::text))`,
     ),
     check(
+      'ck_tickets_pending_retrieval_source',
+      sql`pending_retrieval_source = ANY (ARRAY['whatsapp'::text, 'app'::text])`,
+    ),
+    check(
+      'ck_tickets_subscription',
+      sql`(entitlement <> 'subscription'::text) OR (subscription_id IS NOT NULL)`,
+    ),
+    check(
+      'ck_tickets_subscription_entitlement',
+      sql`(subscription_id IS NULL) OR (entitlement = 'subscription'::text)`,
+    ),
+    check(
+      'ck_tickets_subscription_not_due',
+      sql`(subscription_id IS NULL) OR (payment_status = 'not_required'::text)`,
+    ),
+    check(
       'ck_tickets_voided_fields',
       sql`(status <> 'voided'::text) OR ((voided_at IS NOT NULL) AND (void_reason IS NOT NULL))`,
     ),
@@ -719,11 +743,6 @@ export const tickets = pgTable(
     check(
       'tickets_payment_status_check',
       sql`payment_status = ANY (ARRAY['not_required'::text, 'due'::text, 'collected'::text, 'waived'::text])`,
-    ),
-    // V2-015 (0013, DEC-516): an early request from the app; replaces tickets_pending_retrieval_source_check
-    check(
-      'ck_tickets_pending_retrieval_source',
-      sql`pending_retrieval_source = ANY (ARRAY['whatsapp'::text, 'app'::text])`,
     ),
     check('tickets_plate_digits_check', sql`plate_digits ~ '^[0-9]{1,4}$'::text`),
     check(
@@ -2683,12 +2702,13 @@ export const online_payments = pgTable(
     version: integer().default(1).notNull(),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    subscription_period_seq: integer(),
   },
   (table) => [
     index('ix_online_payments_account').using(
       'btree',
       table.account_id.asc().nullsLast().op('timestamptz_ops'),
-      table.created_at.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
     ),
     index('ix_online_payments_created').using(
       'btree',
@@ -2701,6 +2721,13 @@ export const online_payments = pgTable(
         table.created_at.asc().nullsLast().op('uuid_ops'),
       )
       .where(sql`(org_id IS NOT NULL)`),
+    index('ix_online_payments_subscription')
+      .using(
+        'btree',
+        table.subscription_id.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(subscription_id IS NOT NULL)`),
     index('ix_online_payments_ticket')
       .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
       .where(sql`(ticket_id IS NOT NULL)`),
@@ -2708,7 +2735,7 @@ export const online_payments = pgTable(
       .using(
         'btree',
         table.ticket_id.asc().nullsLast().op('uuid_ops'),
-        table.created_at.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
       )
       .where(
         sql`((purpose = 'visit'::text) AND (status = ANY (ARRAY['initiated'::text, 'authorized'::text])))`,
@@ -2769,6 +2796,19 @@ export const online_payments = pgTable(
     check(
       'ck_online_payments_subscription',
       sql`(purpose <> 'subscription'::text) OR (subscription_id IS NOT NULL)`,
+    ),
+    check(
+      'ck_online_payments_subscription_seq',
+      sql`(subscription_period_seq IS NULL) OR (purpose = 'subscription'::text)`,
+    ),
+    check('ck_online_payments_subscription_seq_min', sql`subscription_period_seq >= 1`),
+    check(
+      'ck_online_payments_subscription_seq_set',
+      sql`(purpose <> 'subscription'::text) OR (subscription_period_seq IS NOT NULL)`,
+    ),
+    check(
+      'ck_online_payments_subscription_venue',
+      sql`(purpose <> 'subscription'::text) OR (venue_id IS NOT NULL)`,
     ),
     check('ck_online_payments_vat', sql`(vat_halalas >= 0) AND (vat_halalas < amount_halalas)`),
     check('ck_online_payments_visit_org', sql`(purpose <> 'visit'::text) OR (org_id IS NOT NULL)`),
@@ -3001,6 +3041,7 @@ export const customer_push_messages = pgTable(
     sent_at: timestamp({ withTimezone: true, mode: 'string' }),
     receipt_checked_at: timestamp({ withTimezone: true, mode: 'string' }),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    subscription_id: uuid(),
   },
   (table) => [
     index('ix_customer_push_account').using(
@@ -3013,24 +3054,276 @@ export const customer_push_messages = pgTable(
       .where(
         sql`((status = 'sent'::text) AND (provider_receipt_id IS NOT NULL) AND (receipt_checked_at IS NULL))`,
       ),
+
     unique('uq_customer_push_dedupe').on(table.dedupe_key),
+    check('ck_customer_push_attempts', sql`attempts >= 0`),
     check(
       'ck_customer_push_kind',
       sql`kind = ANY (ARRAY['car_received'::text, 'request_accepted'::text, 'car_ready'::text, 'pickup_reminder'::text, 'subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text])`,
+    ),
+    check('ck_customer_push_provider', sql`provider = ANY (ARRAY['expo'::text, 'simulator'::text])`),
+    check('ck_customer_push_receipt_status', sql`receipt_status = ANY (ARRAY['ok'::text, 'error'::text])`),
+    check('ck_customer_push_sent_provider', sql`(sent_at IS NULL) OR (provider IS NOT NULL)`),
+    check('ck_customer_push_skipped', sql`(status = 'skipped'::text) = (skipped_reason IS NOT NULL)`),
+    check(
+      'ck_customer_push_skipped_reason',
+      sql`skipped_reason = ANY (ARRAY['no_token'::text, 'session_revoked'::text, 'account_unavailable'::text, 'stale'::text, 'token_moved'::text])`,
     ),
     check(
       'ck_customer_push_status',
       sql`status = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'skipped'::text])`,
     ),
+    check('ck_customer_push_subscription_alone', sql`(subscription_id IS NULL) OR (ticket_id IS NULL)`),
     check(
-      'ck_customer_push_skipped_reason',
-      sql`skipped_reason = ANY (ARRAY['no_token'::text, 'session_revoked'::text, 'account_unavailable'::text, 'stale'::text, 'token_moved'::text])`,
+      'ck_customer_push_subscription_kind',
+      sql`(subscription_id IS NULL) OR (kind = ANY (ARRAY['subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text]))`,
     ),
-    check('ck_customer_push_skipped', sql`(status = 'skipped'::text) = (skipped_reason IS NOT NULL)`),
-    check('ck_customer_push_provider', sql`provider = ANY (ARRAY['expo'::text, 'simulator'::text])`),
-    check('ck_customer_push_sent_provider', sql`(sent_at IS NULL) OR (provider IS NOT NULL)`),
-    check('ck_customer_push_receipt_status', sql`receipt_status = ANY (ARRAY['ok'::text, 'error'::text])`),
-    check('ck_customer_push_attempts', sql`attempts >= 0`),
+    check('ck_customer_push_subscription_org', sql`(subscription_id IS NULL) OR (org_id IS NOT NULL)`),
     check('ck_customer_push_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
+  ],
+);
+
+export const subscription_plans = pgTable(
+  'subscription_plans',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    name_ar: text().notNull(),
+    name_en: text(),
+    vehicles_included: integer().default(1).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    monthly_price_halalas: bigint({ mode: 'number' }),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    yearly_price_halalas: bigint({ mode: 'number' }),
+    status: text().default('active').notNull(),
+    replaces_plan_id: uuid(),
+    replaced_by_plan_id: uuid(),
+    created_by: uuid().notNull(),
+    retired_at: timestamp({ withTimezone: true, mode: 'string' }),
+    retired_by: uuid(),
+    retire_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_plans_active')
+      .using('btree', table.venue_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(status = 'active'::text)`),
+    index('ix_subscription_plans_org').using('btree', table.org_id.asc().nullsLast().op('uuid_ops')),
+    index('ix_subscription_plans_venue').using(
+      'btree',
+      table.venue_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+
+    check(
+      'ck_subscription_plans_has_price',
+      sql`(monthly_price_halalas IS NOT NULL) OR (yearly_price_halalas IS NOT NULL)`,
+    ),
+    check('ck_subscription_plans_monthly', sql`monthly_price_halalas >= 100`),
+    check('ck_subscription_plans_name', sql`(char_length(name_ar) >= 2) AND (char_length(name_ar) <= 60)`),
+    check('ck_subscription_plans_no_pan', sql`retire_reason !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_subscription_plans_not_self',
+      sql`(replaced_by_plan_id IS NULL) OR (replaced_by_plan_id <> id)`,
+    ),
+    check('ck_subscription_plans_replaced', sql`(replaced_by_plan_id IS NULL) OR (status = 'retired'::text)`),
+    check('ck_subscription_plans_retired', sql`(status = 'retired'::text) = (retired_at IS NOT NULL)`),
+    check('ck_subscription_plans_retired_by', sql`(retired_at IS NULL) OR (retired_by IS NOT NULL)`),
+    check('ck_subscription_plans_status', sql`status = ANY (ARRAY['active'::text, 'retired'::text])`),
+    check('ck_subscription_plans_vehicles_max', sql`vehicles_included <= 5`),
+    check('ck_subscription_plans_vehicles_min', sql`vehicles_included >= 1`),
+    check('ck_subscription_plans_yearly', sql`yearly_price_halalas >= 100`),
+  ],
+);
+
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    plan_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    billing_cycle: text().notNull(),
+    status: text().default('pending_payment').notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    price_halalas: bigint({ mode: 'number' }).notNull(),
+    vehicles_included: integer().notNull(),
+    cycle_anchor_at: timestamp({ withTimezone: true, mode: 'string' }),
+    periods_paid: integer().default(0).notNull(),
+    current_period_start: timestamp({ withTimezone: true, mode: 'string' }),
+    current_period_end: timestamp({ withTimezone: true, mode: 'string' }),
+    cancel_at_period_end: boolean().default(false).notNull(),
+    cancel_requested_at: timestamp({ withTimezone: true, mode: 'string' }),
+    payment_method_id: uuid(),
+    pending_expires_at: timestamp({ withTimezone: true, mode: 'string' }),
+    grace_ends_at: timestamp({ withTimezone: true, mode: 'string' }),
+    renewal_attempts: integer().default(0).notNull(),
+    next_plan_id: uuid(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    next_price_halalas: bigint({ mode: 'number' }),
+    renewal_notice_for: timestamp({ withTimezone: true, mode: 'string' }),
+    vehicles_changed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    frozen_at: timestamp({ withTimezone: true, mode: 'string' }),
+    frozen_reason: text(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    frozen_seconds_total: bigint({ mode: 'number' }).default(0).notNull(),
+    activated_at: timestamp({ withTimezone: true, mode: 'string' }),
+    ended_at: timestamp({ withTimezone: true, mode: 'string' }),
+    ended_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscriptions_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_subscriptions_org').using(
+      'btree',
+      table.org_id.asc().nullsLast().op('text_ops'),
+      table.status.asc().nullsLast().op('text_ops'),
+    ),
+    index('ix_subscriptions_period_end')
+      .using('btree', table.current_period_end.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(status = ANY (ARRAY['active'::text, 'past_due'::text]))`),
+    index('ix_subscriptions_plan').using('btree', table.plan_id.asc().nullsLast().op('uuid_ops')),
+    index('ix_subscriptions_venue_live')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.status.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(
+        sql`(status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
+      ),
+    uniqueIndex('uq_subscriptions_live')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(
+        sql`(status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
+      ),
+
+    check('ck_subscriptions_activated', sql`(periods_paid = 0) OR (activated_at IS NOT NULL)`),
+    check('ck_subscriptions_anchor', sql`(cycle_anchor_at IS NULL) = (current_period_end IS NULL)`),
+    check('ck_subscriptions_attempts', sql`renewal_attempts >= 0`),
+    check(
+      'ck_subscriptions_cancel_flag',
+      sql`(cancel_at_period_end = false) OR (cancel_requested_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_cycle', sql`billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
+    check(
+      'ck_subscriptions_ended',
+      sql`(status = ANY (ARRAY['canceled'::text, 'expired'::text])) = (ended_at IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscriptions_ended_reason',
+      sql`ended_reason = ANY (ARRAY['pending_expired'::text, 'abandoned'::text, 'period_end'::text, 'grace_expired'::text, 'past_due_canceled'::text, 'account_deleted'::text, 'operator_terminated'::text, 'refunded'::text])`,
+    ),
+    check('ck_subscriptions_ended_reason_set', sql`(ended_at IS NULL) = (ended_reason IS NULL)`),
+    check(
+      'ck_subscriptions_expired_reason',
+      sql`(status <> 'expired'::text) OR (ended_reason = 'grace_expired'::text)`,
+    ),
+    check('ck_subscriptions_frozen', sql`(status = 'frozen'::text) = (frozen_at IS NOT NULL)`),
+    check(
+      'ck_subscriptions_frozen_reason',
+      sql`frozen_reason = ANY (ARRAY['operator_suspended'::text, 'venue_inactive'::text])`,
+    ),
+    check('ck_subscriptions_frozen_reason_set', sql`(frozen_at IS NULL) = (frozen_reason IS NULL)`),
+    check('ck_subscriptions_frozen_total', sql`frozen_seconds_total >= 0`),
+    check('ck_subscriptions_grace', sql`(status = 'past_due'::text) = (grace_ends_at IS NOT NULL)`),
+    check(
+      'ck_subscriptions_live_period',
+      sql`(status <> ALL (ARRAY['active'::text, 'past_due'::text, 'frozen'::text])) OR (current_period_end IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_next_plan', sql`(next_plan_id IS NULL) = (next_price_halalas IS NULL)`),
+    check('ck_subscriptions_next_price', sql`next_price_halalas >= 100`),
+    check('ck_subscriptions_paid_period', sql`(periods_paid = 0) = (current_period_end IS NULL)`),
+    check(
+      'ck_subscriptions_pending',
+      sql`(status <> 'pending_payment'::text) OR (pending_expires_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_pending_unpaid', sql`(status <> 'pending_payment'::text) OR (periods_paid = 0)`),
+    check('ck_subscriptions_period_order', sql`current_period_end > current_period_start`),
+    check('ck_subscriptions_period_pair', sql`(current_period_start IS NULL) = (current_period_end IS NULL)`),
+    check('ck_subscriptions_periods', sql`periods_paid >= 0`),
+    check('ck_subscriptions_price', sql`price_halalas >= 100`),
+    check(
+      'ck_subscriptions_status',
+      sql`status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'canceled'::text, 'expired'::text, 'frozen'::text])`,
+    ),
+    check('ck_subscriptions_vehicles_max', sql`vehicles_included <= 5`),
+    check('ck_subscriptions_vehicles_min', sql`vehicles_included >= 1`),
+  ],
+);
+
+export const subscription_vehicles = pgTable(
+  'subscription_vehicles',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    customer_vehicle_id: uuid().notNull(),
+    added_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_subscription_vehicles_vehicle')
+      .using('btree', table.customer_vehicle_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(removed_at IS NULL)`),
+    uniqueIndex('uq_subscription_vehicles_live')
+      .using(
+        'btree',
+        table.subscription_id.asc().nullsLast().op('uuid_ops'),
+        table.customer_vehicle_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+
+    check('ck_subscription_vehicles_removed', sql`(removed_at IS NULL) OR (removed_at >= added_at)`),
+  ],
+);
+
+export const subscription_periods = pgTable(
+  'subscription_periods',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    seq: integer().notNull(),
+    plan_id: uuid().notNull(),
+    billing_cycle: text().notNull(),
+    starts_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    ends_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    price_halalas: bigint({ mode: 'number' }).notNull(),
+    online_payment_id: uuid().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    extended_seconds: bigint({ mode: 'number' }).default(0).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_periods_org').using(
+      'btree',
+      table.org_id.asc().nullsLast().op('timestamptz_ops'),
+      table.starts_at.asc().nullsLast().op('uuid_ops'),
+    ),
+
+    unique('uq_subscription_periods_seq').on(table.subscription_id, table.seq),
+    unique('uq_subscription_periods_payment').on(table.online_payment_id),
+    check('ck_subscription_periods_cycle', sql`billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
+    check('ck_subscription_periods_extended', sql`extended_seconds >= 0`),
+    check('ck_subscription_periods_order', sql`ends_at > starts_at`),
+    check('ck_subscription_periods_price', sql`price_halalas >= 100`),
+    check('ck_subscription_periods_seq', sql`seq >= 1`),
   ],
 );

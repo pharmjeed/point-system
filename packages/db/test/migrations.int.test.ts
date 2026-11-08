@@ -45,6 +45,14 @@ const ONLINE_PAYMENT_TABLES = [
   'platform_alerts',
 ];
 
+/** The V2 subscription tables of 0016_subscriptions.sql (V2-030 / V2-031, docs/v2/03_Data_Model.md §4). */
+const SUBSCRIPTION_TABLES = [
+  'subscription_plans',
+  'subscriptions',
+  'subscription_vehicles',
+  'subscription_periods',
+];
+
 /**
  * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
  * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
@@ -79,12 +87,16 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016) and the 6 online-payment tables of 0012 (V2-020)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016) the 6 online-payment tables of 0012 (V2-020) and the 4 subscription tables of 0016 (V2-030 / V2-031)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
     expect(r.rows[0].n).toBe(
-      47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length + ONLINE_PAYMENT_TABLES.length,
+      47 +
+        PLATFORM_TABLES.length +
+        CUSTOMER_TABLES.length +
+        ONLINE_PAYMENT_TABLES.length +
+        SUBSCRIPTION_TABLES.length,
     );
     const ref = await refClient.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
@@ -156,6 +168,8 @@ describe('migrations', () => {
       '0013_customer_visits_push_token_index.sql',
       '0014_visit_payments_live_index.sql',
       '0014_visit_payments_system_refund_index.sql',
+      '0016_online_payments_subscription_index.sql',
+      '0016_tickets_subscription_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -173,8 +187,10 @@ describe('migrations', () => {
       [
         [
           'ix_alerts_manual_resolved',
+          'ix_online_payments_subscription',
           'ix_online_payments_ticket_live',
           'ix_tickets_customer_vehicle_open',
+          'ix_tickets_subscription',
           'ix_whatsapp_inbound_org_received',
           'ix_whatsapp_messages_accepted',
           'uq_customer_sessions_push_token',
@@ -185,8 +201,10 @@ describe('migrations', () => {
     );
     expect(r.rows).toEqual([
       { name: 'ix_alerts_manual_resolved', valid: true },
+      { name: 'ix_online_payments_subscription', valid: true },
       { name: 'ix_online_payments_ticket_live', valid: true },
       { name: 'ix_tickets_customer_vehicle_open', valid: true },
+      { name: 'ix_tickets_subscription', valid: true },
       { name: 'ix_whatsapp_inbound_org_received', valid: true },
       { name: 'ix_whatsapp_messages_accepted', valid: true },
       { name: 'uq_customer_sessions_push_token', valid: true },
@@ -258,7 +276,13 @@ describe('migrations', () => {
       expect(new Set(cfg.columns.map((c) => c.name))).toEqual(expected);
       checked++;
     }
-    expect(checked).toBe(47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length + ONLINE_PAYMENT_TABLES.length);
+    expect(checked).toBe(
+      47 +
+        PLATFORM_TABLES.length +
+        CUSTOMER_TABLES.length +
+        ONLINE_PAYMENT_TABLES.length +
+        SUBSCRIPTION_TABLES.length,
+    );
   });
 
   it('runs docs/06_schema_invariants_test.sql green on the migrated schema', async () => {
@@ -303,7 +327,7 @@ describe('migrations', () => {
     await client.query('BEGIN');
     try {
       await client.query('SET LOCAL ROLE point_app');
-      for (const t of ONLINE_PAYMENT_TABLES) {
+      for (const t of [...ONLINE_PAYMENT_TABLES, ...SUBSCRIPTION_TABLES]) {
         await client.query('SAVEPOINT s');
         await expect(client.query(`DELETE FROM ${t} WHERE false`), t).rejects.toThrow(/permission denied/);
         await client.query('ROLLBACK TO SAVEPOINT s');
@@ -319,12 +343,31 @@ describe('migrations', () => {
       const pu = await client.query<{ id: string }>(
         `INSERT INTO platform_users (phone_e164, full_name, role, secret_hash) VALUES ('+966500000978', 'x', 'platform_finance', 'x') RETURNING id`,
       );
+      // V2-031 (0016): a subscription payment names its subscription, its venue and the period it pays
+      const org = await client.query<{ id: string }>(
+        `INSERT INTO organizations (name_ar) VALUES ('مؤسسة') RETURNING id`,
+      );
+      const venue = await client.query<{ id: string }>(
+        `INSERT INTO venues (org_id, code, name_ar) VALUES ($1, 'OFC', 'برج') RETURNING id`,
+        [org.rows[0]!.id],
+      );
+      const plan = await client.query<{ id: string }>(
+        `INSERT INTO subscription_plans (org_id, venue_id, name_ar, monthly_price_halalas, created_by)
+         VALUES ($1, $2, 'سيارة واحدة', 2300, $3) RETURNING id`,
+        [org.rows[0]!.id, venue.rows[0]!.id, pu.rows[0]!.id],
+      );
+      const sub = await client.query<{ id: string }>(
+        `INSERT INTO subscriptions (account_id, plan_id, org_id, venue_id, billing_cycle, price_halalas, vehicles_included,
+                                    pending_expires_at)
+         VALUES ($1, $2, $3, $4, 'monthly', 2300, 1, now()) RETURNING id`,
+        [acc.rows[0]!.id, plan.rows[0]!.id, org.rows[0]!.id, venue.rows[0]!.id],
+      );
       const pay = await client.query<{ id: string }>(
-        `INSERT INTO online_payments (account_id, purpose, subscription_id, amount_halalas, vat_halalas, gateway, given_id,
-                                      gateway_payment_id, status, paid_at)
-         VALUES ($1, 'subscription', gen_random_uuid(), 2300, 300, 'moyasar', gen_random_uuid(), 'pay-1', 'paid', now())
+        `INSERT INTO online_payments (account_id, purpose, subscription_id, subscription_period_seq, org_id, venue_id,
+                                      amount_halalas, vat_halalas, gateway, given_id, gateway_payment_id, status, paid_at)
+         VALUES ($1, 'subscription', $2, 1, $3, $4, 2300, 300, 'moyasar', gen_random_uuid(), 'pay-1', 'paid', now())
          RETURNING id`,
-        [acc.rows[0]!.id],
+        [acc.rows[0]!.id, sub.rows[0]!.id, org.rows[0]!.id, venue.rows[0]!.id],
       );
       const ref = await client.query<{ id: string }>(
         `INSERT INTO refunds (online_payment_id, amount_halalas, reason, issued_by) VALUES ($1, 500, 'خطأ في السعر', $2) RETURNING id`,

@@ -16,7 +16,7 @@ import {
   EXPO_PUSH_RECEIPTS_LIMIT,
   type CustomerPushRuntime,
 } from '../infra/customer-push.js';
-import { customerPushContent } from './push-messages.js';
+import { customerPushContent, customerSubscriptionPushContent } from './push-messages.js';
 
 /** canon §7.2 V2 rows (V2-016, DEC-519). */
 export const CUSTOMER_PUSH_SEND_JOB = 'job.customer_push_send';
@@ -93,39 +93,74 @@ async function planPush(tx: Tx, ev: EventEnvelope, intent: CustomerPushIntent): 
     [intent.ticketId],
   );
   if (!t || t.channel !== 'app') return;
+  await planCustomerPush(tx, {
+    accountId: t.account_id,
+    orgId: t.org_id,
+    venueId: t.venue_id,
+    kind: intent.kind,
+    ticketId: intent.ticketId,
+    ref: intent.ref,
+    sourceOutboxId: ev.id,
+  });
+}
+
+export interface CustomerPushPlan {
+  accountId: string;
+  /** the operator of the visit or of the subscription's venue (receipts are read per operator) */
+  orgId: string;
+  venueId: string | null;
+  kind: CustomerPushKind;
+  ticketId?: string | null;
+  /** V2-031 (DEC-535): a push about a subscription (renewal notice, failed renewal, expiry) */
+  subscriptionId?: string | null;
+  /** the episode the push is about: one push per kind and episode and device */
+  ref: string;
+  sourceOutboxId?: string | null;
+}
+
+/**
+ * One `customer_push_messages` row per live session of the account with a push token, and its
+ * `job.customer_push_send`, in the caller's transaction (DEC-41's rule: no push without its change). Ids only.
+ */
+export async function planCustomerPush(tx: Tx, p: CustomerPushPlan): Promise<number> {
   const sessions = await tx.rows<{ id: string }>(
-    `SELECT id FROM customer_account_sessions
-      WHERE account_id = $1 AND revoked_at IS NULL AND push_token IS NOT NULL AND refresh_expires_at > $2
-      ORDER BY id`,
-    [t.account_id, tx.now],
+    `SELECT s.id FROM customer_account_sessions s JOIN customer_accounts a ON a.id = s.account_id
+      WHERE s.account_id = $1 AND a.status = 'active' AND s.revoked_at IS NULL AND s.push_token IS NOT NULL
+        AND s.refresh_expires_at > $2
+      ORDER BY s.id`,
+    [p.accountId, tx.now],
   );
+  let planned = 0;
   for (const s of sessions) {
     const row = await tx.maybeOne<{ id: string }>(
-      `INSERT INTO customer_push_messages (account_id, session_id, org_id, ticket_id, kind, dedupe_key, source_outbox_id,
-                                           created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+      `INSERT INTO customer_push_messages (account_id, session_id, org_id, ticket_id, subscription_id, kind, dedupe_key,
+                                           source_outbox_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
        ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`,
       [
-        t.account_id,
+        p.accountId,
         s.id,
-        t.org_id,
-        intent.ticketId,
-        intent.kind,
-        `push:${intent.kind}:${intent.ref}:${s.id}`,
-        ev.id,
+        p.orgId,
+        p.ticketId ?? null,
+        p.subscriptionId ?? null,
+        p.kind,
+        `push:${p.kind}:${p.ref}:${s.id}`,
+        p.sourceOutboxId ?? null,
         tx.now,
       ],
     );
     if (!row) continue;
+    planned++;
     await enqueue(tx, {
       type: CUSTOMER_PUSH_SEND_JOB,
-      orgId: t.org_id,
-      venueId: t.venue_id,
+      orgId: p.orgId,
+      venueId: p.venueId,
       aggregate: { type: 'customer_push', id: row.id },
       payload: { push_id: row.id },
       maxAttempts: 5,
     });
   }
+  return planned;
 }
 
 export function startCustomerPushPlanner(): void {
@@ -156,6 +191,14 @@ interface PushRow {
   ticket_status: string | null;
   venue_name_ar: string | null;
   venue_name_en: string | null;
+  /** V2-031 (DEC-535): a subscription push */
+  subscription_id: string | null;
+  subscription_status: string | null;
+  subscription_cancel: boolean | null;
+  subscription_period_end: Date | null;
+  subscription_next_price: number | null;
+  sub_venue_name_ar: string | null;
+  sub_venue_name_en: string | null;
 }
 
 /** The ticket states in which each kind still says something true (a late job sends nothing stale). */
@@ -164,6 +207,13 @@ const STILL_TRUE: Partial<Record<CustomerPushKind, ReadonlySet<string>>> = {
   request_accepted: new Set(['assigned', 'assigned_waiting', 'retrieving']),
   car_ready: new Set(['ready']),
   pickup_reminder: new Set(['ready']),
+};
+
+/** V2-031 (DEC-535): the subscription states in which each subscription kind still says something true. */
+const SUBSCRIPTION_STILL_TRUE: Partial<Record<CustomerPushKind, ReadonlySet<string>>> = {
+  subscription_renewal: new Set(['active']),
+  subscription_payment_failed: new Set(['past_due']),
+  subscription_expired: new Set(['expired']),
 };
 
 async function settle(
@@ -223,12 +273,18 @@ async function sendPush(rt: CustomerPushRuntime, ctx: JobContext, id: string): P
     await ctx.db.query<PushRow>(
       `SELECT m.id, m.account_id, m.session_id, m.org_id, m.ticket_id, m.kind, m.status, m.attempts,
               s.push_token, (s.revoked_at IS NOT NULL) AS session_revoked, a.status AS account_status, a.locale,
-              t.status AS ticket_status, v.name_ar AS venue_name_ar, v.name_en AS venue_name_en
+              t.status AS ticket_status, v.name_ar AS venue_name_ar, v.name_en AS venue_name_en,
+              m.subscription_id, sub.status AS subscription_status, sub.cancel_at_period_end AS subscription_cancel,
+              sub.current_period_end AS subscription_period_end,
+              sub.next_price_halalas::float8 AS subscription_next_price,
+              sv.name_ar AS sub_venue_name_ar, sv.name_en AS sub_venue_name_en
          FROM customer_push_messages m
          JOIN customer_account_sessions s ON s.id = m.session_id
          JOIN customer_accounts a ON a.id = m.account_id
          LEFT JOIN tickets t ON t.id = m.ticket_id AND t.org_id = m.org_id
          LEFT JOIN venues v ON v.id = t.venue_id AND v.org_id = t.org_id
+         LEFT JOIN subscriptions sub ON sub.id = m.subscription_id AND sub.org_id = m.org_id
+         LEFT JOIN venues sv ON sv.id = sub.venue_id AND sv.org_id = sub.org_id
         WHERE m.id = $1`,
       [id],
     )
@@ -239,17 +295,39 @@ async function sendPush(rt: CustomerPushRuntime, ctx: JobContext, id: string): P
   if (p.session_revoked)
     return settle(ctx.db, id, { status: 'skipped', skipped: 'session_revoked', at: now });
   if (!p.push_token) return settle(ctx.db, id, { status: 'skipped', skipped: 'no_token', at: now });
-  const still = STILL_TRUE[p.kind];
-  if (!p.ticket_id || !still || !still.has(p.ticket_status ?? ''))
-    return settle(ctx.db, id, { status: 'skipped', skipped: 'stale', at: now });
-
-  const content = customerPushContent({
-    kind: p.kind,
-    locale: p.locale === 'en' ? 'en' : 'ar',
-    ticketId: p.ticket_id,
-    brand: { ar: rt.env.BRAND_CUSTOMER_NAME_AR, en: rt.env.BRAND_CUSTOMER_NAME_EN },
-    venue: p.venue_name_ar ? { ar: p.venue_name_ar, en: p.venue_name_en } : null,
-  });
+  const brand = { ar: rt.env.BRAND_CUSTOMER_NAME_AR, en: rt.env.BRAND_CUSTOMER_NAME_EN };
+  const locale = p.locale === 'en' ? 'en' : 'ar';
+  let content;
+  if (p.subscription_id) {
+    // V2-031 (DEC-535): a renewal notice of a subscription canceled since, a failed renewal paid since … says nothing
+    const still = SUBSCRIPTION_STILL_TRUE[p.kind];
+    const stale =
+      !still ||
+      !still.has(p.subscription_status ?? '') ||
+      (p.kind === 'subscription_renewal' && p.subscription_cancel === true);
+    if (stale || !p.sub_venue_name_ar)
+      return settle(ctx.db, id, { status: 'skipped', skipped: 'stale', at: now });
+    content = customerSubscriptionPushContent({
+      kind: p.kind,
+      locale,
+      subscriptionId: p.subscription_id,
+      brand,
+      venue: { ar: p.sub_venue_name_ar, en: p.sub_venue_name_en },
+      renewsAt: p.subscription_period_end,
+      newPriceHalalas: p.subscription_next_price,
+    });
+  } else {
+    const still = STILL_TRUE[p.kind];
+    if (!p.ticket_id || !still || !still.has(p.ticket_status ?? ''))
+      return settle(ctx.db, id, { status: 'skipped', skipped: 'stale', at: now });
+    content = customerPushContent({
+      kind: p.kind,
+      locale,
+      ticketId: p.ticket_id,
+      brand,
+      venue: p.venue_name_ar ? { ar: p.venue_name_ar, en: p.venue_name_en } : null,
+    });
+  }
   const token = p.push_token;
   let ticket;
   try {

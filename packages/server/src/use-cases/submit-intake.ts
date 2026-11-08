@@ -17,6 +17,7 @@ import {
 } from '../modules/tickets-custody/index.js';
 import { listUploadedPhotoKinds } from '../modules/media/index.js';
 import { venueSettingsFor } from '../modules/venues-events/index.js';
+import { applySubscriptionEntitlement } from '../modules/subscriptions/index.js';
 import { customerLinking } from './hooks.js';
 import { auditCommand, eventActor } from './shared.js';
 
@@ -82,11 +83,17 @@ export class SubmitIntakeUseCase {
       });
     const inspection = missingPhotos.length ? 'incomplete' : 'complete';
 
-    const updated = await tx.one<TicketRow>(
+    const parked = await tx.one<TicketRow>(
       `UPDATE tickets SET status = 'parking', submitted_at = $2, inspection_status = $3, version = version + 1
         WHERE id = $1 AND version = $4 RETURNING *`,
       [t.id, tx.now, inspection, t.version],
     );
+    // V2-033 (docs/v2/04 §2, DEC-535): the entitlement decided again with the final plate and customer — an active
+    // subscription of the linked account at this venue covering this vehicle, with no other open ticket of it
+    const entitlement = await applySubscriptionEntitlement(tx, parked);
+    const updated = entitlement
+      ? await tx.one<TicketRow>(`SELECT * FROM tickets WHERE id = $1`, [t.id])
+      : parked;
     // the intake inspection record (11 TT-03): kept with the damage marks entered in the draft
     const insp = await tx.maybeOne<{ id: string }>(
       `UPDATE vehicle_inspections SET required_photos_ok = $2, notes = COALESCE(notes, $3)
@@ -123,6 +130,9 @@ export class SubmitIntakeUseCase {
         inspection_status: inspection,
         payment_status: submitted.payment_status,
         wa_link_status: submitted.wa_link_status,
+        // V2-033: the entitlement in the ticket's timeline (docs/v2/03 §6: «يُوثَّق في ticket_events»)
+        entitlement: submitted.entitlement,
+        subscription_id: submitted.subscription_id ?? null,
       },
     });
     // the draft leaves `received`: a draft_abandoned alert raised by a refused discard is resolved (11 §6.10, 14 §8)
@@ -157,7 +167,13 @@ export class SubmitIntakeUseCase {
       venueId: t.venue_id,
       requestId,
       before: { status: 'received' },
-      after: { status: 'parking', inspection_status: inspection, wa_link_status: submitted.wa_link_status },
+      after: {
+        status: 'parking',
+        inspection_status: inspection,
+        wa_link_status: submitted.wa_link_status,
+        entitlement: submitted.entitlement,
+        ...(entitlement ? { entitlement_before: entitlement.before } : {}),
+      },
       metadata: { acknowledged_incomplete_inspection: !!body.acknowledge_incomplete_inspection },
     });
     return loadTicketDetail(tx, t.id, { userId: actor.userId, role: actor.role });

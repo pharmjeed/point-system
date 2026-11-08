@@ -223,10 +223,11 @@ export class CustomerController {
   @Get('locations')
   @RequireCustomer()
   locations(
+    @CurrentCustomer() actor: CustomerActorContext,
     @Query(new ZodQueryPipe(CustomerLocationListQuerySchema))
     query: Out<typeof CustomerLocationListQuerySchema>,
   ) {
-    return listLocations(this.db, this.locationDeps(), query);
+    return listLocations(this.db, this.locationDeps(), { ...query, accountId: actor.accountId });
   }
 
   @Get('locations/:venueId')

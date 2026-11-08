@@ -160,6 +160,12 @@ export const JOB_TYPES = [
   'job.customer_push_send',
   'job.customer_push_receipts',
   'job.payment_method_token_delete',
+  // V2 (V2-031, DEC-532, DEC-533): the subscription timers — the renewal (and its grace retries), the end of the
+  // grace, the renewal notice 3 days before the end, and the end of a checkout left unpaid (docs/v2/04 §1)
+  'job.subscription_renew',
+  'job.subscription_grace_expire',
+  'job.subscription_renewal_notice',
+  'job.pending_payment_expire',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

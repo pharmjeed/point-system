@@ -3,7 +3,7 @@
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
 -- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, 0009 the customer accounts,
 -- V2-010, 0010 the entry pass and the app tickets, V2-013/V2-014, 0011 their deletion, V2-017, 0012 the online payments,
--- V2-020 / V2-021, and 0013 the customer visits and pushes, V2-015 / V2-016):
+-- V2-020 / V2-021, 0013 the customer visits and pushes, V2-015 / V2-016, and 0016 the subscriptions, V2-030 … V2-035):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -205,6 +205,11 @@ SELECT expect_fail('two customers rows of one operator for the same account',
 SELECT expect_fail('customer audit row of a customer without account',
  $q$INSERT INTO customer_audit_log(actor_type,action,entity_type) VALUES ('customer','customer.auth.signed_in','customer_account')$q$);
 -- V2 online payments (0012_online_payments.sql, V2-020 / V2-021, DEC-510 … DEC-514): checks are only added here
+-- (0016 gives online_payments.subscription_id its foreign key: the subscription payments below name a real one)
+INSERT INTO subscription_plans(id,org_id,venue_id,name_ar,vehicles_included,monthly_price_halalas,created_by) VALUES
+ ('00000000-0000-0000-0000-00000000aa51','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2','سيارة واحدة',1,30000,'00000000-0000-0000-0000-00000000f001');
+INSERT INTO subscriptions(id,account_id,plan_id,org_id,venue_id,billing_cycle,price_halalas,vehicles_included,pending_expires_at) VALUES
+ ('00000000-0000-0000-0000-00000000aa61','00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000aa51','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2','monthly',30000,1,now()+interval '30 minutes');
 SELECT expect_fail('saved card stored as a card number instead of a gateway token',
  $q$INSERT INTO customer_payment_methods(account_id,gateway,gateway_token,last4) VALUES ('00000000-0000-0000-0000-00000000ca01','moyasar','4111111111111111','1111')$q$);
 INSERT INTO online_payments(id,account_id,purpose,ticket_id,org_id,venue_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status,paid_at) VALUES
@@ -212,11 +217,11 @@ INSERT INTO online_payments(id,account_id,purpose,ticket_id,org_id,venue_id,amou
 SELECT expect_fail('second successful online payment for the same ticket',
  $q$INSERT INTO online_payments(account_id,purpose,ticket_id,org_id,venue_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status,paid_at) VALUES ('00000000-0000-0000-0000-00000000ca01','visit','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1',2300,300,'moyasar','00000000-0000-0000-0000-00000000ab92','pay-inv-2','paid',now())$q$);
 SELECT expect_fail('the same gateway payment recorded twice',
- $q$INSERT INTO online_payments(account_id,purpose,subscription_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription',gen_random_uuid(),2300,300,'moyasar','00000000-0000-0000-0000-00000000ab93','pay-inv-1','authorized')$q$);
+ $q$INSERT INTO online_payments(account_id,purpose,subscription_id,subscription_period_seq,venue_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription','00000000-0000-0000-0000-00000000aa61',1,'00000000-0000-0000-0000-0000000000a2',2300,300,'moyasar','00000000-0000-0000-0000-00000000ab93','pay-inv-1','authorized')$q$);
 SELECT expect_fail('visit payment without its ticket',
  $q$INSERT INTO online_payments(account_id,purpose,amount_halalas,vat_halalas,gateway,given_id) VALUES ('00000000-0000-0000-0000-00000000ca01','visit',2300,300,'moyasar','00000000-0000-0000-0000-00000000ab94')$q$);
 SELECT expect_fail('online payment below the gateway minimum',
- $q$INSERT INTO online_payments(account_id,purpose,subscription_id,amount_halalas,vat_halalas,gateway,given_id) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription',gen_random_uuid(),99,0,'moyasar','00000000-0000-0000-0000-00000000ab95')$q$);
+ $q$INSERT INTO online_payments(account_id,purpose,subscription_id,subscription_period_seq,venue_id,amount_halalas,vat_halalas,gateway,given_id) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription','00000000-0000-0000-0000-00000000aa61',1,'00000000-0000-0000-0000-0000000000a2',99,0,'moyasar','00000000-0000-0000-0000-00000000ab95')$q$);
 SELECT expect_fail('refunded more than was paid',
  $q$UPDATE online_payments SET refunded_halalas=2400, status='refunded' WHERE id='00000000-0000-0000-0000-00000000ab01'$q$);
 SELECT expect_fail('refunded amount on a payment still marked paid',
@@ -302,4 +307,61 @@ SELECT expect_fail('skipped customer push without a reason',
  $q$INSERT INTO customer_push_messages(account_id,session_id,kind,dedupe_key,status) SELECT '00000000-0000-0000-0000-00000000ca01',id,'car_ready','push:x','skipped' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
 SELECT expect_fail('unknown customer push kind',
  $q$INSERT INTO customer_push_messages(account_id,session_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'marketing','push:y' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
+-- V2-030 … V2-035 (0016_subscriptions.sql, DEC-531 … DEC-539): plans, the subscription state machine, the covered
+-- vehicles, the paid periods and the entitlement of a visit; checks are only added here
+SELECT expect_fail('plan without any price',
+ $q$INSERT INTO subscription_plans(org_id,venue_id,name_ar,created_by) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2','باقة','00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('plan below the gateway minimum',
+ $q$INSERT INTO subscription_plans(org_id,venue_id,name_ar,monthly_price_halalas,created_by) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2','باقة',99,'00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('plan covering six vehicles',
+ $q$INSERT INTO subscription_plans(org_id,venue_id,name_ar,vehicles_included,monthly_price_halalas,created_by) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2','باقة',6,30000,'00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('retired plan without its retirement time',
+ $q$UPDATE subscription_plans SET status='retired' WHERE id='00000000-0000-0000-0000-00000000aa51'$q$);
+SELECT expect_fail('second live subscription of one account at one venue',
+ $q$INSERT INTO subscriptions(account_id,plan_id,org_id,venue_id,billing_cycle,price_halalas,vehicles_included,pending_expires_at) VALUES ('00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000aa51','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2','monthly',30000,1,now())$q$);
+SELECT expect_fail('pending subscription without its expiry',
+ $q$UPDATE subscriptions SET pending_expires_at=NULL WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('active subscription without a paid period',
+ $q$UPDATE subscriptions SET status='active', pending_expires_at=NULL WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+UPDATE subscriptions SET status='active', pending_expires_at=NULL, periods_paid=1, activated_at=now(), cycle_anchor_at=now(),
+  current_period_start=now(), current_period_end=now()+interval '1 month' WHERE id='00000000-0000-0000-0000-00000000aa61';
+SELECT expect_fail('period ending before it starts',
+ $q$UPDATE subscriptions SET current_period_end=current_period_start-interval '1 day' WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('past due subscription without its grace end',
+ $q$UPDATE subscriptions SET status='past_due' WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('frozen subscription without its freeze time and reason',
+ $q$UPDATE subscriptions SET status='frozen' WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('frozen for a reason outside operator suspension / venue closure',
+ $q$UPDATE subscriptions SET status='frozen', frozen_at=now(), frozen_reason='holiday' WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('ended subscription without its reason',
+ $q$UPDATE subscriptions SET status='canceled', ended_at=now() WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('expired subscription that did not expire at the end of its grace',
+ $q$UPDATE subscriptions SET status='expired', ended_at=now(), ended_reason='period_end' WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+SELECT expect_fail('cancel at period end without the time it was asked',
+ $q$UPDATE subscriptions SET cancel_at_period_end=true WHERE id='00000000-0000-0000-0000-00000000aa61'$q$);
+INSERT INTO subscription_vehicles(subscription_id,account_id,customer_vehicle_id) VALUES
+ ('00000000-0000-0000-0000-00000000aa61','00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000cb01');
+SELECT expect_fail('the same vehicle covered twice by one subscription',
+ $q$INSERT INTO subscription_vehicles(subscription_id,account_id,customer_vehicle_id) VALUES ('00000000-0000-0000-0000-00000000aa61','00000000-0000-0000-0000-00000000ca01','00000000-0000-0000-0000-00000000cb01')$q$);
+INSERT INTO online_payments(id,account_id,purpose,subscription_id,subscription_period_seq,org_id,venue_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status,paid_at) VALUES
+ ('00000000-0000-0000-0000-00000000ab61','00000000-0000-0000-0000-00000000ca01','subscription','00000000-0000-0000-0000-00000000aa61',1,'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2',30000,3913,'moyasar','00000000-0000-0000-0000-00000000ab71','pay-sub-1','paid',now()),
+ ('00000000-0000-0000-0000-00000000ab62','00000000-0000-0000-0000-00000000ca01','subscription','00000000-0000-0000-0000-00000000aa61',1,'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2',30000,3913,'moyasar','00000000-0000-0000-0000-00000000ab72','pay-sub-2','paid',now());
+SELECT expect_fail('subscription payment without the period it pays',
+ $q$INSERT INTO online_payments(account_id,purpose,subscription_id,venue_id,amount_halalas,vat_halalas,gateway,given_id) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription','00000000-0000-0000-0000-00000000aa61','00000000-0000-0000-0000-0000000000a2',30000,3913,'moyasar','00000000-0000-0000-0000-00000000ab73')$q$);
+SELECT expect_fail('visit payment naming a subscription period',
+ $q$UPDATE online_payments SET subscription_period_seq=1 WHERE id='00000000-0000-0000-0000-00000000ab01'$q$);
+INSERT INTO subscription_periods(subscription_id,org_id,venue_id,seq,plan_id,billing_cycle,starts_at,ends_at,price_halalas,online_payment_id) VALUES
+ ('00000000-0000-0000-0000-00000000aa61','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2',1,'00000000-0000-0000-0000-00000000aa51','monthly',now(),now()+interval '1 month',30000,'00000000-0000-0000-0000-00000000ab61');
+SELECT expect_fail('one period paid twice',
+ $q$INSERT INTO subscription_periods(subscription_id,org_id,venue_id,seq,plan_id,billing_cycle,starts_at,ends_at,price_halalas,online_payment_id) VALUES ('00000000-0000-0000-0000-00000000aa61','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a2',1,'00000000-0000-0000-0000-00000000aa51','monthly',now(),now()+interval '1 month',30000,'00000000-0000-0000-0000-00000000ab62')$q$);
+SELECT expect_fail('ticket covered by a subscription without naming it',
+ $q$UPDATE tickets SET entitlement='subscription' WHERE id='00000000-0000-0000-0000-0000000000e1'$q$);
+SELECT expect_fail('ticket naming a subscription without its entitlement',
+ $q$UPDATE tickets SET subscription_id='00000000-0000-0000-0000-00000000aa61' WHERE id='00000000-0000-0000-0000-0000000000e1'$q$);
+SELECT expect_fail('subscription visit that still owes a fee',
+ $q$UPDATE tickets SET entitlement='subscription', subscription_id='00000000-0000-0000-0000-00000000aa61', payment_status='due', fee_halalas=2000 WHERE id='00000000-0000-0000-0000-0000000000e1'$q$);
+SELECT expect_fail('subscription push of a visit kind',
+ $q$INSERT INTO customer_push_messages(account_id,session_id,org_id,subscription_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000aa61','car_ready','push:s1' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
+SELECT expect_fail('push about a subscription and a ticket at once',
+ $q$INSERT INTO customer_push_messages(account_id,session_id,org_id,ticket_id,subscription_id,kind,dedupe_key) SELECT '00000000-0000-0000-0000-00000000ca01',id,'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-00000000aa61','subscription_renewal','push:s2' FROM customer_account_sessions WHERE refresh_hash='rh1'$q$);
 SELECT 'ALL INVARIANT TESTS PASSED';

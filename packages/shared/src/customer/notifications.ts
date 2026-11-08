@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { TicketStatusSchema } from '../canon/enums.js';
+import { SubscriptionStatusSchema } from '../canon/subscriptions.js';
 
 const iso = z.iso.datetime({ offset: true });
 
@@ -37,7 +38,7 @@ export type CustomerDevice = z.infer<typeof CustomerDeviceSchema>;
 // Push messages (docs/v2/01 §3)
 // ---------------------------------------------------------------------------------------------
 
-/** The kinds of customer pushes; the subscription ones are reserved for V4 (V2-03x) and never sent before. */
+/** The kinds of customer pushes; the subscription ones are sent since V4 (V2-031, DEC-535). */
 export const CUSTOMER_PUSH_KINDS = [
   'car_received',
   'request_accepted',
@@ -49,15 +50,40 @@ export const CUSTOMER_PUSH_KINDS = [
 ] as const;
 export type CustomerPushKind = (typeof CUSTOMER_PUSH_KINDS)[number];
 
+/** The subscription kinds (V2-031): they open C-14, the visit kinds open C-12. */
+export const CUSTOMER_SUBSCRIPTION_PUSH_KINDS = [
+  'subscription_renewal',
+  'subscription_payment_failed',
+  'subscription_expired',
+] as const satisfies readonly CustomerPushKind[];
+export type CustomerSubscriptionPushKind = (typeof CUSTOMER_SUBSCRIPTION_PUSH_KINDS)[number];
+const VISIT_PUSH_KINDS = [
+  'car_received',
+  'request_accepted',
+  'car_ready',
+  'pickup_reminder',
+] as const satisfies readonly CustomerPushKind[];
+
 /**
  * The `data` of a customer push: what the app reads to open the right screen. Opaque ids only (DEC-23, DEC-520): the
- * ticket id is a random UUID worth nothing without the account's own session — no plate, spot, key, code or name.
+ * ticket or subscription id is a random UUID worth nothing without the account's own session — no plate, spot, key,
+ * code, name or amount.
  */
-export const CustomerPushDataSchema = z.strictObject({
+export const CustomerVisitPushDataSchema = z.strictObject({
   type: z.literal('visit'),
-  kind: z.enum(CUSTOMER_PUSH_KINDS),
+  kind: z.enum(VISIT_PUSH_KINDS),
   visit_id: z.uuid(),
 });
+/** V2-031 (DEC-535): a subscription push opens C-14. */
+export const CustomerSubscriptionPushDataSchema = z.strictObject({
+  type: z.literal('subscription'),
+  kind: z.enum(CUSTOMER_SUBSCRIPTION_PUSH_KINDS),
+  subscription_id: z.uuid(),
+});
+export const CustomerPushDataSchema = z.discriminatedUnion('type', [
+  CustomerVisitPushDataSchema,
+  CustomerSubscriptionPushDataSchema,
+]);
 export type CustomerPushData = z.infer<typeof CustomerPushDataSchema>;
 
 // ---------------------------------------------------------------------------------------------
@@ -86,8 +112,15 @@ export const CustomerVisitUpdatedSchema = z.object({
 });
 export type CustomerVisitUpdated = z.infer<typeof CustomerVisitUpdatedSchema>;
 
-/** `subscription.updated` (reserved for V4): the app reads its subscriptions again. */
-export const CustomerSubscriptionUpdatedSchema = z.object({ subscription_id: z.uuid() });
+/**
+ * `subscription.updated` (V2-031, DEC-535): every transition of a subscription of the account; the app reads
+ * `GET /v1/customer/subscriptions` again (C-06 / C-14 / C-10's wait for a 3-D Secure payment).
+ */
+export const CustomerSubscriptionUpdatedSchema = z.object({
+  subscription_id: z.uuid(),
+  status: SubscriptionStatusSchema,
+});
+export type CustomerSubscriptionUpdated = z.infer<typeof CustomerSubscriptionUpdatedSchema>;
 
 /** The envelope of every customer realtime message (no organization, venue, pool or staff ids). */
 export const CustomerRealtimeEnvelopeSchema = z.object({

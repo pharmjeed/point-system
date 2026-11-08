@@ -1,3 +1,4 @@
+import { subscriptionLifecycle } from '../../../core/hooks/subscription-lifecycle.js';
 import type { CustomerAccountDeleteBody, CustomerAccountDeleted } from '@point/shared/customer';
 import {
   customerTokenHash,
@@ -99,6 +100,12 @@ export async function deleteCustomerAccount(
     `UPDATE customer_vehicles SET removed_at = $2 WHERE account_id = $1 AND removed_at IS NULL`,
     [actor.accountId, tx.now],
   );
+  // V2-031 / V2-034 (04 §1, DEC-536): every live subscription of the account ends with it (canceled, no renewal, no
+  // refund beyond what the platform decides); before the cards go, so that nothing is charged again
+  const subscriptionsCanceled = await subscriptionLifecycle.onAccountDeleted(tx, {
+    accountId: actor.accountId,
+    requestId: client.requestId,
+  });
   // V2-021: the saved cards (gateway tokens) can never be charged again; V2-023 (DEC-524): their tokens are deleted
   // at the gateway after COMMIT (job.payment_method_token_delete). The online payments stay: financial records are
   // kept (DEC-508).
@@ -157,6 +164,7 @@ export async function deleteCustomerAccount(
     metadata: {
       vehicles_removed: vehicles.rowCount ?? 0,
       payment_methods_removed: cards.rowCount ?? 0,
+      subscriptions_canceled: subscriptionsCanceled,
       sessions_revoked: sessions.rowCount ?? 0,
       // the operators' rows stay theirs (V2-D12): only how many, never which
       operator_customer_rows_kept: linked.n,

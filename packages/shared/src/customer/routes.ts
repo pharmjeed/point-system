@@ -50,9 +50,18 @@ import {
   CustomerVehicleRemovedSchema,
   CustomerVehicleSchema,
 } from './vehicles.js';
+import {
+  CustomerSubscribeBodySchema,
+  CustomerSubscriptionCheckoutSchema,
+  CustomerSubscriptionCommandBodySchema,
+  CustomerSubscriptionListSchema,
+  CustomerSubscriptionPayBodySchema,
+  CustomerSubscriptionSchema,
+  CustomerSubscriptionVehiclesBodySchema,
+} from './subscriptions.js';
 
 export interface CustomerRouteDef {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Path template, e.g. `/v1/customer/vehicles/{vehicleId}`. */
   path: string;
   auth: 'public' | 'customer';
@@ -314,6 +323,69 @@ export const CUSTOMER_ROUTES = {
     data: CustomerPaymentMethodRemovedSchema,
   },
   // --- end V2-022 / V2-023 ---
+  // --- V2-032 (DEC-532, DEC-534): the subscriptions — C-09 subscribe, C-10 pay, C-14 cancel / resume / vehicles ---
+  subscriptions: {
+    method: 'GET',
+    path: '/v1/customer/subscriptions',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerSubscriptionListSchema,
+  },
+  subscribe: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscribeBodySchema,
+    data: CustomerSubscriptionCheckoutSchema,
+  },
+  subscription: {
+    method: 'GET',
+    path: '/v1/customer/subscriptions/{subscriptionId}',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerSubscriptionSchema,
+  },
+  subscriptionPay: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions/{subscriptionId}/pay',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionPayBodySchema,
+    data: CustomerSubscriptionCheckoutSchema,
+  },
+  subscriptionCancel: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions/{subscriptionId}/cancel',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionCommandBodySchema,
+    data: CustomerSubscriptionSchema,
+  },
+  subscriptionResume: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions/{subscriptionId}/resume',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionCommandBodySchema,
+    data: CustomerSubscriptionSchema,
+  },
+  subscriptionVehicles: {
+    method: 'PUT',
+    path: '/v1/customer/subscriptions/{subscriptionId}/vehicles',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionVehiclesBodySchema,
+    data: CustomerSubscriptionSchema,
+  },
+  // --- end V2-032 ---
 } as const satisfies Record<string, CustomerRouteDef>;
 
 export type CustomerRouteKey = keyof typeof CUSTOMER_ROUTES;

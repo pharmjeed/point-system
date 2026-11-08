@@ -11,6 +11,7 @@ import { maskPhone } from '../core/logging/redact.js';
 import { assertOperatorOperating } from '../core/operator-status.js';
 import { ENV } from '../http/tokens.js';
 import { markPassUsed, verifyIntakePass, type VerifiedPass } from '../modules/customer-accounts/index.js';
+import { applySubscriptionEntitlement, subscriptionCoverage } from '../modules/subscriptions/index.js';
 import {
   assertCreator,
   checkVersion,
@@ -166,6 +167,14 @@ export class IntakePassUseCase {
       [ticket.id, ticket.version, ...cols.map((c) => sets[c])],
     );
     await markPassUsed(tx, pass.accountId, pass.step);
+    // V2-033 (docs/v2/04 §2 rule 1, DEC-535): the account's active subscription at this venue covering the scanned
+    // vehicle makes the visit the subscription's («مشترك بوينت», nothing due at the handover); «إتمام التسجيل»
+    // decides again with the final plate. The driver learns only covered / not covered (01 §4), never the plan.
+    const coverage = await subscriptionCoverage(tx, updated);
+    const entitlementChange = await applySubscriptionEntitlement(tx, updated);
+    const final = entitlementChange
+      ? await tx.one<TicketRow>(`SELECT * FROM tickets WHERE id = $1`, [ticket.id])
+      : updated;
 
     await auditCommand(tx, actor, {
       action: 'ticket.intake',
@@ -175,9 +184,15 @@ export class IntakePassUseCase {
       venueId: ticket.venue_id,
       requestId,
       before: { version: ticket.version, channel: ticket.channel },
-      after: { version: updated.version, channel: 'app', entitlement: updated.entitlement },
+      after: {
+        version: final.version,
+        channel: 'app',
+        entitlement: final.entitlement,
+        subscription_id: final.subscription_id ?? null,
+      },
       metadata: {
         method: started ? 'pass_new_ticket' : 'pass_draft',
+        subscription: coverage.covered ? 'covered' : coverage.reason,
         vehicle_prefilled: !!vehicle,
         vehicle_chosen: pass.vehicleId !== null,
         pass_step: pass.step,
@@ -199,6 +214,12 @@ export class IntakePassUseCase {
         first_name: firstName(pass.displayName),
         phone_masked: maskPhone(pass.phoneE164),
         vehicle_prefilled: !!vehicle,
+        // V2-033 (01 §4): «مشترك — هذه السيارة غير مشمولة» when the account subscribes here for another vehicle
+        subscription: coverage.covered
+          ? ('covered' as const)
+          : coverage.reason === 'vehicle_not_covered' || coverage.reason === 'open_ticket'
+            ? coverage.reason
+            : null,
       },
     };
     return started ? { ...result, task: started.task, driver_state: started.driver_state } : result;

@@ -13,6 +13,7 @@ import {
 } from '../domain/gateway.js';
 import type { PaymentsRuntime } from '../runtime.js';
 import { applyGatewayPayment, paymentById, type OnlinePaymentRow } from './payment-sync.js';
+import { subscriptionPaymentHook } from './subscription-hook.js';
 
 export interface StartPaymentInput {
   accountId: string;
@@ -21,8 +22,9 @@ export interface StartPaymentInput {
   ticketId?: string | null;
   orgId?: string | null;
   venueId?: string | null;
-  /** subscription (phase V4) */
+  /** subscription (V2-031): the subscription and the period this payment pays */
   subscriptionId?: string | null;
+  subscriptionPeriodSeq?: number | null;
   /** VAT included (04 §4); the VAT part is computed here */
   amountHalalas: number;
   source: GatewaySource | { type: 'saved'; paymentMethodId: string; token: string };
@@ -63,7 +65,10 @@ export class OnlinePayments {
   /** Steps 2 and 3 for a row written by `begin` once its transaction committed (V2-022, DEC-521). */
   sendInitiated(
     id: string,
-    input: Pick<StartPaymentInput, 'source' | 'callbackUrl' | 'amountHalalas' | 'purpose' | 'ticketId'>,
+    input: Pick<
+      StartPaymentInput,
+      'source' | 'callbackUrl' | 'amountHalalas' | 'purpose' | 'ticketId' | 'subscriptionId'
+    >,
   ): Promise<StartedPayment> {
     return this.send(id, input);
   }
@@ -79,8 +84,8 @@ export class OnlinePayments {
       await tx.query(
         `INSERT INTO online_payments (id, account_id, purpose, subscription_id, ticket_id, org_id, venue_id,
                                       payment_method_id, amount_halalas, vat_halalas, gateway, given_id, source_type,
-                                      created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)`,
+                                      created_at, updated_at, subscription_period_seq)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14, $15)`,
         [
           id,
           input.accountId,
@@ -96,6 +101,7 @@ export class OnlinePayments {
           givenId,
           sourceType,
           tx.now,
+          input.subscriptionPeriodSeq ?? null,
         ],
       );
       const metadata = {
@@ -103,6 +109,12 @@ export class OnlinePayments {
         amount_halalas: input.amountHalalas,
         source_type: sourceType,
         ticket_id: input.ticketId ?? null,
+        ...(input.subscriptionId
+          ? {
+              subscription_id: input.subscriptionId,
+              subscription_period_seq: input.subscriptionPeriodSeq ?? null,
+            }
+          : {}),
       };
       await customerAudit(tx, {
         actor: { type: 'customer', accountId: input.accountId },
@@ -117,7 +129,8 @@ export class OnlinePayments {
         action: 'online_payment.initiated',
         entityType: 'online_payment',
         entityId: id,
-        orgId: input.orgId ?? null,
+        // a subscription payment is POINT's alone: not in the operator's audit_log (DEC-534)
+        orgId: input.purpose === 'visit' ? (input.orgId ?? null) : null,
         requestId: input.requestId ?? null,
         metadata,
       });
@@ -148,7 +161,10 @@ export class OnlinePayments {
 
   private async send(
     id: string,
-    input: Pick<StartPaymentInput, 'source' | 'callbackUrl' | 'amountHalalas' | 'purpose' | 'ticketId'>,
+    input: Pick<
+      StartPaymentInput,
+      'source' | 'callbackUrl' | 'amountHalalas' | 'purpose' | 'ticketId' | 'subscriptionId'
+    >,
   ): Promise<StartedPayment> {
     const row = (await paymentById(this.db, id))!;
     const common = {
@@ -160,6 +176,7 @@ export class OnlinePayments {
         online_payment_id: id,
         purpose: input.purpose,
         ...(input.ticketId ? { ticket_id: input.ticketId } : {}),
+        ...(input.subscriptionId ? { subscription_id: input.subscriptionId } : {}),
       },
     };
     const res: GatewayResult<CreatedPayment> =
@@ -202,7 +219,7 @@ export class OnlinePayments {
           action: 'online_payment.failed',
           entityType: 'online_payment',
           entityId: id,
-          orgId: row.org_id,
+          orgId: row.purpose === 'visit' ? row.org_id : null,
           metadata,
         });
         await customerAudit(tx, {
@@ -213,6 +230,9 @@ export class OnlinePayments {
           accountId: row.account_id,
           metadata,
         });
+        // V2-031: a refused renewal is a failed attempt of its subscription (DEC-533)
+        const sub = row.purpose === 'subscription' ? subscriptionPaymentHook() : null;
+        if (sub) await sub.afterFailed(tx, (await paymentById(tx, id))!);
       });
       throw new AppError('PAYMENT_FAILED', { online_payment_id: id, failure_code: failureCode });
     }

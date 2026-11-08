@@ -46,7 +46,12 @@ export const REFUND_KINDS = ['manual', 'system'] as const;
 export type RefundKind = (typeof REFUND_KINDS)[number];
 
 /** The reason of a system refund (`refunds.reason`, DEC-523). */
-export const SYSTEM_REFUND_REASONS = ['double_payment', 'not_due'] as const;
+export const SYSTEM_REFUND_REASONS = [
+  'double_payment',
+  'not_due',
+  // V2-034 (DEC-536): the unused share of a subscription period when its operator is terminated
+  'subscription_prorated',
+] as const;
 export type SystemRefundReason = (typeof SYSTEM_REFUND_REASONS)[number];
 
 export const REFUND_STATUSES = ['requested', 'succeeded', 'failed'] as const;

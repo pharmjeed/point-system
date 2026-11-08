@@ -58,6 +58,8 @@ export interface TicketRow {
   /** V2-014 (0010, DEC-502): the account vehicle an app intake copied, and the entitlement decided at intake */
   customer_vehicle_id: string | null;
   entitlement: TicketEntitlement;
+  /** V2-033 (0016, DEC-535): the subscription that covered the visit at intake (`entitlement = subscription` only) */
+  subscription_id: string | null;
 }
 
 /** `retrieval_cycles` row. */

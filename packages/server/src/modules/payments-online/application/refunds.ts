@@ -150,7 +150,7 @@ export class RefundsService {
       action: 'refund.issue',
       entityType: 'refund',
       entityId: id,
-      orgId: p.org_id,
+      orgId: p.purpose === 'visit' ? p.org_id : null,
       requestId: client.requestId,
       ip: client.ip,
       userAgent: client.userAgent,
@@ -183,7 +183,15 @@ export async function issueSystemRefund(
   p: OnlinePaymentRow,
   reason: SystemRefundReason,
   details: Record<string, unknown> = {},
+  /**
+   * V2-034 (DEC-536): a part of the payment (the unused share of a subscription period) instead of all of it, and
+   * no `payment_double` alert for a refund that is the rule, not an accident
+   */
+  opts: { amountHalalas?: number; alert?: boolean } = {},
 ): Promise<string | null> {
+  const amount = opts.amountHalalas ?? p.amount_halalas;
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > p.amount_halalas - p.refunded_halalas)
+    return null;
   const existing = await tx.maybeOne<{ id: string }>(
     `SELECT id FROM refunds WHERE online_payment_id = $1 AND kind = 'system'`,
     [p.id],
@@ -195,7 +203,7 @@ export async function issueSystemRefund(
   await tx.query(
     `INSERT INTO refunds (id, online_payment_id, amount_halalas, reason, issued_by, kind, created_at)
      VALUES ($1, $2, $3, $4, NULL, 'system', $5)`,
-    [id, p.id, p.amount_halalas, reason, tx.now],
+    [id, p.id, amount, reason, tx.now],
   );
   await enqueue(tx, {
     type: PAYMENT_REFUND_SEND_JOB,
@@ -206,11 +214,12 @@ export async function issueSystemRefund(
   });
   const metadata = {
     online_payment_id: p.id,
-    amount_halalas: p.amount_halalas,
+    amount_halalas: amount,
     payment_amount_halalas: p.amount_halalas,
-    full: true,
+    full: amount === p.amount_halalas,
     kind: 'system',
     ticket_id: p.ticket_id,
+    ...(p.subscription_id ? { subscription_id: p.subscription_id } : {}),
     ...details,
   };
   await platformAudit(tx, {
@@ -218,7 +227,7 @@ export async function issueSystemRefund(
     action: 'refund.issue',
     entityType: 'refund',
     entityId: id,
-    orgId: p.org_id,
+    orgId: p.purpose === 'visit' ? p.org_id : null,
     reason,
     metadata,
   });
@@ -230,12 +239,13 @@ export async function issueSystemRefund(
     accountId: p.account_id,
     metadata: { ...metadata, reason },
   });
-  await raisePlatformAlert(tx, {
-    type: 'payment_double',
-    dedupeKey: `payment_double:${p.id}`,
-    onlinePaymentId: p.id,
-    details: { online_payment_id: p.id, ticket_id: p.ticket_id, refund_id: id, reason, ...details },
-  });
+  if (opts.alert ?? true)
+    await raisePlatformAlert(tx, {
+      type: 'payment_double',
+      dedupeKey: `payment_double:${p.id}`,
+      onlinePaymentId: p.id,
+      details: { online_payment_id: p.id, ticket_id: p.ticket_id, refund_id: id, reason, ...details },
+    });
   return id;
 }
 
@@ -262,7 +272,7 @@ async function finishRefund(
     action: `refund.${status}`,
     entityType: 'refund',
     entityId: r.id,
-    orgId: payment.org_id,
+    orgId: payment.purpose === 'visit' ? payment.org_id : null,
     metadata,
   });
   await customerAudit(tx, {

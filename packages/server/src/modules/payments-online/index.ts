@@ -56,6 +56,12 @@ export {
   visitPaymentHook,
   type VisitPaymentHook,
 } from './application/visit-hook.js';
+// V2-031 (DEC-532): what a subscription payment's moves do to its subscription
+export {
+  registerSubscriptionPaymentHook,
+  subscriptionPaymentHook,
+  type SubscriptionPaymentHook,
+} from './application/subscription-hook.js';
 export {
   confirmPendingCard,
   dropPendingCard,

@@ -21,7 +21,8 @@ type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
  * model (`listPublicLocations` / `getPublicLocation`: approved profile, active venue, active operator, presigned
  * photos, `open_now` from the weekly hours). This module adds what the customer API owns (DEC-499): the distance
  * from the caller's position and its ordering, the offset cursor of `meta.next_cursor`, the `subscribed` filter, and
- * the prices of the subscription plans — none until the plans exist (V2-03x).
+ * the prices of the subscription plans (V2-032, DEC-534: the active plans of `subscription_plans` while the venue's
+ * subscription switch is on — read here from the plans table, the subscriptions module owns the writes).
  */
 
 /** Great-circle distance in metres. */
@@ -34,6 +35,8 @@ export function distanceMetres(a: { lat: number; lng: number }, b: { lat: number
 }
 
 export interface LocationQuery {
+  /** the caller's account: the `subscribed` filter (V2-032) */
+  accountId?: string | undefined;
   q?: string | undefined;
   filter?: CustomerLocationFilter | undefined;
   lat?: number | undefined;
@@ -49,7 +52,55 @@ export interface LocationDeps {
   ttlS: number;
 }
 
-function summaryOf(l: PublicLocation, from: { lat: number; lng: number } | null): CustomerLocationSummary {
+interface PlanPrice {
+  plan_id: string;
+  venue_id: string;
+  name_ar: string;
+  vehicles_included: number;
+  monthly_price_halalas: number | null;
+  yearly_price_halalas: number | null;
+}
+
+/**
+ * The plans a listed venue sells (C-08 / C-09; V2-032): active, while the venue's subscription switch is on, the
+ * fewest vehicles and the cheapest first. A venue that does not sell subscriptions has none.
+ */
+async function sellablePlans(q: Q, venueIds: readonly string[]): Promise<PlanPrice[]> {
+  if (!venueIds.length) return [];
+  return (
+    await q.query<PlanPrice>(
+      `SELECT p.id AS plan_id, p.venue_id, p.name_ar, p.vehicles_included,
+              p.monthly_price_halalas::float8 AS monthly_price_halalas,
+              p.yearly_price_halalas::float8 AS yearly_price_halalas
+         FROM subscription_plans p
+         JOIN venue_public_profiles vp ON vp.venue_id = p.venue_id AND vp.org_id = p.org_id
+        WHERE p.venue_id = ANY($1) AND p.status = 'active' AND vp.subscriptions_enabled
+        ORDER BY p.vehicles_included, p.monthly_price_halalas NULLS LAST, p.yearly_price_halalas, p.created_at, p.id`,
+      [venueIds],
+    )
+  ).rows;
+}
+
+/** The venues of the account's live subscriptions (C-07 «مشترك فيه»). */
+async function subscribedVenues(q: Q, accountId: string): Promise<Set<string>> {
+  const r = await q.query<{ venue_id: string }>(
+    `SELECT venue_id FROM subscriptions
+      WHERE account_id = $1 AND status IN ('pending_payment','active','past_due','frozen')`,
+    [accountId],
+  );
+  return new Set(r.rows.map((x) => x.venue_id));
+}
+
+const cheapestMonthly = (plans: readonly PlanPrice[]): number | null => {
+  const prices = plans.map((p) => p.monthly_price_halalas).filter((p): p is number => p !== null);
+  return prices.length ? Math.min(...prices) : null;
+};
+
+function summaryOf(
+  l: PublicLocation,
+  from: { lat: number; lng: number } | null,
+  plans: readonly PlanPrice[] = [],
+): CustomerLocationSummary {
   return {
     venue_id: l.venue_id,
     name_ar: l.name_ar,
@@ -66,8 +117,8 @@ function summaryOf(l: PublicLocation, from: { lat: number; lng: number } | null)
     subscriptions_enabled: l.subscriptions_enabled,
     // halalas, VAT included (C-09): the price the platform set for non-subscribers (V2-D05)
     pay_per_visit_halalas: l.pay_per_visit_halalas,
-    // subscription plans (03 §4) arrive with V2-03x: no location sells one yet
-    monthly_from_halalas: null,
+    // V2-032: the cheapest monthly plan the venue sells (03 §4), VAT included
+    monthly_from_halalas: l.subscriptions_enabled ? cheapestMonthly(plans) : null,
   };
 }
 
@@ -110,8 +161,8 @@ async function allListed(
 
 /**
  * `GET /v1/customer/locations` (C-07): search by name, filter, order by distance from the given position (else by
- * name), offset cursor in `meta.next_cursor`; `subscribed` lists the venues of the account's live subscriptions —
- * none until subscriptions exist (V2-03x).
+ * name), offset cursor in `meta.next_cursor`; `subscribed` lists the venues of the account's live subscriptions
+ * (V2-032).
  */
 export async function listLocations(
   q: Q,
@@ -119,8 +170,10 @@ export async function listLocations(
   query: LocationQuery,
 ): Promise<{ data: { items: CustomerLocationSummary[] }; next_cursor: string | null }> {
   const offset = decodeCursor(query.cursor);
-  if (query.filter === 'subscribed') return { data: { items: [] }, next_cursor: null };
-  const rows = await allListed(
+  const subscribed =
+    query.filter === 'subscribed' && query.accountId ? await subscribedVenues(q, query.accountId) : null;
+  if (query.filter === 'subscribed' && !subscribed?.size) return { data: { items: [] }, next_cursor: null };
+  const listed = await allListed(
     q,
     {
       ...(query.q ? { search: query.q } : {}),
@@ -129,8 +182,19 @@ export async function listLocations(
     },
     deps,
   );
+  const rows = subscribed ? listed.filter((l) => subscribed.has(l.venue_id)) : listed;
   const from = query.lat !== undefined && query.lng !== undefined ? { lat: query.lat, lng: query.lng } : null;
-  const items = rows.map((r) => summaryOf(r, from));
+  const plans = await sellablePlans(
+    q,
+    rows.filter((r) => r.subscriptions_enabled).map((r) => r.venue_id),
+  );
+  const items = rows.map((r) =>
+    summaryOf(
+      r,
+      from,
+      plans.filter((p) => p.venue_id === r.venue_id),
+    ),
+  );
   if (from)
     items.sort(
       (a, b) =>
@@ -163,12 +227,20 @@ export async function getLocation(
 ): Promise<CustomerLocationDetail> {
   const l = await getPublicLocation(q, venueId, deps);
   if (!l) throw new AppError('VENUE_NOT_LISTED');
+  const plans = l.subscriptions_enabled ? await sellablePlans(q, [l.venue_id]) : [];
   return {
-    ...summaryOf(l, null),
+    ...summaryOf(l, null, plans),
     address: l.address,
     timezone: l.timezone,
     opening_hours: l.opening_hours,
     photo_urls: l.photos.slice(0, 10).map((p) => p.url),
-    plans: [],
+    // V2-032 (C-08 → C-09): the plans sold here, VAT included
+    plans: plans.map((p) => ({
+      plan_id: p.plan_id,
+      name_ar: p.name_ar,
+      vehicles_included: p.vehicles_included,
+      monthly_price_halalas: p.monthly_price_halalas,
+      yearly_price_halalas: p.yearly_price_halalas,
+    })),
   };
 }

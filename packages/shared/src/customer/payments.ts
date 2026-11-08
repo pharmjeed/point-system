@@ -53,7 +53,8 @@ export const CustomerReceiptSchema = z.object({
   venue_name_en: z.string().nullable(),
   operator_name_ar: z.string(),
   operator_name_en: z.string().nullable(),
-  description: z.literal('visit'),
+  /** `subscription` since V2-032: the receipt of a subscription period (DEC-534) */
+  description: z.enum(['visit', 'subscription']),
   amount_halalas: z.number().int(),
   net_halalas: z.number().int(),
   vat_halalas: z.number().int(),

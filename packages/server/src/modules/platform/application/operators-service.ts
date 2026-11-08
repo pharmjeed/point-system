@@ -1,3 +1,4 @@
+import { subscriptionLifecycle } from '../../../core/hooks/subscription-lifecycle.js';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   OPERATOR_STATUSES,
@@ -599,6 +600,14 @@ export class OperatorsService {
       userAgent: client.userAgent,
       reason: reason || null,
       metadata: { from_status: org.operator_status, to_status: rule.to },
+    });
+    // V2-034 (docs/v2/02 §4, 04 §1; DEC-536): the customers' subscriptions at the operator's venues are frozen while it
+    // is suspended, unfrozen with the frozen days added when it comes back, and refunded pro rata when it is terminated
+    await subscriptionLifecycle.onOperatorStatusChanged(tx, {
+      orgId,
+      from: org.operator_status,
+      to: rule.to,
+      requestId: client.requestId,
     });
     await this.tellStaff(tx, orgId);
     return this.detailIn(tx, orgId);

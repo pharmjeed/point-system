@@ -31,6 +31,12 @@ export const CUSTOMER_ERROR_CODES = [
   'VISIT_NOT_PAYABLE',
   'PAYMENT_IN_PROGRESS',
   'CUSTOMER_CONSENT_REQUIRED',
+  // V2-032 (DEC-534): the subscriptions (05 §5)
+  'SUBSCRIPTION_ALREADY_EXISTS',
+  'SUBSCRIPTION_NOT_ACTIVE',
+  'SUBSCRIPTION_PLAN_UNAVAILABLE',
+  'SUBSCRIPTION_VEHICLES_LOCKED',
+  'SUBSCRIPTION_CARD_REQUIRED',
 ] as const;
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[number];
 export const CustomerErrorCodeSchema = z.enum(CUSTOMER_ERROR_CODES);
@@ -75,7 +81,10 @@ export type CustomerApiErrorCode = CustomerErrorCode | CustomerReusedErrorCode;
  * `HANDOVER_CODE_UNAVAILABLE` → `{ reason: 'whatsapp' | 'staff' | 'locked' | 'expired' | 'none' }` (V2-015);
  * `VISIT_NOT_PAYABLE` → `{ reason: 'delivered' | 'voided' | 'not_due' | 'entitlement' | 'below_minimum' }`;
  * `PAYMENT_IN_PROGRESS` → `{ online_payment_id, retry_after_s }`; `CUSTOMER_CONSENT_REQUIRED` → `{ kind:
- * 'card_on_file', current_version }` (V2-022 / V2-023).
+ * 'card_on_file', current_version }` (V2-022 / V2-023); `SUBSCRIPTION_ALREADY_EXISTS` → `{ subscription_id, status }`;
+ * `SUBSCRIPTION_NOT_ACTIVE` → `{ subscription_id, current_status, command }`; `SUBSCRIPTION_PLAN_UNAVAILABLE` →
+ * `{ reason: 'retired' | 'cycle' | 'not_sold' }`; `SUBSCRIPTION_VEHICLES_LOCKED` → `{ available_at }`;
+ * `SUBSCRIPTION_CARD_REQUIRED` → `{ source_type }` (V2-032).
  */
 export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<ErrorDef, 'alert'>>> = {
   CUSTOMER_OTP_INVALID: {
@@ -202,6 +211,46 @@ export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<Err
     log: 'info',
     message: 'Agree to keep the card for later payments first.',
     message_ar: 'وافق أولًا على حفظ البطاقة للمدفوعات القادمة.',
+  },
+  // V2-032 (DEC-534): one live subscription per account and venue (uq_subscriptions_live)
+  SUBSCRIPTION_ALREADY_EXISTS: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'You already have a subscription at this location.',
+    message_ar: 'لديك اشتراك في هذا الموقع.',
+  },
+  // V2-032: the command does not apply to the subscription in its current status (04 §1)
+  SUBSCRIPTION_NOT_ACTIVE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'This subscription cannot be changed in its current status.',
+    message_ar: 'لا يمكن تعديل هذا الاشتراك في حالته الحالية.',
+  },
+  // V2-032: the plan is retired, does not sell the cycle, or the location sells no subscriptions any more
+  SUBSCRIPTION_PLAN_UNAVAILABLE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'This plan is not available any more. Choose another one.',
+    message_ar: 'هذه الباقة لم تعد متاحة. اختر باقة أخرى.',
+  },
+  // V2-032 (01 R6): the covered vehicles change once per period
+  SUBSCRIPTION_VEHICLES_LOCKED: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'You already changed the covered vehicle this period.',
+    message_ar: 'غيّرت السيارة المشمولة في هذه الفترة. يمكنك التغيير في الفترة القادمة.',
+  },
+  // V2-032 (DEC-534): the renewals charge a saved card, so the subscription is paid with one
+  SUBSCRIPTION_CARD_REQUIRED: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'Pay with a card kept for the automatic renewal.',
+    message_ar: 'ادفع ببطاقة تُحفظ للتجديد التلقائي.',
   },
 };
 

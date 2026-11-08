@@ -345,6 +345,21 @@ const PLATFORM_ROWS: readonly PRow[] = [
   ['GET', '/v1/platform/reconciliation-runs/{runId}', 'platform.payment_read', 'none', 'read', 'V2-024'],
   ['GET', '/v1/platform/alerts', 'platform.payment_read', 'none', 'read', 'V2-024'],
   ['POST', '/v1/platform/alerts/{alertId}/resolve', 'platform.payment_read', 'required', 'command', 'V2-024'],
+  // P-05 subscription plans (V2-030, DEC-531): per venue; a price change is a new plan and the old one retired
+  ['GET', '/v1/platform/plans', 'platform.plan_manage', 'none', 'read', 'V2-030'],
+  ['POST', '/v1/platform/plans', 'platform.plan_manage', 'required', 'command', 'V2-030'],
+  ['POST', '/v1/platform/plans/{planId}/retire', 'platform.plan_manage', 'required', 'command', 'V2-030'],
+  // P-07 subscriptions and their report (V2-035, DEC-537): counts and amounts, masked customers
+  ['GET', '/v1/platform/subscriptions', 'platform.subscription_read', 'none', 'read', 'V2-035'],
+  ['GET', '/v1/platform/subscriptions/report', 'platform.subscription_read', 'none', 'read', 'V2-035'],
+  [
+    'GET',
+    '/v1/platform/subscriptions/{subscriptionId}',
+    'platform.subscription_read',
+    'none',
+    'read',
+    'V2-035',
+  ],
 ];
 
 /** The `/v1/platform/*` routes (docs/07_openapi.yaml tag `platform`), checked by test/platform.test.ts. */

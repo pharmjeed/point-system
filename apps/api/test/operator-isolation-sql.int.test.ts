@@ -120,6 +120,26 @@ const GLOBAL: { file: string; sql: string; why: string }[] = [
     why: 'keyed by the notification id inside the job payload (globally unique)',
   },
   {
+    file: 'modules/subscriptions/application/reports.ts',
+    sql: 'SELECT s.status, count(*)::int AS n FROM subscriptions s GROUP BY s.status',
+    why: 'P-07 report: subscription counts over every operator, platform accounts only (V2-035, no row leaves)',
+  },
+  {
+    file: 'modules/subscriptions/application/reports.ts',
+    sql: 'COALESCE(sum(COALESCE(s.next_price_halalas, s.price_halalas)), 0)::float8 AS amount',
+    why: 'P-07 report: the renewals due across operators, a count and a sum only (V2-035)',
+  },
+  {
+    file: 'modules/subscriptions/application/reports.ts',
+    sql: 'SELECT s.ended_reason AS reason, count(*)::int AS n FROM subscriptions s',
+    why: 'P-07 report: the churn across operators, counts per reason only (V2-035)',
+  },
+  {
+    file: 'modules/subscriptions/application/reports.ts',
+    sql: 'WHERE s.activated_at >= $1 AND s.activated_at < $2',
+    why: 'P-07 report: the new subscriptions across operators, a count only (V2-035)',
+  },
+  {
     file: 'modules/whatsapp/infra/channel.ts',
     sql: 'SELECT * FROM whatsapp_channel WHERE is_active ORDER BY created_at, id',
     why: 'the webhook verifies a delivery against every active channel, then stores it for the one it names (DEC-475)',
