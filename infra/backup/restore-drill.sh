@@ -95,7 +95,10 @@ step "7. a modified backup is refused"
 cp "$file" "$work/tampered.$(basename "$file" | sed 's/.*\.dump\./dump./')"
 tampered="$work/tampered.$(basename "$file" | sed 's/.*\.dump\./dump./')"
 offset=$((size / 2))
-printf '\x00' | dd of="$tampered" bs=1 seek="$offset" conv=notrunc status=none
+# flip every bit of one byte (writing a fixed value would change nothing when the byte already has it)
+orig=$(od -An -tu1 -j "$offset" -N1 "$tampered" | tr -d ' ')
+printf "\\$(printf '%03o' $((orig ^ 255)))" | dd of="$tampered" bs=1 seek="$offset" conv=notrunc status=none
+[ -f "$file.hmac" ] && cp "$file.hmac" "$tampered.hmac"
 cp "$file.sha256" "$tampered.sha256"
 sed -i "s#  .*#  $(basename "$tampered")#" "$tampered.sha256"
 if "$HERE/restore.sh" "$tampered" "$(url "${DST}_x")" >/dev/null 2>"$work/tamper1.err"; then fail "a modified backup was restored"; fi

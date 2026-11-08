@@ -56,6 +56,19 @@ case "$file" in
       : "${BACKUP_PASSPHRASE:?BACKUP_PASSPHRASE or BACKUP_PASSPHRASE_FILE is required for an openssl backup}"
       pass="env:BACKUP_PASSPHRASE"
     fi
+    # authenticate before decrypting: CBC is malleable, so a forged .sha256 must not be enough (DEC-515)
+    [ -f "$file.hmac" ] || die "no $file.hmac next to the openssl backup: it cannot be authenticated" 1
+    if [ -n "${BACKUP_PASSPHRASE_FILE:-}" ]; then
+      key=$({ printf 'point-backup-mac\0'; cat "$BACKUP_PASSPHRASE_FILE"; } | sha256sum | cut -d' ' -f1)
+    else
+      key=$({ printf 'point-backup-mac\0'; printf '%s' "$BACKUP_PASSPHRASE"; } | sha256sum | cut -d' ' -f1)
+    fi
+    expected=$(sed -n 's/^hmac-sha256 \([0-9a-f]\{64\}\)$/\1/p' "$file.hmac")
+    actual=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$key" -r "$file" | cut -d' ' -f1)
+    unset key
+    [ -n "$expected" ] && [ "$expected" = "$actual" ] ||
+      die "authentication failed: $file was modified or was not made with this passphrase" 1
+    echo "hmac ok"
     decrypt() { openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -pass "$pass" -in "$file"; }
     ;;
   *) die "unknown backup type (expected .dump.age or .dump.enc): $file" 2 ;;
