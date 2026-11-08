@@ -11,6 +11,7 @@ import {
 } from '../dispatch-ops.js';
 import { DiscardDraftUseCase, VoidTicketUseCase } from '../discard-void.js';
 import { HandoverUseCase } from '../handover.js';
+import { IntakePassUseCase } from '../intake-pass.js';
 import { MovementUseCase } from '../movement.js';
 import { TicketQueries } from '../queries.js';
 import { RequestRetrievalUseCase } from '../request-retrieval.js';
@@ -37,6 +38,7 @@ import { TicketsController } from './tickets.controller.js';
   providers: [
     IntakeService,
     StartIntakeUseCase,
+    IntakePassUseCase,
     SubmitIntakeUseCase,
     DiscardDraftUseCase,
     VoidTicketUseCase,

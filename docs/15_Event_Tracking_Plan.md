@@ -107,7 +107,7 @@ flowchart LR
 
 | الاسم التحليلي | الخصائص | يُستخدم في |
 |---|---|---|
-| `ticket_created` | `channel` enum(whatsapp/paper)، `pricing_mode` enum(included/per_vehicle) | حجم الاستلام؛ KPI-16 |
+| `ticket_created` | `channel` enum(whatsapp/paper/app)، `pricing_mode` enum(included/per_vehicle) | حجم الاستلام؛ KPI-16 (`app` بطاقة الدخول في الإصدار الثاني، DEC-501) |
 | `ticket_intake_submitted` | `channel`، `inspection_status` enum(complete/incomplete/exception_approved)، `photos_count` int، `has_customer_phone` bool، `wa_link_method` enum(direct/qr/none)، `intake_duration_s` int | KPI-14، KPI-16 |
 | `ticket_parked` | `parking_duration_s` int، `spot_mode` enum(spot/note)، `key_slot_used` bool، `had_pending_retrieval` bool، `is_repark` bool | KPI-16 |
 | `ticket_retrieval_requested` | `request_source` enum(whatsapp/staff)، `cycle_no` int، `requested_early` bool، `queue_depth` int، `available_drivers` int، `ingest_latency_ms` int (للطلب الذي تفتح ضغطة واتساب دورته فقط: من `whatsapp_inbound_events.received_at` حتى كتابة الدورة بساعة المعاملة؛ لا للطلب المبكر المحوَّل عند الصف ولا لطلب الموظف، DEC-367) | KPI-03، KPI-14، سعة التشغيل، هدف حفظ الطلب |

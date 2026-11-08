@@ -140,7 +140,7 @@ async function acceptedRound(tx: Tx, taskId: string | null) {
 // enums used by the projections (the shared catalog validates the result)
 // ---------------------------------------------------------------------------------------------
 
-const CHANNELS = ['whatsapp', 'paper'] as const;
+const CHANNELS = ['whatsapp', 'paper', 'app'] as const;
 const PRICING = ['included', 'per_vehicle'] as const;
 const OFFER_MODES = ['single', 'broadcast'] as const;
 const TASK_TYPES = ['park', 'retrieve', 'repark'] as const;

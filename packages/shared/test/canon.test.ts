@@ -56,6 +56,7 @@ const ENUM_LISTS: Record<string, string> = {
   'الحالات النهائية': 'TERMINAL_TICKET_STATUSES',
   // §5.2
   'tickets.channel': 'TICKET_CHANNELS',
+  'tickets.entitlement': 'TICKET_ENTITLEMENTS',
   'tickets.wa_link_status': 'WA_LINK_STATUSES',
   'tickets.inspection_status': 'INSPECTION_STATUSES',
   'tickets.payment_status': 'PAYMENT_STATUSES',

@@ -10,6 +10,9 @@ export * from './vehicles.js';
 export * from './locations.js';
 export * from './home.js';
 export * from './routes.js';
+// V2-013: the entry pass (C-11 / O-01)
+export * from './pass.js';
+export * from './pass-contract.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,

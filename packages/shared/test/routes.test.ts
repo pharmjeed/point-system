@@ -140,7 +140,7 @@ describe('ROUTES vs docs/07_openapi.yaml', () => {
         .map((r) => routeKey(r.method as HttpMethod, r.path))
         .sort(),
     ).toEqual(ops.map((o) => routeKey(o.method as HttpMethod, o.path)).sort());
-    expect(ROUTES).toHaveLength(135); // canon §9 + the V2-004 public-profile routes (O-04)
+    expect(ROUTES).toHaveLength(136); // canon §9 + the V2-004 public-profile routes (O-04) + intake-pass (O-01)
   });
 
   it('matches x-permission and x-idempotency of every operation', () => {
@@ -160,7 +160,7 @@ describe('ROUTES vs docs/07_openapi.yaml', () => {
     }
   });
 
-  it('has the 81 ✓ routes announced in 07 §1.4', () => {
+  it('has the 82 ✓ routes announced in 07 §1.4', () => {
     const announced = /\((\d+) مسارًا، `x-idempotency: required`\)/.exec(readDoc('07_API_Contract.md'))?.[1];
     expect(IDEMPOTENT_ROUTES).toHaveLength(Number(announced));
     expect(ops.filter((o) => o.idempotency === 'required')).toHaveLength(

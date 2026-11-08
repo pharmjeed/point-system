@@ -85,6 +85,7 @@ const COLLECTION: Record<string, 'list' | 'refs' | string> = {
   'GET /v1/admin/retention-policy': 'list',
   'GET /v1/admin/org-settings': 'list',
   'POST /v1/tickets': 'refs',
+  'POST /v1/tickets/intake-pass': 'refs', // V2-013 (O-01): a draft or an event in the body
   'POST /v1/cash-handovers': 'refs',
   'POST /v1/drivers': 'refs',
   'POST /v1/staff': 'refs',
@@ -596,6 +597,14 @@ describe('V2-007 operator isolation: nothing of operator A is visible or writabl
     const at = '2026-10-28T15:00:00.000Z';
     const cases: [SeedUserKey, 'post' | 'put' | 'patch' | 'get', string, Record<string, unknown>?][] = [
       ['DRV4', 'post', '/v1/tickets', { event_id: A.event }],
+      // V2-013: the pass intake names a draft or an event of the caller's own operator only
+      ['DRV4', 'post', '/v1/tickets/intake-pass', { pass_token: 'P1.x', event_id: A.event }],
+      [
+        'DRV4',
+        'post',
+        '/v1/tickets/intake-pass',
+        { pass_token: 'P1.x', ticket_id: A.r.ticketDraft, expected_version: 1 },
+      ],
       ['DRV4', 'post', '/v1/me/duty/start', { venue_id: A.venue }],
       ['DRV1', 'post', '/v1/me/audio-test', { device_id: A.r.device!, result: 'heard' }],
       [

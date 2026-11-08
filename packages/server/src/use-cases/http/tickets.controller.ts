@@ -14,6 +14,7 @@ import { zodBody } from '../../http/zod-pipe.js';
 import { IntakeService } from '../../modules/tickets-custody/index.js';
 import { DiscardDraftUseCase, VoidTicketUseCase } from '../discard-void.js';
 import { HandoverUseCase } from '../handover.js';
+import { IntakePassUseCase } from '../intake-pass.js';
 import { TicketQueries } from '../queries.js';
 import { RequestRetrievalUseCase } from '../request-retrieval.js';
 import { StartIntakeUseCase } from '../start-intake.js';
@@ -21,6 +22,7 @@ import { SubmitIntakeUseCase } from '../submit-intake.js';
 import { reasonBody, ticketIdParam } from './pipes.js';
 import {
   HandoverBody,
+  IntakePassBody,
   ListTicketsQuery,
   PatchIntakeBody,
   ReasonOnlyBody,
@@ -35,6 +37,7 @@ import {
 export class TicketsController {
   constructor(
     private readonly startIntake: StartIntakeUseCase,
+    private readonly intakePass: IntakePassUseCase,
     private readonly intake: IntakeService,
     private readonly submitIntake: SubmitIntakeUseCase,
     private readonly discardDraft: DiscardDraftUseCase,
@@ -54,6 +57,20 @@ export class TicketsController {
     @Body(zodBody(StartIntakeBody)) body: z.infer<typeof StartIntakeBody>,
   ) {
     return created(await this.startIntake.execute(tx, actor, body, rid));
+  }
+
+  /** O-01 (V2-013, DEC-500): the customer's entry pass scanned in D-05; 200 for a draft, 201 for a new ticket. */
+  @Post('intake-pass')
+  @RequirePermission('ticket.intake')
+  @Command('POST /v1/tickets/intake-pass')
+  async byPass(
+    @CurrentTx() tx: Tx,
+    @CurrentActor() actor: ActorContext,
+    @RequestId() rid: string,
+    @Body(zodBody(IntakePassBody)) body: z.infer<typeof IntakePassBody>,
+  ) {
+    const result = await this.intakePass.execute(tx, actor, body, rid);
+    return 'task' in result ? created(result) : result;
   }
 
   @Get()

@@ -116,7 +116,10 @@
 
 ### 5.2 حقول حالة أخرى على التذكرة
 
-- `tickets.channel`: `whatsapp` · `paper`
+> في الإصدار الثاني `app` تذكرة استلمها السائق بمسح بطاقة الدخول من تطبيق العميل (O-01، V2-013، DEC-501)، و`entitlement` أهلية الزيارة تُحدَّد عند الاستلام (V2-014، DEC-502؛ `docs/v2/04` §2).
+
+- `tickets.channel`: `whatsapp` · `paper` · `app`
+- `tickets.entitlement`: `none` · `subscription` · `app_paid` · `event_included`
 - `tickets.wa_link_status`: `none` · `pending_send` · `pending_confirmation` · `linked` · `failed` · `opted_out`
 - `tickets.inspection_status`: `pending` · `complete` · `incomplete` · `exception_approved`
 - `tickets.payment_status`: `not_required` · `due` · `collected` · `waived`
@@ -445,6 +448,8 @@
 | `DEPENDENCY_TIMEOUT` | 504 | انتهت مهلة خدمة خارجية |
 | `PLATFORM_AUTH_REQUIRED` | 401 | الإصدار الثاني: لا توجد جلسة منصة صالحة لمسار `/v1/platform/*` (لا كوكي منصة، أو كوكي موظفين فقط)؛ جلسة الموظف لا تفتح مسار المنصة ولا العكس (DEC-462) |
 | `OPERATOR_SUSPENDED` | 409 | الإصدار الثاني: المشغّل (المؤسسة) معلّق أو منتهٍ من المنصة، فلا يُفتح حفل ولا وردية ولا مناوبة ولا استلام جديد (02 §4 في `docs/v2`، V2-005، DEC-466، DEC-486) |
+| `PASS_INVALID` | 422 | الإصدار الثاني: بطاقة الدخول الممسوحة ليست بطاقة بوينت صالحة (صيغة أو توقيع أو حساب غير نشط)، `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500) |
+| `PASS_EXPIRED` | 410 | الإصدار الثاني: بطاقة الدخول خارج نافذة الخطوة الحالية ± 1 (30 ث) أو استُعملت خطوتها لاستلام سابق (DEC-500) |
 
 ---
 
@@ -477,6 +482,7 @@
 | الطريقة | المسار | الصلاحية | تكرار |
 |---|---|---|---|
 | POST | `/v1/tickets` | `ticket.intake` | ✓ |
+| POST | `/v1/tickets/intake-pass` | `ticket.intake` | ✓ |
 | PATCH | `/v1/tickets/{ticketId}/intake` | `ticket.intake` | ✓ |
 | POST | `/v1/tickets/{ticketId}/media` | `ticket.intake` | ✓ |
 | POST | `/v1/media/{mediaId}/complete` | `ticket.intake` | ✓ |

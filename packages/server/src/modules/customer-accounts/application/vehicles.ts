@@ -35,16 +35,17 @@ interface VehicleRow {
 
 /**
  * «In a visit in progress» (C-15: such a vehicle cannot be removed): an open ticket of one of the account's linked
- * `customers` rows (V2-D12) with the same plate. Tickets name the customer vehicle itself once the app intake
- * exists (`tickets.customer_vehicle_id`, V2-013); until then the plate is the link.
+ * `customers` rows (V2-D12) naming the vehicle (`tickets.customer_vehicle_id`, an app intake, V2-013) or, for a
+ * paper or WhatsApp intake, with the same plate.
  */
 const VEHICLE_SELECT = `
   SELECT v.id, v.plate_country, v.plate_digits, v.plate_letters_ar, v.plate_letters_en, v.plate_raw, v.vehicle_make,
          v.vehicle_model, v.vehicle_color, v.vehicle_type, v.created_at,
          EXISTS (SELECT 1 FROM tickets t JOIN customers c ON c.id = t.customer_id AND c.org_id = t.org_id
                   WHERE c.customer_account_id = v.account_id AND t.status = ANY($2)
-                    AND t.plate_country = v.plate_country AND t.plate_digits = v.plate_digits
-                    AND t.plate_letters_ar = v.plate_letters_ar) AS in_active_visit
+                    AND (t.customer_vehicle_id = v.id
+                         OR (t.plate_country = v.plate_country AND t.plate_digits = v.plate_digits
+                             AND t.plate_letters_ar = v.plate_letters_ar))) AS in_active_visit
     FROM customer_vehicles v`;
 
 function vehicleView(v: VehicleRow): CustomerVehicle {
