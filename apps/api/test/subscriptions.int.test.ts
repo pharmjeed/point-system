@@ -432,6 +432,19 @@ describe('V2-031 / V2-032 — the subscription machine (docs/v2/04 §1)', () => 
     const c = checkout(await subscribe(a, { vehicles: [v] }));
     expect(c.payment).toMatchObject({ status: 'paid', amount_halalas: MONTHLY, card_last4: '1111' });
     expect(c.payment.receipt).toMatchObject({ description: 'subscription', amount_halalas: MONTHLY });
+    // V5's documents hook (DEC-543, DEC-539): the subscription charge has its simplified invoice, naming the venue
+    const invoice = await t.db.query(
+      `SELECT kind, total_halalas::int AS total, lines->0->>'description_ar' AS line
+         FROM invoices WHERE online_payment_id = $1`,
+      [c.payment.payment_id],
+    );
+    expect(invoice.rows).toEqual([
+      {
+        kind: 'customer_simplified',
+        total: MONTHLY,
+        line: expect.stringContaining('اشتراك خدمة صف السيارات — '),
+      },
+    ]);
     const id = c.subscription.subscription_id;
     const start = t.clock.now();
     const end1 = addBillingPeriods(start, 'monthly', 1);
@@ -943,6 +956,12 @@ describe('V2-034 — freeze with the operator and the venue (04 §1, 02 §4)', (
       { kind: 'system', reason: 'subscription_prorated', amount: expected, status: 'succeeded' },
     ]);
     expect((await subPayments(id))[0]).toMatchObject({ status: 'partially_refunded', refunded: expected });
+    // the prorated refund has its credit note against the subscription's invoice (V5, DEC-543)
+    const notes = await t.db.query(
+      `SELECT total_halalas::int AS total FROM invoices WHERE online_payment_id = $1 AND kind = 'credit_note'`,
+      [c.payment.payment_id],
+    );
+    expect(notes.rows).toEqual([{ total: expected }]);
     // no double-payment alert for a refund that is the rule
     const alerts = await t.db.query(
       `SELECT count(*)::int AS n FROM platform_alerts WHERE online_payment_id = $1`,

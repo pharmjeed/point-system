@@ -91,6 +91,31 @@ async function account(): Promise<Account> {
   return { id, access };
 }
 
+/**
+ * The subscription a subscriber visit names (0016: `ck_tickets_subscription`, DEC-535/DEC-538): one plan and one
+ * active subscription per venue, made once.
+ */
+const subscriptionByVenue = new Map<string, string>();
+async function subscriptionAt(org: string, venue: string): Promise<string> {
+  const known = subscriptionByVenue.get(venue);
+  if (known) return known;
+  const a = await account();
+  const plan = await t.db.query<{ id: string }>(
+    `INSERT INTO subscription_plans (org_id, venue_id, name_ar, monthly_price_halalas, created_by)
+     VALUES ($1, $2, 'سيارة واحدة', 30000, $3) RETURNING id`,
+    [org, venue, platformUserId],
+  );
+  const sub = await t.db.query<{ id: string }>(
+    `INSERT INTO subscriptions (account_id, plan_id, org_id, venue_id, billing_cycle, status, price_halalas,
+            vehicles_included, cycle_anchor_at, periods_paid, current_period_start, current_period_end, activated_at)
+     VALUES ($1, $2, $3, $4, 'monthly', 'active', 30000, 1, '2026-09-01T00:00:00Z', 1, '2026-09-01T00:00:00Z',
+             '2027-09-01T00:00:00Z', '2026-09-01T00:00:00Z') RETURNING id`,
+    [a.id, plan.rows[0]!.id, org, venue],
+  );
+  subscriptionByVenue.set(venue, sub.rows[0]!.id);
+  return sub.rows[0]!.id;
+}
+
 /** A ticket of a venue owing `fee` (the visit payment collects it, DEC-521). */
 async function ticket(
   org: string,
@@ -105,8 +130,9 @@ async function ticket(
   const r = await t.db.query<{ id: string }>(
     `INSERT INTO tickets (org_id, venue_id, event_id, dispatch_pool_id, display_number, status, channel, paper_serial,
             plate_digits, plate_letters_ar, vehicle_holder_type, key_holder_type, created_by, submitted_at, parked_at,
-            payment_status, fee_halalas, entitlement, delivered_at, delivered_by)
-     VALUES ($1, $2, $3, $4, $5, $6, 'paper', $7, '4821', 'ب ح د', $8, $8, $9, now(), now(), $10, $11, $12, $13, $14)
+            payment_status, fee_halalas, entitlement, delivered_at, delivered_by, subscription_id)
+     VALUES ($1, $2, $3, $4, $5, $6, 'paper', $7, '4821', 'ب ح د', $8, $8, $9, now(), now(), $10, $11, $12, $13, $14,
+             $15)
      RETURNING id`,
     [
       org,
@@ -123,6 +149,7 @@ async function ticket(
       opts.sub ? 'subscription' : 'none',
       delivered,
       delivered ? creator : null,
+      opts.sub ? await subscriptionAt(org, venue) : null,
     ],
   );
   return r.rows[0]!.id;

@@ -173,6 +173,9 @@ describe('PNT-028 — POST /v1/tickets/{ticketId}/submit-intake', () => {
         inspection_status: 'complete',
         payment_status: 'due',
         wa_link_status: 'none',
+        // V2-033 (DEC-535): the entitlement decided again at submit, and the subscription that covers the visit
+        entitlement: 'none',
+        subscription_id: null,
       },
     ]);
     const timeline = (

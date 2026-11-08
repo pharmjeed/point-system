@@ -381,6 +381,7 @@ describe('V2-017 — C-20 delete the account (DEC-508)', () => {
           payment_methods_removed: 0,
           sessions_revoked: 2,
           operator_customer_rows_kept: 1,
+          subscriptions_canceled: 0, // V2-034 (DEC-536): the live subscriptions end with the account
         },
       },
     ]);
