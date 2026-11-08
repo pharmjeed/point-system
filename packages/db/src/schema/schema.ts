@@ -2306,6 +2306,10 @@ export const customer_otp_challenges = pgTable(
     uniqueIndex('uq_customer_otp_open_phone')
       .using('btree', table.phone_e164.asc().nullsLast().op('text_ops'))
       .where(sql`(status = 'open'::text)`),
+    // V2-051 (0018_customer_otp_wamid_index.sql, DEC-564)
+    index('ix_customer_otp_wamid')
+      .using('btree', table.wa_message_id.asc().nullsLast().op('text_ops'))
+      .where(sql`(wa_message_id IS NOT NULL)`),
 
     check('ck_customer_otp_attempts', sql`(attempts_left >= 0) AND (attempts_left <= 5)`),
     check('ck_customer_otp_ciphertext', sql`(status = 'open'::text) OR (code_ciphertext IS NULL)`),

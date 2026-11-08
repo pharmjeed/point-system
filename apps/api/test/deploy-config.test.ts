@@ -43,6 +43,9 @@ describe('reverse proxy (infra/caddy/Caddyfile)', () => {
     expect(caddy).toContain('X-Content-Type-Options "nosniff"');
     expect(caddy).toMatch(/@api path \/v1 \/v1\/\* \/ws \/ws\/\* \/health\/live \/health\/ready/);
     expect(caddy).toMatch(/handle \/webhooks\/whatsapp \{[^}]*max_size 4MB/s);
+    // V2-051 (DEC-562): the gateway's and the e-invoicing provider's webhooks reach the api (not the PWA)
+    expect(caddy).toMatch(/handle \/webhooks\/payments\/moyasar \{[^}]*max_size 1MB[^}]*\}\s*reverse_proxy/s);
+    expect(caddy).toMatch(/handle \/webhooks\/einvoicing \{[^}]*max_size 1MB[^}]*\}\s*reverse_proxy/s);
     expect(caddy).toMatch(/handle \/metrics\* \{\s*respond 404\s*\}/);
   });
 
@@ -57,7 +60,14 @@ describe('reverse proxy (infra/caddy/Caddyfile)', () => {
   });
 
   it('the access log drops secrets carried in query strings', () => {
-    for (const p of ['hub.verify_token', 'X-Amz-Signature', 'X-Amz-Credential', 'X-Amz-Security-Token']) {
+    // V2-051 (DEC-562): `phone` too (P-06's exact search by number), canon rule 8
+    for (const p of [
+      'phone',
+      'hub.verify_token',
+      'X-Amz-Signature',
+      'X-Amz-Credential',
+      'X-Amz-Security-Token',
+    ]) {
       expect(caddy).toContain(`delete ${p}`);
     }
   });

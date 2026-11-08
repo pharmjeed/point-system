@@ -1,4 +1,6 @@
 import {
+  CUSTOMER_OTP_DAILY_LOCK_HOURS,
+  CUSTOMER_OTP_DAILY_LOCKS,
   CUSTOMER_OTP_LENGTH,
   CUSTOMER_OTP_LOCK_MINUTES,
   CUSTOMER_OTP_MAX_ATTEMPTS,
@@ -228,7 +230,17 @@ export class CustomerOtpService {
     if (!safeEqual(otpCodeHash(this.env.CODE_PEPPER, ch.id, code), ch.code_hash)) {
       const left = ch.attempts_left - 1;
       if (left <= 0) {
-        const until = new Date(tx.now.getTime() + CUSTOMER_OTP_LOCK_MINUTES * 60_000);
+        // DEC-560: the number's third lock within a day lasts a day (the attempts no longer come back every 15 min)
+        const earlier = await tx.one<{ n: number }>(
+          `SELECT count(*)::int AS n FROM customer_otp_challenges
+            WHERE phone_e164 = $1 AND status = 'locked' AND closed_at > $2::timestamptz - make_interval(hours => $3)`,
+          [phone, tx.now, CUSTOMER_OTP_DAILY_LOCK_HOURS],
+        );
+        const daily = earlier.n + 1 >= CUSTOMER_OTP_DAILY_LOCKS;
+        const until = new Date(
+          tx.now.getTime() +
+            (daily ? CUSTOMER_OTP_DAILY_LOCK_HOURS * 60 : CUSTOMER_OTP_LOCK_MINUTES) * 60_000,
+        );
         await tx.query(
           `UPDATE customer_otp_challenges SET attempts_left = 0, status = 'locked', locked_until = $2, closed_at = $3,
                   code_ciphertext = NULL,
@@ -236,7 +248,7 @@ export class CustomerOtpService {
             WHERE id = $1`,
           [ch.id, until, tx.now],
         );
-        await audit('customer.auth.otp_locked', accountId, { locked_until: iso(until) });
+        await audit('customer.auth.otp_locked', accountId, { locked_until: iso(until), daily });
         throw new AppError('CUSTOMER_OTP_LOCKED', { locked_until: iso(until) }, { keepEffects: true });
       }
       await tx.query(`UPDATE customer_otp_challenges SET attempts_left = $2 WHERE id = $1`, [ch.id, left]);

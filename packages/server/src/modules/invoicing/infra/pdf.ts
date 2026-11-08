@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { inflateSync } from 'node:zlib';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { sar, type EInvoiceDocument } from '../domain/document.js';
@@ -8,6 +10,59 @@ const require = createRequire(import.meta.url);
 const FONT_DIR = '@ibm/plex-sans-arabic/fonts/complete/woff';
 const fontPath = (weight: 'Regular' | 'SemiBold') =>
   require.resolve(`${FONT_DIR}/IBMPlexSansArabic-${weight}.woff`);
+
+/**
+ * A WOFF 1.0 font as the plain sfnt (TrueType/OpenType) it wraps: every table inflated once with the native zlib
+ * (W3C WOFF §4–§5). V2-051 (DEC-563): handed a WOFF, the layout engine re-inflates a table in pure JavaScript each
+ * time it reads it — about 1.6 s of blocked event loop per invoice in the worker, three quarters of it in that
+ * inflate (the V2 load profile); the sfnt renders the same glyphs.
+ */
+export function woffToSfnt(woff: Buffer): Buffer {
+  if (woff.length < 44 || woff.toString('latin1', 0, 4) !== 'wOFF') throw new Error('not a WOFF 1.0 font');
+  const flavor = woff.readUInt32BE(4);
+  const numTables = woff.readUInt16BE(12);
+  const tables: { tag: number; checksum: number; data: Buffer }[] = [];
+  for (let i = 0; i < numTables; i++) {
+    const e = 44 + i * 20;
+    const offset = woff.readUInt32BE(e + 4);
+    const compLength = woff.readUInt32BE(e + 8);
+    const origLength = woff.readUInt32BE(e + 12);
+    const raw = woff.subarray(offset, offset + compLength);
+    const data = compLength < origLength ? inflateSync(raw) : Buffer.from(raw);
+    if (data.length !== origLength) throw new Error('WOFF table length mismatch');
+    tables.push({ tag: woff.readUInt32BE(e), checksum: woff.readUInt32BE(e + 16), data });
+  }
+  tables.sort((x, y) => x.tag - y.tag);
+  let pow = 1;
+  while (pow * 2 <= numTables) pow *= 2;
+  const head = 12 + 16 * numTables;
+  const size = tables.reduce((n, t) => n + ((t.data.length + 3) & ~3), head);
+  const out = Buffer.alloc(size);
+  out.writeUInt32BE(flavor, 0);
+  out.writeUInt16BE(numTables, 4);
+  out.writeUInt16BE(pow * 16, 6);
+  out.writeUInt16BE(Math.log2(pow), 8);
+  out.writeUInt16BE(numTables * 16 - pow * 16, 10);
+  let at = head;
+  tables.forEach((t, i) => {
+    const r = 12 + i * 16;
+    out.writeUInt32BE(t.tag, r);
+    out.writeUInt32BE(t.checksum, r + 4);
+    out.writeUInt32BE(at, r + 8);
+    out.writeUInt32BE(t.data.length, r + 12);
+    t.data.copy(out, at);
+    at += (t.data.length + 3) & ~3;
+  });
+  return out;
+}
+
+/** The two weights of the invoice as sfnt buffers, decoded once per process. */
+const fonts = new Map<string, Buffer>();
+function font(weight: 'Regular' | 'SemiBold'): Buffer {
+  let b = fonts.get(weight);
+  if (!b) fonts.set(weight, (b = woffToSfnt(readFileSync(fontPath(weight)))));
+  return b;
+}
 
 const ARABIC = /[\u{600}-\u{6ff}\u{750}-\u{77f}\u{8a0}-\u{8ff}\u{fb50}-\u{fdff}\u{fe70}-\u{fefe}]/u;
 /** digits with their terminators (`15%`, `+3`) stay one left-to-right run */
@@ -126,8 +181,8 @@ export async function renderInvoicePdf(d: EInvoiceDocument, o: PdfOptions): Prom
     pdf.on('end', () => resolve(Buffer.concat(chunks)));
     pdf.on('error', reject);
   });
-  pdf.registerFont('r', fontPath('Regular'));
-  pdf.registerFont('b', fontPath('SemiBold'));
+  pdf.registerFont('r', font('Regular'));
+  pdf.registerFont('b', font('SemiBold'));
   const L = 40;
   const R = 555;
   const title = TITLES[d.kind] ?? TITLES.customer_simplified!;

@@ -180,6 +180,7 @@ describe('migrations', () => {
       '0014_visit_payments_system_refund_index.sql',
       '0016_online_payments_subscription_index.sql',
       '0016_tickets_subscription_index.sql',
+      '0018_customer_otp_wamid_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -197,6 +198,7 @@ describe('migrations', () => {
       [
         [
           'ix_alerts_manual_resolved',
+          'ix_customer_otp_wamid',
           'ix_online_payments_subscription',
           'ix_online_payments_ticket_live',
           'ix_tickets_customer_vehicle_open',
@@ -211,6 +213,7 @@ describe('migrations', () => {
     );
     expect(r.rows).toEqual([
       { name: 'ix_alerts_manual_resolved', valid: true },
+      { name: 'ix_customer_otp_wamid', valid: true },
       { name: 'ix_online_payments_subscription', valid: true },
       { name: 'ix_online_payments_ticket_live', valid: true },
       { name: 'ix_tickets_customer_vehicle_open', valid: true },

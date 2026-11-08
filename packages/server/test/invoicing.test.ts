@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { FIRST_PREVIOUS_INVOICE_HASH, roundHalfUpDiv, shareOfBp, vatOfInclusive } from '@point/shared';
 import { describe, expect, it } from 'vitest';
 import {
@@ -19,6 +20,7 @@ import {
   SimulatorEInvoicingProvider,
   totalsOf,
   UnconfiguredLiveProvider,
+  woffToSfnt,
   zatcaQr,
   type ContractTerms,
   type EInvoiceDocument,
@@ -344,5 +346,37 @@ describe('the invoice PDF (Arabic, right to left)', () => {
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.toString('latin1')).toMatch(/IBMPlexSansArabic/);
     if (process.env.INVOICE_PDF_OUT) writeFileSync(process.env.INVOICE_PDF_OUT, pdf);
+  });
+
+  it('V2-051 (DEC-563): the WOFF font is inflated once into a valid sfnt (every table checksum holds)', () => {
+    const req = createRequire(new URL('../package.json', import.meta.url));
+    const woff = readFileSync(
+      req.resolve('@ibm/plex-sans-arabic/fonts/complete/woff/IBMPlexSansArabic-Regular.woff'),
+    );
+    const sfnt = woffToSfnt(woff);
+    expect(sfnt.readUInt32BE(0)).toBe(woff.readUInt32BE(4)); // the flavour
+    const n = sfnt.readUInt16BE(4);
+    expect(n).toBe(woff.readUInt16BE(12));
+    expect(sfnt.length).toBe(woff.readUInt32BE(16)); // totalSfntSize of the WOFF header
+    const tags: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const r = 12 + i * 16;
+      const tag = sfnt.toString('latin1', r, r + 4);
+      const [checksum, offset, length] = [
+        sfnt.readUInt32BE(r + 4),
+        sfnt.readUInt32BE(r + 8),
+        sfnt.readUInt32BE(r + 12),
+      ];
+      const data = Buffer.alloc((length + 3) & ~3);
+      sfnt.copy(data, 0, offset, offset + length);
+      if (tag === 'head') data.writeUInt32BE(0, 8); // checkSumAdjustment is left out of the head checksum
+      let sum = 0;
+      for (let k = 0; k < data.length; k += 4) sum = (sum + data.readUInt32BE(k)) >>> 0;
+      expect(sum, tag).toBe(checksum);
+      tags.push(tag);
+    }
+    expect(tags).toEqual([...tags].sort());
+    expect(tags).toEqual(expect.arrayContaining(['cmap', 'glyf', 'head', 'hmtx', 'loca', 'GSUB']));
+    expect(() => woffToSfnt(Buffer.from('not a font at all, certainly not 44 bytes long....'))).toThrow();
   });
 });
