@@ -37,10 +37,12 @@ describe('docs/v2/05 §1: every customer route of the contracts is documented', 
     const required = Object.entries(CUSTOMER_ROUTES)
       .filter(([, r]) => r.idempotency === 'required')
       .map(([k]) => k);
-    expect(required).toEqual(['mePatch', 'consents', 'vehicleCreate']);
+    expect(required).toEqual(['mePatch', 'consents', 'vehicleCreate', 'vehicleDelete', 'meDelete']);
+    // signed-in auth calls: logout, and the re-verification of C-20 (V2-017, DEC-507)
+    const signedIn = ['/v1/customer/auth/logout', '/v1/customer/auth/reauth/verify'];
     for (const r of Object.values(CUSTOMER_ROUTES)) {
       if (r.method === 'GET') expect(r.idempotency).toBe('none');
-      if (r.path.includes('/auth/') && r.path !== '/v1/customer/auth/logout') expect(r.auth).toBe('public');
+      if (r.path.includes('/auth/')) expect(r.auth).toBe(signedIn.includes(r.path) ? 'customer' : 'public');
     }
   });
 });

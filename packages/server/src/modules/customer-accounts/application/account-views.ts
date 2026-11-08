@@ -14,7 +14,9 @@ type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
 
 export interface CustomerAccountRow {
   id: string;
-  phone_e164: string;
+  /** NULL once deleted (0011): only `phone_hash` remains */
+  phone_e164: string | null;
+  phone_hash: string | null;
   display_name: string | null;
   locale: 'ar' | 'en';
   status: 'active' | 'suspended' | 'deleted';
@@ -60,6 +62,8 @@ export async function buildCustomerMe(q: Q, texts: ConsentTexts, accountId: stri
   const a = (await q.query<CustomerAccountRow>(`SELECT * FROM customer_accounts WHERE id = $1`, [accountId]))
     .rows[0];
   if (!a) throw new AppError('AUTH_UNAUTHENTICATED');
+  if (a.status === 'deleted' || a.phone_e164 === null) throw new AppError('ACCOUNT_DELETED');
+  const phone = a.phone_e164;
   const latest = (
     await q.query<ConsentRow>(
       `SELECT DISTINCT ON (kind) kind, version, granted, created_at FROM customer_account_consents
@@ -88,8 +92,8 @@ export async function buildCustomerMe(q: Q, texts: ConsentTexts, accountId: stri
   const consents = { terms: state('terms'), privacy: state('privacy'), marketing: state('marketing') };
   return {
     id: a.id,
-    phone_e164: a.phone_e164,
-    phone_masked: maskPhone(a.phone_e164),
+    phone_e164: phone,
+    phone_masked: maskPhone(phone),
     display_name: a.display_name,
     locale: a.locale,
     status: a.status,

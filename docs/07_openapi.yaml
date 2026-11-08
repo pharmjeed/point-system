@@ -10950,6 +10950,70 @@ paths:
       x-idempotency: required
       x-rate-limit-class: write
       x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED]
+    delete:
+      operationId: customerMeDelete
+      summary: حذف الحساب C-20
+      tags: [Customer]
+      description: |-
+        متطلب Apple وGoogle (V2-017، DEC-507، DEC-508). يلزمه دليل تحقق حديث من POST /v1/customer/auth/reauth/verify لهذه الجلسة نفسها (صالح 300 ث، مرة واحدة)، وإلا CUSTOMER_REAUTH_REQUIRED بـreason (missing / invalid / expired). يُرفض أثناء زيارة جارية (CUSTOMER_ACCOUNT_VISIT_ACTIVE). في معاملة واحدة: status = deleted وdeleted_at، يُمحى الاسم ويُستبدل الجوال ببصمة HMAC لا تُعكس (phone_hash) فيسجّل الرقم نفسه حسابًا جديدًا لاحقًا، تُزال السيارات (removed_at)، تُلغى الجلسات (account_closed) وتُسقط رموز الإشعارات، ويُغلق رمز دخول مفتوح للرقم. تبقى سجلات التدقيق والموافقات، وصفوف customers لدى المشغلين وتذاكرهم بحسب احتفاظ كل مشغل (V2-D12) دون مساس. بعدها أي رمز للحساب ← ACCOUNT_DELETED أو AUTH_SESSION_REVOKED.
+
+        الأثر: customer_accounts + customer_vehicles + customer_account_sessions + customer_otp_challenges + customer_audit_log (customer.account.deleted)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reauth_token:
+                  type: string
+                  minLength: 16
+                  maxLength: 200
+              required: [reauth_token]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccountDeletedEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED | CUSTOMER_REAUTH_REQUIRED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_ACCOUNT_VISIT_ACTIVE | IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_ACCOUNT_VISIT_ACTIVE, CUSTOMER_REAUTH_REQUIRED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED]
   /v1/customer/consents:
     post:
       operationId: customerConsents
@@ -11332,6 +11396,130 @@ paths:
       x-idempotency: none
       x-rate-limit-class: read
       x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+  # ---- V2-012 (C-15) and V2-017 (C-20): DEC-505, DEC-507
+  /v1/customer/vehicles/{vehicleId}:
+    delete:
+      operationId: customerVehicleDelete
+      summary: حذف سيارة C-15
+      tags: [Customer]
+      description: |-
+        إزالة ناعمة (removed_at، لا حذف فعلي) تحت قفل صف الحساب، فتتحرر اللوحة لإضافة لاحقة (V2-012، DEC-505). سيارة حساب آخر أو غير موجودة أو محذوفة سابقًا ← RESOURCE_NOT_FOUND (resource: customer_vehicle) بالرد نفسه؛ سيارة في زيارة جارية (in_active_visit) ← CUSTOMER_VEHICLE_IN_ACTIVE_VISIT ولا يُكتب شيء.
+
+        الأثر: customer_vehicles.removed_at + customer_audit_log (customer.vehicle.remove)
+      parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVehicleRemovedEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_VEHICLE_IN_ACTIVE_VISIT | IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_VEHICLE_IN_ACTIVE_VISIT, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND]
+  /v1/customer/auth/reauth/verify:
+    post:
+      operationId: customerAuthReauthVerify
+      summary: إعادة التحقق قبل حذف الحساب
+      tags: [Customer]
+      description: |-
+        C-20 (V2-017، DEC-507): يطلب التطبيق رمزًا لرقم الحساب نفسه بـPOST /v1/customer/auth/otp (الحدود والقالب نفساهما)، ثم يرسله هنا بجلسته. القواعد كتحقق الدخول: رمز خاطئ يُنقص المحاولات (CUSTOMER_OTP_INVALID مع attempts_left)، والخامس يقفل الرقم 15 دقيقة (CUSTOMER_OTP_LOCKED)، والمنتهي أو المستعمل CUSTOMER_OTP_EXPIRED. النجاح يستهلك الرمز ويرد reauth_token مرتبطًا بهذه الجلسة وحدها، صالحًا 300 ث ولمرة واحدة، ولا يُخزَّن منه إلا sha256؛ والأحدث يحل محل السابق.
+
+        الأثر: customer_otp_challenges + customer_account_sessions.reauth_hash + customer_audit_log (customer.auth.reauth_verified)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+              required: [code]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReauthEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED | CUSTOMER_OTP_EXPIRED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_OTP_INVALID | VALIDATION_FAILED
+        '423':
+          $ref: '#/components/responses/CustomerError'
+          description: CUSTOMER_OTP_LOCKED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: auth
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_OTP_EXPIRED, CUSTOMER_OTP_INVALID, CUSTOMER_OTP_LOCKED]
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsAppWebhook
@@ -16917,6 +17105,56 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/CustomerHome'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    # ---- V2-012 / V2-017 (DEC-505, DEC-507)
+    CustomerVehicleRemovedEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            vehicle_id:
+              type: string
+              format: uuid
+            removed_at:
+              type: string
+              format: date-time
+          required: [vehicle_id, removed_at]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerReauthEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            reauth_token:
+              type: string
+              minLength: 16
+              maxLength: 200
+            expires_at:
+              type: string
+              format: date-time
+          required: [reauth_token, expires_at]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerAccountDeletedEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            deleted:
+              type: boolean
+              enum: [true]
+            deleted_at:
+              type: string
+              format: date-time
+          required: [deleted, deleted_at]
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]

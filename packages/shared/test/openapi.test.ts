@@ -71,9 +71,9 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
     expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(127);
     const v1 = ops.filter((o) => !o.path.startsWith('/v1/platform/') && !o.path.startsWith('/v1/customer/'));
     expect(v1.filter((o) => o.requestBody)).toHaveLength(84); // + PUT public-profile, …/photos, …/submit (V2-004)
-    // every customer write has a body (V2-010)
+    // every customer write with a body in CUSTOMER_ROUTES documents it (V2-010; DELETE …/vehicles/{id} has none, V2-012)
     expect(ops.filter((o) => o.path.startsWith('/v1/customer/') && o.requestBody)).toHaveLength(
-      CUSTOMER.filter((r) => r.method !== 'GET').length,
+      CUSTOMER.filter((r) => 'body' in r).length,
     );
   });
 
@@ -126,7 +126,7 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
       c === 'PAYLOAD_TOO_LARGE' ? 413 : customerErrorDef(c as CustomerApiErrorCode).http;
     const problems: string[] = [];
     const customerOps = ops.filter((o) => findCustomerRoute(o.method, o.path));
-    expect(customerOps).toHaveLength(12);
+    expect(customerOps).toHaveLength(Object.keys(CUSTOMER_ROUTES).length);
     for (const op of customerOps) {
       for (const [status, codes] of op.responses)
         for (const code of codes) {

@@ -9,6 +9,7 @@ export * from './auth.js';
 export * from './vehicles.js';
 export * from './locations.js';
 export * from './home.js';
+export * from './deletion.js';
 export * from './routes.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {

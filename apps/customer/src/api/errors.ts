@@ -48,9 +48,9 @@ export class BadResponseError extends Error {
   }
 }
 
-/** The session is gone (refresh refused): the app returns to sign-in. */
+/** The session is gone (refresh refused, or the account was deleted — C-20): the app returns to sign-in. */
 export class SignedOutError extends Error {
-  constructor(readonly reason: 'revoked' | 'missing') {
+  constructor(readonly reason: 'revoked' | 'missing' | 'deleted') {
     super(`signed out: ${reason}`);
     this.name = 'SignedOutError';
   }

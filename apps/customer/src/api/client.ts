@@ -26,10 +26,12 @@ import {
   type CustomerMe,
   type CustomerMePatchBody,
   type CustomerOtpChallenge,
+  type CustomerReauth,
   type CustomerRouteKey,
   type CustomerTokens,
   type CustomerVehicle,
   type CustomerVehicleCreateBody,
+  type CustomerVehicleRemoved,
 } from '@point/shared/customer';
 import type { StoredSession, TokenStore } from '../session/tokenStore';
 import { ApiError, BadResponseError, SignedOutError } from './errors';
@@ -45,8 +47,8 @@ export interface CustomerApiOptions {
   /** Generates an `Idempotency-Key` (a UUID on the device). */
   newKey: () => string;
   now?: () => number;
-  /** Called once when the session is refused (refresh rejected); the app shows sign-in. */
-  onSignedOut?: (reason: 'revoked') => void;
+  /** Called once when the session is refused (refresh rejected, account deleted); the app shows sign-in. */
+  onSignedOut?: (reason: 'revoked' | 'deleted') => void;
 }
 
 type Route<K extends CustomerRouteKey> = (typeof CUSTOMER_ROUTES)[K];
@@ -95,10 +97,10 @@ export function createCustomerApi(opts: CustomerApiOptions) {
       : new BadResponseError(status, `HTTP ${status} without an error envelope`);
   }
 
-  async function signOut(): Promise<never> {
+  async function signOut(reason: 'revoked' | 'deleted' = 'revoked'): Promise<never> {
     await opts.tokens.clear();
-    opts.onSignedOut?.('revoked');
-    throw new SignedOutError('revoked');
+    opts.onSignedOut?.(reason);
+    throw new SignedOutError(reason);
   }
 
   /** One refresh at a time; every waiting call gets the same new pair. */
@@ -114,7 +116,8 @@ export function createCustomerApi(opts: CustomerApiOptions) {
             device_id: opts.device.id,
           }),
         });
-        if (res.status === 401 || res.status === 410) return await signOut();
+        if (res.status === 401) return await signOut();
+        if (res.status === 410) return await signOut('deleted');
         if (res.status < 200 || res.status >= 300) throw parseError(res.status, res.body);
         const parsed = successEnvelopeSchema(CustomerTokensSchema).safeParse(res.body);
         if (!parsed.success) throw new BadResponseError(res.status, 'refresh: unexpected body');
@@ -175,6 +178,9 @@ export function createCustomerApi(opts: CustomerApiOptions) {
         }
         return signOut();
       }
+      // the account was deleted (C-20, on this device or another): its tokens are worth nothing any more
+      if (route.auth === 'customer' && error instanceof ApiError && error.code === 'ACCOUNT_DELETED')
+        return signOut('deleted');
       throw error;
     }
   }
@@ -247,6 +253,36 @@ export function createCustomerApi(opts: CustomerApiOptions) {
 
     async home(query: CustomerHomeQuery = {}): Promise<CustomerHome> {
       return (await call('home', { query: { ...query } })).data;
+    },
+
+    // ---- V2-012 (C-15) and V2-017 (C-20)
+
+    /** C-15: soft remove (the server refuses a vehicle in a visit in progress). */
+    async removeVehicle(vehicleId: string, idempotencyKey?: string): Promise<CustomerVehicleRemoved> {
+      return (await call('vehicleDelete', { params: { vehicleId }, idempotencyKey })).data;
+    },
+
+    /**
+     * C-20 step 2: the code the app requested with `requestOtp(me.phone_e164, …)` → a single-use proof bound to this
+     * session (DEC-507).
+     */
+    async reauthVerify(code: string): Promise<CustomerReauth> {
+      return (await call('reauthVerify', { body: { code } })).data;
+    },
+
+    /**
+     * C-20 step 3: deletes the account and forgets the tokens. A retry after a lost answer meets ACCOUNT_DELETED
+     * (the account is already gone): that is the same outcome, so it resolves as well.
+     */
+    async deleteAccount(reauthToken: string, idempotencyKey?: string): Promise<{ deletedAt: string | null }> {
+      try {
+        const { data } = await call('meDelete', { body: { reauth_token: reauthToken }, idempotencyKey });
+        await opts.tokens.clear();
+        return { deletedAt: data.deleted_at };
+      } catch (e) {
+        if (e instanceof SignedOutError && e.reason === 'deleted') return { deletedAt: null };
+        throw e;
+      }
     },
   };
 }
