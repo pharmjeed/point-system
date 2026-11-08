@@ -19,6 +19,9 @@
 //   push_outage      the test Push service stopped: failures counted, push_failed_repeatedly, dispatch unaffected
 //   worker_stop      the worker stopped 2 min: outbox_lag raised, escalations due meanwhile run once afterwards
 //   worker_x3        three workers on one outbox: no row processed twice, every message sent once
+//   kp6 … kp9        V2-051 (DEC-561, infra/chaos/v2.mjs): the payment webhook processed once, a renewal charged
+//                    once (given_id), the invoice chain under a crash and ten concurrent issues, the monthly
+//                    settlement once per operator — with the payment simulator as a fourth process
 //
 // Knobs: --only kp1,kp5,… · --out DIR · --port CHAOS_PORT_BASE (4120) · --keep-db · --no-build ·
 // CHAOS_DB_OUTAGE_S (60) · CHAOS_WA_OUTAGE_S (600) · CHAOS_WA_TEMP_OUTAGE_S (180) · CHAOS_WORKER_STOP_S (120) ·
@@ -40,6 +43,8 @@ import { Proc, SCRIPTS, waitHttp } from '../harness/procs.mjs';
 import { runId, seedWorld } from '../harness/seed.mjs';
 import { table } from '../harness/stats.mjs';
 import { DriverBot, prng } from '../load/bots.mjs';
+import { PAYMENT_SIMULATOR, paySim, paymentSimulatorEnv, v2ServerEnv } from '../harness/v2.mjs';
+import { V2_SCENARIOS } from './v2.mjs';
 
 const { values: a } = parseArgs({
   options: {
@@ -61,6 +66,7 @@ const P = {
   sim: BASE_PORT + 10,
   push: BASE_PORT + 20,
   dbProxy: BASE_PORT + 30,
+  pay: BASE_PORT + 40,
 };
 const KEEP = !!a['keep-db'];
 const S = (name, def) => Number(env[name] ?? def) * 1000;
@@ -151,6 +157,7 @@ class Stage {
     this.dbName = `point_chaos_${this.name}_${RUN}`;
     this.url = await createDb(this.dbName);
     await migrateDb(this.url);
+    const payWebhookSecret = randomBytes(16).toString('hex');
     this.srv = serverEnv({
       dbUrl: this.url,
       ports: P,
@@ -158,6 +165,8 @@ class Stage {
         RATE_LIMIT_AUTH_PER_MIN: '600',
         // test knob: a crashed worker's lease frees its rows sooner (production default 30 s)
         WORKER_LEASE_SECONDS: String(WORKER_LEASE_S),
+        // V2-051: the gateway and the e-invoicing provider are their simulators (the payment one a process)
+        ...(o.v2 ? v2ServerEnv({ ports: P, webhookSecret: payWebhookSecret }) : {}),
         ...(o.server ?? {}),
       },
     });
@@ -183,6 +192,19 @@ class Stage {
     this.worker = new Proc('worker', SCRIPTS.worker, { ...this.srv, WORKER_ID: 'chaos-worker-1' }, this.dir);
     this.sim.start();
     await waitHttp(`http://127.0.0.1:${P.sim}/_sim/health`);
+    if (o.v2) {
+      this.pay = new Proc(
+        'payment-simulator',
+        PAYMENT_SIMULATOR,
+        paymentSimulatorEnv({ ports: P, webhookSecret: payWebhookSecret, retries: 2 }),
+        this.dir,
+      );
+      this.extra = [...(this.extra ?? []), this.pay];
+      this.pay.start();
+      this.payBase = `http://127.0.0.1:${P.pay}`;
+      await waitHttp(`${this.payBase}/_sim/payments`);
+      this.paySim = paySim(this.payBase);
+    }
     await this.startApi();
     await this.startWorker();
     const { SimulatorClient } = await importDist('tools/wa-simulator/dist/index.js');
@@ -1594,6 +1616,10 @@ const SCENARIOS = {
   },
   worker_stop: { fn: workerStop, title: `worker stopped ${dur(WORKER_STOP_MS)} (outbox_lag)` },
   worker_x3: { fn: workerX3, title: 'three workers on one outbox' },
+  // V2-051 (DEC-561): the V2 kill points, on a stage with the payment simulator
+  ...Object.fromEntries(
+    Object.entries(V2_SCENARIOS).map(([k, v]) => [k, { ...v, stage: () => ({ v2: true }) }]),
+  ),
 };
 
 function build() {
@@ -1602,7 +1628,7 @@ function build() {
     'pnpm',
     [
       '-r',
-      ...['shared', 'db', 'server', 'api', 'worker', 'wa-simulator'].flatMap((p) => [
+      ...['shared', 'db', 'server', 'api', 'worker', 'wa-simulator', 'payment-simulator'].flatMap((p) => [
         '--filter',
         `@point/${p}`,
       ]),

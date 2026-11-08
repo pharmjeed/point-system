@@ -114,9 +114,9 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - name: Build the backend (tsc → dist)
-        run: pnpm -r --filter @point/shared --filter @point/db --filter @point/server --filter @point/api --filter @point/worker --filter @point/wa-simulator build
-      - name: pnpm ops:chaos — KP-1 … KP-5 (TC-013 … TC-017)
-        run: pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5 --no-build --out chaos-report
+        run: pnpm -r --filter @point/shared --filter @point/db --filter @point/server --filter @point/api --filter @point/worker --filter @point/wa-simulator --filter @point/payment-simulator build
+      - name: pnpm ops:chaos — KP-1 … KP-5 (TC-013 … TC-017) and the V2 points KP-6 … KP-9 (V2-051, DEC-561)
+        run: pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5,kp6,kp7,kp8,kp9 --no-build --out chaos-report
         env:
           HARNESS_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - uses: actions/upload-artifact@v4

@@ -1,5 +1,6 @@
 import { vatOfInclusive, type OnlinePaymentPurpose } from '@point/shared';
 import { customerAudit } from '../../../core/audit/customer-audit.js';
+import { killPoint } from '../../../core/chaos/kill-points.js';
 import { platformAudit } from '../../../core/audit/platform-audit.js';
 import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
@@ -237,6 +238,8 @@ export class OnlinePayments {
       throw new AppError('PAYMENT_FAILED', { online_payment_id: id, failure_code: failureCode });
     }
     const created = res.value;
+    // V2-051 (DEC-561, KP-7): the gateway took the charge; nothing about it is recorded here yet
+    killPoint('online_payment_after_gateway_ok_before_record');
     const payment = await this.db.transaction(async (tx) => {
       const locked = (await paymentById(tx, id, true))!;
       return (await applyGatewayPayment(tx, locked, created.payment, { kind: 'create' })).payment;

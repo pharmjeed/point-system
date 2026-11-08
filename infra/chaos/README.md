@@ -7,7 +7,7 @@ started from the production build as child processes on ports 4120–4199.
 
 ```bash
 PATH=/opt/node24/bin:$PATH pnpm ops:chaos                       # every scenario (~27 min)
-pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5            # the kill points (~4 min; CI on pushes to main)
+pnpm ops:chaos --only kp1,kp2,kp3,kp4,kp4_silent,kp5,kp6,kp7,kp8,kp9   # the kill points (~6 min; CI on pushes to main)
 CHAOS_DB_OUTAGE_S=20 pnpm ops:chaos --only db_outage --no-build # a shorter outage while iterating
 ```
 
@@ -31,6 +31,13 @@ without the variable and verifies:
 | `kp4` | `wa_send_after_provider_ok_before_done` | worker | the provider holds W-02, the database no `wa_message_id`; the status webhook (`biz_opaque_callback_data`) proves the acceptance: no resend (TC-016) |
 | `kp4_silent` | same, without status webhooks | worker | after `CRASH_WAIT_MS` one more attempt: exactly one duplicate, recorded as attempt 2, never a third; no operational effect repeated (TC-016) |
 | `kp5` | `accept_after_commit_before_response` | api | the accept committed with its answer stored under the key, the client got nothing; the same key replays 200 (`Idempotent-Replayed`) twice; one assignment, one `task.claimed` (TC-017) |
+| `kp6` | `payment_webhook_after_commit_before_done` | worker | V2 (DEC-561): a 3-D Secure payment completed at the payment simulator; the worker dies with the payment `paid` and its webhook job `processing`; after the lease the job runs again (attempts 2) and does nothing; the gateway's redeliveries are stored once per `event_id`; one `online_payment.paid`, one invoice, the ticket collected once |
+| `kp7` | `online_payment_after_gateway_ok_before_record` | worker | V2: a subscription's period moved to end now; the renewal is charged at the gateway and the worker dies before recording it (the row `initiated`, no gateway id); after the restart the same `given_id` reaches the gateway, which charged once: one payment for the period, `paid`, two periods, one invoice |
+| `kp8` | `invoice_issued_before_commit` | api | V2: the api dies inside the transaction that issues the invoice of a paid visit; nothing of it committed; the app's retry with the same key answers the same payment `paid` with one invoice; then ten customers pay at once: each series one gapless chain (icv 1..n, previous_hash, `invoice_series`), no number twice |
+| `kp9` | `settlement_after_operator_commit` | worker | V2: `job.settlement_monthly` for the previous month dies after the first operator's statement; after the lease every operator has one statement, the first one recomputed to the same lines and total, `settlement.generate` once per operator |
+
+The V2 scenarios (`infra/chaos/v2.mjs`) run on a stage with the payment simulator as a fourth process (port base + 40)
+and the e-invoicing simulator inside the api and the worker.
 
 ## Outages (17 §12)
 
