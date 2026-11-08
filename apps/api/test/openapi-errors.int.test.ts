@@ -3,6 +3,7 @@ import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import {
   DRIVE_PERMISSIONS,
   PLATFORM_ROUTES,
+  ROUTES,
   ROLE_PERMISSIONS,
   findRoute,
   type Permission,
@@ -156,7 +157,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     }
     // the 131 operations of 07 but the internal GET /metrics, the platform operations (V2-002, V2-003…) and the
     // customer operations (V2-010)
-    expect(routes).toHaveLength(135 + PLATFORM_ROUTES.length + CUSTOMER.length); // + the 4 V2-004 staff routes, the payment webhook (V2-021)
+    // every route of ROUTES but the internal GET /metrics (V2-004, intake-pass V2-013, the payment webhook V2-021)
+    expect(routes).toHaveLength(ROUTES.length - 1 + PLATFORM_ROUTES.length + CUSTOMER.length);
     expect(seen).toContain('GET /v1/customer/me AUTH_UNAUTHENTICATED');
     expect(seen).toContain('GET /v1/customer/locations/{venueId} VENUE_NOT_LISTED');
     expect(seen).toContain('PATCH /v1/customer/me IDEMPOTENCY_KEY_REQUIRED');
@@ -192,7 +194,11 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     }
     // the 93 staff writes (82 with a requestBody, 11 without; V2-004 adds 3), the platform commands and the 7 customer
     // writes (V2-010)
-    expect(checked).toBe(94 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
+    expect(checked).toBe(
+      95 + // + intake-pass (V2-013), the payment webhook (V2-021)
+        PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length +
+        CUSTOMER_WRITES,
+    );
     expect(problems).toEqual([]);
   });
 
@@ -221,7 +227,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
         problems.push(`${where} — not documented`);
     }
     // + the platform commands and the customer writes
-    expect(checked).toBe(92 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
+    expect(checked).toBe(93 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
     expect(problems).toEqual([]);
   });
 });

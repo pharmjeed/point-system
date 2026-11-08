@@ -115,6 +115,9 @@ export const ERROR_CODES = [
   'PAYMENT_NOT_REFUNDABLE',
   'REFUND_AMOUNT_EXCEEDS_PAID',
   'PAYMENT_WEBHOOK_SIGNATURE_INVALID',
+  // V2-013 (DEC-500): the customer's entry pass scanned at intake (O-01)
+  'PASS_INVALID',
+  'PASS_EXPIRED',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
@@ -884,6 +887,20 @@ export const ERROR_CATALOG: Readonly<Record<ErrorCode, ErrorDef>> = {
     log: 'warn',
     message: 'Invalid payment webhook secret.',
     message_ar: 'سر Webhook بوابة الدفع غير صالح',
+  },
+  PASS_INVALID: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'The entry pass is not valid.',
+    message_ar: 'بطاقة الدخول غير صالحة. اطلب من العميل فتح البطاقة في التطبيق ثم امسحها مجددًا.',
+  },
+  PASS_EXPIRED: {
+    http: 410,
+    retryable: false,
+    log: 'info',
+    message: 'The entry pass has expired. Scan the current one.',
+    message_ar: 'انتهت صلاحية بطاقة الدخول. امسح البطاقة الظاهرة الآن في جوال العميل.',
   },
 };
 

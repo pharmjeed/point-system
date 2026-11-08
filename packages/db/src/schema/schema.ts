@@ -621,6 +621,8 @@ export const tickets = pgTable(
     version: integer().default(1).notNull(),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    customer_vehicle_id: uuid(),
+    entitlement: text().default('none').notNull(),
   },
   (table) => [
     index('ix_tickets_creator_draft')
@@ -629,6 +631,11 @@ export const tickets = pgTable(
     index('ix_tickets_customer')
       .using('btree', table.customer_id.asc().nullsLast().op('uuid_ops'))
       .where(sql`(customer_id IS NOT NULL)`),
+    index('ix_tickets_customer_vehicle_open')
+      .using('btree', table.customer_vehicle_id.asc().nullsLast().op('uuid_ops'))
+      .where(
+        sql`((customer_vehicle_id IS NOT NULL) AND (status <> ALL (ARRAY['delivered'::text, 'voided'::text])))`,
+      ),
     index('ix_tickets_event_status').using(
       'btree',
       table.event_id.asc().nullsLast().op('uuid_ops'),
@@ -667,9 +674,17 @@ export const tickets = pgTable(
       .where(sql`((paper_serial IS NOT NULL) AND (status <> 'voided'::text))`),
 
     unique('tickets_event_id_display_number_key').on(table.event_id, table.display_number),
+    check('ck_tickets_app_customer', sql`(channel <> 'app'::text) OR (customer_id IS NOT NULL)`),
+    check('ck_tickets_app_no_whatsapp', sql`(channel <> 'app'::text) OR (wa_link_status = 'none'::text)`),
+    check('ck_tickets_channel', sql`channel = ANY (ARRAY['whatsapp'::text, 'paper'::text, 'app'::text])`),
+    check('ck_tickets_customer_vehicle_app', sql`(customer_vehicle_id IS NULL) OR (channel = 'app'::text)`),
     check(
       'ck_tickets_delivered_fields',
       sql`(status <> 'delivered'::text) OR ((delivered_at IS NOT NULL) AND (delivered_by IS NOT NULL))`,
+    ),
+    check(
+      'ck_tickets_entitlement',
+      sql`entitlement = ANY (ARRAY['none'::text, 'subscription'::text, 'app_paid'::text, 'event_included'::text])`,
     ),
     check(
       'ck_tickets_fee_matches_payment_status',
@@ -691,7 +706,6 @@ export const tickets = pgTable(
       'ck_tickets_waiver_fields',
       sql`(payment_status <> 'waived'::text) OR ((payment_waived_at IS NOT NULL) AND (payment_waiver_reason IS NOT NULL))`,
     ),
-    check('tickets_channel_check', sql`channel = ANY (ARRAY['whatsapp'::text, 'paper'::text])`),
     check('tickets_display_number_check', sql`display_number >= 1`),
     check('tickets_fee_halalas_check', sql`fee_halalas >= 0`),
     check(
@@ -2427,6 +2441,31 @@ export const customer_vehicles = pgTable(
     check(
       'ck_customer_vehicles_type',
       sql`vehicle_type = ANY (ARRAY['sedan'::text, 'suv'::text, 'pickup'::text, 'van'::text, 'other'::text])`,
+    ),
+  ],
+);
+
+export const customer_passes = pgTable(
+  'customer_passes',
+  {
+    account_id: uuid().primaryKey().notNull(),
+    secret_ciphertext: text().notNull(),
+    previous_secret_ciphertext: text(),
+    previous_valid_until: timestamp({ withTimezone: true, mode: 'string' }),
+    key_version: integer().default(1).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    last_used_step: bigint({ mode: 'number' }),
+    last_used_at: timestamp({ withTimezone: true, mode: 'string' }),
+    rotated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('ck_customer_passes_key_version', sql`key_version >= 1`),
+    check('ck_customer_passes_last_step', sql`(last_used_step IS NULL) OR (last_used_step >= 0)`),
+    check('ck_customer_passes_last_used', sql`(last_used_step IS NULL) = (last_used_at IS NULL)`),
+    check(
+      'ck_customer_passes_previous',
+      sql`(previous_secret_ciphertext IS NULL) = (previous_valid_until IS NULL)`,
     ),
   ],
 );

@@ -15,7 +15,8 @@ import type { LinkMethod } from './linkStore';
  * every command again; these only choose what the screens offer and send.
  */
 
-export type IntakeChannel = 'whatsapp' | 'paper';
+/** `app`: the customer's entry pass was scanned (O-01, V2-013): the account is the customer, nothing to type. */
+export type IntakeChannel = 'whatsapp' | 'paper' | 'app';
 
 /** D-05 «تذكرة العميل» + «طريقة الربط» + the phone, the consent and the stub number. */
 export interface ChannelForm {
@@ -46,6 +47,8 @@ export function channelBody(
   e164: string | null,
   recorded?: string | null,
 ): Pick<IntakePatch, 'channel' | 'customer_phone' | 'consent' | 'paper_serial'> {
+  // the app ticket keeps the account the server linked (DEC-501): nothing about the channel is sent
+  if (form.channel === 'app') return {};
   if (form.channel === 'paper')
     return {
       channel: 'paper',
@@ -76,6 +79,7 @@ export function channelIssues(
   e164: string | null,
   recorded?: string | null,
 ): ChannelIssue[] {
+  if (form.channel === 'app') return [];
   if (form.channel === 'paper') return form.paperSerial.trim() ? [] : ['paper_serial'];
   if (form.method === 'qr' || keepsRecordedPhone(form, recorded)) return [];
   const issues: ChannelIssue[] = [];
@@ -108,7 +112,8 @@ const stepSaved = (t: FormTicket) => !!(t.plate?.digits || t.plate?.raw || t.veh
 export function channelForm(ticket: FormTicket, draft: Partial<ChannelForm>): ChannelForm {
   const qrSaved = ticket.channel === 'whatsapp' && stepSaved(ticket) && !ticket.customer?.phone_masked;
   return {
-    // a draft saved before the WhatsApp choice existed carries a stub number only: it was a paper intake
+    // a draft saved before the WhatsApp choice existed carries a stub number only: it was a paper intake (a scanned
+    // entry pass writes `app` into the device's draft at once, so the server's `app` and the draft agree)
     channel: draft.channel ?? (draft.paperSerial ? 'paper' : ticket.channel),
     method: draft.method ?? (qrSaved ? 'qr' : 'direct'),
     phone: draft.phone ?? '',
@@ -126,8 +131,8 @@ const CLOSED: readonly TicketStatus[] = ['delivered', 'voided'];
 
 export const isClosedTicket = (status: TicketStatus): boolean => CLOSED.includes(status);
 
-/** The D-07 mode: أ direct send, ب the customer-brand QR panel, ج the paper stub (02 D-07). */
-export type LinkMode = 'direct' | 'qr' | 'paper';
+/** The D-07 mode: أ direct send, ب the customer-brand QR panel, ج the paper stub (02 D-07); app = the entry pass. */
+export type LinkMode = 'direct' | 'qr' | 'paper' | 'app';
 
 const SENT_STATES: readonly WaLinkStatus[] = ['pending_send', 'linked', 'failed'];
 
@@ -142,6 +147,8 @@ export function linkMode(
   hasQr: boolean,
 ): LinkMode {
   if (ticket.channel === 'paper') return 'paper';
+  // V2-013 (DEC-503): the customer follows the visit in the app, no WhatsApp link to make
+  if (ticket.channel === 'app') return 'app';
   if (ticket.wa_link_status === 'pending_confirmation') return 'qr';
   if (chosen) return chosen;
   if (hasQr) return 'qr';
@@ -149,8 +156,8 @@ export function linkMode(
   return ticket.customer?.phone_masked ? 'direct' : 'qr';
 }
 
-/** What D-07 draws: ج the stub, أ the send status, ب the customer panel (02 D-07). */
-export type LinkBody = 'paper' | 'status' | 'panel';
+/** What D-07 draws: ج the stub, أ the send status, ب the customer panel (02 D-07), or the app note (V2-013). */
+export type LinkBody = 'paper' | 'status' | 'panel' | 'app';
 
 /**
  * The body of D-07 for its mode: the QR method shows the customer panel until the ticket is linked — also
@@ -160,6 +167,7 @@ export type LinkBody = 'paper' | 'status' | 'panel';
  */
 export function linkBody(mode: LinkMode, status: WaLinkStatus): LinkBody {
   if (mode === 'paper') return 'paper';
+  if (mode === 'app') return 'app';
   if (mode === 'direct') return 'status';
   return status === 'linked' ? 'status' : 'panel';
 }

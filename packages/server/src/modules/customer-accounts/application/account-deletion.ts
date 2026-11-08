@@ -1,4 +1,3 @@
-import { OPEN_TICKET_STATUSES } from '@point/shared';
 import type { CustomerAccountDeleteBody, CustomerAccountDeleted } from '@point/shared/customer';
 import {
   customerTokenHash,
@@ -11,6 +10,7 @@ import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import type { ClientInfo } from '../../identity-access/application/auth-service.js';
+import { listAccountVisits } from './visits.js';
 
 type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
 
@@ -24,16 +24,12 @@ export function deletedPhoneHash(pepper: string, phoneE164: string): string {
 }
 
 /**
- * A visit in progress of the account (C-15, C-20): an open ticket of one of its linked `customers` rows (V2-D12).
- * The same reading as `in_active_visit` and C-06's current visit (DEC-499).
+ * A visit in progress of the account (C-15, C-20): an open ticket of one of its linked `customers` rows (V2-D12) —
+ * paper, WhatsApp or the entry pass (an app intake links the row itself, V2-013). The one definition of «a visit of
+ * the account» is {@link listAccountVisits} (DEC-504), which C-06's current visit reads too.
  */
 export async function hasVisitInProgress(q: Q, accountId: string): Promise<boolean> {
-  const r = await q.query<{ active: boolean }>(
-    `SELECT EXISTS (SELECT 1 FROM tickets t JOIN customers c ON c.id = t.customer_id AND c.org_id = t.org_id
-                     WHERE c.customer_account_id = $1 AND t.status = ANY($2)) AS active`,
-    [accountId, [...OPEN_TICKET_STATUSES]],
-  );
-  return r.rows[0]?.active === true;
+  return (await listAccountVisits(q, accountId, { openOnly: true, limit: 1 })).length > 0;
 }
 
 /**

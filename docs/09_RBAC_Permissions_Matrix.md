@@ -151,6 +151,7 @@ interface ActorContext {
 | المسار | الصلاحية | الفحوص الإضافية | رمز الرفض الأبرز |
 |---|---|---|---|
 | `POST /v1/tickets` | `ticket.intake` | الحفل `open` في موقع المناوبة؛ السائق بلا حركة نشطة تحت قفل المجموعة | `MOVEMENT_IN_PROGRESS` |
+| `POST /v1/tickets/intake-pass` | `ticket.intake` | الإصدار الثاني (O-01، V2-013، DEC-500): نطاق `POST /v1/tickets` نفسه (مناوبة في الموقع، المشغل غير معلّق)، ومسودته `received` التي أنشأها هو إن سمّاها؛ بطاقة دخول صالحة لحساب نشط | `PASS_INVALID` |
 | `PATCH /v1/tickets/{ticketId}/intake` | `ticket.intake` | منشئ التذكرة؛ الحالة `received` (كل الحقول) أو `parking` بـ`channel = paper` و`paper_serial` فقط والتذكرة غير مربوطة (DEC-40)؛ `expected_version` | `PERMISSION_DENIED` |
 | `POST /v1/tickets/{ticketId}/media` | `ticket.intake` | منشئ التذكرة؛ الحالة `received` أو `parking` (إكمال الصور الناقصة) | `PERMISSION_DENIED` |
 | `POST /v1/media/{mediaId}/complete` | `ticket.intake` | رافع الوسائط نفسه | `RESOURCE_NOT_FOUND` |

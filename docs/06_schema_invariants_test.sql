@@ -2,7 +2,8 @@
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
 -- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, 0009 the customer accounts,
--- V2-010, 0011 their deletion, V2-017, and 0012 the online payments, V2-020 / V2-021):
+-- V2-010, 0010 the entry pass and the app tickets, V2-013/V2-014, 0011 their deletion, V2-017, and 0012 the online
+-- payments, V2-020 / V2-021):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -249,4 +250,29 @@ SELECT expect_fail('customer session with half a re-verification proof',
 UPDATE customer_accounts SET status='deleted', deleted_at=now(), phone_e164=NULL, display_name=NULL, phone_hash=repeat('a',64)
  WHERE id='00000000-0000-0000-0000-00000000ca01';
 INSERT INTO customer_accounts(phone_e164) VALUES ('+966500000951');
+-- V2 entry pass and app tickets (0010_customer_pass_and_app_intake.sql, V2-013/V2-014, DEC-500 … DEC-502)
+INSERT INTO customer_passes(account_id,secret_ciphertext) VALUES ('00000000-0000-0000-0000-00000000ca01','k1:iv:tag:ct');
+SELECT expect_fail('second entry pass for one account',
+ $q$INSERT INTO customer_passes(account_id,secret_ciphertext) VALUES ('00000000-0000-0000-0000-00000000ca01','k1:iv:tag:ct2')$q$);
+SELECT expect_fail('previous pass secret without its validity end',
+ $q$UPDATE customer_passes SET previous_secret_ciphertext='k1:iv:tag:old' WHERE account_id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('last used pass step without its time',
+ $q$UPDATE customer_passes SET last_used_step=59434512 WHERE account_id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('ticket channel outside whatsapp/paper/app',
+ $q$UPDATE tickets SET channel='sms' WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+SELECT expect_fail('unknown ticket entitlement',
+ $q$UPDATE tickets SET entitlement='free' WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+SELECT expect_fail('app ticket without the account''s customers row',
+ $q$UPDATE tickets SET channel='app', customer_id=NULL WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+SELECT expect_fail('app ticket going through WhatsApp linking',
+ $q$UPDATE tickets SET channel='app', customer_id='00000000-0000-0000-0000-000000000c51', wa_link_status='pending_send' WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+INSERT INTO customer_vehicles(id,account_id,plate_digits,plate_letters_ar,plate_letters_en) VALUES
+ ('00000000-0000-0000-0000-00000000cb01','00000000-0000-0000-0000-00000000ca01','77','ر س ص','R S X');
+SELECT expect_fail('customer vehicle on a WhatsApp ticket',
+ $q$UPDATE tickets SET customer_vehicle_id='00000000-0000-0000-0000-00000000cb01' WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+SELECT expect_fail('ticket naming a vehicle that is not a customer vehicle',
+ $q$UPDATE tickets SET channel='app', customer_id='00000000-0000-0000-0000-000000000c51', customer_vehicle_id='00000000-0000-0000-0000-0000000000e1' WHERE id='00000000-0000-0000-0000-0000000000e2'$q$);
+UPDATE tickets SET channel='app', customer_id='00000000-0000-0000-0000-000000000c51',
+  customer_vehicle_id='00000000-0000-0000-0000-00000000cb01', entitlement='event_included'
+ WHERE id='00000000-0000-0000-0000-0000000000e2';
 SELECT 'ALL INVARIANT TESTS PASSED';

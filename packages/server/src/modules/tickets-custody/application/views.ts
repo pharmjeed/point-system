@@ -198,6 +198,8 @@ export async function loadTicketDetail(q: Queryable, ticketId: string, viewer: V
   const base = {
     ...ticketSummary(t),
     projection: full ? ('full' as const) : ('minimal' as const),
+    // O-02 (V2-014, DEC-502): the entitlement badge of S-03 / D-05 («مشمول» / «يدفع X»)
+    entitlement: t.entitlement,
     vehicle_detail: {
       make: t.vehicle_make,
       model: t.vehicle_model,

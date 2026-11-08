@@ -1,4 +1,4 @@
-import type { TicketStatus } from '@point/shared';
+import type { TicketChannel, TicketEntitlement, TicketStatus } from '@point/shared';
 
 /** `tickets` row (docs/06_schema.sql). */
 export interface TicketRow {
@@ -9,7 +9,7 @@ export interface TicketRow {
   dispatch_pool_id: string;
   display_number: number;
   status: TicketStatus;
-  channel: 'whatsapp' | 'paper';
+  channel: TicketChannel;
   customer_id: string | null;
   wa_link_status: 'none' | 'pending_send' | 'pending_confirmation' | 'linked' | 'failed' | 'opted_out';
   link_version: number;
@@ -55,6 +55,9 @@ export interface TicketRow {
   version: number;
   created_at: Date;
   updated_at: Date;
+  /** V2-014 (0010, DEC-502): the account vehicle an app intake copied, and the entitlement decided at intake */
+  customer_vehicle_id: string | null;
+  entitlement: TicketEntitlement;
 }
 
 /** `retrieval_cycles` row. */

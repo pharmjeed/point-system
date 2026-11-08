@@ -722,7 +722,9 @@ export const s03 = {
   phone: 'الجوال:',
   revealPhone: 'إظهار الرقم',
   channel: 'قناة العميل:',
-  channelName: { whatsapp: 'واتساب', paper: 'تذكرة ورقية' },
+  channelName: { whatsapp: 'واتساب', paper: 'تذكرة ورقية', app: 'تطبيق العميل' },
+  /** O-02 (V2-014, DEC-502): the badge itself is `entitlementBadge` of ar.ts (shared with D-10/D-11) */
+  entitlement: 'الأهلية:',
   inspection: 'الفحص:',
   payment: 'التحصيل:',
   spot: 'الموقف:',

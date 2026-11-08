@@ -6,6 +6,7 @@
  * Test code only — the real rules live in packages/server (S2) and are checked there.
  */
 import { randomInt } from 'node:crypto';
+import { parsePassToken, verifyPassToken } from '../../../../../packages/shared/src/customer/pass';
 import { fail, fakeNowMs, ok, page, uuid, validation, type Reply } from './http';
 import type { FCycle, FLinkCode, FMedia, FOffer, FTask, FTicket, FUser } from './model';
 import { effectiveSettings, normalizePhone } from './routesSetup';
@@ -228,6 +229,7 @@ export function registerDriverRoutes(s: FakeServer): void {
     // request and the open task (its assignee for staff and the assignee only) — 09 §5.1
     const base = {
       ...ticketSummary(t),
+      entitlement: t.entitlement ?? 'none',
       vehicle_detail: { make: t.vehicle_make, model: t.vehicle_model, color: t.vehicle_color, type: null },
       parked_at: t.parked_at,
       pending_retrieval_at: t.pending_retrieval_at,
@@ -326,6 +328,7 @@ export function registerDriverRoutes(s: FakeServer): void {
         vehicle: { make: t.vehicle_make, model: t.vehicle_model, color: t.vehicle_color, type: null },
         status: t.status,
         version: t.version,
+        ...(t.entitlement && t.entitlement !== 'none' ? { entitlement: t.entitlement } : {}),
       },
       parking: mine
         ? {
@@ -909,6 +912,8 @@ export function registerDriverRoutes(s: FakeServer): void {
       inspection_status: 'pending',
       payment_status: event.pricing_mode === 'per_vehicle' ? 'due' : 'not_required',
       fee_halalas: event.pricing_mode === 'per_vehicle' ? event.fee_halalas : 0,
+      entitlement: event.pricing_mode === 'per_vehicle' ? 'none' : 'event_included',
+      customer_vehicle_id: null,
       spot_id: null,
       spot_note: null,
       key_slot_id: null,
@@ -1024,8 +1029,18 @@ export function registerDriverRoutes(s: FakeServer): void {
       )
         fail('INVALID_STATE_TRANSITION', { current_status: t.status });
     }
+    // V2-013 (DEC-501): an app ticket keeps the account unless the draft leaves the app channel
+    const leavingApp = t.channel === 'app' && (b.channel === 'whatsapp' || b.channel === 'paper');
+    if (t.channel === 'app' && !leavingApp) {
+      const bad = ['customer_phone', 'consent', 'paper_serial'].filter((f) => f in b);
+      if (bad.length) validation(bad.map((field) => ({ field, issue: 'app_channel' })));
+    }
     // applied to a copy first: a refused command changes nothing (one transaction on the server)
     const next: FTicket = { ...t };
+    if (leavingApp) {
+      next.customer_phone = null;
+      next.customer_vehicle_id = null;
+    }
     if ('plate' in b) applyPlate(next, b.plate);
     if (b.vehicle) {
       if ('make' in b.vehicle) next.vehicle_make = b.vehicle.make ?? null;
@@ -1072,6 +1087,57 @@ export function registerDriverRoutes(s: FakeServer): void {
     next.version += 1;
     Object.assign(t, next);
     return ok(ticketDetail(t, u));
+  });
+
+  // V2-013 (O-01): the customer's entry pass scanned in D-05 makes the driver's draft an app ticket
+  s.on('POST /v1/tickets/intake-pass', (ctx) => {
+    const u = s.need(ctx, 'ticket.intake');
+    onDuty(u);
+    const b = ctx.body ?? {};
+    if (typeof b.pass_token !== 'string' || !b.pass_token)
+      validation([{ field: 'pass_token', issue: 'required' }]);
+    if (typeof b.ticket_id !== 'string') validation([{ field: 'ticket_id', issue: 'required' }]);
+    if (!Number.isInteger(b.expected_version))
+      validation([{ field: 'expected_version', issue: 'required_with_ticket_id' }]);
+    const t = creatorDraft({ ...ctx, params: { ticketId: b.ticket_id } }, u, ['received']);
+    s.checkVersion('ticket', t, b.expected_version);
+    if (t.channel === 'app' || t.customer_phone || t.paper_serial || t.wa_link_status !== 'none')
+      fail('INVALID_STATE_TRANSITION', { current_status: t.status, reason: 'customer_channel_set' });
+    const parsed = parsePassToken(b.pass_token);
+    if (!parsed) fail('PASS_INVALID', { reason: 'malformed' });
+    const account = s.passAccounts.get(parsed.accountId);
+    if (!account || account.status !== 'active') fail('PASS_INVALID', { reason: 'account_unavailable' });
+    const v = verifyPassToken({ token: b.pass_token, secrets: [account.secret], nowMs: fakeNowMs() });
+    if (!v.ok) {
+      if (v.reason === 'stale' || v.reason === 'future') fail('PASS_EXPIRED', { reason: v.reason });
+      fail('PASS_INVALID', { reason: 'bad_signature' });
+    }
+    if (account.lastStep !== null && v.step <= account.lastStep)
+      fail('PASS_EXPIRED', { reason: 'already_used' });
+    const vehicle = account.vehicles.find((x) => x.id === v.vehicleId);
+    account.lastStep = v.step;
+    t.channel = 'app';
+    t.customer_phone = account.phone;
+    t.customer_vehicle_id = vehicle?.id ?? null;
+    if (vehicle) {
+      t.plate_country = 'SA';
+      t.plate_digits = vehicle.digits;
+      t.plate_letters_ar = vehicle.letters_ar;
+      t.plate_letters_en = vehicle.letters_en;
+      t.plate_raw = null;
+      t.vehicle_make = vehicle.make;
+      t.vehicle_model = vehicle.model;
+      t.vehicle_color = vehicle.color;
+    }
+    t.version += 1;
+    return ok({
+      ticket: ticketDetail(t, u),
+      customer: {
+        first_name: account.firstName,
+        phone_masked: mask(account.phone),
+        vehicle_prefilled: !!vehicle,
+      },
+    });
   });
 
   s.on('POST /v1/tickets/:ticketId/media', (ctx) => {

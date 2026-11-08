@@ -62,6 +62,26 @@ export interface Ctx {
 
 export type Handler = (ctx: Ctx) => Reply;
 
+/** A customer account of the platform as the pass intake sees it (V2-013): the secret, the phone, the vehicles. */
+export interface FPassAccount {
+  id: string;
+  /** 32 bytes, base64url (as `GET /v1/customer/pass` delivers it to the app) */
+  secret: string;
+  phone: string;
+  firstName: string | null;
+  status: 'active' | 'suspended' | 'deleted';
+  vehicles: Array<{
+    id: string;
+    digits: string;
+    letters_ar: string;
+    letters_en: string;
+    make: string;
+    model: string | null;
+    color: string;
+  }>;
+  lastStep: number | null;
+}
+
 export interface FakeCall {
   method: string;
   path: string;
@@ -116,6 +136,16 @@ export class FakeServer {
   readonly telemetry: Array<{ userId: string | null; body: Record<string, unknown> }> = [];
   /** `POST /v1/incidents` from the driver screens (D-10 «إبلاغ عن مشكلة», D-11, D-13 «إبلاغ عن واقعة»). */
   readonly incidents: Array<Record<string, unknown>> = [];
+  /**
+   * V2-013 (O-01): the customer accounts whose entry pass a driver may scan (`POST /v1/tickets/intake-pass`),
+   * registered by a spec with `addPassAccount`; the fake verifies the token with the shared pure verifier.
+   */
+  readonly passAccounts = new Map<string, FPassAccount>();
+  addPassAccount(a: Omit<FPassAccount, 'lastStep'>): FPassAccount {
+    const account: FPassAccount = { ...a, lastStep: null };
+    this.passAccounts.set(a.id, account);
+    return account;
+  }
   /** The WhatsApp side (link codes, provider answers, the customer's actions): set by the driver routes. */
   whatsapp!: FakeWhatsApp;
   /**

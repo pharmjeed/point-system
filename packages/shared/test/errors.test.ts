@@ -68,8 +68,8 @@ const { registry, behaviour } = guide();
 describe('AC3 — catalog covers canon §8', () => {
   it('has every §8 code exactly once, and nothing else', () => {
     expect(Object.keys(ERROR_CATALOG).sort()).toEqual([...canonHttp.keys()].sort());
-    // 96 of V1 + the 2 V2 platform codes (DEC-462, DEC-466) + the 4 online-payment codes (V2-020 / V2-021)
-    expect(Object.keys(ERROR_CATALOG)).toHaveLength(102);
+    // 96 of V1 + 2 V2 platform codes (DEC-462, DEC-466) + 2 pass codes (DEC-500) + 4 online-payment codes (V2-020 / V2-021)
+    expect(Object.keys(ERROR_CATALOG)).toHaveLength(104);
     expect(new Set(ERROR_CODES).size).toBe(ERROR_CODES.length);
   });
 

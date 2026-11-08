@@ -14,6 +14,7 @@ import type {
   DutySession,
   HandoverResult,
   Incident,
+  IntakePassResult,
   IncidentType,
   Media,
   MediaContentType,
@@ -200,7 +201,8 @@ export async function changeCustomerPhone(
 
 export interface IntakePatch {
   expected_version: number;
-  channel?: TicketChannel;
+  /** `app` is never sent: it comes from the entry pass (`intakeByPass`, DEC-501) */
+  channel?: Exclude<TicketChannel, 'app'>;
   plate?: PlateBody;
   vehicle?: VehicleInfo;
   customer_phone?: string | null;
@@ -208,6 +210,23 @@ export interface IntakePatch {
   paper_serial?: string | null;
   key_tag?: string | null;
   notes?: string | null;
+}
+
+/**
+ * `POST /v1/tickets/intake-pass` (O-01; V2-013, DEC-500): the scanned entry pass makes the driver's D-05 draft an
+ * app ticket (channel `app`, the vehicle from the account when it is there).
+ */
+export async function intakeByPass(
+  ticketId: string,
+  body: { pass_token: string; expected_version: number },
+  key: string,
+): Promise<IntakePassResult> {
+  return (
+    await api.post<IntakePassResult>('/v1/tickets/intake-pass', {
+      body: { ...body, ticket_id: ticketId },
+      idempotencyKey: key,
+    })
+  ).data;
 }
 
 export async function patchIntake(ticketId: string, body: IntakePatch, key: string): Promise<TicketDetail> {

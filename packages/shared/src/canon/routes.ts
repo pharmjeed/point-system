@@ -81,6 +81,7 @@ const ROWS: readonly Row[] = [
 
   // §9.2 Intake and tickets
   ['POST', '/v1/tickets', 'ticket.intake', 'required', '9.2'],
+  ['POST', '/v1/tickets/intake-pass', 'ticket.intake', 'required', '9.2'], // V2-013 (O-01, DEC-500)
   ['PATCH', '/v1/tickets/{ticketId}/intake', 'ticket.intake', 'required', '9.2'],
   ['POST', '/v1/tickets/{ticketId}/media', 'ticket.intake', 'required', '9.2'],
   ['POST', '/v1/media/{mediaId}/complete', 'ticket.intake', 'required', '9.2'],

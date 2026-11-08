@@ -172,7 +172,12 @@ export interface FTicket {
     | 'delivered'
     | 'reparking'
     | 'voided';
-  channel: 'whatsapp' | 'paper';
+  /** `app`: the entry pass scanned in D-05 (O-01, V2-013) */
+  channel: 'whatsapp' | 'paper' | 'app';
+  /** V2-014 (DEC-502): decided at intake; absent = `none` (tickets seeded before the field) */
+  entitlement?: 'none' | 'subscription' | 'app_paid' | 'event_included';
+  /** the customer account's vehicle an app intake copied (V2-013) */
+  customer_vehicle_id?: string | null;
   plate_country: string;
   plate_digits: string | null;
   plate_letters_ar: string | null;

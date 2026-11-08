@@ -1,6 +1,7 @@
 // Cross-module use-cases (04 §4.4): they own the transaction and compose tickets-custody with dispatch.
 export { TicketsCustodyHttpModule, DispatchHttpModule } from './http/modules.js';
-export { StartIntakeUseCase, type StartIntakeBody } from './start-intake.js';
+export { StartIntakeUseCase, intakeEntitlement, type StartIntakeBody } from './start-intake.js';
+export { IntakePassUseCase, firstName, type IntakePassBody } from './intake-pass.js';
 export { SubmitIntakeUseCase } from './submit-intake.js';
 export { DiscardDraftUseCase, VoidTicketUseCase } from './discard-void.js';
 export { CompleteParkingUseCase, type CompleteParkingBody } from './complete-parking.js';

@@ -982,7 +982,9 @@ paths:
                   type: [string, 'null']
                   format: uuid
                 channel:
-                  $ref: '#/components/schemas/TicketChannel'
+                  type: string
+                  enum: [whatsapp, paper]
+                  description: app لا يُطلب هنا؛ يأتي من POST /v1/tickets/intake-pass (DEC-501)
               additionalProperties: false
             examples:
               single_event:
@@ -1129,6 +1131,109 @@ paths:
       x-idempotency: none
       x-rate-limit-class: read
       x-error-codes: [SCOPE_VENUE_DENIED]
+  /v1/tickets/intake-pass:
+    post:
+      operationId: intakeByPass
+      summary: 'استلام بمسح بطاقة الدخول من تطبيق العميل (O-01)'
+      tags: [Intake & Tickets]
+      description: |-
+        الإصدار الثاني (V2-013، V2-014؛ DEC-500، DEC-501، DEC-502). يمسح السائق في D-05 رمز QR المتغير من شاشة C-11 في تطبيق العميل؛ صيغة الرمز P1.<account>.<vehicle>.<step>.<mac> (docs/v2/05 §1.3).
+
+        ticket_id + expected_version: مسودة السائق نفسه (received، أنشأها هو في مناوبته) تصبح تذكرة تطبيق — الطريق الذي يستعمله D-05 لأن «استلام مركبة» في D-04 أنشأ المسودة. بلا ticket_id: تُنشأ التذكرة كما في POST /v1/tickets (event_id بالقاعدة نفسها) ثم تُربط، والرد 201 بالمهمة وحالة السائق.
+
+        الشروط: نطاق POST /v1/tickets نفسه (مناوبة في الموقع، ليس في استراحة، المشغل غير معلّق ← OPERATOR_SUSPENDED حتى للمسودة القائمة) · المسودة بلا قناة عميل (لا جوال ولا رقم ورقي ولا رمز ربط ولا تذكرة تطبيق) وإلا INVALID_STATE_TRANSITION (reason: customer_channel_set) · الرمز بصيغته وتوقيعه بسر الحساب لحساب active (PASS_INVALID) · الخطوة ضمن الحالية ± 1 على ساعة الخادم وأكبر من آخر خطوة استُعملت (PASS_EXPIRED).
+
+        الأثر: channel = app، wa_link_status = none، صف customers للمشغل مربوط بالحساب (customer_account_id؛ الجوال واللغة فقط، V2-D12)، customer_vehicle_id وحقول السيارة منسوخة من customer_vehicles إن كانت السيارة المختارة في الحساب (وإلا تبقى للسائق يدويًا، vehicle_prefilled: false)، entitlement كما حُدد عند إنشاء التذكرة (event_included لحفل included وإلا none)، customer_passes.last_used_step، audit_log. لا W-01 ولا أي رسالة واتساب لهذه التذكرة (DEC-503).
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pass_token:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  description: نص رمز QR كما قرأته الكاميرا
+                ticket_id:
+                  type: string
+                  format: uuid
+                  description: مسودة السائق في D-05
+                expected_version:
+                  type: integer
+                  minimum: 1
+                  description: إلزامي مع ticket_id
+                event_id:
+                  type: [string, 'null']
+                  format: uuid
+                  description: بلا ticket_id فقط، كما في POST /v1/tickets
+              required: [pass_token]
+              additionalProperties: false
+            examples:
+              d05_draft:
+                summary: مسودة D-05
+                value:
+                  pass_token: P1.AAAAAAAAQACAAAAAAAAAAQ.AAAAAAAAQACAAAAAAAAAAg.59434512.pQ1w9xZr5vA3nK
+                  ticket_id: 5d1c7a40-9b8e-4f2a-a3c1-0e2d4f6a8b10
+                  expected_version: 1
+      responses:
+        '200':
+          description: المسودة صارت تذكرة تطبيق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntakePassResultEnvelope'
+        '201':
+          description: تذكرة جديدة بالبطاقة (بلا ticket_id)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntakePassResultEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | AUTH_UNAUTHENTICATED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: ASSIGNMENT_REQUIRED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND | TICKET_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: DRIVER_ON_BREAK | DUTY_REQUIRED | EVENT_NOT_OPEN | IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION | MOVEMENT_IN_PROGRESS | OPERATOR_SUSPENDED | VERSION_CONFLICT
+        '410':
+          $ref: '#/components/responses/Error'
+          description: PASS_EXPIRED
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | PASS_INVALID | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - cookieSession: []
+        csrfHeader: []
+      x-permission: ticket.intake
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [DRIVER_ON_BREAK, DUTY_REQUIRED, EVENT_NOT_OPEN, INVALID_STATE_TRANSITION, MOVEMENT_IN_PROGRESS, OPERATOR_SUSPENDED, PASS_EXPIRED, PASS_INVALID, TICKET_NOT_FOUND, VERSION_CONFLICT]
+      x-domain-events: [ticket.created, task.created, custody.changed, driver.availability_changed]
+      x-ws-events: [driver.state_changed, ticket.updated]
   /v1/tickets/{ticketId}/intake:
     patch:
       operationId: patchIntake
@@ -1157,7 +1262,9 @@ paths:
                   minimum: 1
                   description: رقم الإصدار للتزامن المتفائل
                 channel:
-                  $ref: '#/components/schemas/TicketChannel'
+                  type: string
+                  enum: [whatsapp, paper]
+                  description: 'تذكرة app تتحول إلى واتساب أو ورقية في received فقط (تفك ربط الحساب، DEC-501)'
                 plate:
                   $ref: '#/components/schemas/PlateInput'
                 vehicle:
@@ -11596,6 +11703,46 @@ paths:
       x-idempotency: none
       x-rate-limit-class: auth
       x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_OTP_EXPIRED, CUSTOMER_OTP_INVALID, CUSTOMER_OTP_LOCKED]
+  # --- V2-013 (DEC-500): the entry pass, C-11 ---
+  /v1/customer/pass:
+    get:
+      operationId: customerPass
+      summary: سر بطاقة الدخول للجهاز (C-11)
+      tags: [Customer]
+      description: |-
+        ما يحتاجه التطبيق ليولّد QR بطاقة الدخول بلا اتصال (V2-D14، DEC-500): السر (32 بايت base64url) يُحفظ في التخزين الآمن للجهاز ولا يُسجَّل ولا يُعرض، ووقت الخادم لتصحيح ساعة الجهاز، والسيارات للاختيار. الرمز يتغير كل 30 ث بصيغة P1.<account>.<vehicle>.<step>.<mac> (docs/v2/05 §1.3). يُنشأ السر أول مرة، ويُدوَّر عند الطلب بعد مضي مدته (refresh_after) ويبقى السابق صالحًا 7 أيام لجهاز بلا اتصال. الرد Cache-Control: no-store.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPassEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+  # --- end V2-013 ---
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsAppWebhook
@@ -12197,8 +12344,12 @@ components:
       description: tickets.status (canon §5.1)
     TicketChannel:
       type: string
-      enum: [whatsapp, paper]
-      description: tickets.channel
+      enum: [whatsapp, paper, app]
+      description: tickets.channel (app = بطاقة الدخول من تطبيق العميل، الإصدار الثاني، DEC-501)
+    TicketEntitlement:
+      type: string
+      enum: [none, subscription, app_paid, event_included]
+      description: 'tickets.entitlement (الإصدار الثاني، DEC-502): تُحدد عند الاستلام؛ قبل الاشتراكات (V4) والدفع في التطبيق (V3) event_included لحفل included وإلا none'
     WaLinkStatus:
       type: string
       enum: [none, pending_send, pending_confirmation, linked, failed, opted_out]
@@ -12440,7 +12591,7 @@ components:
         INTERNAL_ERROR, INVALID_STATE_TRANSITION, KEY_NOT_PICKED_UP, KEY_SLOT_OCCUPIED, KEY_TAG_IN_USE, MEDIA_TOO_LARGE, MEDIA_TYPE_UNSUPPORTED, MEDIA_UPLOAD_INCOMPLETE,
         MOVEMENT_IN_PROGRESS, NEXT_TASK_ALREADY_RESERVED, NOT_OFFER_RECIPIENT, NOT_TASK_ASSIGNEE, OFFER_EXPIRED, OFFER_NOT_FOUND, OFFER_REVOKED, OLDER_REQUEST_PENDING,
         OPERATOR_SUSPENDED,
-        PAGINATION_CURSOR_INVALID, PAPER_SERIAL_IN_USE, PAPER_STUB_MISMATCH, PARKING_SPOT_OCCUPIED, PAYLOAD_TOO_LARGE, PAYMENT_ALREADY_RECORDED, PAYMENT_ALREADY_REVERSED,
+        PAGINATION_CURSOR_INVALID, PAPER_SERIAL_IN_USE, PAPER_STUB_MISMATCH, PARKING_SPOT_OCCUPIED, PASS_EXPIRED, PASS_INVALID, PAYLOAD_TOO_LARGE, PAYMENT_ALREADY_RECORDED, PAYMENT_ALREADY_REVERSED,
         PAYMENT_AMOUNT_MISMATCH, PAYMENT_FAILED, PAYMENT_METHOD_NOT_ALLOWED, PAYMENT_NOT_REFUNDABLE, PAYMENT_PENDING,
         PAYMENT_WEBHOOK_SIGNATURE_INVALID, PERMISSION_DENIED, PHONE_INVALID, PLATE_INVALID, PLATFORM_AUTH_REQUIRED, RATE_LIMITED, REASON_REQUIRED, REASSIGN_BLOCKED_MOVEMENT, REFUND_AMOUNT_EXCEEDS_PAID,
         RESEND_LIMIT_REACHED, RESOURCE_NOT_FOUND, RETRIEVAL_ALREADY_ACTIVE, SCOPE_VENUE_DENIED, SERVICE_UNAVAILABLE, SHIFT_ALREADY_OPEN, SHIFT_CLOSE_BLOCKED, SHIFT_NOT_OPEN,
@@ -13511,6 +13662,37 @@ components:
           type: [string, 'null']
           description: اسم السائق أو رقم الموقف/الخانة
       required: [type]
+    IntakePassResult:
+      type: object
+      description: 'رد POST /v1/tickets/intake-pass (O-01، DEC-500): التذكرة بعد الربط، وما يراه المشغل عن العميل (V2-D12 — الاسم الأول والجوال مقنّعًا، لا يُخزَّن الاسم لديه)؛ task وdriver_state لطريق الإنشاء (201) وحده'
+      properties:
+        ticket:
+          $ref: '#/components/schemas/TicketDetail'
+        task:
+          $ref: '#/components/schemas/Task'
+        driver_state:
+          $ref: '#/components/schemas/DriverState'
+        customer:
+          type: object
+          properties:
+            first_name:
+              type: [string, 'null']
+            phone_masked:
+              type: [string, 'null']
+              examples: [05•••••123]
+            vehicle_prefilled:
+              type: boolean
+              description: false ← السيارة المختارة ليست في الحساب أو لم تُختر سيارة، فيكملها السائق يدويًا (01 §4)
+          required: [first_name, phone_masked, vehicle_prefilled]
+      required: [ticket, customer]
+    IntakePassResultEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IntakePassResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
     TicketDetail:
       allOf:
       - $ref: '#/components/schemas/TicketSummary'
@@ -13522,6 +13704,8 @@ components:
             description: 'minimal: تُحذف الحقول المقيدة أدناه؛ full: للمكلّف بمهمة مفتوحة على التذكرة أو منشئها أثناء التسجيل أو المشرف/الإدارة'
           vehicle_detail:
             $ref: '#/components/schemas/VehicleInfo'
+          entitlement:
+            $ref: '#/components/schemas/TicketEntitlement'
           customer:
             type: [object, 'null']
             properties:
@@ -13808,6 +13992,9 @@ components:
               type: integer
               minimum: 1
               description: رقم الإصدار للتزامن المتفائل
+            entitlement:
+              $ref: '#/components/schemas/TicketEntitlement'
+              description: 'شارة الأهلية في D-10/D-11 (O-02، DEC-502): تُرسل حين لا تكون none فقط'
         parking:
           type: [object, 'null']
           properties:
@@ -17357,6 +17544,57 @@ components:
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]
+    # --- V2-013 (DEC-500): the entry pass ---
+    CustomerPass:
+      type: object
+      properties:
+        scheme:
+          type: string
+          enum: [P1]
+        account_id:
+          type: string
+          format: uuid
+        secret:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: 32 بايت base64url؛ للتخزين الآمن في الجهاز فقط
+        step_seconds:
+          type: integer
+          enum: [30]
+        server_time:
+          type: string
+          format: date-time
+        rotated_at:
+          type: string
+          format: date-time
+        refresh_after:
+          type: string
+          format: date-time
+        vehicles:
+          type: array
+          items:
+            type: object
+            properties:
+              vehicle_id:
+                type: string
+                format: uuid
+              plate_display:
+                type: string
+              vehicle_make:
+                type: [string, 'null']
+              vehicle_color:
+                type: [string, 'null']
+            required: [vehicle_id, plate_display, vehicle_make, vehicle_color]
+      required: [scheme, account_id, secret, step_seconds, server_time, rotated_at, refresh_after, vehicles]
+    CustomerPassEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerPass'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    # --- end V2-013 ---
     # ---- V2-012 / V2-017 (DEC-505, DEC-507)
     CustomerVehicleRemovedEnvelope:
       type: object

@@ -24,6 +24,7 @@ import {
 } from './deletion.js';
 import { CustomerHomeSchema } from './home.js';
 import { CustomerLocationDetailSchema, CustomerLocationListSchema } from './locations.js';
+import { CustomerPassSchema } from './pass-contract.js';
 import {
   CustomerVehicleCreateBodySchema,
   CustomerVehicleListSchema,
@@ -178,6 +179,16 @@ export const CUSTOMER_ROUTES = {
     body: CustomerAccountDeleteBodySchema,
     data: CustomerAccountDeletedSchema,
   },
+  // --- V2-013 (DEC-500): the entry pass, C-11 ---
+  pass: {
+    method: 'GET',
+    path: '/v1/customer/pass',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerPassSchema,
+  },
+  // --- end V2-013 ---
 } as const satisfies Record<string, CustomerRouteDef>;
 
 export type CustomerRouteKey = keyof typeof CUSTOMER_ROUTES;

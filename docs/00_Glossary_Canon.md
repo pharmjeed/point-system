@@ -116,7 +116,10 @@
 
 ### 5.2 حقول حالة أخرى على التذكرة
 
-- `tickets.channel`: `whatsapp` · `paper`
+> في الإصدار الثاني `app` تذكرة استلمها السائق بمسح بطاقة الدخول من تطبيق العميل (O-01، V2-013، DEC-501)، و`entitlement` أهلية الزيارة تُحدَّد عند الاستلام (V2-014، DEC-502؛ `docs/v2/04` §2).
+
+- `tickets.channel`: `whatsapp` · `paper` · `app`
+- `tickets.entitlement`: `none` · `subscription` · `app_paid` · `event_included`
 - `tickets.wa_link_status`: `none` · `pending_send` · `pending_confirmation` · `linked` · `failed` · `opted_out`
 - `tickets.inspection_status`: `pending` · `complete` · `incomplete` · `exception_approved`
 - `tickets.payment_status`: `not_required` · `due` · `collected` · `waived`
@@ -451,6 +454,8 @@
 | `PAYMENT_NOT_REFUNDABLE` | 409 | الإصدار الثاني: الدفعة الإلكترونية ليست `paid` ولا `partially_refunded` فلا تُسترد (V2-021، DEC-513) |
 | `REFUND_AMOUNT_EXCEEDS_PAID` | 409 | الإصدار الثاني: الاسترداد مع ما سبقه وما ينتظر أكبر من المدفوع (V2-021، DEC-513) |
 | `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | 401 | سر Webhook بوابة الدفع غير صالح |
+| `PASS_INVALID` | 422 | الإصدار الثاني: بطاقة الدخول الممسوحة ليست بطاقة بوينت صالحة (صيغة أو توقيع أو حساب غير نشط)، `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500) |
+| `PASS_EXPIRED` | 410 | الإصدار الثاني: بطاقة الدخول خارج نافذة الخطوة الحالية ± 1 (30 ث) أو استُعملت خطوتها لاستلام سابق (DEC-500) |
 
 ---
 
@@ -483,6 +488,7 @@
 | الطريقة | المسار | الصلاحية | تكرار |
 |---|---|---|---|
 | POST | `/v1/tickets` | `ticket.intake` | ✓ |
+| POST | `/v1/tickets/intake-pass` | `ticket.intake` | ✓ |
 | PATCH | `/v1/tickets/{ticketId}/intake` | `ticket.intake` | ✓ |
 | POST | `/v1/tickets/{ticketId}/media` | `ticket.intake` | ✓ |
 | POST | `/v1/media/{mediaId}/complete` | `ticket.intake` | ✓ |

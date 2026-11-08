@@ -59,11 +59,27 @@
 - **`POST /v1/customer/auth/reauth/verify`** (`C-20`، Bearer، بلا `Idempotency-Key`، صنف `auth`): يطلب التطبيق رمزًا لرقم الحساب نفسه بمسار الدخول `POST /v1/customer/auth/otp` (القالب والحدود نفسها، واتساب فقط)، ثم يرسل `{ code }` هنا. القواعد كتحقق الدخول (`CUSTOMER_OTP_INVALID`/`_LOCKED`/`_EXPIRED`)؛ النجاح يستهلك الرمز ويرد `{ reauth_token, expires_at }`: دليل لمرة واحدة مرتبط بالجلسة نفسها، صالح `CUSTOMER_REAUTH_TTL_S` = 300 ث، لا يُخزَّن منه إلا sha256 (`customer_account_sessions.reauth_hash`)، والأحدث يحل محل السابق.
 - **`DELETE /v1/customer/me`** (`C-20`، `Idempotency-Key`) بالجسم `{ reauth_token }`: بلا دليل أو بدليل ليس الحي لهذه الجلسة أو منتهٍ ← `CUSTOMER_REAUTH_REQUIRED` (403، `reason`: `missing`/`invalid`/`expired`؛ 403 لا 401 كي لا يُخرج التطبيقَ)، وأثناء زيارة جارية ← `CUSTOMER_ACCOUNT_VISIT_ACTIVE` (409). في معاملة واحدة: `status = 'deleted'` و`deleted_at`، يُمحى الاسم ويصير الجوال `NULL` وتبقى بصمته `phone_hash = HMAC-SHA256(CODE_PEPPER, customer_phone:<phone>)` (لا تُعكس، ويسجّل الرقم نفسه حسابًا **جديدًا** لاحقًا)، تُزال السيارات، تُلغى كل الجلسات (`account_closed`) وتُسقط رموز الإشعارات وأدلة إعادة التحقق، يُغلق رمز دخول مفتوح للرقم، وتُحذف ردود الأوامر المخزنة للحساب في `customer_idempotency_keys` (قد تحمل الاسم والجوال). يبقى: `customer_audit_log` (`customer.account.deleted` بالأعداد فقط) و`customer_account_consents`، وصفوف `customers` لدى المشغلين وتذاكرهم وبياناتها بحسب احتفاظ كل مشغل في الإصدار الأول (V2-D12) — لا شيء يمتد إلى بيانات المشغل. الرد `{ deleted: true, deleted_at }`. بعدها رمز الوصول أو التحديث الحالي للحساب ← `ACCOUNT_DELETED` (410) فيعود التطبيق إلى `C-01`، وإعادة الطلب بالمفتاح نفسه ترد `ACCOUNT_DELETED` أيضًا (الحارس قبل التكرار)، فيعدّها التطبيق نجاحًا. الاشتراكات ووسائل الدفع تُلغى هنا حين تُبنى (V4/V3).
 
+### 1.4 بطاقة الدخول (V2-013، DEC-500)
+
+- **`GET /v1/customer/pass`** (`C-11`، Bearer، بلا `Idempotency-Key`، صنف `read`، `Cache-Control: private, no-store`) يرد `CustomerPass`: `{ scheme: 'P1', account_id, secret, step_seconds: 30, server_time, rotated_at, refresh_after, vehicles: [{ vehicle_id, plate_display, vehicle_make, vehicle_color }] }`. السر (32 بايتًا base64url، 43 حرفًا) يُنشأ في أول طلب ويُخزَّن مشفرًا (`customer_passes`)، ويُدوَّر في أول طلب بعد `refresh_after` (30 يومًا) ويبقى السابق صالحًا 7 أيام لجهاز بلا اتصال. يحفظه التطبيق في التخزين الآمن ولا يعرضه.
+- **صيغة الرمز** (`generatePassToken` / `verifyPassToken` في `@point/shared/customer`، الكود نفسه في التطبيق والخادم):
+
+  ```
+  P1.<account>.<vehicle>.<step>.<mac>
+  account  = base64url(16 بايت uuid الحساب)                      22 حرفًا
+  vehicle  = base64url(16 بايت uuid السيارة المختارة) أو «-»       22 حرفًا
+  step     = floor(unix_seconds / 30) عشريًا، بساعة الجهاز + (server_time − ساعة الجهاز وقت الجلب)
+  mac      = base64url(أول 10 بايتات من HMAC-SHA256(secret, "point-pass:v1:<account uuid>:<vehicle uuid أو ->:<step>"))
+  ```
+
+  الخادم يقبل التوقيع بالسر الحالي أو السابق في مهلته، ثم الخطوة الحالية ± 1 (`PASS_EXPIRED` بـ`stale`/`future` خارجها)، ثم خطوة أكبر من آخر خطوة استُعملت في استلام (`already_used`)؛ وغير ذلك `PASS_INVALID` (`malformed` / `bad_signature` / `account_unavailable` لحساب معلّق أو محذوف أو بلا بطاقة).
+- **زيارات الحساب** (V2-014، DEC-504): `listAccountVisits` على الخادم هي مصدر `current_visit` في `GET /v1/customer/home` وقراءات الزيارة الجارية للسيارة والحساب؛ مساراها `GET /v1/customer/visits[/{ticketId}]` مع `C-12`/`C-16` (V2-015، V2-017).
+
 ## 2. مسارات المشغل الجديدة (تحت `/v1` كما هي)
 
 | المسار | الوظيفة |
 |---|---|
-| `POST /v1/tickets/intake-pass` | استلام بمسح بطاقة الدخول (O-01): يتحقق من الرمز المتغير، ينشئ التذكرة `channel='app'` ويحدد الأهلية |
+| `POST /v1/tickets/intake-pass` | استلام بمسح بطاقة الدخول (O-01، **مبني V2-013**، DEC-501): `{ pass_token, ticket_id, expected_version }` يجعل مسودة D-05 للسائق تذكرة `channel = app` (200)، أو بلا `ticket_id` (و`event_id` كـ`POST /v1/tickets`) ينشئها (201)؛ يرد `{ ticket, customer: { first_name, phone_masked, vehicle_prefilled }, task?, driver_state? }`؛ `ticket.intake`، `Idempotency-Key`، نطاق الاستلام و`OPERATOR_SUSPENDED`؛ والأهلية كما حُددت عند الإنشاء (DEC-502) |
 | `GET /v1/venues/{venueId}/public-profile` · `PUT …` · `POST …/photos` · `POST …/submit` | ملف الموقع العام (O-04، V2-004 مبني): القراءة، الحفظ مسودة باستبدال كامل (`expected_version` 0 للإنشاء)، رابط رفع صورة موقّع، الإرسال للمراجعة؛ `venue.manage` (DEC-490 … DEC-494) |
 | `GET /v1/settlement/statements[/{id}]` | كشوف التسوية للمشغل (قراءة، O-05) |
 | `GET /v1/operator/subscription` | اشتراك النظام وفواتيره (O-06) |
@@ -103,7 +119,8 @@
 القناة الواحدة كما هي برقم بوينت. القوالب W-01…W-08 تُعاد صياغتها بعلامة «بوينت» واسم الموقع، ويُضاف:
 - رابط اختياري لتحميل التطبيق في رسالة الترحيب.
 - قالب مصادقة لرمز التحقق: القناة الوحيدة لرمز الدخول، بلا SMS (DEC-460).
-- العميل الذي له حساب ويستخدم الواتساب: الرسائل تُربط بحسابه، وتظهر الزيارة في تطبيقه.
+- العميل الذي له حساب ويستخدم الواتساب: الرسائل تُربط بحسابه، وتظهر الزيارة في تطبيقه (`listAccountVisits` تقرأ صف المشغل المربوط بالحساب، DEC-504).
+- **تذكرة التطبيق (`channel = app`، DEC-503):** لا W-01 ولا أي قالب لاحق عليها؛ يتابعها العميل في `C-12` (V2-015) وإشعارات التطبيق (V2-016). ورمز التسليم لها يصدر ويظهر في `C-12` مع V2-015؛ قبله التسليم باستثناء المشرف.
 
 ## 7. المتاجر
 

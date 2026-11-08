@@ -2,7 +2,7 @@
  * Pure intake rules (11 TT-03, TT-04a; 08 INTAKE_INCOMPLETE, DRAFT_HAS_DATA).
  */
 export interface IntakeSnapshot {
-  channel: 'whatsapp' | 'paper';
+  channel: 'whatsapp' | 'paper' | 'app';
   plate_country: string;
   plate_digits: string | null;
   plate_letters_ar: string | null;
@@ -37,6 +37,9 @@ export function missingIntakeFields(t: IntakeSnapshot, opts: { hasQrLink: boolea
   if (!t.key_tag) missing.push('key_tag');
   if (t.channel === 'paper') {
     if (!t.paper_serial) missing.push('paper_serial');
+  } else if (t.channel === 'app') {
+    // V2-013 (DEC-501): the account's customers row is the customer channel (ck_tickets_app_customer)
+    if (!t.customer_id) missing.push('customer_phone');
   } else if (!t.customer_id && !opts.hasQrLink && t.wa_link_status !== 'linked') {
     missing.push('customer_phone');
   }
