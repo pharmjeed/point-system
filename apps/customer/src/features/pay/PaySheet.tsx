@@ -27,7 +27,7 @@ import { Field } from '../../ui/Field';
 import { CommandKey } from '../commandKey';
 import { formatCardNumber, formatExpiry, sar, validateCard, type CardIssue } from './card';
 import { cardRow, orderCards } from './methods';
-import { payVisit, type PayOutcome } from './payFlow';
+import { checkoutSubscription, payVisit, type PayOutcome, type SubscriptionCheckoutRequest } from './payFlow';
 import { createCardTokenizer, TokenizeError } from './tokenize';
 
 /** A native Apple Pay sheet (PassKit) handing over the payment token for the server; absent in Expo Go. */
@@ -86,6 +86,17 @@ export function PayDue({ ticketId, amountHalalas, onPaid, applePay }: PayDueProp
   );
 }
 
+/**
+ * V2-032 (C-10 for a subscription): the sheet pays a subscription instead of a visit — the start command of the
+ * checkout (subscribe, or pay a waiting one). The card is always kept for the automatic renewal (DEC-534): «حفظ
+ * البطاقة» is on and fixed, Apple Pay is not offered.
+ */
+export interface SubscriptionSheetCheckout {
+  start: SubscriptionCheckoutRequest['start'];
+  /** the subscription the checkout created or paid (C-14 opens it) */
+  onSubscription?: (subscriptionId: string | null) => void;
+}
+
 export function PaySheet({
   visible,
   ticketId,
@@ -93,13 +104,18 @@ export function PaySheet({
   onClose,
   onPaid,
   applePay,
+  subscription,
+  title,
 }: {
   visible: boolean;
-  ticketId: string;
+  /** the visit to pay (C-12); unused with `subscription` */
+  ticketId?: string;
   amountHalalas: number;
   onClose: () => void;
   onPaid: () => void;
   applePay?: ApplePayProvider;
+  subscription?: SubscriptionSheetCheckout;
+  title?: string;
 }) {
   const { t, f } = useI18n();
   const session = useSession();
@@ -109,7 +125,7 @@ export function PaySheet({
   const [expiry, setExpiry] = useState('');
   const [cvc, setCvc] = useState('');
   const [name, setName] = useState('');
-  const [save, setSave] = useState(false);
+  const [save, setSave] = useState(!!subscription);
   const [issues, setIssues] = useState<CardIssue[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
@@ -134,28 +150,44 @@ export function PaySheet({
         setSelected(ordered[0]?.id ?? 'new');
       })
       .catch(() => setCards([]));
-    if (applePay && Platform.OS === 'ios' && appConfig.payments.applePayMerchantId)
+    if (!subscription && applePay && Platform.OS === 'ios' && appConfig.payments.applePayMerchantId)
       applePay.available().then(setApplePayReady, () => setApplePayReady(false));
-  }, [visible, session.api, applePay]);
+  }, [visible, session.api, applePay, subscription]);
 
   const run = async (source: CustomerPaymentSource, saveCard: boolean, signature: string) => {
     setBusy(true);
     setMessage(null);
-    const outcome: PayOutcome = await payVisit(
-      {
-        api: session.api,
-        openAuthSession: (url, back) => WebBrowser.openAuthSessionAsync(url, back),
-        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-        now: Date.now,
-      },
-      {
-        ticketId,
-        source,
-        saveCard,
-        cardOnFileVersion: consentVersion,
-        idempotencyKey: key.for(signature),
-      },
-    );
+    const effects = {
+      openAuthSession: (url: string, back: string) => WebBrowser.openAuthSessionAsync(url, back),
+      sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+      now: Date.now,
+    };
+    let outcome: PayOutcome;
+    if (subscription) {
+      const result = await checkoutSubscription(
+        { ...effects, api: session.api },
+        {
+          start: subscription.start,
+          source,
+          saveCard: source.type === 'token' ? true : saveCard,
+          cardOnFileVersion: consentVersion,
+          idempotencyKey: key.for(signature),
+        },
+      );
+      subscription.onSubscription?.(result.subscriptionId ?? null);
+      outcome = result;
+    } else {
+      outcome = await payVisit(
+        { ...effects, api: session.api },
+        {
+          ticketId: ticketId ?? '',
+          source,
+          saveCard,
+          cardOnFileVersion: consentVersion,
+          idempotencyKey: key.for(signature),
+        },
+      );
+    }
     setBusy(false);
     switch (outcome.kind) {
       case 'paid':
@@ -188,6 +220,14 @@ export function PaySheet({
         setMessage({ tone: 'warning', text: t.pay.consent });
         return;
       }
+      case 'card_required':
+        key.reset();
+        setMessage({ tone: 'warning', text: t.pay.cardRequired });
+        return;
+      case 'exists':
+        key.reset();
+        setMessage({ tone: 'warning', text: t.subscribe.exists });
+        return;
       default:
         setMessage({ tone: 'danger', text: t.pay.failed });
     }
@@ -226,7 +266,7 @@ export function PaySheet({
       <ScrollView style={styles.backdrop} keyboardShouldPersistTaps="handled">
         <View style={styles.sheet} accessibilityViewIsModal>
           <AppText variant="title" accessibilityRole="header">
-            {t.pay.sheetTitle}
+            {title ?? t.pay.sheetTitle}
           </AppText>
           <AppText variant="bodyStrong">
             {t.pay.total}: {f(t.pay.amountLabel, { amount: isolate(amount) })}
@@ -315,12 +355,12 @@ export function PaySheet({
                   error={issues.includes('name') ? t.pay.issues.name : null}
                 />
                 <Checkbox
-                  label={t.pay.saveCard}
+                  label={subscription ? t.pay.saveForRenewal : t.pay.saveCard}
                   checked={save}
-                  onChange={setSave}
+                  onChange={subscription ? () => setSave(true) : setSave}
                   detail={
                     <AppText variant="small" tone="muted">
-                      {t.pay.saveCardDetail}
+                      {subscription ? t.pay.saveForRenewalDetail : t.pay.saveCardDetail}
                     </AppText>
                   }
                 />

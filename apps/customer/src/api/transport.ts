@@ -4,7 +4,7 @@
  */
 
 export interface HttpRequest {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Path with query string, e.g. `/v1/customer/locations?limit=5`. */
   path: string;
   headers: Readonly<Record<string, string>>;

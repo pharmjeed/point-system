@@ -1,6 +1,6 @@
 /**
  * C-06 الرئيسية: the big «بطاقة الدخول» button (C-11), the visit in progress above everything when there is one —
- * it opens C-12 and follows the customer socket (V2-015) — my subscriptions (C-14, V2-032: placeholder) and
+ * it opens C-12 and follows the customer socket (V2-015) — my subscriptions (each opening C-14, V2-032) and
  * the nearby locations from `GET /v1/customer/home`, each opening C-08, with «كل المواقع» (C-07), «سياراتي» (C-15)
  * and «الإعدادات» (C-19, where sign-out and C-20 live) since V2-012/V2-017, and «زياراتي» (C-16, V2-015).
  */
@@ -48,7 +48,12 @@ export default function Home() {
 
   // V2-015: the visit card follows the customer socket (and every reconnection reads home again)
   useEffect(
-    () => session.events.subscribe({ onVisit: () => void load(), onResync: () => void load() }),
+    () =>
+      session.events.subscribe({
+        onVisit: () => void load(),
+        onSubscription: () => void load(),
+        onResync: () => void load(),
+      }),
     [session.events, load],
   );
 
@@ -116,14 +121,21 @@ export default function Home() {
                 <AppText tone="muted">{t.home.noSubscriptions}</AppText>
               </Card>
             ) : (
-              home.subscriptions.map((sub) => (
-                <Card key={sub.subscription_id}>
-                  <AppText variant="bodyStrong">
-                    {locale === 'en' && sub.venue_name_en ? sub.venue_name_en : sub.venue_name_ar}
-                  </AppText>
-                  <AppText tone="muted">{t.subscriptionStatus[sub.status]}</AppText>
-                </Card>
-              ))
+              home.subscriptions.map((sub) => {
+                const title = locale === 'en' && sub.venue_name_en ? sub.venue_name_en : sub.venue_name_ar;
+                return (
+                  <Pressable
+                    key={sub.subscription_id}
+                    accessibilityRole="button"
+                    accessibilityLabel={title}
+                    onPress={() => router.push('/subscriptions')}
+                    style={({ pressed }) => [styles.locationCard, pressed && styles.pressed]}
+                  >
+                    <AppText variant="bodyStrong">{title}</AppText>
+                    <AppText tone="muted">{t.subscriptionStatus[sub.status]}</AppText>
+                  </Pressable>
+                );
+              })
             )}
           </View>
         );

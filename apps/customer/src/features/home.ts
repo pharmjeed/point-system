@@ -1,6 +1,6 @@
 /**
  * C-06 view model (01 C-06): «بطاقة الدخول» first as the big action, the visit in progress above everything when
- * there is one, my subscriptions (placeholder until C-14), then the nearby locations. Pure.
+ * there is one, my subscriptions (C-14 since V2-032), then the nearby locations. Pure.
  */
 import type { CustomerHome, CustomerLocationSummary } from '@point/shared/customer';
 import { fmt, isolate, type AppLocale, type Dictionary } from '../i18n';

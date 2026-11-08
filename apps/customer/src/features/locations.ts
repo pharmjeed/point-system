@@ -4,7 +4,7 @@
  * screens hold the state, the server decides what is listed and whether it is open (`open_now`, DEC-499).
  *
  * Subscription prices are «قريبًا» until phase V4 sells plans (C-09/C-14, V2-030…V2-032; DEC-506): the screen
- * shows the per-visit price only and never a subscribe button that leads nowhere.
+ * shows the per-visit price, and since V2-032 the plans' prices with «اشترك» (C-09) where plans are sold.
  */
 import {
   WEEKDAY_KEYS,
@@ -184,8 +184,6 @@ export function hoursLines(hours: OpeningHours, dict: Dictionary, now: number): 
 export interface PriceLine {
   label: string;
   value: string;
-  /** «قريبًا» (subscriptions arrive with phase V4). */
-  soon: boolean;
 }
 
 export interface LocationDetailView {
@@ -195,8 +193,8 @@ export interface LocationDetailView {
   address: string | null;
   openNow: string | null;
   prices: PriceLine[];
-  /** At least one price is «قريبًا»: the note under the prices. */
-  subscriptionsSoon: boolean;
+  /** V2-032: the location sells at least one plan — C-08 shows «اشترك» (C-09). */
+  canSubscribe: boolean;
 }
 
 export function locationDetailView(
@@ -210,12 +208,21 @@ export function locationDetailView(
     prices.push({
       label: dict.locations.perVisit,
       value: isolate(formatMoney(loc.pay_per_visit_halalas, dict)),
-      soon: false,
     });
-  if (loc.subscriptions_enabled) {
-    prices.push({ label: dict.locations.monthly, value: dict.locations.soon, soon: true });
-    prices.push({ label: dict.locations.yearly, value: dict.locations.soon, soon: true });
-  }
+  // V2-032 (C-08): the cheapest monthly and yearly prices of the plans sold here (VAT included)
+  const plans = loc.subscriptions_enabled ? loc.plans : [];
+  const cheapest = (pick: (p: (typeof plans)[number]) => number | null) => {
+    const all = plans.map(pick).filter((v): v is number => v !== null);
+    return all.length ? Math.min(...all) : null;
+  };
+  const monthly = cheapest((p) => p.monthly_price_halalas);
+  const yearly = cheapest((p) => p.yearly_price_halalas);
+  const from = (h: number) =>
+    plans.length > 1
+      ? fmt(dict.locations.from, { amount: isolate(formatMoney(h, dict)) })
+      : isolate(formatMoney(h, dict));
+  if (monthly !== null) prices.push({ label: dict.locations.monthly, value: from(monthly) });
+  if (yearly !== null) prices.push({ label: dict.locations.yearly, value: from(yearly) });
   const address = [loc.address, loc.city]
     .filter((p): p is string => !!p && p.trim() !== '')
     .join(dict.locations.listSeparator);
@@ -226,7 +233,7 @@ export function locationDetailView(
     address: address || null,
     openNow: loc.open_now === null ? null : loc.open_now ? dict.home.openNow : dict.home.closedNow,
     prices,
-    subscriptionsSoon: prices.some((p) => p.soon),
+    canSubscribe: plans.length > 0,
   };
 }
 

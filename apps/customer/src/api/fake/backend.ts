@@ -4,7 +4,8 @@
  * attempts then a 15-minute lock, rotating refresh tokens (reuse revokes the session), versioned consents,
  * Saudi plate normalisation, the 5-vehicle limit, `Idempotency-Key` replay, and the 08 error envelope; and since
  * V2-012/V2-017 the vehicle removal (C-15), the re-verification proof and the account deletion (C-20); since
- * V2-015/V2-016 the visits (C-12, C-16, C-13, ./visits.ts) with their live updates, and the push registration.
+ * V2-015/V2-016 the visits (C-12, C-16, C-13, ./visits.ts) with their live updates, and the push registration;
+ * since V2-032 the subscriptions (C-09, C-10, C-14) with the server's machine, reduced to what the app sees.
  *
  * The WhatsApp message is not sent anywhere: it lands in `inbox` (the role of tools/wa-simulator), and the app
  * shows the code on C-03 in development only. Never used by a release build unless explicitly configured
@@ -47,6 +48,8 @@ import {
   type CustomerPaymentMethod,
   type CustomerRouteKey,
   type CustomerOnlinePayment,
+  type CustomerSubscription,
+  type CustomerSubscriptionPayment,
   type CustomerTokens,
   type CustomerVehicle,
 } from '@point/shared/customer';
@@ -157,6 +160,9 @@ class Reject extends Error {
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+
+/** The source part of a subscription checkout body (C-10). */
+type CustomerSubscriptionPayBodyLike = z.output<typeof CUSTOMER_ROUTES.subscriptionPay.body>;
 
 export function createFakeBackend(options: FakeBackendOptions = {}) {
   const now = options.now ?? Date.now;
@@ -459,6 +465,273 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     };
   }
 
+  // ---- V2-032 (C-09, C-10, C-14): subscriptions with the server's rules, reduced (DEC-532, DEC-534)
+
+  interface FakeSubPayment {
+    id: string;
+    status: 'initiated' | 'paid' | 'failed';
+    behaviour: FakeCardBehaviour;
+    brand: string | null;
+    last4: string | null;
+    amount: number;
+    createdAt: number;
+    paidAt: number | null;
+    saveCard: { token: string; brand: string; last4: string; month: number; year: number } | null;
+    savedCardId: string | null;
+  }
+  interface FakeSubscription {
+    id: string;
+    accountId: string;
+    venueId: string;
+    planId: string;
+    cycle: 'monthly' | 'yearly';
+    status: CustomerSubscription['status'];
+    price: number;
+    vehiclesIncluded: number;
+    vehicleIds: string[];
+    periodStart: number | null;
+    periodEnd: number | null;
+    cancelAtEnd: boolean;
+    vehiclesChangedAt: number | null;
+    pendingExpiresAt: number | null;
+    createdAt: number;
+    endedAt: number | null;
+    endedReason: CustomerSubscription['ended_reason'];
+    payments: FakeSubPayment[];
+  }
+  const subscriptions = new Map<string, FakeSubscription>();
+  const LIVE_SUB = new Set(['pending_payment', 'active', 'past_due', 'frozen']);
+
+  /** The calendar months of a period (the server uses the Riyadh calendar; the fake adds UTC months). */
+  function addMonths(ms: number, months: number): number {
+    const d = new Date(ms);
+    const target = d.getUTCMonth() + months;
+    const year = d.getUTCFullYear() + Math.floor(target / 12);
+    const month = ((target % 12) + 12) % 12;
+    const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    return Date.UTC(
+      year,
+      month,
+      Math.min(d.getUTCDate(), last),
+      d.getUTCHours(),
+      d.getUTCMinutes(),
+      d.getUTCSeconds(),
+    );
+  }
+
+  /** The machine's timers, lazily on every read: the 30-minute checkout, the 3-D Secure answer, the period end. */
+  function advanceSub(sub: FakeSubscription) {
+    for (const p of sub.payments)
+      if (p.status === 'initiated' && now() - p.createdAt >= FAKE_3DS_MS) settleSubPayment(sub, p);
+    if (sub.status === 'pending_payment' && sub.pendingExpiresAt !== null && now() >= sub.pendingExpiresAt) {
+      sub.status = 'canceled';
+      sub.endedAt = now();
+      sub.endedReason = 'pending_expired';
+    }
+    if (sub.status === 'active' && sub.periodEnd !== null && now() >= sub.periodEnd && sub.cancelAtEnd) {
+      sub.status = 'canceled';
+      sub.endedAt = sub.periodEnd;
+      sub.endedReason = 'period_end';
+    }
+  }
+
+  function settleSubPayment(sub: FakeSubscription, p: FakeSubPayment, outcome?: 'success' | 'fail') {
+    if (p.status !== 'initiated') return;
+    const fail = outcome ? outcome === 'fail' : p.behaviour === 'tdd';
+    p.status = fail ? 'failed' : 'paid';
+    if (fail) return;
+    p.paidAt = now();
+    const account = accounts.get(sub.accountId);
+    if (account && p.saveCard) p.savedCardId = keepCard(account, p.saveCard, 'ok').id;
+    if (sub.status === 'pending_payment') {
+      sub.status = 'active';
+      sub.periodStart = now();
+      sub.periodEnd = addMonths(now(), sub.cycle === 'yearly' ? 12 : 1);
+      sub.pendingExpiresAt = null;
+    } else if (sub.status === 'past_due' && sub.periodEnd !== null) {
+      sub.status = 'active';
+      sub.periodStart = sub.periodEnd;
+      sub.periodEnd = addMonths(sub.periodEnd, sub.cycle === 'yearly' ? 12 : 1);
+    }
+  }
+
+  function subPaymentView(
+    sub: FakeSubscription,
+    p: FakeSubPayment,
+    url: string | null = null,
+  ): CustomerSubscriptionPayment {
+    const venue = FAKE_LOCATIONS.find((l) => l.venue_id === sub.venueId) as CustomerLocationDetail;
+    const vat = p.amount - Math.round((p.amount * 10_000) / 11_500);
+    return {
+      payment_id: p.id,
+      subscription_id: sub.id,
+      status: p.status,
+      amount_halalas: p.amount,
+      vat_halalas: vat,
+      currency: 'SAR',
+      card_brand: p.brand,
+      card_last4: p.last4,
+      failure_code: p.status === 'failed' ? '51' : null,
+      transaction_url: p.status === 'initiated' ? url : null,
+      callback_url: 'sa.point.app://pay/return',
+      paid_at: p.paidAt ? iso(p.paidAt) : null,
+      saved_payment_method_id: p.savedCardId,
+      receipt: p.paidAt
+        ? {
+            payment_id: p.id,
+            issued_at: iso(p.paidAt),
+            seller_name_ar: options.brand?.nameAr ?? '—',
+            seller_name_en: options.brand?.nameEn ?? '—',
+            venue_name_ar: venue.name_ar,
+            venue_name_en: venue.name_en,
+            operator_name_ar: venue.operator_name_ar,
+            operator_name_en: venue.operator_name_en,
+            description: 'subscription',
+            amount_halalas: p.amount,
+            net_halalas: p.amount - vat,
+            vat_halalas: vat,
+            vat_rate_bp: 1500,
+            refunded_halalas: 0,
+            currency: 'SAR',
+            card_brand: p.brand,
+            card_last4: p.last4,
+          }
+        : null,
+    };
+  }
+
+  function subView(sub: FakeSubscription, account: Account): CustomerSubscription {
+    advanceSub(sub);
+    const venue = FAKE_LOCATIONS.find((l) => l.venue_id === sub.venueId) as CustomerLocationDetail;
+    const plan = venue.plans.find((p) => p.plan_id === sub.planId);
+    const live = LIVE_SUB.has(sub.status);
+    const latest = sub.payments.at(-1);
+    return {
+      subscription_id: sub.id,
+      venue_id: sub.venueId,
+      venue_name_ar: venue.name_ar,
+      venue_name_en: venue.name_en,
+      operator_name_ar: venue.operator_name_ar,
+      operator_name_en: venue.operator_name_en,
+      plan_id: sub.planId,
+      plan_name_ar: plan?.name_ar ?? '—',
+      plan_name_en: null,
+      billing_cycle: sub.cycle,
+      status: sub.status,
+      price_halalas: sub.price,
+      next_price_halalas: null,
+      vehicles_included: sub.vehiclesIncluded,
+      vehicles: sub.vehicleIds.map((id) => {
+        const v = account.vehicles.find((x) => x.id === id);
+        return { vehicle_id: id, plate_display: v?.plate.display ?? null, removed: !v };
+      }),
+      current_period_start: sub.periodStart === null ? null : iso(sub.periodStart),
+      current_period_end: sub.periodEnd === null ? null : iso(sub.periodEnd),
+      cancel_at_period_end: sub.cancelAtEnd,
+      renews_at:
+        sub.status === 'active' && !sub.cancelAtEnd && sub.periodEnd !== null ? iso(sub.periodEnd) : null,
+      pending_expires_at: sub.pendingExpiresAt === null ? null : iso(sub.pendingExpiresAt),
+      grace_ends_at: null,
+      frozen_at: null,
+      frozen_reason: null,
+      can_change_vehicles:
+        (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'frozen') &&
+        (sub.vehiclesChangedAt === null ||
+          sub.periodStart === null ||
+          sub.vehiclesChangedAt < sub.periodStart),
+      can_cancel: live && !sub.cancelAtEnd,
+      can_resume: (sub.status === 'active' || sub.status === 'frozen') && sub.cancelAtEnd,
+      can_pay: sub.status === 'pending_payment' || sub.status === 'past_due',
+      latest_payment: latest ? subPaymentView(sub, latest) : null,
+      ended_at: sub.endedAt === null ? null : iso(sub.endedAt),
+      ended_reason: sub.endedReason,
+      created_at: iso(sub.createdAt),
+    };
+  }
+
+  function ownSub(account: Account, id: string | undefined): FakeSubscription {
+    const sub = subscriptions.get(id ?? '');
+    if (!sub || sub.accountId !== account.id)
+      throw new Reject('RESOURCE_NOT_FOUND', { resource: 'subscription' });
+    advanceSub(sub);
+    return sub;
+  }
+
+  /** The source of a subscription payment: a card kept for the renewals (DEC-534). */
+  function subSource(
+    account: Account,
+    body: {
+      source: CustomerSubscriptionPayBodyLike['source'];
+      save_card?: boolean | undefined;
+      card_on_file_version?: string | undefined;
+    },
+  ) {
+    if (body.source.type === 'applepay')
+      throw new Reject('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'applepay' });
+    if (body.source.type === 'token') {
+      if (!body.save_card) throw new Reject('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'token' });
+      assertCardConsent(body.card_on_file_version);
+      const info = parseFakeToken(body.source.token);
+      if (!info) throw new Reject('PAYMENT_FAILED', { failure_code: 'gateway_invalid_request_error' });
+      return {
+        behaviour: info.behaviour,
+        brand: info.brand as string | null,
+        last4: info.last4 as string | null,
+        saveCard: {
+          token: body.source.token,
+          brand: info.brand,
+          last4: info.last4,
+          month: info.month,
+          year: info.year,
+        },
+      };
+    }
+    const card = account.cards.find(
+      (c) => c.id === (body.source as { payment_method_id: string }).payment_method_id,
+    );
+    if (!card) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'payment_method' });
+    return {
+      behaviour: card.behaviour,
+      brand: card.brand as string | null,
+      last4: card.last4 as string | null,
+      saveCard: null,
+    };
+  }
+
+  function chargeSub(sub: FakeSubscription, src: ReturnType<typeof subSource>, amount: number) {
+    const p: FakeSubPayment = {
+      id: uuid(),
+      status: 'initiated',
+      behaviour: src.behaviour,
+      brand: src.brand,
+      last4: src.last4,
+      amount,
+      createdAt: now(),
+      paidAt: null,
+      saveCard: src.saveCard,
+      savedCardId: null,
+    };
+    sub.payments.push(p);
+    if (src.behaviour === 'dec') {
+      p.status = 'failed';
+      throw new Reject('PAYMENT_FAILED', {
+        online_payment_id: p.id,
+        failure_code: '51',
+        subscription_id: sub.id,
+      });
+    }
+    if (src.behaviour === 'ok') settleSubPayment(sub, p, 'success');
+    const account = accounts.get(sub.accountId) as Account;
+    return {
+      subscription: subView(sub, account),
+      payment: subPaymentView(
+        sub,
+        p,
+        p.status === 'initiated' ? `https://payments.fake.invalid/3ds/${p.id}` : null,
+      ),
+    };
+  }
+
   const handlers: Record<CustomerRouteKey, Handler> = {
     otpRequest(req) {
       const raw = (req.body ?? {}) as { phone_e164?: unknown };
@@ -659,7 +932,14 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       }
       if (q.filter === 'subscribable') items = items.filter((l) => l.subscriptions_enabled);
       if (q.filter === 'open_now') items = items.filter((l) => l.open_now === true);
-      if (q.filter === 'subscribed') items = [];
+      if (q.filter === 'subscribed') {
+        const mine = new Set(
+          [...subscriptions.values()]
+            .filter((x) => x.accountId === authenticate(req).id && (advanceSub(x), LIVE_SUB.has(x.status)))
+            .map((x) => x.venueId),
+        );
+        items = items.filter((l) => mine.has(l.venue_id));
+      }
       if (from) items.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
       const offset = q.cursor?.startsWith('o:') ? Number(q.cursor.slice(2)) || 0 : 0;
       const page = items.slice(offset, offset + q.limit);
@@ -695,7 +975,21 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       const home: CustomerHome = {
         display_name: account.displayName,
         current_visit: visit,
-        subscriptions: [],
+        subscriptions: [...subscriptions.values()]
+          .filter((x) => x.accountId === account.id && (advanceSub(x), LIVE_SUB.has(x.status)))
+          .map((x) => {
+            const v = subView(x, account);
+            return {
+              subscription_id: v.subscription_id,
+              venue_id: v.venue_id,
+              venue_name_ar: v.venue_name_ar,
+              venue_name_en: v.venue_name_en,
+              status: v.status,
+              billing_cycle: v.billing_cycle,
+              current_period_end: v.current_period_end,
+              cancel_at_period_end: v.cancel_at_period_end,
+            };
+          }),
         nearby_locations: nearby.slice(0, CUSTOMER_HOME_NEARBY_MAX),
         vehicles_count: account.vehicles.length,
       };
@@ -932,6 +1226,147 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       return visits.rate(account.id, params.ticketId as string, body);
     },
 
+    // ---- V2-032 (C-09, C-10, C-14)
+
+    subscriptions(req) {
+      const account = authenticate(req);
+      const items = [...subscriptions.values()]
+        .filter((x) => x.accountId === account.id)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((x) => subView(x, account));
+      return { items };
+    },
+
+    subscribe(req) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.subscribe.body, req.body);
+      const venue = FAKE_LOCATIONS.find((l) => l.plans.some((p) => p.plan_id === body.plan_id));
+      const plan = venue?.plans.find((p) => p.plan_id === body.plan_id);
+      if (!venue || !plan) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'subscription_plan' });
+      if (!venue.subscriptions_enabled)
+        throw new Reject('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'not_sold' });
+      const price = body.billing_cycle === 'yearly' ? plan.yearly_price_halalas : plan.monthly_price_halalas;
+      if (price === null) throw new Reject('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'cycle' });
+      if (body.vehicle_ids.length > plan.vehicles_included)
+        throw new Reject('VALIDATION_FAILED', {
+          fields: [{ field: 'vehicle_ids', issue: 'too_many', max: plan.vehicles_included }],
+        });
+      if (!body.vehicle_ids.every((id) => account.vehicles.some((v) => v.id === id)))
+        throw new Reject('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
+      for (const x of subscriptions.values()) advanceSub(x);
+      const live = [...subscriptions.values()].find(
+        (x) => x.accountId === account.id && x.venueId === venue.venue_id && LIVE_SUB.has(x.status),
+      );
+      if (live)
+        throw new Reject('SUBSCRIPTION_ALREADY_EXISTS', { subscription_id: live.id, status: live.status });
+      const src = subSource(account, body);
+      const sub: FakeSubscription = {
+        id: uuid(),
+        accountId: account.id,
+        venueId: venue.venue_id,
+        planId: plan.plan_id,
+        cycle: body.billing_cycle,
+        status: 'pending_payment',
+        price,
+        vehiclesIncluded: plan.vehicles_included,
+        vehicleIds: [...body.vehicle_ids],
+        periodStart: null,
+        periodEnd: null,
+        cancelAtEnd: false,
+        vehiclesChangedAt: null,
+        pendingExpiresAt: now() + 30 * 60_000,
+        createdAt: now(),
+        endedAt: null,
+        endedReason: null,
+        payments: [],
+      };
+      subscriptions.set(sub.id, sub);
+      return chargeSub(sub, src, price);
+    },
+
+    subscription(req, { params }) {
+      const account = authenticate(req);
+      return subView(ownSub(account, params.subscriptionId), account);
+    },
+
+    subscriptionPay(req, { params }) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.subscriptionPay.body, req.body);
+      const sub = ownSub(account, params.subscriptionId);
+      if (sub.status !== 'pending_payment' && sub.status !== 'past_due')
+        throw new Reject('SUBSCRIPTION_NOT_ACTIVE', {
+          subscription_id: sub.id,
+          current_status: sub.status,
+          command: 'subscription.pay',
+        });
+      return chargeSub(sub, subSource(account, body), sub.price);
+    },
+
+    subscriptionCancel(req, { params }) {
+      const account = authenticate(req);
+      const sub = ownSub(account, params.subscriptionId);
+      if (sub.status === 'pending_payment' || sub.status === 'past_due') {
+        sub.endedReason = sub.status === 'pending_payment' ? 'abandoned' : 'past_due_canceled';
+        sub.status = 'canceled';
+        sub.endedAt = now();
+      } else if (sub.status === 'active' || sub.status === 'frozen') sub.cancelAtEnd = true;
+      else
+        throw new Reject('SUBSCRIPTION_NOT_ACTIVE', {
+          subscription_id: sub.id,
+          current_status: sub.status,
+          command: 'subscription.cancel',
+        });
+      return subView(sub, account);
+    },
+
+    subscriptionResume(req, { params }) {
+      const account = authenticate(req);
+      const sub = ownSub(account, params.subscriptionId);
+      if (sub.status !== 'active' && sub.status !== 'frozen')
+        throw new Reject('SUBSCRIPTION_NOT_ACTIVE', {
+          subscription_id: sub.id,
+          current_status: sub.status,
+          command: 'subscription.resume',
+        });
+      sub.cancelAtEnd = false;
+      return subView(sub, account);
+    },
+
+    subscriptionVehicles(req, { params }) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.subscriptionVehicles.body, req.body);
+      const sub = ownSub(account, params.subscriptionId);
+      if (sub.status !== 'active' && sub.status !== 'past_due' && sub.status !== 'frozen')
+        throw new Reject('SUBSCRIPTION_NOT_ACTIVE', {
+          subscription_id: sub.id,
+          current_status: sub.status,
+          command: 'subscription.vehicles',
+        });
+      if (body.vehicle_ids.length > sub.vehiclesIncluded)
+        throw new Reject('VALIDATION_FAILED', {
+          fields: [{ field: 'vehicle_ids', issue: 'too_many', max: sub.vehiclesIncluded }],
+        });
+      if (!body.vehicle_ids.every((id) => account.vehicles.some((v) => v.id === id)))
+        throw new Reject('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
+      const same =
+        body.vehicle_ids.length === sub.vehicleIds.length &&
+        body.vehicle_ids.every((id) => sub.vehicleIds.includes(id));
+      if (!same) {
+        if (
+          sub.vehiclesChangedAt !== null &&
+          sub.periodStart !== null &&
+          sub.vehiclesChangedAt >= sub.periodStart
+        )
+          throw new Reject('SUBSCRIPTION_VEHICLES_LOCKED', {
+            subscription_id: sub.id,
+            available_at: sub.periodEnd === null ? null : iso(sub.periodEnd),
+          });
+        sub.vehicleIds = [...body.vehicle_ids];
+        sub.vehiclesChangedAt = now();
+      }
+      return subView(sub, account);
+    },
+
     devices(req) {
       authenticate(req);
       const body = parse(CUSTOMER_ROUTES.devices.body, req.body);
@@ -1029,9 +1464,15 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         throw new Error(`fake backend broke the ${found.key} contract: ${checked.error.message}`);
       const status =
         req.method === 'POST' &&
-        ['vehicleCreate', 'visitRequest', 'visitRating', 'visitPay', 'paymentMethodCreate'].includes(
-          found.key,
-        )
+        [
+          'vehicleCreate',
+          'visitRequest',
+          'visitRating',
+          'visitPay',
+          'paymentMethodCreate',
+          'subscribe',
+          'subscriptionPay',
+        ].includes(found.key)
           ? 201
           : 200;
       if (replyKey) replies.set(replyKey, { fingerprint, status, data: checked.data });
@@ -1089,6 +1530,12 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     complete3ds(paymentId: string, outcome: 'success' | 'fail' = 'success') {
       const p = payments.get(paymentId);
       if (p) settlePayment(p, outcome);
+    },
+    /** V2-032: the customer answers a subscription's 3-D Secure page (tests). */
+    complete3dsSubscription(subscriptionId: string, outcome: 'success' | 'fail' = 'success') {
+      const sub = subscriptions.get(subscriptionId);
+      const p = sub?.payments.find((x) => x.status === 'initiated');
+      if (sub && p) settleSubPayment(sub, p, outcome);
     },
     /** Every message «sent» (tests). */
     get inbox(): ReadonlyArray<{ phone: string; code: string; at: number }> {

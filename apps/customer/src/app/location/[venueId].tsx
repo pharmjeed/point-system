@@ -1,8 +1,8 @@
 /**
  * C-08 صفحة الموقع (V2-012): photos (short-lived presigned links of the private bucket, read again on every visit
  * of the screen, DEC-494), the operator line «تشغيل: …» (V2-D01), open now, the week's hours, the address with
- * «فتح في الخرائط», and the prices — per visit, and the subscription prices as «قريبًا» until phase V4 sells plans
- * (DEC-506). No «اشترك» button until then: nothing in the app leads to a screen that does not exist.
+ * «فتح في الخرائط», and the prices — per visit, and since V2-032 the monthly and yearly prices of the plans sold here
+ * with «اشترك», which opens C-09 (DEC-534; it replaces DEC-506's «قريبًا»).
  */
 import type { CustomerLocationDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -135,14 +135,19 @@ export default function LocationDetail() {
             {view.prices.map((p) => (
               <View key={p.label} style={styles.hoursRow}>
                 <AppText style={styles.flex}>{p.label}</AppText>
-                <AppText variant="bodyStrong" tone={p.soon ? 'muted' : 'default'}>
-                  {p.value}
-                </AppText>
+                <AppText variant="bodyStrong">{p.value}</AppText>
               </View>
             ))}
             <AppText variant="small" tone="muted">
-              {view.subscriptionsSoon ? t.locations.soonNote : t.locations.vatNote}
+              {t.locations.vatNote}
             </AppText>
+            {view.canSubscribe ? (
+              <Button
+                label={t.subscribe.action}
+                onPress={() => router.push({ pathname: '/subscribe/[venueId]', params: { venueId } })}
+                testID="location-subscribe"
+              />
+            ) : null}
           </Card>
           {notice ? <Banner tone="warning">{notice}</Banner> : null}
         </>

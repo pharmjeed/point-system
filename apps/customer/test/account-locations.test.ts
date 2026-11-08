@@ -160,23 +160,23 @@ describe('V2-012 — C-07 list, filters and map', () => {
 describe('V2-012 — C-08 location detail', () => {
   const detail = FAKE_LOCATIONS[0] as CustomerLocationDetail;
 
-  it('per-visit price, subscriptions «قريبًا» until V4, address, operator, open now', () => {
+  it('per-visit price, the plans’ monthly and yearly prices with «اشترك» (V2-032), address, operator, open now', () => {
     const v = locationDetailView({ ...detail, open_now: true }, ar, 'ar');
     expect(v.operator).toBe('تشغيل: ركن لخدمات الصف');
     expect(v.address).toBe('طريق العليا العام، حي العليا، الرياض');
     expect(v.openNow).toBe(ar.home.openNow);
     expect(v.prices).toEqual([
-      { label: ar.locations.perVisit, value: isolate('25.00 ر.س'), soon: false },
-      { label: ar.locations.monthly, value: ar.locations.soon, soon: true },
-      { label: ar.locations.yearly, value: ar.locations.soon, soon: true },
+      { label: ar.locations.perVisit, value: isolate('25.00 ر.س') },
+      { label: ar.locations.monthly, value: isolate('345.00 ر.س') },
+      { label: ar.locations.yearly, value: isolate('3,450.00 ر.س') },
     ]);
-    expect(v.subscriptionsSoon).toBe(true);
+    expect(v.canSubscribe).toBe(true);
     const hall = locationDetailView(
       { ...detail, subscriptions_enabled: false, pay_per_visit_halalas: null, open_now: null, address: null },
       en,
       'en',
     );
-    expect(hall).toMatchObject({ prices: [], subscriptionsSoon: false, openNow: null, address: 'الرياض' });
+    expect(hall).toMatchObject({ prices: [], canSubscribe: false, openNow: null, address: 'الرياض' });
     expect(hall.title).toBe('Business Tower — Olaya');
   });
 

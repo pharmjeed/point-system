@@ -9,12 +9,21 @@ import { CustomerPushDataSchema } from '@point/shared/customer';
 
 export type PushPermission = 'granted' | 'denied' | 'undetermined';
 
-/** A tapped notification → the screen to open (C-12 of the visit), or null for anything we did not send. */
+/**
+ * A tapped notification → the screen to open (C-12 of the visit; C-14 for a subscription push, V2-031), or null for
+ * anything we did not send.
+ */
 export function pushRoute(
   data: unknown,
-): { pathname: '/visit/[ticketId]'; params: { ticketId: string } } | null {
+):
+  | { pathname: '/visit/[ticketId]'; params: { ticketId: string } }
+  | { pathname: '/subscriptions'; params: { subscriptionId: string } }
+  | null {
   const r = CustomerPushDataSchema.safeParse(data);
-  return r.success ? { pathname: '/visit/[ticketId]', params: { ticketId: r.data.visit_id } } : null;
+  if (!r.success) return null;
+  return r.data.type === 'visit'
+    ? { pathname: '/visit/[ticketId]', params: { ticketId: r.data.visit_id } }
+    : { pathname: '/subscriptions', params: { subscriptionId: r.data.subscription_id } };
 }
 
 /** C-12's offer card: a visit is open, the build can receive pushes, the OS has not been asked, we did not offer yet. */

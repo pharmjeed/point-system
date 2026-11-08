@@ -32,6 +32,10 @@ import {
   type CustomerPaymentMethodRemoved,
   type CustomerVisitPayBody,
   type CustomerOnlinePayment,
+  type CustomerSubscribeBody,
+  type CustomerSubscription,
+  type CustomerSubscriptionCheckout,
+  type CustomerSubscriptionPayBody,
   type CustomerReauth,
   type CustomerRouteKey,
   type CustomerTokens,
@@ -385,6 +389,60 @@ export function createCustomerApi(opts: CustomerApiOptions) {
       idempotencyKey?: string,
     ): Promise<CustomerPaymentMethodRemoved> {
       return (await call('paymentMethodDelete', { params: { paymentMethodId }, idempotencyKey })).data;
+    },
+
+    // ---- V2-032 (C-09, C-10, C-14): the subscriptions (DEC-532, DEC-534)
+
+    async subscriptions(): Promise<CustomerSubscription[]> {
+      return (await call('subscriptions')).data.items;
+    },
+
+    async subscription(subscriptionId: string): Promise<CustomerSubscription> {
+      return (await call('subscription', { params: { subscriptionId } })).data;
+    },
+
+    /**
+     * C-09 → C-10: the subscription (pending until its payment is paid) and its payment — `paid`, or `initiated`
+     * with the 3-D Secure page; the server decides the price and the period.
+     */
+    async subscribe(
+      body: CustomerSubscribeBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerSubscriptionCheckout> {
+      return (await call('subscribe', { body, idempotencyKey })).data;
+    },
+
+    /** C-14 «ادفع»: a subscription waiting for its payment (a declined card) or in its grace (past due). */
+    async paySubscription(
+      subscriptionId: string,
+      body: CustomerSubscriptionPayBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerSubscriptionCheckout> {
+      return (await call('subscriptionPay', { params: { subscriptionId }, body, idempotencyKey })).data;
+    },
+
+    async cancelSubscription(subscriptionId: string, idempotencyKey?: string): Promise<CustomerSubscription> {
+      return (await call('subscriptionCancel', { params: { subscriptionId }, body: {}, idempotencyKey }))
+        .data;
+    },
+
+    async resumeSubscription(subscriptionId: string, idempotencyKey?: string): Promise<CustomerSubscription> {
+      return (await call('subscriptionResume', { params: { subscriptionId }, body: {}, idempotencyKey }))
+        .data;
+    },
+
+    async setSubscriptionVehicles(
+      subscriptionId: string,
+      vehicleIds: string[],
+      idempotencyKey?: string,
+    ): Promise<CustomerSubscription> {
+      return (
+        await call('subscriptionVehicles', {
+          params: { subscriptionId },
+          body: { vehicle_ids: vehicleIds },
+          idempotencyKey,
+        })
+      ).data;
     },
 
     /**

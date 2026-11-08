@@ -80,6 +80,14 @@ CUSTOMER_LIVE_API_URL=http://127.0.0.1:3000 WA_SIMULATOR_URL=http://127.0.0.1:40
 - **`C-18` وسائل الدفع:** `src/app/payment-methods.tsx` من «وسائل الدفع» في `C-19`.
 - **في الخادم الوهمي:** الزيارة التجريبية لرقم `+966500000099` برسوم 20 ريالًا؛ بطاقات المحاكي نفسها (`4111111111111111` ناجحة، `4000000000000002` 3-D Secure، `4201320000311101` مرفوضة، `4201320131000508` 3-D Secure ثم رفض، `4400000000000008` مدى).
 
+## الاشتراكات (V2-032، DEC-532، DEC-534)
+
+- **`C-08`:** أسعار الباقات المباعة في الموقع (الشهري والسنوي، «من X» حين تتعدد الباقات) وزر «اشترك» بدل «قريبًا».
+- **`C-09` اختيار الباقة:** `src/app/subscribe/[venueId].tsx` — الدورة (شهري/سنوي مع «وفّر X%»)، الباقة، السيارة/السيارات المشمولة من «سياراتي» (حتى عدد الباقة)، الشروط، ثم «متابعة إلى الدفع».
+- **`C-10` للاشتراك:** ورقة الدفع نفسها بخاصية `subscription` (`PaySheet`): بطاقة محفوظة أو بطاقة جديدة **تُحفظ دائمًا** للتجديد التلقائي بموافقة `card_on_file`، ولا Apple Pay (لا يُخصم مرة ثانية). النتيجة من استطلاع `GET /v1/customer/subscriptions/{id}` (`checkoutSubscription` في `payFlow.ts`).
+- **`C-14` اشتراكاتي:** `src/app/subscriptions.tsx` — الحالة وسطر «يتجدد يوم…/ينتهي…/بانتظار الدفع/تعذّر التجديد/مجمّد»، والأوامر التي يسمح بها الخادم (`can_*`): إلغاء التجديد واستئنافه، «ادفع الآن»، «تغيير السيارة» مرة في كل فترة. تُقرأ عند الظهور ومع كل `subscription.updated`.
+- **في الخادم الوهمي:** «برج الأعمال — العليا» بباقة سيارة واحدة (345 ريالًا شهريًا، 3450 سنويًا) و«مجمع الواحة» بباقتين؛ البطاقات نفسها أعلاه.
+
 ## البنية
 
 ```
@@ -89,7 +97,7 @@ assets/brand/        نسخ كما هي من brand/app-icons و brand/logo/point
 src/app/             الشاشات (Expo Router): welcome C-01، phone C-02، otp C-03، profile C-04،
                      vehicle C-05، home C-06، pass C-11، locations C-07، location/[venueId] C-08،
                      visit/[ticketId] C-12 (+ C-13)، visits C-16، vehicles C-15، settings C-19،
-                     delete-account C-20
+                     delete-account C-20، subscribe/[venueId] C-09، subscriptions C-14 (V2-032)
 src/api/             العميل المطبوع (client.ts)، النقل (transport.ts)، الخادم الوهمي (fake/، والزيارات fake/visits.ts)
 src/realtime/        الاتصال الفوري: Socket.IO namespace /customer بترويسة Bearer، أو أحداث الخادم الوهمي (V2-015)
 src/push/            الإشعارات (expo-notifications): الإذن، رمز Expo، النقر يفتح C-12 (V2-016)

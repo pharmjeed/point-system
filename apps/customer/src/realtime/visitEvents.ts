@@ -3,7 +3,7 @@
  * authenticated by `Authorization: Bearer <access token>` on the handshake (React Native's WebSocket sends
  * `extraHeaders`). The server joins the socket to the account's room only and sends `visit.updated` — a minimal
  * projection the screen answers by reading the visit again (the server is the source of truth). Delivery is at most
- * once, so every (re)connection asks the screens to read again as well (`onResync`). Each reconnection takes a fresh
+ * once (since V2-032 also `subscription.updated`), so every (re)connection asks the screens to read again as well (`onResync`). Each reconnection takes a fresh
  * access token (the 15-minute token is refreshed by the API client); `session.revoked` stops the channel.
  *
  * Fake mode (development, DEC-482): the in-memory backend's listeners, with a clock loop that moves the demo visit.
@@ -11,13 +11,17 @@
 import {
   CUSTOMER_REALTIME_NAMESPACE,
   CustomerRealtimeEnvelopeSchema,
+  CustomerSubscriptionUpdatedSchema,
   CustomerVisitUpdatedSchema,
+  type CustomerSubscriptionUpdated,
   type CustomerVisitUpdated,
 } from '@point/shared/customer';
 import type { io as ioFn, Socket } from 'socket.io-client';
 
 export interface VisitEventsListener {
   onVisit(e: CustomerVisitUpdated): void;
+  /** V2-032: `subscription.updated` — C-06 / C-14 read the subscriptions again */
+  onSubscription?(e: CustomerSubscriptionUpdated): void;
   /** connected again after a gap: read what is on screen again */
   onResync?(): void;
 }
@@ -88,6 +92,12 @@ export function socketVisitEvents(o: {
       const data = env.success ? CustomerVisitUpdatedSchema.safeParse(env.data.payload) : null;
       if (!data?.success) return;
       for (const l of listeners) l.onVisit(data.data);
+    });
+    s.on('subscription.updated', (raw: unknown) => {
+      const env = CustomerRealtimeEnvelopeSchema.safeParse(raw);
+      const data = env.success ? CustomerSubscriptionUpdatedSchema.safeParse(env.data.payload) : null;
+      if (!data?.success) return;
+      for (const l of listeners) l.onSubscription?.(data.data);
     });
     s.on('session.revoked', () => {
       stopped = true;
