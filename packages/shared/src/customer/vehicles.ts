@@ -66,3 +66,14 @@ export type CustomerVehicle = z.infer<typeof CustomerVehicleSchema>;
 /** `GET /v1/customer/vehicles` → `data` (oldest first; at most `CUSTOMER_VEHICLES_MAX`, so no cursor). */
 export const CustomerVehicleListSchema = z.object({ items: z.array(CustomerVehicleSchema) });
 export type CustomerVehicleList = z.infer<typeof CustomerVehicleListSchema>;
+
+/**
+ * `DELETE /v1/customer/vehicles/{vehicleId}` → `data` (C-15, V2-012, DEC-505): a soft remove (`removed_at`, never a
+ * hard delete). A vehicle of another account, unknown or already removed → `RESOURCE_NOT_FOUND`; one in a visit in
+ * progress → `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT`.
+ */
+export const CustomerVehicleRemovedSchema = z.object({
+  vehicle_id: z.uuid(),
+  removed_at: z.iso.datetime({ offset: true }),
+});
+export type CustomerVehicleRemoved = z.infer<typeof CustomerVehicleRemovedSchema>;

@@ -19,6 +19,10 @@ export const CUSTOMER_ERROR_CODES = [
   'CUSTOMER_VEHICLE_DUPLICATE',
   'VENUE_NOT_LISTED',
   'ACCOUNT_DELETED',
+  // V2-012 / V2-017 (DEC-505, DEC-507, DEC-508): C-15 remove a vehicle, C-20 delete the account
+  'CUSTOMER_VEHICLE_IN_ACTIVE_VISIT',
+  'CUSTOMER_ACCOUNT_VISIT_ACTIVE',
+  'CUSTOMER_REAUTH_REQUIRED',
 ] as const;
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[number];
 export const CustomerErrorCodeSchema = z.enum(CUSTOMER_ERROR_CODES);
@@ -50,7 +54,8 @@ export type CustomerApiErrorCode = CustomerErrorCode | CustomerReusedErrorCode;
 /**
  * The V2 catalog, in the shape of 08 (`ErrorDef`). Arabic text is customer-facing (V2-D01). `details`:
  * `CUSTOMER_OTP_INVALID` → `{ attempts_left }`; `CUSTOMER_OTP_LOCKED` → `{ locked_until }`;
- * `CUSTOMER_VEHICLE_LIMIT` → `{ max }`; `RATE_LIMITED` on `POST /v1/customer/auth/otp` → `{ retry_after_s }`.
+ * `CUSTOMER_VEHICLE_LIMIT` → `{ max }`; `RATE_LIMITED` on `POST /v1/customer/auth/otp` → `{ retry_after_s }`;
+ * `CUSTOMER_REAUTH_REQUIRED` → `{ reason: 'missing' | 'invalid' | 'expired' }`.
  */
 export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<ErrorDef, 'alert'>>> = {
   CUSTOMER_OTP_INVALID: {
@@ -108,6 +113,28 @@ export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<Err
     log: 'info',
     message: 'This account was deleted.',
     message_ar: 'حُذف هذا الحساب.',
+  },
+  CUSTOMER_VEHICLE_IN_ACTIVE_VISIT: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'This vehicle is in a visit in progress. Remove it after the visit ends.',
+    message_ar: 'هذه السيارة في زيارة جارية. احذفها بعد انتهاء الزيارة.',
+  },
+  CUSTOMER_ACCOUNT_VISIT_ACTIVE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'You have a visit in progress. Delete the account after you collect your car.',
+    message_ar: 'لديك زيارة جارية. احذف الحساب بعد استلام سيارتك.',
+  },
+  // 403, not 401: the app signs out on every 401 but AUTH_SESSION_EXPIRED, and the session itself is fine (DEC-507)
+  CUSTOMER_REAUTH_REQUIRED: {
+    http: 403,
+    retryable: false,
+    log: 'info',
+    message: 'Confirm with a new verification code first.',
+    message_ar: 'أكّد أولًا برمز تحقق جديد.',
   },
 };
 

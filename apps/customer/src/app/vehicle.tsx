@@ -1,9 +1,10 @@
 /**
  * C-05 إضافة سيارة: Saudi plate (digits + three plate letters, normalised as in `tickets`), make, model, colour
  * and type — skippable («يمكن تخطيه»). Make and colour are the 02 §8.4 pick lists with «أخرى» as free text.
+ * C-15 «أضف سيارة» reuses it with `?from=vehicles` (V2-012): saving or cancelling returns to the list.
  */
 import { CUSTOMER_VEHICLE_TYPES, type CustomerVehicleType } from '@point/shared/customer';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { CommandKey } from '../features/commandKey';
 import { errorText } from '../features/errorText';
@@ -32,6 +33,8 @@ export default function Vehicle() {
   const { t, f, locale } = useI18n();
   const session = useSession();
   const router = useRouter();
+  // C-15 «أضف سيارة» opens this same form (V2-012): it goes back to the list instead of continuing R1
+  const fromList = useLocalSearchParams<{ from?: string }>().from === 'vehicles';
   const [form, setForm] = useState<VehicleForm>(emptyVehicleForm);
   const [serverErrors, setServerErrors] = useState<VehicleErrors>({});
   const [submitted, setSubmitted] = useState(false);
@@ -46,6 +49,7 @@ export default function Vehicle() {
   };
 
   const finish = async () => {
+    if (fromList) return router.back();
     await session.markVehiclePromptDone();
     const me = await session.api.me().catch(() => session.me);
     router.replace(me ? await session.setMe(me) : '/home');
@@ -81,7 +85,13 @@ export default function Vehicle() {
       footer={
         <>
           <Button label={t.vehicle.submit} loading={busy} loadingLabel={t.common.saving} onPress={submit} />
-          <Button label={t.vehicle.skip} variant="ghost" size="md" onPress={finish} disabled={busy} />
+          <Button
+            label={fromList ? t.vehicles.cancel : t.vehicle.skip}
+            variant="ghost"
+            size="md"
+            onPress={finish}
+            disabled={busy}
+          />
         </>
       }
     >

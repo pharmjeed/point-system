@@ -102,6 +102,9 @@ export async function refreshCustomerSession(
       WHERE s.id = $1 FOR NO KEY UPDATE OF s`,
     [sessionId],
   );
+  // the current refresh token of a deleted account (C-20) says so: the app shows sign-in, not an error (DEC-508)
+  if (s && s.status === 'deleted' && safeEqual(customerTokenHash(body.refresh_token), s.refresh_hash))
+    throw new AppError('ACCOUNT_DELETED');
   if (!s || s.revoked_at) throw new AppError('AUTH_SESSION_REVOKED', { reason: s ? 'revoked' : 'unknown' });
   if (s.refresh_expires_at.getTime() <= tx.now.getTime())
     throw new AppError('AUTH_SESSION_REVOKED', { reason: 'expired' });

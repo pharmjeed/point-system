@@ -2199,16 +2199,26 @@ export const customer_accounts = pgTable(
   'customer_accounts',
   {
     id: uuid().defaultRandom().primaryKey().notNull(),
-    phone_e164: text().notNull(),
+    // NULL once the account is deleted (V2-017, 0011): phone_hash keeps an irreversible keyed hash instead
+    phone_e164: text(),
     display_name: text(),
     locale: text().default('ar').notNull(),
     status: text().default('active').notNull(),
     deleted_at: timestamp({ withTimezone: true, mode: 'string' }),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    phone_hash: text(),
   },
   (table) => [
     unique('uq_customer_accounts_phone').on(table.phone_e164),
+    check('ck_customer_accounts_phone_present', sql`(status = 'deleted'::text) OR (phone_e164 IS NOT NULL)`),
+    check('ck_customer_accounts_deleted_phone', sql`(status <> 'deleted'::text) OR (phone_e164 IS NULL)`),
+    check('ck_customer_accounts_deleted_name', sql`(status <> 'deleted'::text) OR (display_name IS NULL)`),
+    check('ck_customer_accounts_deleted_hash', sql`(status <> 'deleted'::text) OR (phone_hash IS NOT NULL)`),
+    check(
+      'ck_customer_accounts_phone_hash',
+      sql`(phone_hash IS NULL) OR (phone_hash ~ '^[0-9a-f]{64}$'::text)`,
+    ),
     check('ck_customer_accounts_deleted', sql`(status <> 'deleted'::text) OR (deleted_at IS NOT NULL)`),
     check(
       'ck_customer_accounts_display_name',
@@ -2312,6 +2322,9 @@ export const customer_account_sessions = pgTable(
     refreshed_at: timestamp({ withTimezone: true, mode: 'string' }),
     revoked_at: timestamp({ withTimezone: true, mode: 'string' }),
     revoked_reason: text(),
+    // V2-017 (0011): the single-use re-verification proof of C-20
+    reauth_hash: text(),
+    reauth_expires_at: timestamp({ withTimezone: true, mode: 'string' }),
   },
   (table) => [
     index('ix_customer_sessions_account')
@@ -2342,6 +2355,7 @@ export const customer_account_sessions = pgTable(
       sql`revoked_reason = ANY (ARRAY['logout'::text, 'refresh_reuse'::text, 'device_mismatch'::text, 'signed_in_again'::text, 'account_closed'::text, 'expired_cleanup'::text])`,
     ),
     check('ck_customer_sessions_rotation', sql`rotation_count >= 0`),
+    check('ck_customer_sessions_reauth', sql`(reauth_hash IS NULL) = (reauth_expires_at IS NULL)`),
   ],
 );
 

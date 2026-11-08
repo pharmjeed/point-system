@@ -25,21 +25,30 @@ export interface CustomerActorContext {
  */
 export const CUSTOMER_ACCESS_PREFIX = 'pca';
 export const CUSTOMER_REFRESH_PREFIX = 'pcr';
+/** The single-use re-verification proof of C-20 (V2-017, DEC-507), bound to one session like the other two. */
+export const CUSTOMER_REAUTH_PREFIX = 'pcv';
+
+export type CustomerTokenKind = 'access' | 'refresh' | 'reauth';
+const PREFIX: Readonly<Record<CustomerTokenKind, string>> = {
+  access: CUSTOMER_ACCESS_PREFIX,
+  refresh: CUSTOMER_REFRESH_PREFIX,
+  reauth: CUSTOMER_REAUTH_PREFIX,
+};
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function newCustomerToken(kind: 'access' | 'refresh', sessionId: string): string {
-  return `${kind === 'access' ? CUSTOMER_ACCESS_PREFIX : CUSTOMER_REFRESH_PREFIX}.${sessionId}.${randomToken(32)}`;
+export function newCustomerToken(kind: CustomerTokenKind, sessionId: string): string {
+  return `${PREFIX[kind]}.${sessionId}.${randomToken(32)}`;
 }
 
 /** The session id of a well-formed token of that kind, or null. */
 export function customerTokenSession(
-  kind: 'access' | 'refresh',
+  kind: CustomerTokenKind,
   token: string | null | undefined,
 ): string | null {
   if (typeof token !== 'string' || token.length > 200) return null;
   const parts = token.split('.');
-  const prefix = kind === 'access' ? CUSTOMER_ACCESS_PREFIX : CUSTOMER_REFRESH_PREFIX;
+  const prefix = PREFIX[kind];
   if (
     parts.length !== 3 ||
     parts[0] !== prefix ||
@@ -78,7 +87,8 @@ interface CustomerSessionRow {
  * AUTH_UNAUTHENTICATED (no or malformed token, unknown session), AUTH_SESSION_REVOKED (revoked, or past the refresh
  * lifetime: signing in again is the only way back), AUTH_SESSION_EXPIRED (past its 15 minutes, or an access token
  * the last refresh replaced — a call that crossed a refresh in flight; the app refreshes once and retries),
- * ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED. It never reads a cookie: a staff or platform session is not a customer
+ * ACCOUNT_DELETED (the current token of a deleted account, before the revocation the deletion wrote),
+ * AUTH_ACCOUNT_DISABLED. It never reads a cookie: a staff or platform session is not a customer
  * session.
  */
 export async function loadCustomerActor(
@@ -99,6 +109,8 @@ export async function loadCustomerActor(
   const s = r.rows[0];
   if (!s) throw new AppError('AUTH_UNAUTHENTICATED');
   const hashMatches = safeEqual(customerTokenHash(token), s.access_hash);
+  // a deleted account (C-20) revoked every session as it went: its own last token learns why (V2-017, DEC-508)
+  if (s.status === 'deleted' && hashMatches) throw new AppError('ACCOUNT_DELETED');
   if (s.revoked_at) throw new AppError('AUTH_SESSION_REVOKED', { reason: s.revoked_reason ?? 'logout' });
   if (s.refresh_expires_at.getTime() <= now.getTime())
     throw new AppError('AUTH_SESSION_REVOKED', { reason: 'expired' });

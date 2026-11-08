@@ -9,6 +9,7 @@ export * from './auth.js';
 export * from './vehicles.js';
 export * from './locations.js';
 export * from './home.js';
+export * from './deletion.js';
 export * from './routes.js';
 // V2-013: the entry pass (C-11 / O-01)
 export * from './pass.js';

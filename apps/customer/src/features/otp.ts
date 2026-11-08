@@ -6,7 +6,8 @@
 import { CUSTOMER_OTP_LENGTH, type CustomerOtpChallenge } from '@point/shared/customer';
 import { ApiError } from '../api/errors';
 import { NetworkError } from '../api/transport';
-import { toLatinDigits } from '../i18n/format';
+import { fmt, type AppLocale, type Dictionary } from '../i18n';
+import { minutesUntil, toLatinDigits } from '../i18n/format';
 
 export type OtpNotice =
   | { kind: 'invalid'; attemptsLeft: number | null }
@@ -112,3 +113,45 @@ export function applyResent(s: OtpState, c: CustomerOtpChallenge): OtpState {
 
 /** After a resend failed. */
 export const applyResendError = (s: OtpState, e: unknown, now: number): OtpState => common(s, e, now);
+
+/**
+ * The banner of a notice (C-03, and C-20's confirmation code, V2-017). `lockMinutes` = minutes left of a lock.
+ * A lock that has run out shows nothing.
+ */
+export function otpNoticeText(
+  s: OtpState,
+  dict: Dictionary,
+  locale: AppLocale,
+  now: number,
+): { tone: 'danger' | 'success' | 'warning'; text: string } | null {
+  const n = s.notice;
+  if (!n) return null;
+  switch (n.kind) {
+    case 'invalid':
+      return {
+        tone: 'danger',
+        text:
+          n.attemptsLeft === null ? dict.otp.invalid : fmt(dict.otp.attemptsLeft, { count: n.attemptsLeft }),
+      };
+    case 'expired':
+      return { tone: 'warning', text: dict.otp.expired };
+    case 'locked':
+      if (!isLocked(s, now)) return null;
+      return {
+        tone: 'danger',
+        text: fmt(dict.otp.locked, {
+          minutes: s.lockedUntil ? minutesUntil(new Date(s.lockedUntil).toISOString(), now) : 15,
+        }),
+      };
+    case 'resent':
+      return { tone: 'success', text: dict.otp.resent };
+    case 'rateLimited':
+      return { tone: 'warning', text: dict.errors.RATE_LIMITED };
+    case 'channelDown':
+      return { tone: 'warning', text: dict.otp.channelDown };
+    case 'network':
+      return { tone: 'danger', text: dict.common.networkError };
+    case 'server':
+      return { tone: 'danger', text: locale === 'ar' ? n.messageAr : n.message };
+  }
+}

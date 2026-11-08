@@ -4,6 +4,7 @@ import {
   saudiPlateDisplay,
   type CustomerVehicle,
   CustomerVehicleCreateBodySchema,
+  type CustomerVehicleRemoved,
   type CustomerVehicleType,
 } from '@point/shared/customer';
 import { OPEN_TICKET_STATUSES } from '@point/shared';
@@ -17,6 +18,8 @@ import type { ClientInfo } from '../../identity-access/application/auth-service.
 import { lockCustomerAccount } from './account-service.js';
 
 type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface VehicleRow {
   id: string;
@@ -133,4 +136,42 @@ export async function addCustomerVehicle(
     await tx.query<VehicleRow>(`${VEHICLE_SELECT} WHERE v.id = $1`, [row.id, [...OPEN_TICKET_STATUSES]])
   ).rows[0]!;
   return vehicleView(v);
+}
+
+/**
+ * `DELETE /v1/customer/vehicles/{vehicleId}` (C-15; V2-012, DEC-505): a soft remove — `removed_at`, never a hard
+ * delete (canon rule 9) — so the partial unique index frees the plate for a later add. Under the account's row
+ * lock (DEC-497). Another account's vehicle, an unknown id or one already removed → RESOURCE_NOT_FOUND
+ * (`resource: customer_vehicle`) with the same answer; a vehicle in a visit in progress (`in_active_visit`) →
+ * CUSTOMER_VEHICLE_IN_ACTIVE_VISIT and nothing is written.
+ */
+export async function removeCustomerVehicle(
+  tx: Tx,
+  actor: CustomerActorContext,
+  vehicleId: string,
+  client: ClientInfo,
+): Promise<CustomerVehicleRemoved> {
+  await lockCustomerAccount(tx, actor.accountId);
+  const v = UUID_RE.test(vehicleId)
+    ? (
+        await tx.query<VehicleRow>(
+          `${VEHICLE_SELECT} WHERE v.id = $1 AND v.account_id = $3 AND v.removed_at IS NULL FOR NO KEY UPDATE OF v`,
+          [vehicleId, [...OPEN_TICKET_STATUSES], actor.accountId],
+        )
+      ).rows[0]
+    : undefined;
+  if (!v) throw new AppError('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
+  if (v.in_active_visit) throw new AppError('CUSTOMER_VEHICLE_IN_ACTIVE_VISIT');
+  await tx.query(`UPDATE customer_vehicles SET removed_at = $2 WHERE id = $1`, [v.id, tx.now]);
+  await customerAudit(tx, {
+    actor: { type: 'customer', accountId: actor.accountId },
+    action: 'customer.vehicle.remove',
+    entityType: 'customer_vehicle',
+    entityId: v.id,
+    requestId: client.requestId,
+    ip: client.ip ?? null,
+    userAgent: client.userAgent ?? null,
+    metadata: { vehicle_type: v.vehicle_type },
+  });
+  return { vehicle_id: v.id, removed_at: tx.now.toISOString() };
 }

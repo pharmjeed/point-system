@@ -2,7 +2,7 @@
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
 -- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, 0009 the customer accounts,
--- V2-010, and 0010 the entry pass and the app tickets, V2-013/V2-014):
+-- V2-010, 0010 the entry pass and the app tickets, V2-013/V2-014, and 0011 their deletion, V2-017):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -201,6 +201,23 @@ SELECT expect_fail('two customers rows of one operator for the same account',
  $q$INSERT INTO customers(org_id,phone_e164,customer_account_id) VALUES ('00000000-0000-0000-0000-000000000001','+966500000952','00000000-0000-0000-0000-00000000ca01')$q$);
 SELECT expect_fail('customer audit row of a customer without account',
  $q$INSERT INTO customer_audit_log(actor_type,action,entity_type) VALUES ('customer','customer.auth.signed_in','customer_account')$q$);
+-- V2-017 account deletion (0011_customer_account_deletion.sql, DEC-508): a live account always has its number; a
+-- deleted one has neither number nor name, only the keyed hash, so the same number can sign up again
+SELECT expect_fail('live customer account without a phone',
+ $q$UPDATE customer_accounts SET phone_e164=NULL WHERE id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('deleted customer account that keeps its phone',
+ $q$UPDATE customer_accounts SET status='deleted', deleted_at=now(), phone_hash=repeat('a',64) WHERE id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('deleted customer account that keeps its name',
+ $q$UPDATE customer_accounts SET status='deleted', deleted_at=now(), phone_e164=NULL, phone_hash=repeat('a',64), display_name='سارة' WHERE id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('deleted customer account without the phone hash',
+ $q$UPDATE customer_accounts SET status='deleted', deleted_at=now(), phone_e164=NULL, display_name=NULL WHERE id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('customer phone hash that is not a sha256 hex',
+ $q$UPDATE customer_accounts SET phone_hash='+966500000951' WHERE id='00000000-0000-0000-0000-00000000ca01'$q$);
+SELECT expect_fail('customer session with half a re-verification proof',
+ $q$UPDATE customer_account_sessions SET reauth_hash='x' WHERE refresh_hash='rh1'$q$);
+UPDATE customer_accounts SET status='deleted', deleted_at=now(), phone_e164=NULL, display_name=NULL, phone_hash=repeat('a',64)
+ WHERE id='00000000-0000-0000-0000-00000000ca01';
+INSERT INTO customer_accounts(phone_e164) VALUES ('+966500000951');
 -- V2 entry pass and app tickets (0010_customer_pass_and_app_intake.sql, V2-013/V2-014, DEC-500 … DEC-502)
 INSERT INTO customer_passes(account_id,secret_ciphertext) VALUES ('00000000-0000-0000-0000-00000000ca01','k1:iv:tag:ct');
 SELECT expect_fail('second entry pass for one account',

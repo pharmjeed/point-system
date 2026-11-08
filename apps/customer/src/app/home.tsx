@@ -1,7 +1,8 @@
 /**
  * C-06 الرئيسية: the big «بطاقة الدخول» button (its target C-11 is a stub until V2-013), the visit in progress
  * above everything when there is one (C-12 comes with V2-015), my subscriptions (C-14, V2-032: placeholder) and
- * the nearby locations from `GET /v1/customer/home` (C-07/C-08 with V2-012).
+ * the nearby locations from `GET /v1/customer/home`, each opening C-08, with «كل المواقع» (C-07), «سياراتي» (C-15)
+ * and «الإعدادات» (C-19, where sign-out and C-20 live) since V2-012/V2-017.
  */
 import type { CustomerHome } from '@point/shared/customer';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -118,7 +119,16 @@ export default function Home() {
               home.nearby_locations.map((loc) => {
                 const row = locationRow(loc, t, locale);
                 return (
-                  <Card key={row.id}>
+                  <Pressable
+                    key={row.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={row.title}
+                    accessibilityHint={t.locations.details}
+                    onPress={() =>
+                      router.push({ pathname: '/location/[venueId]', params: { venueId: row.id } })
+                    }
+                    style={({ pressed }) => [styles.locationCard, pressed && styles.pressed]}
+                  >
                     <AppText variant="bodyStrong">{row.title}</AppText>
                     <AppText variant="small" tone="muted">
                       {row.operator}
@@ -129,10 +139,17 @@ export default function Home() {
                         {row.price}
                       </AppText>
                     ) : null}
-                  </Card>
+                  </Pressable>
                 );
               })
             )}
+            <Button
+              label={t.home.allLocations}
+              variant="secondary"
+              size="md"
+              onPress={() => router.push('/locations')}
+              testID="home-locations"
+            />
           </View>
         );
     }
@@ -144,12 +161,15 @@ export default function Home() {
         <Logo variant="mark" height={28} label={brand} />
         <AppText style={styles.brand}>{brand}</AppText>
         <View style={styles.flex} />
-        <Button
-          label={t.home.signOut}
-          variant="ghost"
-          size="md"
-          onPress={() => void session.signOut().then(() => router.replace('/phone'))}
-        />
+        <View>
+          <Button
+            label={t.home.settings}
+            variant="ghost"
+            size="md"
+            onPress={() => router.push('/settings')}
+            testID="home-settings"
+          />
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -165,12 +185,17 @@ export default function Home() {
             <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} />
           ) : null}
           {home ? homeSections(home).map(section) : null}
-          {home && home.vehicles_count === 0 ? (
+          {home ? (
             <Button
-              label={t.home.addVehicle}
+              label={home.vehicles_count === 0 ? t.home.addVehicle : t.home.myVehicles}
               variant="secondary"
               size="md"
-              onPress={() => router.push('/vehicle')}
+              onPress={() =>
+                home.vehicles_count === 0
+                  ? router.push({ pathname: '/vehicle', params: { from: 'vehicles' } })
+                  : router.push('/vehicles')
+              }
+              testID="home-vehicles"
             />
           ) : null}
         </View>
@@ -206,4 +231,13 @@ const styles = StyleSheet.create({
     gap: space[1],
   },
   mono: { fontFamily: font.mono },
+  locationCard: {
+    backgroundColor: color.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.border,
+    padding: space[4],
+    gap: space[2],
+  },
+  pressed: { backgroundColor: color.primarySubtle },
 });

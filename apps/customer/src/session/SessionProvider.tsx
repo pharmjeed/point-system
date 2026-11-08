@@ -31,6 +31,8 @@ interface SessionValue extends ApiBundle {
   markWelcomeSeen(): Promise<void>;
   markVehiclePromptDone(): Promise<void>;
   signOut(): Promise<void>;
+  /** C-20: the account is gone (the client already dropped the tokens); the app starts R1 over at C-01. */
+  forgetAccount(): void;
   /** Where R1 continues with the current (or given) state. */
   destination(next?: {
     me?: CustomerMe | null;
@@ -113,6 +115,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await bundle.api.logout();
         setMeState(null);
       },
+      forgetAccount: () => setMeState(null),
       destination: (next = {}) =>
         nextDestination({
           me: next.me === undefined ? me : next.me,

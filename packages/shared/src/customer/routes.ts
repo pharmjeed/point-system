@@ -16,12 +16,19 @@ import {
   CustomerRefreshBodySchema,
   CustomerTokensSchema,
 } from './auth.js';
+import {
+  CustomerAccountDeleteBodySchema,
+  CustomerAccountDeletedSchema,
+  CustomerReauthSchema,
+  CustomerReauthVerifyBodySchema,
+} from './deletion.js';
 import { CustomerHomeSchema } from './home.js';
 import { CustomerLocationDetailSchema, CustomerLocationListSchema } from './locations.js';
 import { CustomerPassSchema } from './pass-contract.js';
 import {
   CustomerVehicleCreateBodySchema,
   CustomerVehicleListSchema,
+  CustomerVehicleRemovedSchema,
   CustomerVehicleSchema,
 } from './vehicles.js';
 
@@ -144,6 +151,33 @@ export const CUSTOMER_ROUTES = {
     idempotency: 'none',
     rateLimitClass: 'read',
     data: CustomerHomeSchema,
+  },
+  // ---- V2-012 (C-15) and V2-017 (C-20): remove a vehicle, re-verify, delete the account (DEC-505, DEC-507)
+  vehicleDelete: {
+    method: 'DELETE',
+    path: '/v1/customer/vehicles/{vehicleId}',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    data: CustomerVehicleRemovedSchema,
+  },
+  reauthVerify: {
+    method: 'POST',
+    path: '/v1/customer/auth/reauth/verify',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'auth',
+    body: CustomerReauthVerifyBodySchema,
+    data: CustomerReauthSchema,
+  },
+  meDelete: {
+    method: 'DELETE',
+    path: '/v1/customer/me',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerAccountDeleteBodySchema,
+    data: CustomerAccountDeletedSchema,
   },
   // --- V2-013 (DEC-500): the entry pass, C-11 ---
   pass: {

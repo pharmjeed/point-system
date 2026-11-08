@@ -180,6 +180,8 @@ CREATE INDEX ix_venue_public_profiles_listed ON venue_public_profiles(category) 
 ## 3. العميل على مستوى المنصة
 
 > **نُفذ في `packages/db/migrations/0009_customer_accounts.sql` و`0009_customers_account_index.sql` (V2-010، DEC-496…DEC-498).** الفروق عن المسودة أدناه: أسماء صريحة لكل قيد وفهرس، وفحص اللغة وطول الاسم والجهاز؛ في `customer_account_sessions` أعمدة `access_hash` و`access_expires_at` و`refresh_expires_at` و`rotation_count` و`refreshed_at` و`revoked_reason` وجلسة حية واحدة لكل حساب وجهاز؛ جداول جديدة `customer_otp_challenges` (رموز الدخول: HMAC ونسخة مشفرة مؤقتة) و`customer_idempotency_keys` و`customer_audit_log` (إلحاقي)؛ `customer_account_consents.request_id` وقيد يمنع «رفض» الشروط والخصوصية؛ وفهرس `uq_customers_org_account` في ملف مستقل يُبنى `CONCURRENTLY`. أما `tickets.customer_vehicle_id` و`entitlement` و`customer_passes` فليست في هذا الترحيل (V2-013 وما بعدها).
+>
+> **حذف الحساب في `0011_customer_account_deletion.sql` (V2-017، DEC-507، DEC-508):** `customer_accounts.phone_hash` (بصمة HMAC لا تُعكس)، و`phone_e164` يقبل `NULL` للمحذوف وحده (`ck_customer_accounts_phone_present`)، والمحذوف بلا رقم ولا اسم وببصمة (`ck_customer_accounts_deleted_phone` / `_deleted_name` / `_deleted_hash`، و`_phone_hash` sha256 hex) — فيسجّل الرقم نفسه حسابًا جديدًا؛ و`customer_account_sessions.reauth_hash` / `reauth_expires_at` لدليل إعادة التحقق قبل الحذف (`ck_customer_sessions_reauth`). صفوف `customers` لدى المشغلين لا تُمس.
 
 ```sql
 CREATE TABLE customer_accounts (
