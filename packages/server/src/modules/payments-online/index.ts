@@ -37,6 +37,7 @@ export {
 } from './application/payment-sync.js';
 export { PaymentWebhookIntake, paymentWebhookJob } from './application/webhooks.js';
 export { RefundsService, paymentRefundJob, refundView } from './application/refunds.js';
+export { PlatformPaymentsConsole } from './application/platform-console.js';
 export {
   PaymentsReconciler,
   ensureReconcileScheduled,

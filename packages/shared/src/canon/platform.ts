@@ -311,6 +311,40 @@ const PLATFORM_ROWS: readonly PRow[] = [
     'command',
     'V2-021',
   ],
+  // P-06 customers (V2-024, DEC-526 … DEC-528): search by phone (masked), the account, suspend / reactivate / revoke
+  ['GET', '/v1/platform/customers', 'platform.customer_read', 'none', 'read', 'V2-024'],
+  ['GET', '/v1/platform/customers/{accountId}', 'platform.customer_read', 'none', 'read', 'V2-024'],
+  [
+    'POST',
+    '/v1/platform/customers/{accountId}/suspend',
+    'platform.customer_manage',
+    'required',
+    'write',
+    'V2-024',
+  ],
+  [
+    'POST',
+    '/v1/platform/customers/{accountId}/reactivate',
+    'platform.customer_manage',
+    'required',
+    'write',
+    'V2-024',
+  ],
+  [
+    'POST',
+    '/v1/platform/customers/{accountId}/sessions/revoke',
+    'platform.customer_manage',
+    'required',
+    'write',
+    'V2-024',
+  ],
+  // P-08 payments, reconciliation and finance alerts (V2-024, DEC-529, DEC-530); the refund is V2-021's row above
+  ['GET', '/v1/platform/payments', 'platform.payment_read', 'none', 'read', 'V2-024'],
+  ['GET', '/v1/platform/payments/{paymentId}', 'platform.payment_read', 'none', 'read', 'V2-024'],
+  ['GET', '/v1/platform/reconciliation-runs', 'platform.payment_read', 'none', 'read', 'V2-024'],
+  ['GET', '/v1/platform/reconciliation-runs/{runId}', 'platform.payment_read', 'none', 'read', 'V2-024'],
+  ['GET', '/v1/platform/alerts', 'platform.payment_read', 'none', 'read', 'V2-024'],
+  ['POST', '/v1/platform/alerts/{alertId}/resolve', 'platform.payment_read', 'required', 'command', 'V2-024'],
 ];
 
 /** The `/v1/platform/*` routes (docs/07_openapi.yaml tag `platform`), checked by test/platform.test.ts. */

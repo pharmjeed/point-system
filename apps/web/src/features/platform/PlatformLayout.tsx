@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Building2, LayoutDashboard, LogOut, MapPin } from 'lucide-react';
+import { Building2, CreditCard, LayoutDashboard, LogOut, MapPin, Users } from 'lucide-react';
 import { Navigate, Outlet, useNavigate, useOutletContext } from 'react-router';
 import { ApiError } from '@/api/errors';
 import {
@@ -29,17 +29,26 @@ import { platformNav } from './platformModel';
 import { usePlatformMe } from './usePlatformMe';
 import '@/features/supervisor/staff.css';
 
-const NAV_ICON = { overview: LayoutDashboard, operators: Building2, venues: MapPin } as const;
+const NAV_ICON = {
+  overview: LayoutDashboard,
+  operators: Building2,
+  venues: MapPin,
+  customers: Users,
+  payments: CreditCard,
+} as const;
 const NAV_PATH = {
   overview: paths.platform,
   operators: paths.platformOperators,
   venues: paths.platformVenues,
+  customers: paths.platformCustomers,
+  payments: paths.platformPayments,
 } as const;
 
 /**
  * `/platform/*` — the platform console shell (V2-002 sign-in, V2-003 screens): its own session (`GET
  * /v1/platform/me`), the staff theme, SideNav from 1024px and the BottomNav below, the destinations this platform
- * role may open (P-01 for everyone, P-02 / P-03 with `platform.operator_read`, P-04 with `platform.venue_review`). No platform session, or a restricted
+ * role may open (P-01 for everyone, P-02 / P-03 with `platform.operator_read`, P-04 with `platform.venue_review`, P-06
+ * with `platform.customer_read`, P-08 with `platform.payment_read`). No platform session, or a restricted
  * one, goes to /platform/login. It never touches the staff session (DEC-462).
  */
 export function PlatformLayout() {

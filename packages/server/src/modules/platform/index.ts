@@ -13,3 +13,9 @@ export { assertNoContractOverlap, type IsoDate } from './application/operator-co
 export { OperatorsService, OPERATOR_STATUS_ACTIONS } from './application/operators-service.js';
 // the public listings (V2-004) read the operator's status through the core helper (DEC-487)
 export { isOperatorActive, assertOperatorOperating } from '../../core/operator-status.js';
+// P-06 customers (V2-024, DEC-526 … DEC-528)
+export {
+  PlatformCustomersService,
+  CUSTOMER_ACCOUNT_ACTIONS,
+  type PlatformCustomerSummary,
+} from './application/customers-service.js';
