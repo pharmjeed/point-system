@@ -10359,6 +10359,731 @@ paths:
       x-idempotency: required
       x-rate-limit-class: command
       x-error-codes: [PAYMENT_NOT_REFUNDABLE, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, REFUND_AMOUNT_EXCEEDS_PAID, RESOURCE_NOT_FOUND]
+  /v1/platform/customers:
+    get:
+      operationId: platformListCustomers
+      summary: العملاء (P-06)
+      tags: [Platform]
+      description: |-
+        حسابات العملاء (V2-024، DEC-526)، الأحدث أولًا، والجوال مقنّعًا دائمًا (V2-D12). مع phone بحث مطابق فقط بعد التطبيع كدخول العميل (normalizeSaudiMobile؛ أي صيغة سعودية)، ويجد الحساب المحذوف ببصمة رقمه (DEC-508) بلا جوال ولا اسم؛ لا بحث جزئي. البحث بالجوال يُدوَّن customer.search في platform_audit_log بعدد النتائج لا بالرقم.
+
+        الشروط: phone ليس جوالًا سعوديًا ← PHONE_INVALID
+      parameters:
+      - name: phone
+        in: query
+        required: false
+        description: بحث مطابق بالجوال (أي صيغة سعودية)
+        schema:
+          type: string
+          maxLength: 32
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [active, suspended, deleted]
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformCustomerListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: PHONE_INVALID | VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.customer_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PHONE_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/customers/{accountId}:
+    get:
+      operationId: platformGetCustomer
+      summary: حساب عميل (P-06)
+      tags: [Platform]
+      description: |-
+        الحساب: الحالة والإنشاء، الموافقات بإصداراتها (الأخيرة لكل نوع والسجل)، السيارات، الزيارات بالحقول الدنيا (listAccountVisits، DEC-504)، الجلسات أعدادًا وأجهزة بلا رموز ولا بصمات ولا رمز إشعار، البطاقات المحفوظة (العلامة وآخر 4 أرقام)، المدفوعات الإلكترونية، وسجل أفعال المنصة عليه. الجوال مقنّع، ولا بيانات رمز دخول. القراءة نفسها تُدوَّن customer.view (DEC-526).
+      parameters:
+      - $ref: '#/components/parameters/accountId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformCustomerDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.customer_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/customers/{accountId}/suspend:
+    post:
+      operationId: platformSuspendCustomer
+      summary: تعليق حساب عميل
+      tags: [Platform]
+      description: |-
+        active ← suspended بسبب مسجّل (DEC-527). الجلسات تبقى حية، لكن رمز الوصول والتحديث والدخول تُرفض بـAUTH_ACCOUNT_DISABLED وبطاقة الدخول بـPASS_INVALID حتى إعادة التفعيل؛ ولا يمس تذاكر المشغلين الجارية.
+
+        الشروط: الحالة active ← وإلا INVALID_STATE_TRANSITION (current_status، allowed_from)
+
+        الأثر: customer_accounts.status؛ platform_audit_log (customer.suspend، from_status/to_status) وcustomer_audit_log (customer.account.suspended) في المعاملة نفسها
+      parameters:
+      - $ref: '#/components/parameters/accountId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformCustomerCommandEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.customer_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/customers/{accountId}/reactivate:
+    post:
+      operationId: platformReactivateCustomer
+      summary: إعادة تفعيل حساب عميل
+      tags: [Platform]
+      description: |-
+        suspended ← active بسبب مسجّل؛ الجلسات التي بقيت حية تعمل من جديد.
+
+        الشروط: الحالة suspended ← وإلا INVALID_STATE_TRANSITION (current_status، allowed_from)
+
+        الأثر: customer_accounts.status؛ platform_audit_log (customer.reactivate) وcustomer_audit_log (customer.account.reactivated)
+      parameters:
+      - $ref: '#/components/parameters/accountId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformCustomerCommandEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.customer_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/customers/{accountId}/sessions/revoke:
+    post:
+      operationId: platformRevokeCustomerSessions
+      summary: إنهاء كل جلسات العميل
+      tags: [Platform]
+      description: |-
+        يُنهي كل جلسة حية للحساب بسبب مسجّل (revoked_reason = platform_revoked، ترحيل 0015، DEC-527) ويُسقط رمز الإشعار ودليل إعادة التحقق؛ الطلب التالي برمز الجلسة ← AUTH_SESSION_REVOKED (reason: platform_revoked) فيدخل العميل من جديد. الحالة لا تتغير.
+
+        الشروط: الحالة active أو suspended ← وإلا (محذوف) INVALID_STATE_TRANSITION
+
+        الأثر: customer_account_sessions؛ platform_audit_log (customer.sessions_revoke، revoked_sessions) وcustomer_audit_log (customer.sessions.revoked)
+      parameters:
+      - $ref: '#/components/parameters/accountId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED
+              required: [reason]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformCustomerCommandEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.customer_manage
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/payments:
+    get:
+      operationId: platformListPayments
+      summary: المدفوعات الإلكترونية (P-08)
+      tags: [Platform]
+      description: |-
+        online_payments لكل المشغلين، الأحدث أولًا (V2-024، DEC-529): المبالغ بالهللة شاملة الضريبة وvat_halalas الضريبة داخلها، البطاقة علامة وآخر 4 أرقام، والعميل جوالًا مقنّعًا. from/to أيام الرياض (شاملة) على created_at.
+
+        الشروط: from بعد to ← VALIDATION_FAILED (to: before_from)
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/OnlinePaymentStatus'
+      - name: purpose
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [visit, subscription]
+      - name: org_id
+        in: query
+        required: false
+        description: المشغل
+        schema:
+          type: string
+          format: uuid
+      - name: venue_id
+        in: query
+        required: false
+        description: الموقع
+        schema:
+          type: string
+          format: uuid
+      - name: account_id
+        in: query
+        required: false
+        description: حساب العميل
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        required: false
+        description: أول يوم بتوقيت الرياض
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        description: آخر يوم بتوقيت الرياض
+        schema:
+          type: string
+          format: date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPaymentListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.payment_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/payments/{paymentId}:
+    get:
+      operationId: platformGetPayment
+      summary: دفعة إلكترونية وخطها الزمني (P-08)
+      tags: [Platform]
+      description: |-
+        الدفعة وأوقات حالاتها، والمتبقي للاسترداد (refundable_halalas: المدفوع − المسترد − ما ينتظر الإرسال)، والاستردادات بمُصدِرها، وسجل حالاتها من platform_audit_log، وتسليمات البوابة عنها منقّاة (النوع والأوقات والنتيجة والحالة والمبالغ التي ادّعتها، لا الجسم المخزّن)، وتنبيهاتها. الاسترداد بـPOST …/refunds (DEC-513).
+      parameters:
+      - $ref: '#/components/parameters/paymentId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPaymentDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.payment_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/reconciliation-runs:
+    get:
+      operationId: platformListReconciliationRuns
+      summary: تشغيلات المطابقة اليومية (P-08)
+      tags: [Platform]
+      description: |-
+        payment_reconciliation_runs (job.payments_reconcile، DEC-514)، الأحدث بدءًا أولًا، بالأعداد وصافي المدفوع لكل طرف. from/to على run_date (يوم الرياض المقارَن).
+
+        الشروط: from بعد to ← VALIDATION_FAILED
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [running, matched, mismatched, failed]
+      - name: from
+        in: query
+        required: false
+        description: أول يوم
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        description: آخر يوم
+        schema:
+          type: string
+          format: date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 30
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReconciliationRunListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.payment_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/reconciliation-runs/{runId}:
+    get:
+      operationId: platformGetReconciliationRun
+      summary: تشغيل مطابقة وفروقه
+      tags: [Platform]
+      description: |-
+        التشغيل وبنود الفروق (unknown_at_point، missing_at_gateway، status، amount، refunded): معرّفات وحالات ومبالغ فقط، وsynced حين طُبّق سجل البوابة.
+      parameters:
+      - $ref: '#/components/parameters/runId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReconciliationRunEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.payment_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PLATFORM_AUTH_REQUIRED, RESOURCE_NOT_FOUND]
+  /v1/platform/alerts:
+    get:
+      operationId: platformListAlerts
+      summary: تنبيهات المالية (P-08)
+      tags: [Platform]
+      description: |-
+        platform_alerts (DEC-514)، الأحدث رفعًا أولًا؛ status=open (الافتراضي) غير المحلولة، وresolved المحلولة، وall الكل.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [open, resolved, all]
+          default: open
+      - name: type
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/PlatformAlertType'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: مؤشر معتم من meta.next_cursor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformAlertListEnvelope'
+        '400':
+          $ref: '#/components/responses/Error'
+          description: PAGINATION_CURSOR_INVALID
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '422':
+          $ref: '#/components/responses/Error'
+          description: VALIDATION_FAILED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+      x-permission: platform.payment_read
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [PAGINATION_CURSOR_INVALID, PLATFORM_AUTH_REQUIRED]
+  /v1/platform/alerts/{alertId}/resolve:
+    post:
+      operationId: platformResolveAlert
+      summary: حل تنبيه مالية بملاحظة
+      tags: [Platform]
+      description: |-
+        يغلق تنبيهًا حيًا بملاحظة (DEC-530) بصلاحية P-08 (platform.payment_read: المالية والمالك) لأن الحل لا يحرك مالًا؛ تكرار الحالة نفسها لاحقًا يفتح تنبيهًا جديدًا (تنبيه حي واحد لكل dedupe_key).
+
+        الشروط: ملاحظة 3 محارف على الأقل ← وإلا REASON_REQUIRED (field: note)؛ تنبيه محلول ← INVALID_STATE_TRANSITION
+
+        الأثر: platform_alerts (resolved، resolved_by، resolution_note)؛ platform_audit_log (platform_alert.resolve)
+      parameters:
+      - $ref: '#/components/parameters/alertId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: [string, 'null']
+                  maxLength: 500
+                  description: 3 محارف على الأقل بعد التشذيب، وإلا REASON_REQUIRED (الحقل note)
+              required: [note]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformAlertEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+          description: AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED | PLATFORM_AUTH_REQUIRED
+        '403':
+          $ref: '#/components/responses/Error'
+          description: AUTH_ACCOUNT_DISABLED | AUTH_MFA_SETUP_REQUIRED | AUTH_SECRET_CHANGE_REQUIRED | PERMISSION_DENIED
+        '404':
+          $ref: '#/components/responses/Error'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_IN_PROGRESS | INVALID_STATE_TRANSITION
+        '413':
+          $ref: '#/components/responses/Error'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REUSED | REASON_REQUIRED | VALIDATION_FAILED
+        '428':
+          $ref: '#/components/responses/Error'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/Error'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/Error'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - platformSession: []
+        csrfHeader: []
+      x-permission: platform.payment_read
+      x-idempotency: required
+      x-rate-limit-class: command
+      x-error-codes: [INVALID_STATE_TRANSITION, PERMISSION_DENIED, PLATFORM_AUTH_REQUIRED, REASON_REQUIRED, RESOURCE_NOT_FOUND]
   /v1/platform/venues:
     get:
       operationId: platformListVenues
@@ -12434,6 +13159,22 @@ components:
         type: string
         minLength: 8
         maxLength: 128
+    accountId:
+      name: accountId
+      in: path
+      required: true
+      description: معرّف حساب العميل (customer_accounts.id)
+      schema:
+        type: string
+        format: uuid
+    runId:
+      name: runId
+      in: path
+      required: true
+      description: معرّف تشغيل المطابقة (payment_reconciliation_runs.id)
+      schema:
+        type: string
+        format: uuid
     alertId:
       name: alertId
       in: path
@@ -17554,6 +18295,640 @@ components:
             $ref: '#/components/schemas/PlatformVenueListItem'
         meta:
           $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformAlertType:
+      type: string
+      enum: [payment_unknown, payment_mismatch, payment_refund_failed, payment_reconcile_failed]
+      description: platform_alerts.type (DEC-514)
+    PlatformNamedRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name_ar:
+          type: [string, 'null']
+      required: [id, name_ar]
+    PlatformCustomerSummary:
+      type: object
+      description: حساب عميل كما تعرضه المنصة (P-06، DEC-526) — الجوال مقنّعًا فقط، والمحذوف بلا جوال ولا اسم
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: [string, 'null']
+        phone_masked:
+          type: [string, 'null']
+          description: 05•••••123؛ null للمحذوف
+        status:
+          type: string
+          enum: [active, suspended, deleted]
+        locale:
+          type: string
+          enum: [ar, en]
+        vehicles_count:
+          type: integer
+        live_sessions:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: [string, 'null']
+          format: date-time
+      required: [id, display_name, phone_masked, status, locale, vehicles_count, live_sessions, created_at, deleted_at]
+    PlatformCustomerDetail:
+      allOf:
+      - $ref: '#/components/schemas/PlatformCustomerSummary'
+      - type: object
+        properties:
+          updated_at:
+            type: string
+            format: date-time
+          consents:
+            type: object
+            properties:
+              current:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum: [terms, privacy, marketing]
+                    current_version:
+                      type: string
+                    answered_version:
+                      type: [string, 'null']
+                    granted:
+                      type: [boolean, 'null']
+                    up_to_date:
+                      type: boolean
+                    answered_at:
+                      type: [string, 'null']
+                      format: date-time
+              history:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                    version:
+                      type: string
+                    granted:
+                      type: boolean
+                    created_at:
+                      type: string
+                      format: date-time
+          vehicles:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                plate_display:
+                  type: [string, 'null']
+                make:
+                  type: [string, 'null']
+                model:
+                  type: [string, 'null']
+                color:
+                  type: [string, 'null']
+                type:
+                  type: [string, 'null']
+                created_at:
+                  type: string
+                  format: date-time
+                removed_at:
+                  type: [string, 'null']
+                  format: date-time
+          visits:
+            type: array
+            description: الحقول الدنيا للزيارة (listAccountVisits، DEC-504) — لا مفتاح ولا موقف ولا موظف ولا رمز
+            items:
+              type: object
+              properties:
+                ticket_id:
+                  type: string
+                  format: uuid
+                org:
+                  $ref: '#/components/schemas/PlatformNamedRef'
+                venue:
+                  $ref: '#/components/schemas/PlatformNamedRef'
+                status:
+                  $ref: '#/components/schemas/TicketStatus'
+                open:
+                  type: boolean
+                channel:
+                  type: string
+                  enum: [whatsapp, paper, app]
+                plate_display:
+                  type: [string, 'null']
+                entitlement:
+                  type: string
+                received_at:
+                  type: string
+                  format: date-time
+                delivered_at:
+                  type: [string, 'null']
+                  format: date-time
+          sessions:
+            type: object
+            description: أعداد وأجهزة فقط — لا رمز ولا بصمة ولا رمز إشعار
+            properties:
+              live:
+                type: integer
+              total:
+                type: integer
+              devices:
+                type: integer
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    platform:
+                      type: string
+                      enum: [ios, android]
+                    device_hint:
+                      type: string
+                      description: آخر 4 محارف من معرّف التثبيت
+                    live:
+                      type: boolean
+                    push_enabled:
+                      type: boolean
+                    created_at:
+                      type: string
+                      format: date-time
+                    last_seen_at:
+                      type: [string, 'null']
+                      format: date-time
+                    revoked_at:
+                      type: [string, 'null']
+                      format: date-time
+                    revoked_reason:
+                      type: [string, 'null']
+          payment_methods:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                brand:
+                  type: [string, 'null']
+                last4:
+                  type: [string, 'null']
+                expires_month:
+                  type: [integer, 'null']
+                expires_year:
+                  type: [integer, 'null']
+                is_default:
+                  type: boolean
+                created_at:
+                  type: string
+                  format: date-time
+                removed_at:
+                  type: [string, 'null']
+                  format: date-time
+          payments:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                purpose:
+                  type: string
+                  enum: [visit, subscription]
+                status:
+                  $ref: '#/components/schemas/OnlinePaymentStatus'
+                amount_halalas:
+                  type: integer
+                vat_halalas:
+                  type: integer
+                refunded_halalas:
+                  type: integer
+                card_brand:
+                  type: [string, 'null']
+                card_last4:
+                  type: [string, 'null']
+                org:
+                  oneOf:
+                  - $ref: '#/components/schemas/PlatformNamedRef'
+                  - type: 'null'
+                venue:
+                  oneOf:
+                  - $ref: '#/components/schemas/PlatformNamedRef'
+                  - type: 'null'
+                ticket_id:
+                  type: [string, 'null']
+                  format: uuid
+                created_at:
+                  type: string
+                  format: date-time
+                paid_at:
+                  type: [string, 'null']
+                  format: date-time
+          history:
+            type: array
+            items:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum: [customer.suspend, customer.reactivate, customer.sessions_revoke]
+                reason:
+                  type: [string, 'null']
+                from_status:
+                  type: [string, 'null']
+                to_status:
+                  type: [string, 'null']
+                revoked_sessions:
+                  type: [integer, 'null']
+                occurred_at:
+                  type: string
+                  format: date-time
+                actor:
+                  type: [object, 'null']
+        required: [updated_at, consents, vehicles, visits, sessions, payment_methods, payments, history]
+    PlatformCustomerCommandResult:
+      type: object
+      properties:
+        account:
+          $ref: '#/components/schemas/PlatformCustomerSummary'
+        revoked_sessions:
+          type: integer
+          description: عدد الجلسات المنهاة (0 للتعليق وإعادة التفعيل)
+      required: [account, revoked_sessions]
+    PlatformPaymentListItem:
+      type: object
+      description: دفعة إلكترونية في P-08 (DEC-529) — بلا رمز بطاقة ولا جوال كامل ولا اسم
+      properties:
+        id:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          enum: [visit, subscription]
+        status:
+          $ref: '#/components/schemas/OnlinePaymentStatus'
+        amount_halalas:
+          type: integer
+          description: شامل الضريبة
+        vat_halalas:
+          type: integer
+        refunded_halalas:
+          type: integer
+        currency:
+          type: string
+          const: SAR
+        gateway:
+          type: string
+          const: moyasar
+        gateway_payment_id:
+          type: [string, 'null']
+        source_type:
+          type: [string, 'null']
+        card_brand:
+          type: [string, 'null']
+        card_last4:
+          type: [string, 'null']
+        failure_code:
+          type: [string, 'null']
+        account:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            phone_masked:
+              type: [string, 'null']
+            status:
+              type: string
+              enum: [active, suspended, deleted]
+          required: [id, phone_masked, status]
+        org:
+          oneOf:
+          - $ref: '#/components/schemas/PlatformNamedRef'
+          - type: 'null'
+        venue:
+          oneOf:
+          - $ref: '#/components/schemas/PlatformNamedRef'
+          - type: 'null'
+        ticket_id:
+          type: [string, 'null']
+          format: uuid
+        subscription_id:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        paid_at:
+          type: [string, 'null']
+          format: date-time
+      required: [id, purpose, status, amount_halalas, vat_halalas, refunded_halalas, currency, gateway, account, created_at]
+    PlatformPaymentDetail:
+      allOf:
+      - $ref: '#/components/schemas/PlatformPaymentListItem'
+      - type: object
+        properties:
+          authorized_at:
+            type: [string, 'null']
+            format: date-time
+          failed_at:
+            type: [string, 'null']
+            format: date-time
+          refunded_at:
+            type: [string, 'null']
+            format: date-time
+          gateway_updated_at:
+            type: [string, 'null']
+            format: date-time
+          updated_at:
+            type: string
+            format: date-time
+          version:
+            type: integer
+          refundable_halalas:
+            type: integer
+            description: المدفوع − المسترد − ما ينتظر الإرسال (0 لحالة لا تقبل الاسترداد)
+          refund_pending_halalas:
+            type: integer
+          refunds:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                amount_halalas:
+                  type: integer
+                reason:
+                  type: string
+                status:
+                  $ref: '#/components/schemas/RefundStatus'
+                failure_code:
+                  type: [string, 'null']
+                issued_by:
+                  type: object
+                created_at:
+                  type: string
+                  format: date-time
+                sent_at:
+                  type: [string, 'null']
+                  format: date-time
+                completed_at:
+                  type: [string, 'null']
+                  format: date-time
+          status_history:
+            type: array
+            items:
+              type: object
+              properties:
+                action:
+                  type: string
+                from_status:
+                  type: [string, 'null']
+                to_status:
+                  type: [string, 'null']
+                cause:
+                  type: [string, 'null']
+                failure_code:
+                  type: [string, 'null']
+                occurred_at:
+                  type: string
+                  format: date-time
+          webhook_events:
+            type: array
+            description: تسليمات البوابة منقّاة — لا الجسم المخزّن
+            items:
+              type: object
+              properties:
+                id:
+                  type: integer
+                event_type:
+                  type: string
+                live:
+                  type: [boolean, 'null']
+                received_at:
+                  type: string
+                  format: date-time
+                processed_at:
+                  type: [string, 'null']
+                  format: date-time
+                outcome:
+                  type: [string, 'null']
+                claimed:
+                  type: object
+                  properties:
+                    status:
+                      type: [string, 'null']
+                    amount_halalas:
+                      type: [integer, 'null']
+                    refunded_halalas:
+                      type: [integer, 'null']
+          alerts:
+            type: array
+            items:
+              $ref: '#/components/schemas/PlatformAlert'
+        required: [refundable_halalas, refund_pending_halalas, refunds, status_history, webhook_events, alerts]
+    PlatformReconciliationRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gateway:
+          type: string
+          const: moyasar
+        run_date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [running, matched, mismatched, failed]
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+        gateway_count:
+          type: [integer, 'null']
+        local_count:
+          type: [integer, 'null']
+        matched_count:
+          type: [integer, 'null']
+        mismatch_count:
+          type: [integer, 'null']
+        gateway_paid_halalas:
+          type: [integer, 'null']
+        local_paid_halalas:
+          type: [integer, 'null']
+        failure_reason:
+          type: [string, 'null']
+      required: [id, gateway, run_date, status, started_at, finished_at]
+    PlatformReconciliationRunDetail:
+      allOf:
+      - $ref: '#/components/schemas/PlatformReconciliationRun'
+      - type: object
+        properties:
+          mismatches:
+            type: array
+            items:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum: [unknown_at_point, missing_at_gateway, status, amount, refunded]
+                gateway_payment_id:
+                  type: [string, 'null']
+                online_payment_id:
+                  type: [string, 'null']
+                point_status:
+                  type: [string, 'null']
+                gateway_status:
+                  type: [string, 'null']
+                point_amount_halalas:
+                  type: [integer, 'null']
+                gateway_amount_halalas:
+                  type: [integer, 'null']
+                point_refunded_halalas:
+                  type: [integer, 'null']
+                gateway_refunded_halalas:
+                  type: [integer, 'null']
+                synced:
+                  type: boolean
+        required: [mismatches]
+    PlatformAlert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/PlatformAlertType'
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        status:
+          type: string
+          enum: [open, acknowledged, resolved]
+        dedupe_key:
+          type: string
+        online_payment_id:
+          type: [string, 'null']
+          format: uuid
+        details:
+          type: object
+          description: معرّفات ومبالغ ورموز فقط (منقّاة عند الرفع)
+        occurrences:
+          type: integer
+        raised_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+        resolved_by:
+          type: [object, 'null']
+        resolution_note:
+          type: [string, 'null']
+      required: [id, type, severity, status, dedupe_key, online_payment_id, details, occurrences, raised_at, last_seen_at, resolved_at, resolved_by, resolution_note]
+    PlatformCustomerListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformCustomerSummary'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformCustomerDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformCustomerDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformCustomerCommandEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformCustomerCommandResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformPaymentListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformPaymentListItem'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformPaymentDetailEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformPaymentDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformReconciliationRunListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformReconciliationRun'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformReconciliationRunEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformReconciliationRunDetail'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    PlatformAlertListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformAlert'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+      required: [data, meta]
+    PlatformAlertEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PlatformAlert'
+        meta:
+          $ref: '#/components/schemas/Meta'
       required: [data, meta]
     CustomerErrorResponse:
       type: object

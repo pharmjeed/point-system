@@ -186,6 +186,8 @@ CREATE INDEX ix_venue_public_profiles_listed ON venue_public_profiles(category) 
 > **بطاقة الدخول وتذكرة التطبيق في `0010_customer_pass_and_app_intake.sql` (V2-013، V2-014؛ DEC-500 … DEC-502):** `customer_passes` بالسر مشفرًا نصًا (`encrypt()`، لا `bytea`) ومعه `previous_secret_ciphertext`/`previous_valid_until` للتدوير و`key_version` و`last_used_step`/`last_used_at` لرفض الخطوة المعادة؛ وقيد القناة أُعيد باسم `ck_tickets_channel` بالقيمة `app`؛ و`tickets.customer_vehicle_id` (`fk_tickets_customer_vehicle`) و`tickets.entitlement` (`ck_tickets_entitlement`) وقيود `ck_tickets_app_customer` و`ck_tickets_app_no_whatsapp` و`ck_tickets_customer_vehicle_app`، وفهرس `ix_tickets_customer_vehicle_open` في ملف مستقل `CONCURRENTLY`. **`tickets.subscription_id` لم يُضف:** يأتي مع `subscriptions` في المرحلة V4 مع قيده.
 >
 > **حذف الحساب في `0011_customer_account_deletion.sql` (V2-017، DEC-507، DEC-508):** `customer_accounts.phone_hash` (بصمة HMAC لا تُعكس)، و`phone_e164` يقبل `NULL` للمحذوف وحده (`ck_customer_accounts_phone_present`)، والمحذوف بلا رقم ولا اسم وببصمة (`ck_customer_accounts_deleted_phone` / `_deleted_name` / `_deleted_hash`، و`_phone_hash` sha256 hex) — فيسجّل الرقم نفسه حسابًا جديدًا؛ و`customer_account_sessions.reauth_hash` / `reauth_expires_at` لدليل إعادة التحقق قبل الحذف (`ck_customer_sessions_reauth`). صفوف `customers` لدى المشغلين لا تُمس.
+>
+> **إنهاء جلسات العميل من المنصة في `0015_platform_customer_ops.sql` (V2-024، DEC-527):** `ck_customer_sessions_revoked_reason` يُعاد بالقيم كلها ومعها `platform_revoked` (توسيع لا تضييق)، بلا عمود ولا جدول جديد؛ تعليق الحساب يستعمل `customer_accounts.status = 'suspended'` القائم.
 
 ```sql
 CREATE TABLE customer_accounts (

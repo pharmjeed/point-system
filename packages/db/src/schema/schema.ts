@@ -2364,7 +2364,7 @@ export const customer_account_sessions = pgTable(
     check('ck_customer_sessions_revoked', sql`(revoked_at IS NULL) = (revoked_reason IS NULL)`),
     check(
       'ck_customer_sessions_revoked_reason',
-      sql`revoked_reason = ANY (ARRAY['logout'::text, 'refresh_reuse'::text, 'device_mismatch'::text, 'signed_in_again'::text, 'account_closed'::text, 'expired_cleanup'::text])`,
+      sql`revoked_reason = ANY (ARRAY['logout'::text, 'refresh_reuse'::text, 'device_mismatch'::text, 'signed_in_again'::text, 'account_closed'::text, 'expired_cleanup'::text, 'platform_revoked'::text])`,
     ),
     check('ck_customer_sessions_rotation', sql`rotation_count >= 0`),
     check('ck_customer_sessions_reauth', sql`(reauth_hash IS NULL) = (reauth_expires_at IS NULL)`),

@@ -7,15 +7,28 @@ import { DATABASE, ENV, LOGGER, SECRETS } from '../../http/tokens.js';
 import { OnlinePayments } from './application/online-payments.js';
 import { RefundsService } from './application/refunds.js';
 import { PaymentWebhookIntake } from './application/webhooks.js';
-import { PaymentWebhookController, PlatformRefundsController } from './http/controllers.js';
+import {
+  PaymentWebhookController,
+  PlatformAlertsController,
+  PlatformReconciliationController,
+  PlatformRefundsController,
+} from './http/controllers.js';
+import { PlatformPaymentsConsole } from './application/platform-console.js';
+import { ListCursorCodec } from '../venues-events/index.js';
 import { PaymentsRuntime } from './runtime.js';
 
 /**
- * api process (V2-020 / V2-021): the payment gateway's webhook and the platform's refund command. The customer's
+ * api process (V2-020 / V2-021, V2-024): the payment gateway's webhook, the platform's refund command and P-08's reads
+ * (payments, reconciliation runs, finance alerts and their resolution). The customer's
  * payment screens (V2-022, V2-023) start payments through OnlinePayments, exported here.
  */
 @Module({
-  controllers: [PaymentWebhookController, PlatformRefundsController],
+  controllers: [
+    PaymentWebhookController,
+    PlatformRefundsController,
+    PlatformReconciliationController,
+    PlatformAlertsController,
+  ],
   providers: [
     {
       provide: PaymentsRuntime,
@@ -34,6 +47,12 @@ import { PaymentsRuntime } from './runtime.js';
       useFactory: (db: Database, rt: PaymentsRuntime) => new OnlinePayments(db, rt),
     },
     RefundsService,
+    PlatformPaymentsConsole,
+    {
+      provide: ListCursorCodec,
+      useFactory: (env: Env) => new ListCursorCodec(env.SESSION_SECRET),
+      inject: [ENV],
+    },
   ],
   exports: [PaymentsRuntime, OnlinePayments],
 })

@@ -279,12 +279,19 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
         ),
       ),
     ).toBe(true);
-    // the ticket and customer routes of V1 all need a staff permission; the V2 app API needs its Bearer session
+    // the ticket and customer routes of V1 all need a staff permission, the platform's P-06 a platform permission
+    // (V2-024); the V2 app API needs its Bearer session
     const customerSide = routes.filter(
       (r) => /tickets|customer|handover|whatsapp-link/.test(r.path) && !r.path.startsWith('/v1/customer/'),
     );
     expect(customerSide.length).toBeGreaterThan(10);
-    expect(customerSide.every((r) => !r.public && !!r.permission)).toBe(true);
+    expect(
+      customerSide.every((r) =>
+        r.path.startsWith('/v1/platform/')
+          ? !r.public && !!r.platformPermission
+          : !r.public && !!r.permission,
+      ),
+    ).toBe(true);
     const app = routes.filter((r) => r.path.startsWith('/v1/customer/') && !r.public);
     expect(app.length).toBeGreaterThan(5);
     expect(app.every((r) => r.customer && !r.permission && !r.platformPermission)).toBe(true);

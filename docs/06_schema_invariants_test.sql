@@ -189,6 +189,8 @@ SELECT expect_fail('second live session of an account on the same device',
  $q$INSERT INTO customer_account_sessions(account_id,device_id,platform,refresh_hash,access_hash,access_expires_at,refresh_expires_at) VALUES ('00000000-0000-0000-0000-00000000ca01','device-0001','ios','rh2','ah2',now()+interval '15 minutes',now()+interval '60 days')$q$);
 SELECT expect_fail('customer session revoked without a reason',
  $q$UPDATE customer_account_sessions SET revoked_at=now() WHERE refresh_hash='rh1'$q$);
+SELECT expect_fail('customer session revoked with an unknown reason (0015 widens the list with platform_revoked only)',
+ $q$UPDATE customer_account_sessions SET revoked_at=now(), revoked_reason='admin' WHERE refresh_hash='rh1'$q$);
 SELECT expect_fail('terms consent recorded as refused (withdrawal is account deletion)',
  $q$INSERT INTO customer_account_consents(account_id,kind,version,granted) VALUES ('00000000-0000-0000-0000-00000000ca01','terms','2026-11-01',false)$q$);
 INSERT INTO customer_vehicles(account_id,plate_digits,plate_letters_ar,plate_letters_en) VALUES

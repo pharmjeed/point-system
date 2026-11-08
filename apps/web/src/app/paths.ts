@@ -22,6 +22,8 @@ export const paths = {
   platformLogin: '/platform/login', // V2-002
   platformVenues: '/platform/venues', // P-04 (V2-004)
   platformOperators: '/platform/operators', // P-02 (V2-003); P-03 is /platform/operators/:orgId
+  platformCustomers: '/platform/customers', // P-06 (V2-024); one account is /platform/customers/:accountId
+  platformPayments: '/platform/payments', // P-08 (V2-024); …/reconciliation, …/alerts, …/:paymentId
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)
 } as const;
 
@@ -41,6 +43,15 @@ const STAFF_PREFIXES = [
 /** P-03 — one operator of the platform console (V2-003). */
 export const platformOperatorPath = (orgId: string) =>
   `${paths.platformOperators}/${encodeURIComponent(orgId)}`;
+
+/** P-06 — one customer account; P-08 — one online payment, one reconciliation run (V2-024). */
+export const platformCustomerPath = (accountId: string) =>
+  `${paths.platformCustomers}/${encodeURIComponent(accountId)}`;
+export const platformPaymentPath = (paymentId: string) =>
+  `${paths.platformPayments}/${encodeURIComponent(paymentId)}`;
+export const platformReconciliationPath = (runId?: string) =>
+  `${paths.platformPayments}/reconciliation${runId ? `/${encodeURIComponent(runId)}` : ''}`;
+export const platformAlertsPath = `${paths.platformPayments}/alerts`;
 
 /** The V2 platform console: its own session and cookie; never the staff session handling (DEC-462). */
 export function isPlatformArea(pathname: string): boolean {
