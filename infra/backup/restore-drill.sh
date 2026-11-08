@@ -97,7 +97,7 @@ tampered="$work/tampered.$(basename "$file" | sed 's/.*\.dump\./dump./')"
 offset=$((size / 2))
 # flip every bit of one byte (writing a fixed value would change nothing when the byte already has it)
 orig=$(od -An -tu1 -j "$offset" -N1 "$tampered" | tr -d ' ')
-printf "\\$(printf '%03o' $((orig ^ 255)))" | dd of="$tampered" bs=1 seek="$offset" conv=notrunc status=none
+printf '%b' "\\0$(printf '%03o' $((orig ^ 255)))" | dd of="$tampered" bs=1 seek="$offset" conv=notrunc status=none
 [ -f "$file.hmac" ] && cp "$file.hmac" "$tampered.hmac"
 cp "$file.sha256" "$tampered.sha256"
 sed -i "s#  .*#  $(basename "$tampered")#" "$tampered.sha256"
