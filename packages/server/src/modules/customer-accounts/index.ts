@@ -9,6 +9,7 @@ export { customerOtpSendHandler } from './application/otp-sender.js';
 export { pointChannel, type PointChannel } from './application/point-channel.js';
 export { buildCustomerMe, consentTexts, type ConsentTexts } from './application/account-views.js';
 export { distanceMetres } from './application/locations.js';
+export { deletedPhoneHash, hasVisitInProgress } from './application/account-deletion.js';
 
 /**
  * worker process: `job.customer_otp_send` (DEC-496). The WhatsApp runtime is built lazily from the validated process

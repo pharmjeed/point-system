@@ -81,6 +81,23 @@ describe('deployment configuration guards', () => {
     ]);
   });
 
+  it("V2-020 (DEC-510): MOYASAR_MODE=test — the gateway's test API from local or staging only, over https", () => {
+    const test = { MOYASAR_MODE: 'test', MOYASAR_BASE_URL: 'https://api.moyasar.com' };
+    for (const APP_ENV of ['local', 'staging'])
+      expect(testEnv({ APP_ENV, ...test }).MOYASAR_MODE).toBe('test');
+    for (const APP_ENV of ['test', 'production'])
+      expect(() => testEnv({ ...(APP_ENV === 'production' ? production : {}), APP_ENV, ...test })).toThrow(
+        APP_ENV === 'production'
+          ? 'MOYASAR_MODE must be live in production'
+          : 'MOYASAR_MODE=test is only allowed',
+      );
+    const staging = { APP_ENV: 'staging', WA_TEST_RECIPIENT_ALLOWLIST: '+966500000001' };
+    expect(problems({ ...staging, ...test })).toEqual([]);
+    expect(problems({ ...staging, ...test, MOYASAR_BASE_URL: 'http://api.moyasar.example' })).toEqual([
+      'MOYASAR_BASE_URL must be https when MOYASAR_MODE=test',
+    ]);
+  });
+
   it('a __Host- cookie without Secure is refused in every environment (browsers drop it)', () => {
     const local = {
       APP_ENV: 'local',

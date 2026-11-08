@@ -4,12 +4,15 @@ import {
   CUSTOMER_OTP_MAX_ATTEMPTS,
   CUSTOMER_OTP_RESEND_AFTER_S,
   CUSTOMER_OTP_TTL_S,
+  CUSTOMER_REAUTH_TTL_S,
   maskPhone,
   type CustomerAuthResult,
   type CustomerDevicePlatform,
   type CustomerLocale,
   type CustomerOtpChallenge,
+  type CustomerReauth,
 } from '@point/shared/customer';
+import { customerTokenHash, newCustomerToken } from '../../../core/actor-context/customer-actor.js';
 import { customerAudit } from '../../../core/audit/customer-audit.js';
 import type { Env } from '../../../core/config/env.js';
 import {
@@ -24,6 +27,7 @@ import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { enqueue } from '../../../core/outbox/outbox-writer.js';
 import type { ClientInfo } from '../../identity-access/application/auth-service.js';
+import { lockCustomerAccount } from './account-service.js';
 import { buildCustomerMe, consentTexts, type CustomerAccountRow } from './account-views.js';
 import { issueCustomerSession } from './customer-sessions.js';
 
@@ -192,19 +196,26 @@ export class CustomerOtpService {
     };
   }
 
-  async verify(
+  /**
+   * The code check of the sign-in verify, shared by the re-verification of C-20 (DEC-507): serialized on the
+   * number, refused while it is locked, CUSTOMER_OTP_EXPIRED without a live code, a wrong code costs an attempt
+   * (the fifth locks the number 15 minutes) and commits although the request is refused (`keepEffects`); the right
+   * code is consumed. `accountId` names the caller of a re-verification in the audit rows.
+   */
+  private async consumeCode(
     tx: Tx,
-    body: { phone_e164: string; code: string; device_id: string; platform: CustomerDevicePlatform },
+    phone: string,
+    code: string,
     client: ClientInfo,
-  ): Promise<CustomerAuthResult> {
-    const phone = body.phone_e164;
+    accountId: string | null,
+  ): Promise<{ id: string; audit: (action: string, accountId: string | null, m: object) => Promise<void> }> {
     await this.lockPhone(tx, phone);
     await this.assertNotLocked(tx, phone);
     const ch = await this.openChallenge(tx, phone);
     if (!ch || ch.expires_at.getTime() <= tx.now.getTime()) throw new AppError('CUSTOMER_OTP_EXPIRED');
-    const audit = (action: string, accountId: string | null, metadata: Record<string, unknown>) =>
-      customerAudit(tx, {
-        actor: accountId ? { type: 'customer', accountId } : { type: 'anonymous' },
+    const audit = async (action: string, who: string | null, metadata: object) => {
+      await customerAudit(tx, {
+        actor: who ? { type: 'customer', accountId: who } : { type: 'anonymous' },
         action,
         entityType: 'customer_otp_challenge',
         entityId: ch.id,
@@ -213,7 +224,8 @@ export class CustomerOtpService {
         userAgent: client.userAgent ?? null,
         metadata: { phone_masked: maskPhone(phone), ...metadata },
       });
-    if (!safeEqual(otpCodeHash(this.env.CODE_PEPPER, ch.id, body.code), ch.code_hash)) {
+    };
+    if (!safeEqual(otpCodeHash(this.env.CODE_PEPPER, ch.id, code), ch.code_hash)) {
       const left = ch.attempts_left - 1;
       if (left <= 0) {
         const until = new Date(tx.now.getTime() + CUSTOMER_OTP_LOCK_MINUTES * 60_000);
@@ -224,11 +236,11 @@ export class CustomerOtpService {
             WHERE id = $1`,
           [ch.id, until, tx.now],
         );
-        await audit('customer.auth.otp_locked', null, { locked_until: iso(until) });
+        await audit('customer.auth.otp_locked', accountId, { locked_until: iso(until) });
         throw new AppError('CUSTOMER_OTP_LOCKED', { locked_until: iso(until) }, { keepEffects: true });
       }
       await tx.query(`UPDATE customer_otp_challenges SET attempts_left = $2 WHERE id = $1`, [ch.id, left]);
-      await audit('customer.auth.otp_failed', null, { attempts_left: left });
+      await audit('customer.auth.otp_failed', accountId, { attempts_left: left });
       throw new AppError('CUSTOMER_OTP_INVALID', { attempts_left: left }, { keepEffects: true });
     }
     await tx.query(
@@ -237,7 +249,18 @@ export class CustomerOtpService {
         WHERE id = $1`,
       [ch.id, tx.now],
     );
-    // the account is created by the first verified sign-in (DEC-482)
+    return { id: ch.id, audit };
+  }
+
+  async verify(
+    tx: Tx,
+    body: { phone_e164: string; code: string; device_id: string; platform: CustomerDevicePlatform },
+    client: ClientInfo,
+  ): Promise<CustomerAuthResult> {
+    const phone = body.phone_e164;
+    const { audit } = await this.consumeCode(tx, phone, body.code, client, null);
+    // the account is created by the first verified sign-in (DEC-482); a deleted account no longer holds its number
+    // (0011), so the same number signs up again as a new account (DEC-508)
     const inserted = await tx.maybeOne<{ id: string }>(
       `INSERT INTO customer_accounts (phone_e164, created_at, updated_at) VALUES ($1, $2, $2)
        ON CONFLICT ON CONSTRAINT uq_customer_accounts_phone DO NOTHING RETURNING id`,
@@ -263,5 +286,39 @@ export class CustomerOtpService {
       account: await buildCustomerMe(tx, consentTexts(this.env), account.id),
       is_new_account: !!inserted,
     };
+  }
+
+  /**
+   * `POST /v1/customer/auth/reauth/verify` (C-20, DEC-507): the code the app just requested for the account's own
+   * number (`POST /v1/customer/auth/otp`) proves the caller holds that WhatsApp now. Same rules as the sign-in
+   * verify; the answer is a single-use proof bound to the caller's session, valid CUSTOMER_REAUTH_TTL_S, stored as
+   * sha256 only. A newer proof replaces the previous one. Lock order: the number, then the account row.
+   */
+  async reauthVerify(
+    tx: Tx,
+    actor: { accountId: string; sessionId: string },
+    body: { code: string },
+    client: ClientInfo,
+  ): Promise<CustomerReauth> {
+    const a = await tx.maybeOne<{ phone_e164: string | null }>(
+      `SELECT phone_e164 FROM customer_accounts WHERE id = $1`,
+      [actor.accountId],
+    );
+    if (!a?.phone_e164) throw new AppError('ACCOUNT_DELETED');
+    const { id, audit } = await this.consumeCode(tx, a.phone_e164, body.code, client, actor.accountId);
+    await lockCustomerAccount(tx, actor.accountId);
+    const token = newCustomerToken('reauth', actor.sessionId);
+    const expiresAt = new Date(tx.now.getTime() + CUSTOMER_REAUTH_TTL_S * 1000);
+    const r = await tx.query(
+      `UPDATE customer_account_sessions SET reauth_hash = $2, reauth_expires_at = $3
+        WHERE id = $1 AND account_id = $4 AND revoked_at IS NULL`,
+      [actor.sessionId, customerTokenHash(token), expiresAt, actor.accountId],
+    );
+    if (!r.rowCount) throw new AppError('AUTH_SESSION_REVOKED', { reason: 'revoked' });
+    await audit('customer.auth.reauth_verified', actor.accountId, {
+      session_id: actor.sessionId,
+      challenge_id: id,
+    });
+    return { reauth_token: token, expires_at: iso(expiresAt) };
   }
 }

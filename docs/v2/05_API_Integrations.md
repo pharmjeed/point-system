@@ -7,7 +7,7 @@
 | المسار | الوظيفة |
 |---|---|
 | `POST /v1/customer/auth/otp` · `POST /v1/customer/auth/verify` · `POST /v1/customer/auth/refresh` · `POST /v1/customer/auth/logout` | الدخول برمز التحقق (V2-D11) |
-| `GET/PATCH /v1/customer/me` · `DELETE /v1/customer/me` | الحساب، وحذفه برمز تحقق |
+| `GET/PATCH /v1/customer/me` · `DELETE /v1/customer/me` · `POST /v1/customer/auth/reauth/verify` | الحساب، وحذفه برمز تحقق جديد (§1.3) |
 | `POST /v1/customer/consents` | الموافقات بإصدار النص |
 | `GET/POST/DELETE /v1/customer/vehicles[/{id}]` | السيارات |
 | `GET /v1/customer/locations` · `GET /v1/customer/locations/{venueId}` | المواقع المعتمدة وأسعارها |
@@ -51,6 +51,14 @@
 - **مفاتيح التكرار:** `customer_idempotency_keys` لكل حساب، بالبروتوكول 07 §1.4.
 - **التشغيل مع التطبيق:** `apps/customer/README.md` («الخادم الحقيقي»).
 
+### 1.3 حذف السيارة وحذف الحساب (V2-012، V2-017، DEC-505…DEC-508)
+
+ثلاثة مسارات في `CUSTOMER_ROUTES` (مجموعة واحدة في آخر السجل) وفي قسم `Customer` من `07_openapi.yaml`:
+
+- **`DELETE /v1/customer/vehicles/{vehicleId}`** (`C-15`، `Idempotency-Key`، بلا جسم): إزالة ناعمة (`removed_at`) لا حذف فعلي، تحت قفل صف الحساب، فتتحرر اللوحة لإضافة لاحقة؛ الرد `{ vehicle_id, removed_at }`. سيارة حساب آخر أو غير موجودة أو أُزيلت سابقًا ← `RESOURCE_NOT_FOUND` (`resource: customer_vehicle`) بالرد نفسه، وسيارة `in_active_visit` ← `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT` (409) ولا يُكتب شيء.
+- **`POST /v1/customer/auth/reauth/verify`** (`C-20`، Bearer، بلا `Idempotency-Key`، صنف `auth`): يطلب التطبيق رمزًا لرقم الحساب نفسه بمسار الدخول `POST /v1/customer/auth/otp` (القالب والحدود نفسها، واتساب فقط)، ثم يرسل `{ code }` هنا. القواعد كتحقق الدخول (`CUSTOMER_OTP_INVALID`/`_LOCKED`/`_EXPIRED`)؛ النجاح يستهلك الرمز ويرد `{ reauth_token, expires_at }`: دليل لمرة واحدة مرتبط بالجلسة نفسها، صالح `CUSTOMER_REAUTH_TTL_S` = 300 ث، لا يُخزَّن منه إلا sha256 (`customer_account_sessions.reauth_hash`)، والأحدث يحل محل السابق.
+- **`DELETE /v1/customer/me`** (`C-20`، `Idempotency-Key`) بالجسم `{ reauth_token }`: بلا دليل أو بدليل ليس الحي لهذه الجلسة أو منتهٍ ← `CUSTOMER_REAUTH_REQUIRED` (403، `reason`: `missing`/`invalid`/`expired`؛ 403 لا 401 كي لا يُخرج التطبيقَ)، وأثناء زيارة جارية ← `CUSTOMER_ACCOUNT_VISIT_ACTIVE` (409). في معاملة واحدة: `status = 'deleted'` و`deleted_at`، يُمحى الاسم ويصير الجوال `NULL` وتبقى بصمته `phone_hash = HMAC-SHA256(CODE_PEPPER, customer_phone:<phone>)` (لا تُعكس، ويسجّل الرقم نفسه حسابًا **جديدًا** لاحقًا)، تُزال السيارات، تُلغى كل الجلسات (`account_closed`) وتُسقط رموز الإشعارات وأدلة إعادة التحقق، يُغلق رمز دخول مفتوح للرقم، وتُحذف ردود الأوامر المخزنة للحساب في `customer_idempotency_keys` (قد تحمل الاسم والجوال). يبقى: `customer_audit_log` (`customer.account.deleted` بالأعداد فقط) و`customer_account_consents`، وصفوف `customers` لدى المشغلين وتذاكرهم وبياناتها بحسب احتفاظ كل مشغل في الإصدار الأول (V2-D12) — لا شيء يمتد إلى بيانات المشغل. الرد `{ deleted: true, deleted_at }`. بعدها رمز الوصول أو التحديث الحالي للحساب ← `ACCOUNT_DELETED` (410) فيعود التطبيق إلى `C-01`، وإعادة الطلب بالمفتاح نفسه ترد `ACCOUNT_DELETED` أيضًا (الحارس قبل التكرار)، فيعدّها التطبيق نجاحًا. الاشتراكات ووسائل الدفع تُلغى هنا حين تُبنى (V4/V3).
+
 ## 2. مسارات المشغل الجديدة (تحت `/v1` كما هي)
 
 | المسار | الوظيفة |
@@ -88,7 +96,7 @@
 
 رموز العميل المعتمدة في V2-011 بنصوصها ورمز HTTP في `CUSTOMER_ERROR_CATALOG` (`packages/shared/src/customer/errors.ts`، DEC-482)، ومعها رموز 08 التي يعيدها مسار العميل كما هي (`CUSTOMER_REUSED_ERROR_CODES`).
 
-`CUSTOMER_OTP_INVALID`، `CUSTOMER_OTP_EXPIRED`، `CUSTOMER_OTP_LOCKED`، `CUSTOMER_CONSENT_VERSION_STALE`، `CUSTOMER_VEHICLE_LIMIT`، `CUSTOMER_VEHICLE_DUPLICATE`، `PASS_INVALID`، `PASS_EXPIRED`، `SUBSCRIPTION_NOT_ACTIVE`، `SUBSCRIPTION_VEHICLE_NOT_COVERED`، `SUBSCRIPTION_ALREADY_EXISTS`، `PAYMENT_REQUIRED`، `PAYMENT_FAILED`، `PAYMENT_ALREADY_RECORDED`، `VENUE_NOT_LISTED`، `OPERATOR_SUSPENDED`، `ACCOUNT_DELETED`.
+`CUSTOMER_OTP_INVALID`، `CUSTOMER_OTP_EXPIRED`، `CUSTOMER_OTP_LOCKED`، `CUSTOMER_CONSENT_VERSION_STALE`، `CUSTOMER_VEHICLE_LIMIT`، `CUSTOMER_VEHICLE_DUPLICATE`، `PASS_INVALID`، `PASS_EXPIRED`، `SUBSCRIPTION_NOT_ACTIVE`، `SUBSCRIPTION_VEHICLE_NOT_COVERED`، `SUBSCRIPTION_ALREADY_EXISTS`، `PAYMENT_REQUIRED`، `PAYMENT_FAILED`، `PAYMENT_ALREADY_RECORDED`، `VENUE_NOT_LISTED`، `OPERATOR_SUSPENDED`، `ACCOUNT_DELETED`، `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT`، `CUSTOMER_ACCOUNT_VISIT_ACTIVE`، `CUSTOMER_REAUTH_REQUIRED` (V2-012/V2-017، §1.3).
 
 ## 6. واتساب في الإصدار الثاني (V2-D02)
 

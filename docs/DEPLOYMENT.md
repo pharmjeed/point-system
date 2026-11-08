@@ -234,8 +234,8 @@ STORAGE_ORIGIN=
 | `WA_ACCESS_TOKEN` / `WA_APP_SECRET` / `WA_VERIFY_TOKEN` | — | قيم الأسرار التي تشير إليها المراجع |
 | `WA_HTTP_TIMEOUT_MS` | `10000` | مهلة Graph API |
 | `WA_TEST_RECIPIENT_ALLOWLIST` | — | إلزامي في staging الحي: أرقام الفريق فقط |
-| `MOYASAR_MODE` | `simulator` | الإصدار الثاني (V2-020، DEC-510): `live` إلزامي في production ومرفوض في غيرها (local وtest وstaging تدفع عبر `tools/payment-simulator` فقط، فلا خصم حقيقي خارج الإنتاج) |
-| `MOYASAR_BASE_URL` | `http://localhost:4020` | `https://api.moyasar.com` حيًا (https إلزامي)؛ في وضع `simulator` يُرفض أي مضيف `moyasar.com` |
+| `MOYASAR_MODE` | `simulator` | الإصدار الثاني (V2-020، DEC-510): `live` إلزامي في production ومرفوض في غيرها ولا يرسل إلا مفتاح `sk_live_`؛ `test` (واجهة Moyasar الاختبارية الحقيقية) في local وstaging فقط ولا يرسل إلا مفتاح `sk_test_` (للبوابة H3)؛ `simulator` (`tools/payment-simulator`) لا يرسل مفتاحًا حيًا أبدًا — فلا خصم حقيقي خارج الإنتاج |
+| `MOYASAR_BASE_URL` | `http://localhost:4020` | `https://api.moyasar.com` في وضعي `live` و`test` (https إلزامي)؛ في وضع `simulator` يُرفض أي مضيف `moyasar.com` |
 | `MOYASAR_SECRET_KEY_REF` / `MOYASAR_WEBHOOK_SECRET_REF` | `env://MOYASAR_SECRET_KEY` / `env://MOYASAR_WEBHOOK_SECRET` | مراجع الأسرار (لا قيم)، `sm://` في الإنتاج كأسرار واتساب |
 | `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` | — | أثناء تدوير سر الـWebhook فقط (يُقبل السران) ثم يُحذف |
 | `MOYASAR_SECRET_KEY` / `MOYASAR_WEBHOOK_SECRET` | — | المفتاح السري (`sk_live_…` في الإنتاج وحده؛ المحوّل يرفض إرسال مفتاح حي خارج الإنتاج) وسر الـWebhook المشترك الذي يُضبط في لوحة Moyasar |
@@ -260,7 +260,7 @@ STORAGE_ORIGIN=
 | `OTEL_SERVICE_NAME` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_TRACES_SAMPLER_ARG` | يضبطه compose / — / `0.2` | التتبع غير موصول بعد (ملاحظات PNT-094) |
 | `METRICS_ENABLED` / `METRICS_PORT` | `true` / `9464` | المقاييس على `METRICS_PORT` (api) و`METRICS_PORT + 1` (worker)، شبكة داخلية فقط (DEC-61)؛ فحص صحة حاوية العامل يقرأ منفذه، فأبقِ `METRICS_ENABLED=true` |
 
-قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة؛ والإصدار الثاني: `MOYASAR_MODE` غير `live` في production أو `live` خارجها، و`MOYASAR_BASE_URL` بـhttps حين `live`، ومضيف `moyasar.com` في وضع `simulator` (DEC-510).
+قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة؛ والإصدار الثاني: `MOYASAR_MODE` غير `live` في production أو `live` خارجها، و`test` خارج local وstaging، و`MOYASAR_BASE_URL` بغير https حين `live` أو `test`، ومضيف `moyasar.com` في وضع `simulator` (DEC-510).
 
 متغيرات compose (للاستبدال في ملفات compose، من الملف نفسه عبر `--env-file`):
 
@@ -345,6 +345,8 @@ WA_APP_SECRET=<openssl rand -hex 24>   WA_VERIFY_TOKEN=<openssl rand -hex 24>   
 
 **التطوير والاختبار وstaging:** `MOYASAR_MODE=simulator` و`MOYASAR_BASE_URL` على `tools/payment-simulator` (`pnpm dev` يشغّله على 4020 بمفتاحه `sk_test_point_simulator_secret` وسره `point-simulator-webhook-secret`)؛ المحاكي يرفض العمل في الإنتاج ويرفض أي مفتاح حي، والمحوّل يرفض إرسال `sk_live_…` خارج الإنتاج، والإقلاع يرفض `live` خارج الإنتاج — فلا خصم حقيقي ممكن خارجه (DEC-510).
 
+**تجربة البوابة الحقيقية قبل الإطلاق (H3، staging):** `MOYASAR_MODE=test` و`MOYASAR_BASE_URL=https://api.moyasar.com` بمفتاح الاختبار `sk_test_…` من لوحة Moyasar (المحوّل يرفض أي مفتاح غيره في هذا الوضع)، وWebhook اختباري في اللوحة على `https://<staging>/webhooks/payments/moyasar` بسره المشترك. بطاقات Moyasar الاختبارية لا تنقل مالًا.
+
 **الإنتاج:** `MOYASAR_MODE=live`، `MOYASAR_BASE_URL=https://api.moyasar.com`، المفتاح السري `sk_live_…` (من مدير الأسرار) في `MOYASAR_SECRET_KEY`، وفي لوحة Moyasar: Webhook على `https://app.<domain>/webhooks/payments/moyasar` (POST) لأحداث الدفع، بسر مشترك عشوائي (`openssl rand -hex 32`) هو `MOYASAR_WEBHOOK_SECRET`. التدوير: السر الجديد في اللوحة وفي `MOYASAR_WEBHOOK_SECRET`، والقديم في متغير يشير إليه `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` حتى تنقضي إعادة المحاولات، ثم يُحذف. المطابقة اليومية تفتح تنبيهات `platform_alerts` لكل فرق (P-08).
 
 ---
@@ -413,7 +415,7 @@ pc up -d --no-deps web            # ثم الواجهة؛ يظهر «تحديث 
 
 ### 12.2 النسخة اليومية المشفرة
 
-`infra/backup/backup.sh`: `pg_dump --format=custom` يمر مباشرة عبر `age` (أو `openssl` احتياطًا) فلا يُكتب تفريغ غير مشفر على القرص، ويكتب بجواره بصمة `.sha256` وبيانًا `.json` فيه الترحيلات وعدد صفوف الجداول الرئيسية مأخوذة **من اللقطة نفسها** التي نُسخت، فتتحقق أي استعادة لاحقًا صفًا بصف.
+`infra/backup/backup.sh`: `pg_dump --format=custom` يمر مباشرة عبر `age` (أو `openssl` احتياطًا) فلا يُكتب تفريغ غير مشفر على القرص، ويكتب بجواره بصمة `.sha256` (تكشف التلف العارض فقط، فأي أحد يعيد حسابها) وبيانًا `.json`، وفي وضع `openssl` توقيع `.hmac` (HMAC-SHA256 للملف المشفر بمفتاح مشتق من عبارة المرور) لأن AES-CBC غير موثَّق: الاستعادة ترفض ملف `.dump.enc` بلا توقيع صحيح قبل فك تشفيره (DEC-515؛ `age` موثَّق بذاته ويبقى المفضل) فيه الترحيلات وعدد صفوف الجداول الرئيسية مأخوذة **من اللقطة نفسها** التي نُسخت، فتتحقق أي استعادة لاحقًا صفًا بصف.
 
 1. على جهاز غير متصل: `age-keygen -o point-backup.key`؛ احفظ الملف الخاص في مكانين آمنين خارج الخادم، وانسخ المفتاح العام (`age1…`) فقط إلى الخادم.
 2. ملف `/etc/point/backup.env` (صلاحية 600، يملكه المستخدم الذي يشغّل النسخ، هنا `deploy`). يُقرأ بـ`sh` (`. /etc/point/backup.env`)، فضع القيمة التي فيها `&` أو مسافات بين علامتي تنصيص مفردتين:

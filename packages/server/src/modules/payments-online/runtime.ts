@@ -18,9 +18,10 @@ export interface PaymentsDeps {
 
 /**
  * Process-wide online-payment dependencies (api controllers and worker jobs): the MOYASAR_* configuration, secret
- * resolution by reference (`env://`, `sm://`, like the WhatsApp secrets) and the gateway adapter. MOYASAR_MODE only
- * chooses where the same adapter points: the gateway in production, tools/payment-simulator everywhere else (loadEnv
- * refuses `live` outside production, DEC-510).
+ * resolution by reference (`env://`, `sm://`, like the WhatsApp secrets) and the gateway adapter. MOYASAR_MODE chooses
+ * where the same adapter points and which keys it may send (DEC-510): `live` the gateway from production with
+ * `sk_live_` only, `test` the gateway's test API from local or staging with `sk_test_` only, `simulator`
+ * tools/payment-simulator (never a live key).
  */
 export class PaymentsRuntime {
   readonly env: Env;
@@ -45,7 +46,13 @@ export class PaymentsRuntime {
             : null;
           return [current, previous].filter((s): s is string => !!s);
         },
-        allowLiveKey: deps.env.APP_ENV === 'production' && deps.env.MOYASAR_MODE === 'live',
+        // live only from production (loadEnv refuses it elsewhere; this holds even for a hand-built Env)
+        keyPolicy:
+          deps.env.MOYASAR_MODE === 'live'
+            ? deps.env.APP_ENV === 'production'
+              ? 'live'
+              : 'simulator'
+            : deps.env.MOYASAR_MODE,
         ...(deps.fetch ? { fetch: deps.fetch } : {}),
       });
   }

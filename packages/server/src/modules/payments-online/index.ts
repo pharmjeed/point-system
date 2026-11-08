@@ -12,7 +12,13 @@ import { defaultPaymentsRuntime, PaymentsRuntime } from './runtime.js';
 
 export { PaymentsOnlineHttpModule } from './payments-online.module.js';
 export { PaymentsRuntime, defaultPaymentsRuntime, type PaymentsDeps } from './runtime.js';
-export { MoyasarGateway, normalizePayment, type MoyasarOptions } from './infra/moyasar.js';
+export {
+  MoyasarGateway,
+  keyAllowed,
+  normalizePayment,
+  type MoyasarKeyPolicy,
+  type MoyasarOptions,
+} from './infra/moyasar.js';
 export type * from './domain/gateway.js';
 export { retryableFailure } from './domain/gateway.js';
 export { decideSync, localStatusOf, type SyncDecision } from './domain/status.js';

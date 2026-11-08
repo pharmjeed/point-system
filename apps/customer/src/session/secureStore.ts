@@ -1,6 +1,7 @@
 /**
  * Device storage on expo-secure-store (iOS Keychain, Android Keystore-encrypted preferences): the session tokens,
- * the install's device id and two small flags. Nothing here goes to AsyncStorage or logs.
+ * the install's device id, two small flags and the language chosen on C-19. Nothing here goes to AsyncStorage or
+ * logs.
  */
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
@@ -10,6 +11,7 @@ const KEYS = {
   session: 'customer.session',
   deviceId: 'customer.device_id',
   welcomeSeen: 'customer.welcome_seen',
+  locale: 'customer.locale',
   vehiclePrompt: (accountId: string) => `customer.vehicle_prompt.${accountId}`,
 } as const;
 
@@ -48,6 +50,9 @@ export const flags = {
   vehiclePromptDone: (accountId: string) => flag(KEYS.vehiclePrompt(accountId)),
   setVehiclePromptDone: (accountId: string) =>
     SecureStore.setItemAsync(KEYS.vehiclePrompt(accountId), '1', options),
+  /** C-19: the language chosen in the app (V2-017), or null to follow the device (DEC-481). */
+  locale: () => SecureStore.getItemAsync(KEYS.locale, options),
+  setLocale: (locale: 'ar' | 'en') => SecureStore.setItemAsync(KEYS.locale, locale, options),
 };
 
 export const newIdempotencyKey = (): string => Crypto.randomUUID();

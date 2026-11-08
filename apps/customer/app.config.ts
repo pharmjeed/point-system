@@ -39,6 +39,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const androidPackage = env('CUSTOMER_ANDROID_PACKAGE') ?? 'sa.point.app';
   const primary = tokens.color.blue['600'].$value;
   const surface = tokens.color.ink['0'].$value;
+  // C-07 (V2-012, DEC-506): react-native-maps draws Apple Maps on iOS with no key; Google Maps on Android needs a
+  // key, given to the build from the environment only (never committed). Without it the app hides the map on
+  // Android and keeps the list with «فتح في الخرائط» links.
+  const androidMapsKey = env('CUSTOMER_ANDROID_GOOGLE_MAPS_API_KEY');
 
   return {
     ...config,
@@ -59,6 +63,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     android: {
       package: androidPackage,
       adaptiveIcon: { foregroundImage: './assets/brand/icon-maskable-512.png', backgroundColor: primary },
+      ...(androidMapsKey ? { config: { googleMaps: { apiKey: androidMapsKey } } } : {}),
     },
     // The home-screen name per language (the Arabic name on Arabic devices).
     locales: {
@@ -80,6 +85,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       brand: { nameAr, nameEn },
       api: apiConfig(),
       forceLocale: env('CUSTOMER_FORCE_LOCALE') ?? null,
+      maps: { android: androidMapsKey !== undefined },
+      // C-19 «تواصل معنا» (V2-017): configured per environment, never a number written in the code
+      support: {
+        whatsapp: env('CUSTOMER_SUPPORT_WHATSAPP') ?? null,
+        email: env('CUSTOMER_SUPPORT_EMAIL') ?? null,
+      },
     },
   };
 };

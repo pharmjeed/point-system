@@ -2,6 +2,7 @@ import { vatOfInclusive } from '@point/shared';
 import { describe, expect, it } from 'vitest';
 import {
   MoyasarGateway,
+  type MoyasarKeyPolicy,
   decideSync,
   normalizePayment,
   riyadhDate,
@@ -162,13 +163,13 @@ describe('the Moyasar adapter', () => {
       },
     );
   }) as unknown as typeof fetch;
-  const gateway = (key: string, allowLiveKey = false, secrets = ['s1', 's0']) =>
+  const gateway = (key: string, keyPolicy: MoyasarKeyPolicy = 'simulator', secrets = ['s1', 's0']) =>
     new MoyasarGateway({
       baseUrl: 'http://sim.test/',
       timeoutMs: 1000,
       secretKey: async () => key,
       webhookSecrets: async () => secrets,
-      allowLiveKey,
+      keyPolicy,
       fetch: fakeFetch,
     });
 
@@ -186,7 +187,22 @@ describe('the Moyasar adapter', () => {
     const r = await gateway('sk_live_abc').fetchPayment('p');
     expect(r).toMatchObject({ ok: false, kind: 'refused' });
     expect(calls).toHaveLength(before);
-    expect((await gateway('sk_live_abc', true).fetchPayment('p')).ok).toBe(true);
+    expect((await gateway('sk_live_abc', 'live').fetchPayment('p')).ok).toBe(true);
+    // live sends only a live key, test (the gateway's test API) only a test key
+    expect(await gateway('sk_test_abc', 'live').fetchPayment('p')).toMatchObject({
+      ok: false,
+      kind: 'refused',
+    });
+    expect((await gateway('sk_test_abc', 'test').fetchPayment('p')).ok).toBe(true);
+    expect(await gateway('sk_live_abc', 'test').fetchPayment('p')).toMatchObject({
+      ok: false,
+      kind: 'refused',
+    });
+    expect(await gateway('pk_test_abc', 'test').fetchPayment('p')).toMatchObject({
+      ok: false,
+      kind: 'refused',
+    });
+    expect(calls).toHaveLength(before + 2);
   });
 
   it('verifies the shared secret in the body (the current one or the previous one)', async () => {
@@ -207,7 +223,7 @@ describe('the Moyasar adapter', () => {
       ok: false,
       reason: 'not_json',
     });
-    expect(await gateway('k', false, []).verifyWebhook(body('s1'))).toEqual({
+    expect(await gateway('k', 'simulator', []).verifyWebhook(body('s1'))).toEqual({
       ok: false,
       reason: 'not_configured',
     });

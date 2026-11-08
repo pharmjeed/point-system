@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Injectable,
@@ -43,7 +44,8 @@ import { customerHome } from '../application/home.js';
 import { getLocation, listLocations, type LocationDeps } from '../application/locations.js';
 import { CustomerOtpService } from '../application/otp-service.js';
 import { pointChannel } from '../application/point-channel.js';
-import { addCustomerVehicle, listCustomerVehicles } from '../application/vehicles.js';
+import { addCustomerVehicle, listCustomerVehicles, removeCustomerVehicle } from '../application/vehicles.js';
+import { deleteCustomerAccount } from '../application/account-deletion.js';
 
 const R = CUSTOMER_ROUTES;
 type Out<S extends z.ZodType> = z.output<S>;
@@ -56,6 +58,22 @@ class OtpRequestPipe implements PipeTransform<unknown, Out<typeof R.otpRequest.b
     if (typeof raw.phone_e164 === 'string' && normalizeSaudiMobile(raw.phone_e164) === null)
       throw new AppError('PHONE_INVALID', { field: 'phone_e164' });
     const r = R.otpRequest.body.safeParse(value ?? {});
+    if (!r.success) throw new AppError('VALIDATION_FAILED', { fields: zodToFields(r.error) });
+    return r.data;
+  }
+}
+
+/**
+ * C-20 (DEC-507): a deletion without its re-verification proof is CUSTOMER_REAUTH_REQUIRED (`reason: missing`) — what
+ * the app has to do next — rather than a field error; anything else wrong with the body stays VALIDATION_FAILED.
+ */
+@Injectable()
+class AccountDeletePipe implements PipeTransform<unknown, Out<typeof R.meDelete.body>> {
+  transform(value: unknown) {
+    const raw = (value ?? {}) as { reauth_token?: unknown };
+    if (raw.reauth_token === undefined || raw.reauth_token === null || raw.reauth_token === '')
+      throw new AppError('CUSTOMER_REAUTH_REQUIRED', { reason: 'missing' });
+    const r = R.meDelete.body.safeParse(value ?? {});
     if (!r.success) throw new AppError('VALIDATION_FAILED', { fields: zodToFields(r.error) });
     return r.data;
   }
@@ -220,5 +238,43 @@ export class CustomerController {
     const from =
       query.lat !== undefined && query.lng !== undefined ? { lat: query.lat, lng: query.lng } : null;
     return customerHome(this.db, this.locationDeps(), actor.accountId, from);
+  }
+
+  // ---- V2-012 (C-15) and V2-017 (C-20): DEC-505, DEC-507, DEC-508
+
+  @Delete('vehicles/:vehicleId')
+  @RequireCustomer()
+  @Command('DELETE /v1/customer/vehicles/{vehicleId}')
+  removeVehicle(
+    @CurrentTx() tx: Tx,
+    @CurrentCustomer() actor: CustomerActorContext,
+    @Param('vehicleId') vehicleId: string,
+    @Client() client: ClientInfo,
+  ) {
+    return removeCustomerVehicle(tx, actor, vehicleId, client);
+  }
+
+  @Post('auth/reauth/verify')
+  @RequireCustomer()
+  @Command('POST /v1/customer/auth/reauth/verify', { idempotent: false })
+  reauthVerify(
+    @CurrentTx() tx: Tx,
+    @CurrentCustomer() actor: CustomerActorContext,
+    @Body(zodBody(R.reauthVerify.body)) body: Out<typeof R.reauthVerify.body>,
+    @Client() client: ClientInfo,
+  ) {
+    return this.otp.reauthVerify(tx, actor, body, client);
+  }
+
+  @Delete('me')
+  @RequireCustomer()
+  @Command('DELETE /v1/customer/me')
+  deleteMe(
+    @CurrentTx() tx: Tx,
+    @CurrentCustomer() actor: CustomerActorContext,
+    @Body(new AccountDeletePipe()) body: Out<typeof R.meDelete.body>,
+    @Client() client: ClientInfo,
+  ) {
+    return deleteCustomerAccount(tx, this.env.CODE_PEPPER, actor, body, client);
   }
 }

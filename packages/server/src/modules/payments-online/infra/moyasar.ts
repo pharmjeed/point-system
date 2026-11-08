@@ -21,11 +21,21 @@ export interface MoyasarOptions {
   /** MOYASAR_WEBHOOK_SECRET_REF and, while it is rotated out, MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF */
   webhookSecrets: () => Promise<string[]>;
   /**
-   * DEC-510: a live secret key (`sk_live_…`) may only be sent from production. Any other environment refuses to
-   * send one, whatever MOYASAR_BASE_URL says, so no real charge can leave dev, a test or staging.
+   * DEC-510: which secret keys may be sent (keyAllowed). `live` (production only) sends `sk_live_…` only; `test`
+   * (Moyasar's test API from local or staging) sends `sk_test_…` only; `simulator` never sends a live key. So no
+   * real charge can leave dev, a test or staging, whatever MOYASAR_BASE_URL says.
    */
-  allowLiveKey: boolean;
+  keyPolicy: MoyasarKeyPolicy;
   fetch?: typeof fetch;
+}
+
+export type MoyasarKeyPolicy = 'live' | 'test' | 'simulator';
+
+/** The keys a mode may send (DEC-510): live ↔ `sk_live_`, test ↔ `sk_test_`, the simulator anything but live. */
+export function keyAllowed(policy: MoyasarKeyPolicy, key: string): boolean {
+  if (policy === 'live') return key.startsWith('sk_live_');
+  if (policy === 'test') return key.startsWith('sk_test_');
+  return !/^(sk|pk)_live_/.test(key);
 }
 
 /** Constant-time equality of two strings of any length (their digests are compared). */
@@ -112,13 +122,13 @@ export class MoyasarGateway implements PaymentGateway {
     const key = await this.opts.secretKey().catch(() => null);
     if (!key)
       return { ok: false, kind: 'refused', status: null, type: null, message: 'gateway key not configured' };
-    if (/^sk_live_/.test(key) && !this.opts.allowLiveKey)
+    if (!keyAllowed(this.opts.keyPolicy, key))
       return {
         ok: false,
         kind: 'refused',
         status: null,
         type: null,
-        message: 'live key refused outside production',
+        message: `key refused in ${this.opts.keyPolicy} mode`,
       };
     try {
       const res = await this.fetchImpl(this.url(path), {

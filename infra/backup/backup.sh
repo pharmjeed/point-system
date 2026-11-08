@@ -53,6 +53,14 @@ fi
 encrypt() {
   if [ "$mode" = age ]; then age "${recipients[@]}"; else openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -salt -pass "$pass"; fi
 }
+# openssl AES-CBC is not authenticated (age is): an altered .dump.enc may still decrypt and restore. The backup
+# therefore carries an HMAC-SHA256 of the ciphertext under a key derived from the passphrase (DEC-515); the plain
+# .sha256 only detects accidents, since anyone can recompute it. The derived key (never the passphrase) is the
+# only secret that appears in openssl's arguments, for the duration of one call.
+mac_key() {
+  if [ -n "${BACKUP_PASSPHRASE_FILE:-}" ]; then { printf 'point-backup-mac\0'; cat "$BACKUP_PASSPHRASE_FILE"; } | sha256sum | cut -d' ' -f1
+  else { printf 'point-backup-mac\0'; printf '%s' "$BACKUP_PASSPHRASE"; } | sha256sum | cut -d' ' -f1; fi
+}
 
 mkdir -p "$BACKUP_DIR"
 started=$(date -u +%s)
@@ -100,6 +108,10 @@ wait "$PG_PID" 2>/dev/null || true
 mv "$tmp" "$base"
 sum=$(sha256sum "$base" | cut -d' ' -f1)
 echo "$sum  $(basename "$base")" >"$base.sha256"
+if [ "$mode" = openssl ]; then
+  mac=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$(mac_key)" -r "$base" | cut -d' ' -f1)
+  echo "hmac-sha256 $mac" >"$base.hmac"
+fi
 size=$(stat -c %s "$base")
 finished=$(date -u +%s)
 cat >"$base.json" <<EOF
@@ -110,7 +122,7 @@ if [ -n "${BACKUP_S3_URI:-}" ]; then
   need aws
   endpoint=()
   [ -n "${BACKUP_S3_ENDPOINT:-}" ] && endpoint=(--endpoint-url "$BACKUP_S3_ENDPOINT")
-  for f in "$base" "$base.sha256" "$base.json"; do
+  for f in "$base" "$base.sha256" "$base.json" ${mac:+"$base.hmac"}; do
     aws "${endpoint[@]}" s3 cp --only-show-errors "$f" "${BACKUP_S3_URI%/}/$(basename "$f")"
   done
 fi
@@ -132,7 +144,7 @@ for f in "${backups[@]}"; do
   [ "$age_days" -lt "$RETENTION_DAYS" ] && continue
   m=$(basename "$f" | sed -E "s/^$BACKUP_NAME-([0-9]{6}).*/\1/")
   if [ "${first_of_month[$m]:-}" = "$f" ] && [ "$m" -ge "$oldest_month" ]; then continue; fi
-  rm -f "$f" "$f.sha256" "$f.json"
+  rm -f "$f" "$f.sha256" "$f.json" "$f.hmac"
 done
 
 if [ -n "${BACKUP_METRICS_FILE:-}" ]; then

@@ -72,8 +72,9 @@ export const envSchema = z.object({
   WA_TEST_RECIPIENT_ALLOWLIST: z.string().default(''),
 
   // V2-020 online payments (DEC-510, DEC-511): the gateway (Moyasar) or its simulator (tools/payment-simulator);
-  // `live` in production only — dev, tests, CI and staging can never charge a card
-  MOYASAR_MODE: z.enum(['live', 'simulator']).default('simulator'),
+  // `live` in production only, `test` (the gateway's test API, `sk_test_` keys only) in local/staging only — dev,
+  // tests, CI and staging can never charge a card
+  MOYASAR_MODE: z.enum(['live', 'test', 'simulator']).default('simulator'),
   MOYASAR_BASE_URL: z.url().default('http://localhost:4020'), // https://api.moyasar.com when live
   MOYASAR_SECRET_KEY_REF: z.string().default('env://MOYASAR_SECRET_KEY'),
   MOYASAR_WEBHOOK_SECRET_REF: z.string().default('env://MOYASAR_WEBHOOK_SECRET'),
@@ -189,6 +190,11 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       'MOYASAR_MODE=live is only allowed in production (dev, test and staging use the simulator)',
     ]);
   }
+  if (env.MOYASAR_MODE === 'test' && env.APP_ENV !== 'local' && env.APP_ENV !== 'staging') {
+    throw new EnvError([
+      "MOYASAR_MODE=test is only allowed in local or staging (the gateway's test API, sk_test_ keys)",
+    ]);
+  }
   if (env.MOYASAR_MODE === 'simulator' && isGatewayHost(env.MOYASAR_BASE_URL)) {
     throw new EnvError(['MOYASAR_BASE_URL must be the payment simulator when MOYASAR_MODE=simulator']);
   }
@@ -237,8 +243,8 @@ export function deploymentProblems(env: Env, source: Record<string, string | und
   if (env.WA_MODE === 'live' && new URL(env.WA_GRAPH_BASE_URL).protocol !== 'https:') {
     out.push('WA_GRAPH_BASE_URL must be https when WA_MODE=live');
   }
-  if (env.MOYASAR_MODE === 'live' && new URL(env.MOYASAR_BASE_URL).protocol !== 'https:') {
-    out.push('MOYASAR_BASE_URL must be https when MOYASAR_MODE=live');
+  if (env.MOYASAR_MODE !== 'simulator' && new URL(env.MOYASAR_BASE_URL).protocol !== 'https:') {
+    out.push(`MOYASAR_BASE_URL must be https when MOYASAR_MODE=${env.MOYASAR_MODE}`);
   }
   if (env.APP_ENV === 'staging' && env.WA_MODE === 'live' && !env.WA_TEST_RECIPIENT_ALLOWLIST.trim()) {
     out.push('WA_TEST_RECIPIENT_ALLOWLIST is required in staging with WA_MODE=live (05 §9 rule 2)');
