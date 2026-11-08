@@ -77,10 +77,18 @@ export function isTerminalTicketStatus(status: TicketStatus): status is Terminal
 // §5.2 Other ticket status fields
 // ---------------------------------------------------------------------------------------------
 
-/** `tickets.channel` */
-export const TICKET_CHANNELS = ['whatsapp', 'paper'] as const;
+/** `tickets.channel` (`app`: the V2 customer app's entry pass, O-01; V2-013, DEC-501) */
+export const TICKET_CHANNELS = ['whatsapp', 'paper', 'app'] as const;
 export type TicketChannel = (typeof TICKET_CHANNELS)[number];
 export const TicketChannelSchema = z.enum(TICKET_CHANNELS);
+
+/**
+ * `tickets.entitlement` (V2, docs/v2/03 §3, 04 §2; V2-014, DEC-502): decided at intake. `subscription` needs the
+ * subscriptions of phase V4 and `app_paid` the in-app payment of V3; until then `event_included` or `none`.
+ */
+export const TICKET_ENTITLEMENTS = ['none', 'subscription', 'app_paid', 'event_included'] as const;
+export type TicketEntitlement = (typeof TICKET_ENTITLEMENTS)[number];
+export const TicketEntitlementSchema = z.enum(TICKET_ENTITLEMENTS);
 
 /** `tickets.wa_link_status` */
 export const WA_LINK_STATUSES = [
@@ -821,6 +829,7 @@ export const SCHEMA_COLUMN_ENUMS = {
   'key_boards.status': SETUP_STATUSES,
   'key_slots.status': SETUP_STATUSES,
   'tickets.status': TICKET_STATUSES,
+  // widened by migration 0010 with `app` (V2-013, DEC-501); the test reads the widening from the migration
   'tickets.channel': TICKET_CHANNELS,
   'tickets.wa_link_status': WA_LINK_STATUSES,
   'tickets.vehicle_type': VEHICLE_TYPES,

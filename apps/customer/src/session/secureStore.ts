@@ -13,6 +13,8 @@ const KEYS = {
   welcomeSeen: 'customer.welcome_seen',
   locale: 'customer.locale',
   vehiclePrompt: (accountId: string) => `customer.vehicle_prompt.${accountId}`,
+  /** C-11 (V2-013): the entry pass secret with the server's clock offset, so the QR draws offline */
+  pass: 'customer.pass',
 } as const;
 
 const options: SecureStore.SecureStoreOptions = {
@@ -56,3 +58,11 @@ export const flags = {
 };
 
 export const newIdempotencyKey = (): string => Crypto.randomUUID();
+
+/** C-11's cache (features/pass.ts): device-only, in the Keychain / Keystore like the session tokens. */
+export const securePassStore = {
+  load: () => SecureStore.getItemAsync(KEYS.pass, options),
+  save: (json: string) => SecureStore.setItemAsync(KEYS.pass, json, options),
+  /** sign-out and account deletion: the secret leaves the device with the session */
+  clear: () => SecureStore.deleteItemAsync(KEYS.pass, options),
+};

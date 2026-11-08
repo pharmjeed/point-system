@@ -27,7 +27,11 @@ import {
   maskPhone,
   normalizeSaudiMobile,
   normalizeSaudiPlate,
+  PASS_SECRET_BYTES,
+  PASS_STEP_S,
+  PASS_TOKEN_PREFIX,
   saudiPlateDisplay,
+  verifyPassToken,
   type CustomerApiErrorCode,
   type CustomerConsentKind,
   type CustomerConsentState,
@@ -37,6 +41,7 @@ import {
   type CustomerLocationDetail,
   type CustomerLocationSummary,
   type CustomerMe,
+  type CustomerPass,
   type CustomerRouteKey,
   type CustomerTokens,
   type CustomerVehicle,
@@ -78,6 +83,8 @@ interface Account {
   createdAt: number;
   consents: ConsentRow[];
   vehicles: CustomerVehicle[];
+  /** V2-013: the entry pass secret (base64url), created by the first `GET /v1/customer/pass` */
+  passSecret: string | null;
 }
 
 interface Session {
@@ -134,6 +141,18 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   const inbox: Array<{ phone: string; code: string; at: number }> = [];
   let requestSeq = 0;
 
+  const base64Url = (bytes: number) => {
+    const b = Array.from({ length: bytes }, () => Math.floor(random() * 256));
+    let s = '';
+    const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    for (let i = 0; i < b.length; i += 3) {
+      const n = (b[i]! << 16) | ((b[i + 1] ?? 0) << 8) | (b[i + 2] ?? 0);
+      s += A[(n >> 18) & 63]! + A[(n >> 12) & 63]!;
+      if (i + 1 < b.length) s += A[(n >> 6) & 63]!;
+      if (i + 2 < b.length) s += A[n & 63]!;
+    }
+    return s;
+  };
   const hex = (bytes: number) =>
     Array.from({ length: bytes }, () =>
       Math.floor(random() * 256)
@@ -331,6 +350,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           createdAt: now(),
           consents: [],
           vehicles: [],
+          passSecret: null,
         });
         accountByPhone.set(phone, accountId);
       }
@@ -501,6 +521,30 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       return home;
     },
 
+    // ---- V2-013 (C-11, DEC-500): the entry pass secret, delivered to the signed-in device only
+
+    pass(req) {
+      const account = authenticate(req);
+      account.passSecret ??= base64Url(PASS_SECRET_BYTES);
+      const rotatedAt = account.createdAt;
+      const out: CustomerPass = {
+        scheme: PASS_TOKEN_PREFIX,
+        account_id: account.id,
+        secret: account.passSecret,
+        step_seconds: PASS_STEP_S,
+        server_time: iso(now()),
+        rotated_at: iso(rotatedAt),
+        refresh_after: iso(rotatedAt + 30 * 24 * 3600_000),
+        vehicles: account.vehicles.map((v) => ({
+          vehicle_id: v.id,
+          plate_display: v.plate.display,
+          vehicle_make: v.vehicle_make,
+          vehicle_color: v.vehicle_color,
+        })),
+      };
+      return out;
+    },
+
     // ---- V2-012 (C-15) and V2-017 (C-20), the server's rules (DEC-505, DEC-507, DEC-508)
 
     vehicleDelete(req, { params }) {
@@ -646,6 +690,14 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       for (let i = inbox.length - 1; i >= 0; i--)
         if (inbox[i]?.phone === phone) return inbox[i]?.code ?? null;
       return null;
+    },
+    /**
+     * The driver's scan (O-01, tests): verifies a token shown on C-11 as `POST /v1/tickets/intake-pass` does, with the
+     * account's secret and this backend's clock.
+     */
+    verifyPass(token: string, atMs = now()) {
+      const secrets = [...accounts.values()].map((a) => a.passSecret).filter((s): s is string => !!s);
+      return verifyPassToken({ token, secrets, nowMs: atMs });
     },
     /** Every message «sent» (tests). */
     get inbox(): ReadonlyArray<{ phone: string; code: string; at: number }> {

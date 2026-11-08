@@ -1,7 +1,7 @@
 /**
  * Entry: waits for the session read, then sends journey R1 where it continues (src/features/onboarding.ts).
  */
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSession } from '../session/SessionProvider';
@@ -13,6 +13,7 @@ import { Screen } from '../ui/Screen';
 export default function Index() {
   const session = useSession();
   const { t } = useI18n();
+  const router = useRouter();
   if (session.phase === 'loading') {
     return (
       <View style={styles.center}>
@@ -24,6 +25,8 @@ export default function Index() {
     return (
       <Screen footer={<Button label={t.common.retry} onPress={session.reload} />}>
         <AppText accessibilityRole="alert">{t.common.networkError}</AppText>
+        {/* C-11 works without a network once cached (V2-D14): reachable from here too */}
+        <Button label={t.home.pass} variant="secondary" onPress={() => router.push('/pass')} />
       </Screen>
     );
   }

@@ -53,6 +53,42 @@ export interface DriftReport {
   extra: Record<string, string[]>;
 }
 
+/**
+ * V2 widenings of a CHECK value list of docs/06_schema.sql (06 ERD §9.2 rules 3–4: a value is added before the code
+ * that writes it, and the auto-named check gets an explicit name). The V1 constraint is then absent by design, and
+ * docs/06_schema.sql stays the delivered V1 file (docs/v2/03 preamble), so the drift check accepts its absence only
+ * when the named replacement exists on the same table with every V1 value still allowed (never a narrowing).
+ */
+export const SUPERSEDED_CONSTRAINTS: readonly {
+  table: string;
+  from: string;
+  to: string;
+  migration: string;
+  decision: string;
+}[] = [
+  {
+    table: 'tickets',
+    from: 'tickets_channel_check',
+    to: 'ck_tickets_channel',
+    migration: '0010_customer_pass_and_app_intake.sql',
+    decision: 'DEC-501',
+  },
+];
+
+const quotedValues = (def: string) => [...def.matchAll(/'([^']*)'/g)].map((m) => m[1]!);
+
+/** A missing V1 constraint replaced by a documented widening (see {@link SUPERSEDED_CONSTRAINTS}). */
+function supersededByWidening(entry: string, actual: readonly string[]): boolean {
+  const [table, name, ...rest] = entry.split(':');
+  const s = SUPERSEDED_CONSTRAINTS.find((x) => x.table === table && x.from === name);
+  if (!s) return false;
+  const v1 = quotedValues(rest.join(':'));
+  const replacement = actual.find((a) => a.startsWith(`${s.table}:${s.to}:`));
+  if (!replacement) return false;
+  const widened = new Set(quotedValues(replacement.slice(`${s.table}:${s.to}:`.length)));
+  return v1.length > 0 && v1.every((v) => widened.has(v));
+}
+
 /** `expected` comes from docs/06_schema.sql, `actual` from the migrations. Anything missing is drift. */
 export function compareCatalogs(expected: CatalogSnapshot, actual: CatalogSnapshot): DriftReport {
   const missing: Record<string, string[]> = {};
@@ -60,7 +96,9 @@ export function compareCatalogs(expected: CatalogSnapshot, actual: CatalogSnapsh
   for (const k of Object.keys(expected) as (keyof CatalogSnapshot)[]) {
     const a = new Set(actual[k]);
     const e = new Set(expected[k]);
-    const m = expected[k].filter((x) => !a.has(x));
+    const m = expected[k].filter(
+      (x) => !a.has(x) && !(k === 'constraints' && supersededByWidening(x, actual.constraints)),
+    );
     const x = actual[k].filter((y) => !e.has(y));
     if (m.length) missing[k] = m;
     if (x.length) extra[k] = x;

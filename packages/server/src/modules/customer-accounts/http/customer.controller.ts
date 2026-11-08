@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Inject,
   Injectable,
   Param,
@@ -46,6 +47,8 @@ import { CustomerOtpService } from '../application/otp-service.js';
 import { pointChannel } from '../application/point-channel.js';
 import { addCustomerVehicle, listCustomerVehicles, removeCustomerVehicle } from '../application/vehicles.js';
 import { deleteCustomerAccount } from '../application/account-deletion.js';
+import { getCustomerPass, type PassKeys } from '../application/pass.js';
+import { parseEncryptionKey } from '../../../core/crypto/crypto.js';
 
 const R = CUSTOMER_ROUTES;
 type Out<S extends z.ZodType> = z.output<S>;
@@ -99,6 +102,7 @@ class ZodQueryPipe<T> implements PipeTransform<unknown, T> {
 export class CustomerController {
   private readonly otp: CustomerOtpService;
   private readonly texts: ConsentTexts;
+  private readonly passKeys: PassKeys;
 
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -108,6 +112,8 @@ export class CustomerController {
   ) {
     this.otp = new CustomerOtpService(env);
     this.texts = consentTexts(env);
+    const key = parseEncryptionKey(env.DATA_ENCRYPTION_KEY, env.DATA_ENCRYPTION_KEY_ID);
+    this.passKeys = { key, keys: [key] };
   }
 
   /** V2-004's public read model needs the photo signer and the request's clock (DEC-499). */
@@ -277,4 +283,17 @@ export class CustomerController {
   ) {
     return deleteCustomerAccount(tx, this.env.CODE_PEPPER, actor, body, client);
   }
+
+  // --- V2-013 (DEC-500): the entry pass, C-11 ---
+  /**
+   * The pass secret for the signed-in device (generates the QR offline). A read for the client, but the first call
+   * creates the secret and a due rotation replaces it, so it runs in a transaction of its own; never cached.
+   */
+  @Get('pass')
+  @RequireCustomer()
+  @Header('Cache-Control', 'private, no-store')
+  pass(@CurrentCustomer() actor: CustomerActorContext, @Client() client: ClientInfo) {
+    return this.db.transaction((tx) => getCustomerPass(tx, this.passKeys, actor.accountId, client));
+  }
+  // --- end V2-013 ---
 }

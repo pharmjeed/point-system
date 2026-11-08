@@ -17,7 +17,7 @@ import { createApi, type ApiBundle } from '../api';
 import { SignedOutError } from '../api/errors';
 import { appConfig } from '../config';
 import { nextDestination, type Destination } from '../features/onboarding';
-import { deviceId, flags } from './secureStore';
+import { deviceId, flags, securePassStore } from './secureStore';
 
 type Phase = 'loading' | 'ready' | 'offline';
 
@@ -113,9 +113,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await bundle.api.logout();
+        await securePassStore.clear().catch(() => undefined);
         setMeState(null);
       },
-      forgetAccount: () => setMeState(null),
+      forgetAccount: () => {
+        void securePassStore.clear().catch(() => undefined);
+        setMeState(null);
+      },
       destination: (next = {}) =>
         nextDestination({
           me: next.me === undefined ? me : next.me,

@@ -16,6 +16,17 @@ export const StartIntakeBody = z.strictObject({
   channel: z.enum(['whatsapp', 'paper']).optional(),
 });
 
+/**
+ * `POST /v1/tickets/intake-pass` (O-01, V2-013): the scanned text is checked by the command (PASS_INVALID), not
+ * here, so a foreign ticket or event in the body is still answered as not found first.
+ */
+export const IntakePassBody = z.strictObject({
+  pass_token: z.string().min(1).max(128),
+  ticket_id: uuid.optional(),
+  expected_version: version.optional(),
+  event_id: uuid.nullable().optional(),
+});
+
 const PlateInput = z.strictObject({
   country: z.string().trim().min(2).max(3).optional(),
   digits: z.string().max(8).optional(),

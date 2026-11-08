@@ -7,7 +7,18 @@ import { getMediaUrl, keyPickup, markReady, startRetrieval } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, Media, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
 import { paths } from '@/app/paths';
-import { Banner, Button, Card, Dialog, PlateBadge, Sheet, Skeleton, Stepper } from '@/components';
+import {
+  Banner,
+  Button,
+  Card,
+  Dialog,
+  EntitlementChip,
+  PlateBadge,
+  Sheet,
+  Skeleton,
+  Stepper,
+} from '@/components';
+import { entitlementBadgeOf } from '@/features/common/entitlement';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useServerNow } from '@/hooks/useNow';
@@ -169,6 +180,10 @@ function Retrieval({ card }: { card: TaskCardData }) {
     3: null,
   };
   const time = (iso: string | null | undefined) => (iso ? formatTime(iso) : undefined);
+  const badge = entitlementBadgeOf(
+    card.ticket.entitlement,
+    card.payment_due ? { amountHalalas: card.payment_due.amount_halalas } : null,
+  );
   const steps = [
     { label: components.stepper.key, time: time(card.task.key_picked_up_at) },
     { label: components.stepper.retrieve, time: time(card.task.started_at) },
@@ -186,6 +201,8 @@ function Retrieval({ card }: { card: TaskCardData }) {
       <div className="flex flex-wrap items-center gap-3">
         {plate ? <PlateBadge {...plate} /> : null}
         <span>{vehicleSummary(card.ticket.vehicle)}</span>
+        {/* O-02 (V2-014): «مشمول» / «يدفع X» */}
+        {badge ? <EntitlementChip badge={badge} size="sm" /> : null}
       </div>
       <Stepper
         current={step}

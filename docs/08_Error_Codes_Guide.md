@@ -448,11 +448,15 @@
 |---|---|---|---|---|
 | `PLATFORM_AUTH_REQUIRED` | 401 | لا | سجّل الدخول إلى لوحة المنصة للمتابعة. | Sign in to the platform to continue. |
 | `OPERATOR_SUSPENDED` | 409 | لا | حساب المشغّل معلّق من المنصة. لا يمكن تنفيذ هذا الإجراء الآن. | The operator is suspended. |
+| `PASS_INVALID` | 422 | لا | بطاقة الدخول غير صالحة. اطلب من العميل فتح البطاقة في التطبيق ثم امسحها مجددًا. | The entry pass is not valid. |
+| `PASS_EXPIRED` | 410 | لا | انتهت صلاحية بطاقة الدخول. امسح البطاقة الظاهرة الآن في جوال العميل. | The entry pass has expired. Scan the current one. |
 
 | الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
 |---|---|---|---|---|
 | `PLATFORM_AUTH_REQUIRED` | أي مسار `/v1/platform/*` غير عام بلا كوكي المنصة (`PLATFORM_SESSION_COOKIE_NAME`، `__Host-point_psid`) أو برمز غير معروف أو بخطوة تحقق لم تكتمل — ومنه الطلب الذي يحمل كوكي جلسة الموظفين وحده: جلسة الموظف لا تُقرأ على مسار المنصة أبدًا، فلا يُرفع `AUTH_UNAUTHENTICATED` الذي يُخرج الموظف من تطبيقه (DEC-462). أما الجلسة المنصية المنتهية أو المبطلة أو الحساب المعطّل أو المقيد فبرموز 4.1 نفسها (`AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`، `AUTH_ACCOUNT_DISABLED`، `AUTH_SECRET_CHANGE_REQUIRED`، `AUTH_MFA_SETUP_REQUIRED` مع `allowed_paths` = مسارات `platform.self`)، ودخول المنصة بـ`AUTH_INVALID_CREDENTIALS`/`AUTH_ACCOUNT_LOCKED`/`AUTH_MFA_*` كدخول الموظفين | — | `/platform/login` (لوحة المنصة)؛ لا يمس جلسة الموظف في التبويب نفسه | info · — |
 | `OPERATOR_SUSPENDED` | لمؤسسة `operator_status` فيها `suspended` أو `terminated` (V2-005، DEC-486): فتح حفل أو إعادة فتحه (`POST /v1/events/{eventId}/open`)، فتح وردية (`POST /v1/shifts/{shiftId}/open`)، بدء مناوبة (`POST /v1/me/duty/start`)، بدء استلام تذكرة (`POST /v1/tickets`). ما بدأ قبل التعليق يكتمل، والدخول والقراءة مسموحان | `operator_status` | `dialog` «تواصل مع المنصة» ثم `refetch`؛ وشريط المشغل المعلّق من `/v1/me` (`organization.operator_status`) | info · — |
+| `PASS_INVALID` | `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500): رمز ليس بصيغة `P1.…`، أو توقيع لا يطابق سر الحساب الحالي ولا السابق في مهلته، أو حساب `suspended`/`deleted` أو بلا بطاقة (`account_unavailable` لا يميّز المعلّق من المحذوف) | `reason`: `malformed` / `bad_signature` / `account_unavailable` | تحت زر «مسح بطاقة العميل» في D-05 مع «امسح مجددًا»؛ يبقى الاستلام اليدوي متاحًا | info · — |
+| `PASS_EXPIRED` | الخطوة خارج الخطوة الحالية ± 1 (30 ث لكل خطوة) على ساعة الخادم، أو خطوة لا تزيد على آخر خطوة استُعملت في استلام (لقطة شاشة معادة) | `reason`: `stale` / `future` / `already_used` | «امسح البطاقة الظاهرة الآن» ثم إعادة المسح | info · — |
 
 ### 4.18 واجهة العميل `/v1/customer/*` (الإصدار الثاني، V2-010)
 

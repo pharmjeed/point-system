@@ -13,10 +13,19 @@ import {
   TERMINAL_TASK_STATUSES,
   TERMINAL_TICKET_STATUSES,
 } from '../src/index.js';
-import { readDoc } from './docs.js';
+import { readFileSync } from 'node:fs';
+import { readDoc, repoPath } from './docs.js';
 
 const sql = readDoc('06_schema.sql').replace(/--[^\n]*/g, '');
 const quoted = (list: string): string[] => [...list.matchAll(/'([^']*)'/g)].map((m) => m[1] ?? '');
+
+/**
+ * V2 migrations that widen a CHECK list of 06_schema.sql (06 ERD §9.2 rule 3) replace the list by the one they
+ * declare: `0010_customer_pass_and_app_intake.sql` re-creates the ticket channel check with `app` (DEC-501).
+ */
+const WIDENED: Record<string, { file: string; constraint: string }> = {
+  'tickets.channel': { file: '0010_customer_pass_and_app_intake.sql', constraint: 'ck_tickets_channel' },
+};
 
 function checkEnums(): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -25,6 +34,17 @@ function checkEnums(): Record<string, string[]> {
     for (const [, column, list] of flat.matchAll(/CHECK \((\w+) IN \(([^)]*)\)\)/g)) {
       out[`${table}.${column}`] = quoted(list ?? '');
     }
+  }
+  for (const [column, w] of Object.entries(WIDENED)) {
+    const migration = readFileSync(repoPath(`packages/db/migrations/${w.file}`), 'utf8');
+    const list = new RegExp(`CONSTRAINT ${w.constraint}\\s+CHECK \\(\\w+ IN \\(([^)]*)\\)\\)`).exec(
+      migration,
+    )?.[1];
+    expect(list, `${w.file} declares ${w.constraint}`).toBeTruthy();
+    const widened = quoted(list ?? '');
+    // a widening keeps every V1 value (06 ERD §9.2 rule 1: never narrowed)
+    expect(widened.slice(0, out[column]?.length), column).toEqual(out[column]);
+    out[column] = widened;
   }
   return out;
 }

@@ -28,6 +28,8 @@ const CUSTOMER_TABLES = [
   'customer_vehicles',
   'customer_idempotency_keys',
   'customer_audit_log',
+  // 0010_customer_pass_and_app_intake.sql (V2-013, DEC-500)
+  'customer_passes',
 ];
 
 /**
@@ -64,7 +66,7 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001) and the 7 customer tables of 0009 (V2-010)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001) and the 8 customer tables of 0009 (V2-010) and 0010 (V2-013)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -135,6 +137,7 @@ describe('migrations', () => {
       '0006_wa_inbound_received_index.sql',
       '0007_alerts_manual_resolved_index.sql',
       '0009_customers_account_index.sql',
+      '0010_tickets_customer_vehicle_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -152,6 +155,7 @@ describe('migrations', () => {
       [
         [
           'ix_alerts_manual_resolved',
+          'ix_tickets_customer_vehicle_open',
           'ix_whatsapp_inbound_org_received',
           'ix_whatsapp_messages_accepted',
           'uq_customers_org_account',
@@ -160,6 +164,7 @@ describe('migrations', () => {
     );
     expect(r.rows).toEqual([
       { name: 'ix_alerts_manual_resolved', valid: true },
+      { name: 'ix_tickets_customer_vehicle_open', valid: true },
       { name: 'ix_whatsapp_inbound_org_received', valid: true },
       { name: 'ix_whatsapp_messages_accepted', valid: true },
       { name: 'uq_customers_org_account', valid: true },
@@ -195,6 +200,8 @@ describe('migrations', () => {
     ['partial unique index', 'DROP INDEX uq_claim_codes_live'],
     ['CHECK constraint', 'ALTER TABLE users DROP CONSTRAINT ck_users_can_drive_supervisor_only'],
     ['view', 'DROP VIEW v_pool_queue'],
+    // V2-013 (DEC-501): the widening that supersedes a V1 check is itself checked
+    ['widened CHECK constraint', 'ALTER TABLE tickets DROP CONSTRAINT ck_tickets_channel'],
   ])('drift check fails when a %s is lost', async (_kind, ddl) => {
     const broken = await createTestDatabase();
     const c = new pg.Client({ connectionString: broken.url });

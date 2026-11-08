@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   EmptyState,
+  EntitlementChip,
   Header,
   ListItem,
   PlateBadge,
@@ -15,6 +16,7 @@ import {
   StatusChip,
   Timeline,
 } from '@/components';
+import { dueOf, entitlementBadgeOf } from '@/features/common/entitlement';
 import { useStaffMe } from '@/features/ops/StaffLayout';
 import {
   components,
@@ -121,6 +123,7 @@ function TicketView({
   const [tab, setTab] = useState<TicketTab>('timeline');
   const [menuOpen, setMenuOpen] = useState(false);
   const available = ticketActions(me, ticket);
+  const entitlement = entitlementBadgeOf(ticket.entitlement, dueOf(ticket));
   const actions = ACTION_ORDER.filter((a) => available.includes(a));
   const requested = params.get('action') as TicketAction | null;
   const [active, setActive] = useState<TicketAction | null>(null);
@@ -198,8 +201,15 @@ function TicketView({
           ) : null}
           <div className="st-facts__row">
             <Fact label={s03.channel}>
-              {s03.channelName[ticket.channel]} «{waLinkStatus[ticket.wa_link_status]}»
+              {s03.channelName[ticket.channel]}
+              {ticket.channel === 'app' ? null : <> «{waLinkStatus[ticket.wa_link_status]}»</>}
             </Fact>
+            {/* O-02 (V2-014, DEC-502): «مشمول» / «يدفع X» */}
+            {entitlement ? (
+              <Fact label={s03.entitlement}>
+                <EntitlementChip badge={entitlement} size="sm" />
+              </Fact>
+            ) : null}
             {ticket.inspection_status ? (
               <Fact label={s03.inspection}>«{inspectionStatus[ticket.inspection_status]}»</Fact>
             ) : null}

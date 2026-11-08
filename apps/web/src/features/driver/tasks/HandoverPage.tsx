@@ -12,6 +12,7 @@ import {
   Button,
   Checkbox,
   CodeInput,
+  EntitlementChip,
   Icon,
   PlateBadge,
   SegmentedControl,
@@ -20,6 +21,7 @@ import {
   TextField,
 } from '@/components';
 import { FieldError } from '@/components/Field';
+import { entitlementBadgeOf } from '@/features/common/entitlement';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useServerNow } from '@/hooks/useNow';
@@ -122,6 +124,10 @@ function HandoverForm({
   const paper = ticket.channel === 'paper';
   const due = !!card.payment_due || ticket.payment_status === 'due';
   const amount = card.payment_due?.amount_halalas ?? ticket.fee_halalas ?? 0;
+  const badge = entitlementBadgeOf(
+    card.ticket.entitlement ?? ticket.entitlement,
+    due ? { amountHalalas: amount } : null,
+  );
   const methods: PaymentMethod[] = card.payment_due?.allowed_methods?.length
     ? card.payment_due.allowed_methods
     : ['cash', 'pos'];
@@ -348,6 +354,8 @@ function HandoverForm({
       <div className="flex flex-wrap items-center gap-3">
         {plate ? <PlateBadge {...plate} /> : null}
         <span>{vehicleSummary(card.ticket.vehicle)}</span>
+        {/* O-02 (V2-014): «مشمول» / «يدفع X» */}
+        {badge ? <EntitlementChip badge={badge} size="sm" /> : null}
       </div>
 
       {paper ? (

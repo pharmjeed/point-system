@@ -119,7 +119,14 @@ export class ChangeCustomerPhoneUseCase {
     if (t.status === 'received')
       throw invalidTransition('ticket', t, PHONE_OP, AFTER_INTAKE, 'draft_use_intake');
     if (t.channel !== 'whatsapp')
-      throw invalidTransition('ticket', t, PHONE_OP, AFTER_INTAKE, 'paper_channel');
+      throw invalidTransition(
+        'ticket',
+        t,
+        PHONE_OP,
+        AFTER_INTAKE,
+        // V2-013 (DEC-503): an app ticket's customer is the account, not a typed number
+        t.channel === 'app' ? 'app_channel' : 'paper_channel',
+      );
 
     const e164 = normalizePhone(body.customer_phone)!;
     const customer =

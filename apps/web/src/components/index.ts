@@ -18,6 +18,7 @@ export { DataTable } from './DataTable';
 export type { DataColumn } from './DataTable';
 export { Dialog } from './Dialog';
 export { DriverStateChip } from './DriverStateChip';
+export { EntitlementChip } from './EntitlementChip';
 export { EmptyState } from './EmptyState';
 export { Field, FieldError } from './Field';
 export { FilterChips } from './FilterChips';
