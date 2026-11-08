@@ -57,6 +57,8 @@ const UNIQUE_RULES: Record<string, Rule> = {
   uq_link_codes_live_ticket: 'VERSION_CONFLICT',
   uq_claim_codes_live: 'VERSION_CONFLICT',
   uq_payments_ticket_recorded: 'PAYMENT_ALREADY_RECORDED',
+  // V2-021: one successful online payment per ticket (0012_online_payments.sql)
+  uq_online_payments_ticket_paid: 'PAYMENT_ALREADY_RECORDED',
   // 08 §5.2
   users_org_id_employee_code_key: {
     code: 'VALIDATION_FAILED',

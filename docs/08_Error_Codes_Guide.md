@@ -479,6 +479,25 @@
 | رمز تحديث منتهٍ أو ملغى أو مستعمل سابقًا أو من جهاز آخر، أو جلسة ملغاة | `AUTH_SESSION_REVOKED` (401) | `reason` | الخروج | info | المستعمل سابقًا والجهاز الآخر يلغيان الجلسة كلها |
 | حساب `suspended` | `AUTH_ACCOUNT_DISABLED` (403) | — | رسالة الخادم | info | |
 
+
+### 4.19 الدفع الإلكتروني (الإصدار الثاني، V2-020 / V2-021)
+
+مدفوعات تطبيق العميل عبر بوابة الدفع (Moyasar، DEC-460، DEC-510 … DEC-514)، منفصلة عن التحصيل النقدي والشبكة (§4.10). `PAYMENT_ALREADY_RECORDED` (§4.10) يُرفع أيضًا لدفعة إلكترونية ناجحة ثانية للتذكرة نفسها (`uq_online_payments_ticket_paid`، §5.1).
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` |
+|---|---|---|---|---|
+| `PAYMENT_FAILED` | 402 | لا | لم تتم عملية الدفع. جرّب بطاقة أخرى أو وسيلة دفع مختلفة. | The payment was declined. |
+| `PAYMENT_NOT_REFUNDABLE` | 409 | لا | لا يمكن استرداد هذه الدفعة في حالتها الحالية. | This payment cannot be refunded in its current status. |
+| `REFUND_AMOUNT_EXCEEDS_PAID` | 409 | لا | مبلغ الاسترداد أكبر من المتبقي من الدفعة. | The refund is larger than what is left of the payment. |
+| `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | 401 | لا | — | Invalid payment webhook secret. |
+
+| الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
+|---|---|---|---|---|
+| `PAYMENT_FAILED` | بدء دفعة (`OnlinePayments.start`، تستعمله أوامر V2-022/V2-023): البوابة رفضت البطاقة أو 3-D Secure، أو رفضت الطلب نفسه (رمز غير معروف). حالة الدفعة `failed` تُحفظ قبل الرد | `online_payment_id`، `failure_code` (رمز البوابة القصير، بلا نص حر ولا رقم بطاقة) | تطبيق العميل: «جرّب بطاقة أخرى» | info · — |
+| `PAYMENT_NOT_REFUNDABLE` | `POST /v1/platform/payments/{paymentId}/refunds` لدفعة ليست `paid` ولا `partially_refunded` (مثل `initiated` أو `failed` أو مستردة كاملًا) | `online_payment_id`، `current_status` | لوحة المنصة P-08: رسالة الخادم ثم `refetch` | info · — |
+| `REFUND_AMOUNT_EXCEEDS_PAID` | الاسترداد المطلوب (أو الكامل حين يُترك المبلغ) أكبر من المدفوع ناقص المسترد وما ينتظر الإرسال | `online_payment_id`، `requested_halalas`، `refundable_halalas` | P-08: خطأ حقل المبلغ مع المتبقي | info · — |
+| `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | `POST /webhooks/payments/moyasar` بلا `secret_token` أو بسر لا يطابق `MOYASAR_WEBHOOK_SECRET_REF` (ولا السابق أثناء التدوير) أو بجسم ليس JSON؛ لا يُحفظ شيء (DEC-511) | — | لا واجهة (المستهلك البوابة) | warn · — |
+
 ---
 
 ## 5. ربط قيود قاعدة البيانات بالرموز
@@ -514,6 +533,7 @@
 | `uq_link_codes_live_ticket` | `link_codes` | `VERSION_CONFLICT` (الأمر يلغي الرمز الحي السابق قبل الإنشاء؛ الانتهاك يعني أمرين متزامنين) |
 | `uq_claim_codes_live` | `claim_codes` | `VERSION_CONFLICT` (إعادة إرسال متزامنة) |
 | `uq_payments_ticket_recorded` | `payments` | `PAYMENT_ALREADY_RECORDED` |
+| `uq_online_payments_ticket_paid` | `online_payments` (V2-021، `0012`) | `PAYMENT_ALREADY_RECORDED` |
 | `uq_alerts_live_dedupe` | `alerts` | لا خطأ: تحديث التنبيه القائم لنفس الموقع والمفتاح (`details`) بدل إنشاء جديد — التفرد على `(venue_id, dedupe_key)` (DEC-46) |
 | `uq_outbox_dedupe_pending` | `outbox_events` | لا خطأ: `INSERT ... ON CONFLICT DO NOTHING` (المهمة معلّقة بالفعل) |
 

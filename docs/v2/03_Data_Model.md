@@ -242,6 +242,8 @@ CREATE TABLE customer_passes (                 -- بطاقة الدخول الم
 
 ## 4. الاشتراكات والدفع
 
+> **الدفع نُفذ في `packages/db/migrations/0012_online_payments.sql` (V2-020 / V2-021، DEC-510 … DEC-514)** — `customer_payment_methods` و`online_payments` و`refunds` و`gateway_webhook_events`، ومعها `payment_reconciliation_runs` و`platform_alerts`. الفروق عن المسودة أدناه: أسماء صريحة لكل قيد؛ `online_payments` بـ`given_id` (مفتاح تكرار الإنشاء لدى البوابة) و`refunded_halalas` التراكمي و`payment_method_id` و`source_type` وعلامة البطاقة وآخر 4 أرقام وأوقات كل حالة و`gateway_updated_at` و`version`، و`gateway_payment_id` فارغ حتى أول رد من البوابة وفريد مع `gateway`؛ القيود مسطحة بلا `BETWEEN` ولا مجموعات `AND` متداخلة (تمرين الاستعادة)؛ `subscription_id` بلا مفتاح أجنبي حتى `subscriptions` (V2-031)؛ الدفعة الناجحة الواحدة للتذكرة تشمل `partially_refunded`؛ `refunds` بـ`failure_code` و`request_id` و`sent_at` و`completed_at` ومشغّل يمنع تعديل غير نتيجة البوابة، ولا حذف لأي صف مالي (REVOKE DELETE). جداول الاشتراك والباقات أدناه للمرحلة V4.
+
 ```sql
 CREATE TABLE subscription_plans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

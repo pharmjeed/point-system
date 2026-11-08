@@ -547,6 +547,8 @@ volumes:
 | `point_wa_service_messages_month` · `point_wa_unique_users_24h_outside_window` | Gauge | استهلاك حصص Meta (الملف 12 §13)؛ التعريف في DEC-413، ويُعدّ مرة في الدقيقة على الأكثر لكل عملية |
 | `point_wa_channel_health` | Gauge | 0 `healthy` · 1 `degraded` · 2 `down`؛ يضبطه `SystemMonitor` من القاعدة في كل عملية (أسوأ قناة نشطة، DEC-417) |
 | `point_push_send_total{outcome}` | Counter | Web Push ونتائجه |
+| `point_payment_webhooks_total{outcome}` | Counter | الإصدار الثاني: تسليمات Webhook بوابة الدفع (`stored`، `duplicate`، `rejected`) (V2-021، DEC-512) |
+| `point_platform_alerts_total{type}` | Counter | الإصدار الثاني: تنبيهات المالية للمنصة المنشأة (`platform_alerts`: دفعة مجهولة، فرق مطابقة، استرداد فاشل، مطابقة متعذرة) (DEC-514) |
 | `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري؛ إعادة الاتصال = مقبس جديد للجلسة خلال 10 دقائق من فقد سابقه على العملية نفسها (DEC-416) |
 | `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات؛ انتظار القفل زمن كل جملة قفل قانونية L1–L8، ومنها ما ينتهي بـ`55P03` أو بجمود (DEC-416) |
 | `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159)؛ وصفر صريح لموقع فيه حفل ووردية مفتوحان بلا مناوبة (15 §12 «غياب السائقين قبل الطلبات») |

@@ -148,6 +148,11 @@ export const JOB_TYPES = [
   'job.export_generate',
   // V2 (V2-010, DEC-496): the customer app's sign-in code over WhatsApp, sent after COMMIT
   'job.customer_otp_send',
+  // V2 (V2-021, DEC-512 … DEC-514): online payments — a gateway webhook processed once, a refund sent after COMMIT,
+  // the daily reconciliation with the gateway
+  'job.payment_webhook_process',
+  'job.payment_refund_send',
+  'job.payments_reconcile',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

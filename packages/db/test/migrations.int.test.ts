@@ -30,6 +30,16 @@ const CUSTOMER_TABLES = [
   'customer_audit_log',
 ];
 
+/** The V2 online-payment tables of 0012_online_payments.sql (V2-020 / V2-021, docs/v2/03_Data_Model.md §4). */
+const ONLINE_PAYMENT_TABLES = [
+  'customer_payment_methods',
+  'online_payments',
+  'refunds',
+  'gateway_webhook_events',
+  'payment_reconciliation_runs',
+  'platform_alerts',
+];
+
 /**
  * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
  * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
@@ -64,11 +74,13 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001) and the 7 customer tables of 0009 (V2-010)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 7 customer tables of 0009 (V2-010) and the 6 online-payment tables of 0012 (V2-020)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
-    expect(r.rows[0].n).toBe(47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length);
+    expect(r.rows[0].n).toBe(
+      47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length + ONLINE_PAYMENT_TABLES.length,
+    );
     const ref = await refClient.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -227,7 +239,7 @@ describe('migrations', () => {
       expect(new Set(cfg.columns.map((c) => c.name))).toEqual(expected);
       checked++;
     }
-    expect(checked).toBe(47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length);
+    expect(checked).toBe(47 + PLATFORM_TABLES.length + CUSTOMER_TABLES.length + ONLINE_PAYMENT_TABLES.length);
   });
 
   it('runs docs/06_schema_invariants_test.sql green on the migrated schema', async () => {
@@ -263,6 +275,52 @@ describe('migrations', () => {
         await expect(client.query(`DELETE FROM ${t} WHERE false`)).rejects.toThrow(/permission denied/);
         await client.query('ROLLBACK TO SAVEPOINT s');
       }
+    } finally {
+      await client.query('ROLLBACK');
+    }
+  });
+
+  it('V2-020: the app role never deletes an online-payment row, and a refund keeps its amount, reason and issuer', async () => {
+    await client.query('BEGIN');
+    try {
+      await client.query('SET LOCAL ROLE point_app');
+      for (const t of ONLINE_PAYMENT_TABLES) {
+        await client.query('SAVEPOINT s');
+        await expect(client.query(`DELETE FROM ${t} WHERE false`), t).rejects.toThrow(/permission denied/);
+        await client.query('ROLLBACK TO SAVEPOINT s');
+      }
+    } finally {
+      await client.query('ROLLBACK');
+    }
+    await client.query('BEGIN');
+    try {
+      const acc = await client.query<{ id: string }>(
+        `INSERT INTO customer_accounts (phone_e164) VALUES ('+966500000977') RETURNING id`,
+      );
+      const pu = await client.query<{ id: string }>(
+        `INSERT INTO platform_users (phone_e164, full_name, role, secret_hash) VALUES ('+966500000978', 'x', 'platform_finance', 'x') RETURNING id`,
+      );
+      const pay = await client.query<{ id: string }>(
+        `INSERT INTO online_payments (account_id, purpose, subscription_id, amount_halalas, vat_halalas, gateway, given_id,
+                                      gateway_payment_id, status, paid_at)
+         VALUES ($1, 'subscription', gen_random_uuid(), 2300, 300, 'moyasar', gen_random_uuid(), 'pay-1', 'paid', now())
+         RETURNING id`,
+        [acc.rows[0]!.id],
+      );
+      const ref = await client.query<{ id: string }>(
+        `INSERT INTO refunds (online_payment_id, amount_halalas, reason, issued_by) VALUES ($1, 500, 'خطأ في السعر', $2) RETURNING id`,
+        [pay.rows[0]!.id, pu.rows[0]!.id],
+      );
+      const id = ref.rows[0]!.id;
+      await client.query('SAVEPOINT s');
+      await expect(
+        client.query(`UPDATE refunds SET amount_halalas = 900 WHERE id = $1`, [id]),
+      ).rejects.toThrow(/append-only/);
+      await client.query('ROLLBACK TO SAVEPOINT s');
+      await client.query(`UPDATE refunds SET status = 'succeeded', completed_at = now() WHERE id = $1`, [id]);
+      await expect(client.query(`UPDATE refunds SET status = 'failed' WHERE id = $1`, [id])).rejects.toThrow(
+        /final/,
+      );
     } finally {
       await client.query('ROLLBACK');
     }

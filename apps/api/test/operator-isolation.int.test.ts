@@ -60,6 +60,8 @@ const EXCLUDED: Record<string, string> = {
   'GET /webhooks/whatsapp': 'Meta handshake (hub.verify_token): no operator data',
   'POST /webhooks/whatsapp':
     'signed Meta delivery: attribution to the right operator is checked by the WhatsApp test below',
+  'POST /webhooks/payments/moyasar':
+    'the payment gateway’s delivery (shared secret): POINT’s own payments, no operator session or id can be named (V2-021)',
   'GET /health/live': 'no data (liveness)',
   'GET /health/ready': 'no data (readiness)',
   'GET /metrics': 'internal network only, process metrics without operator data',

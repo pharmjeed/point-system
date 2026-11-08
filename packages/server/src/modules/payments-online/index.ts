@@ -1,7 +1,94 @@
-// Public surface of the payments-online module (V2-020, DEC-510, DEC-511): the PaymentGateway and its Moyasar
-// adapter; the online payments, their webhook, refunds and reconciliation come with V2-021.
+// Public surface of the payments-online module (V2-020 / V2-021, DEC-510 … DEC-514): the PaymentGateway, its
+// Moyasar adapter, the online payments, their webhook, refunds and the daily reconciliation.
+import type { Clock } from '../../core/clock/clock.js';
+import type { Env } from '../../core/config/env.js';
+import type { Database } from '../../core/db/database.js';
+import type { Logger } from '../../core/logging/logger.js';
+import type { JobHandler } from '../../core/outbox/dispatcher.js';
+import { ensureReconcileScheduled, paymentsReconcileJob } from './application/reconciliation.js';
+import { paymentRefundJob } from './application/refunds.js';
+import { paymentWebhookJob } from './application/webhooks.js';
+import { defaultPaymentsRuntime, PaymentsRuntime } from './runtime.js';
+
+export { PaymentsOnlineHttpModule } from './payments-online.module.js';
 export { PaymentsRuntime, defaultPaymentsRuntime, type PaymentsDeps } from './runtime.js';
 export { MoyasarGateway, normalizePayment, type MoyasarOptions } from './infra/moyasar.js';
 export type * from './domain/gateway.js';
 export { retryableFailure } from './domain/gateway.js';
+export { decideSync, localStatusOf, type SyncDecision } from './domain/status.js';
 export { sanitizePayment, sanitizeWebhookBody, PAN_LIKE } from './domain/sanitize.js';
+export {
+  OnlinePayments,
+  type StartPaymentInput,
+  type StartedPayment,
+} from './application/online-payments.js';
+export {
+  applyGatewayPayment,
+  paymentById,
+  paymentOfGateway,
+  type OnlinePaymentRow,
+  type SyncCause,
+} from './application/payment-sync.js';
+export { PaymentWebhookIntake, paymentWebhookJob } from './application/webhooks.js';
+export { RefundsService, paymentRefundJob, refundView } from './application/refunds.js';
+export {
+  PaymentsReconciler,
+  ensureReconcileScheduled,
+  paymentsReconcileJob,
+  riyadhDate,
+  riyadhDayWindow,
+  scheduleReconcile,
+  type ReconciliationMismatch,
+  type ReconciliationResult,
+} from './application/reconciliation.js';
+export { platformOrgId } from './application/platform-org.js';
+export {
+  PAYMENT_WEBHOOK_PROCESS_JOB,
+  PAYMENT_REFUND_SEND_JOB,
+  PAYMENTS_RECONCILE_JOB,
+} from './domain/jobs.js';
+
+type RuntimeOption = PaymentsRuntime | (() => PaymentsRuntime);
+const asFactory = (given?: RuntimeOption): (() => PaymentsRuntime) =>
+  given instanceof PaymentsRuntime
+    ? () => given
+    : typeof given === 'function'
+      ? given
+      : defaultPaymentsRuntime;
+
+/** worker process: the webhook processing, the refund sender and the daily reconciliation (canon §7.2 V2 row). */
+export function paymentsOnlineJobs(
+  opts: { runtime?: RuntimeOption; reconcileCron?: string } = {},
+): JobHandler[] {
+  const runtime = asFactory(opts.runtime);
+  return [
+    paymentWebhookJob(runtime),
+    paymentRefundJob(runtime),
+    paymentsReconcileJob(runtime, opts.reconcileCron ? { cron: opts.reconcileCron } : {}),
+  ];
+}
+
+/**
+ * worker background service: keeps one `job.payments_reconcile` scheduled (on start, then hourly — a dead run or a
+ * first deployment would otherwise leave no daily run).
+ */
+export function paymentsOnlineWorkerService(deps: { env: Env; db: Database; clock: Clock; logger: Logger }) {
+  let timer: NodeJS.Timeout | null = null;
+  const ensure = () =>
+    deps.db
+      .transaction((tx) => ensureReconcileScheduled(tx, deps.env.PAYMENTS_RECONCILE_CRON_UTC))
+      .catch((err: unknown) =>
+        deps.logger.warn({ err: (err as Error).message }, 'payments reconciliation not scheduled'),
+      );
+  return {
+    start() {
+      void ensure();
+      timer = setInterval(() => void ensure(), 3_600_000);
+      timer.unref();
+    },
+    async stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    },
+  };
+}

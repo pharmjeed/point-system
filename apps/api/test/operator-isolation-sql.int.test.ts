@@ -40,6 +40,11 @@ const GLOBAL: { file: string; sql: string; why: string }[] = [
     why: 'the purge job checks for a pending twin of itself (one job for every operator)',
   },
   {
+    file: 'modules/payments-online/application/reconciliation.ts',
+    sql: 'SELECT 1 FROM outbox_events WHERE type = $1',
+    why: 'the platform reconciliation checks for a pending twin of itself (one job for the whole platform, DEC-514)',
+  },
+  {
     file: 'modules/audit-monitoring/jobs/system-monitor.ts',
     sql: "type = 'task_stuck'",
     why: 'the system monitor sweeps live alerts of every operator; each alert carries its own org_id',

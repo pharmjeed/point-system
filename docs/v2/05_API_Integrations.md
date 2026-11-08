@@ -68,9 +68,21 @@
 
 | المسار | المصدر | المعالجة |
 |---|---|---|
-| `POST /webhooks/payments/{gateway}` | بوابة الدفع | توقيع، تخزين خام، معالجة مرة واحدة عبر Outbox (V2 §4.3) |
+| `POST /webhooks/payments/{gateway}` | بوابة الدفع | توقيع، تخزين خام، معالجة مرة واحدة عبر Outbox (V2 §4.3) — **مبني لـMoyasar: `POST /webhooks/payments/moyasar`** (أدناه) |
 | `POST /webhooks/einvoicing` | مزود الفوترة | حالة الإبلاغ/الاعتماد للفاتورة |
 | `/webhooks/whatsapp` | Meta | كما هو |
+
+### 4.1 Webhook بوابة الدفع (المنفَّذ في V2-021، DEC-511، DEC-512)
+
+- **المسار:** `POST /webhooks/payments/moyasar` (canon §9.8، فئة حد المعدل `webhook`، بلا جلسة ولا CSRF). الجسم كما يرسله Moyasar: `{ id, type, created_at, secret_token, account_name, live, data }`، و`data` كائن الدفعة؛ الأنواع `payment_paid`، `payment_failed`، `payment_refunded`، `payment_voided`، `payment_authorized`، `payment_captured`، `payment_abandoned`، `payment_verified`.
+- **التحقق:** لا توقيع ترويسة لدى Moyasar؛ السر المشترك الذي يُضبط عند إنشاء الـWebhook يصل في `secret_token` داخل الجسم، فيُقرأ الجسم خامًا ويُقارن السر بزمن ثابت مع `MOYASAR_WEBHOOK_SECRET_REF` (والسابق أثناء التدوير) قبل أي معالجة. غيابه أو اختلافه أو جسم غير JSON ← `401 PAYMENT_WEBHOOK_SIGNATURE_INVALID` ولا يُحفظ شيء؛ سر صحيح بلا `id`/`type` ← `422 VALIDATION_FAILED`؛ سر غير مضبوط ← `503` (تعيد البوابة المحاولة).
+- **التخزين:** `gateway_webhook_events` مرة لكل `(gateway, event_id)` بلا `secret_token`، وبطاقة مختزلة إلى العلامة وآخر 4 أرقام (لا رقم مقنّع ولا اسم حامل ولا رمز بطاقة محفوظة)، و`body_sha256` للبايتات الأصلية؛ مع `job.payment_webhook_process` في المعاملة نفسها، ثم `200` بلا جسم (والمكرر كذلك).
+- **المعالجة (العامل):** لا يُوثق بـ`data` الحدث: يقرأ العامل الدفعة من البوابة (`GET /v1/payments/{id}`) خارج أي معاملة، ثم يطبق سجلها على `online_payments` بالانتقالات الأمامية فقط (`initiated → authorized → paid | failed`، ثم `partially_refunded` / `refunded`)، فالمكرر والمتأخر والمعكوس الترتيب لا يرجع الحالة. كل انتقال في `platform_audit_log` (وفي `audit_log` للمشغل لزيارة) و`customer_audit_log` في المعاملة نفسها. دفعة لا تعرفها بوينت ← `outcome = unknown_payment` وتنبيه `payment_unknown`؛ تعارض (مبلغ آخر، أو `failed` تسميها البوابة `paid`) ← لا يُطبق وتنبيه `payment_mismatch`. عودة العميل من صفحة 3-D Secure لا تغيّر شيئًا وحدها.
+
+### 4.2 الاسترداد والمطابقة (V2-021، DEC-513، DEC-514)
+
+- `POST /v1/platform/payments/{paymentId}/refunds` (`platform.refund_issue`: المالية والمالك، ✓ `Idempotency-Key`) بـ`{ amount_halalas?, reason }`: جزئي أو كامل (غياب المبلغ = كل المتبقي)، لا يتجاوز المدفوع ناقص المسترد وما ينتظر (`REFUND_AMOUNT_EXCEEDS_PAID`)، ومن `paid`/`partially_refunded` فقط (`PAYMENT_NOT_REFUNDABLE`). يرد `201 { refund (requested), payment }`، والبوابة يستدعيها `job.payment_refund_send` بعد COMMIT (استرداد بعد آخر للدفعة)، فتصير `succeeded` أو `failed` مع تنبيه `payment_refund_failed`.
+- `job.payments_reconcile` يوميًا (`PAYMENTS_RECONCILE_CRON_UTC`): مدفوعات البوابة ليوم الرياض السابق مقابل `online_payments`، وكل فرق بند في `payment_reconciliation_runs.mismatches` وتنبيه في `platform_alerts`.
 
 ## 5. رموز خطأ جديدة (مقترحة، بنمط 08)
 

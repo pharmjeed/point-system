@@ -110,6 +110,11 @@ export const ERROR_CODES = [
   // V2 platform layer (canon §8 V2 rows, 08 §4.17; DEC-462, DEC-466)
   'PLATFORM_AUTH_REQUIRED',
   'OPERATOR_SUSPENDED',
+  // V2 online payments (canon §8 V2 rows, 08 §4.19; V2-020 / V2-021, DEC-511 … DEC-513)
+  'PAYMENT_FAILED',
+  'PAYMENT_NOT_REFUNDABLE',
+  'REFUND_AMOUNT_EXCEEDS_PAID',
+  'PAYMENT_WEBHOOK_SIGNATURE_INVALID',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
@@ -850,6 +855,35 @@ export const ERROR_CATALOG: Readonly<Record<ErrorCode, ErrorDef>> = {
     log: 'info',
     message: 'The operator is suspended.',
     message_ar: 'حساب المشغّل معلّق من المنصة. لا يمكن تنفيذ هذا الإجراء الآن.',
+  },
+  // 08 §4.19 الدفع الإلكتروني (الإصدار الثاني)
+  PAYMENT_FAILED: {
+    http: 402,
+    retryable: false,
+    log: 'info',
+    message: 'The payment was declined.',
+    message_ar: 'لم تتم عملية الدفع. جرّب بطاقة أخرى أو وسيلة دفع مختلفة.',
+  },
+  PAYMENT_NOT_REFUNDABLE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'This payment cannot be refunded in its current status.',
+    message_ar: 'لا يمكن استرداد هذه الدفعة في حالتها الحالية.',
+  },
+  REFUND_AMOUNT_EXCEEDS_PAID: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'The refund is larger than what is left of the payment.',
+    message_ar: 'مبلغ الاسترداد أكبر من المتبقي من الدفعة.',
+  },
+  PAYMENT_WEBHOOK_SIGNATURE_INVALID: {
+    http: 401,
+    retryable: false,
+    log: 'warn',
+    message: 'Invalid payment webhook secret.',
+    message_ar: 'سر Webhook بوابة الدفع غير صالح',
   },
 };
 

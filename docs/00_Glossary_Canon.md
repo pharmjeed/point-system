@@ -318,9 +318,11 @@
 
 ### 7.2 أنواع المهام المؤجلة (Jobs) في `outbox_events.type`
 
-`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send`
+`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile`
 
 > الإصدار الثاني (V2-010، DEC-496): `job.customer_otp_send` يرسل رمز دخول تطبيق العميل بقالب المصادقة على رقم بوينت بعد COMMIT (المعاملة تكتب الرمز مجزأً ونسخته المشفرة الوحيدة وصف outbox فقط).
+
+> الإصدار الثاني (V2-021، DEC-512 … DEC-514): `job.payment_webhook_process` يعالج تسليم Webhook بوابة الدفع المخزَّن مرة واحدة (يقرأ الدفعة من البوابة خارج أي معاملة ثم يطبقها)؛ `job.payment_refund_send` يرسل الاسترداد للبوابة بعد COMMIT؛ `job.payments_reconcile` المطابقة اليومية مع البوابة (`PAYMENTS_RECONCILE_CRON_UTC`).
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.
 
@@ -445,6 +447,10 @@
 | `DEPENDENCY_TIMEOUT` | 504 | انتهت مهلة خدمة خارجية |
 | `PLATFORM_AUTH_REQUIRED` | 401 | الإصدار الثاني: لا توجد جلسة منصة صالحة لمسار `/v1/platform/*` (لا كوكي منصة، أو كوكي موظفين فقط)؛ جلسة الموظف لا تفتح مسار المنصة ولا العكس (DEC-462) |
 | `OPERATOR_SUSPENDED` | 409 | الإصدار الثاني: المشغّل (المؤسسة) معلّق أو منتهٍ من المنصة، فلا يُفتح حفل ولا وردية ولا مناوبة ولا استلام جديد (02 §4 في `docs/v2`، V2-005، DEC-466، DEC-486) |
+| `PAYMENT_FAILED` | 402 | الإصدار الثاني: رفضت بوابة الدفع العملية أو لم تقبل وسيلة الدفع؛ حالة الدفعة `failed` محفوظة (V2-020، DEC-512) |
+| `PAYMENT_NOT_REFUNDABLE` | 409 | الإصدار الثاني: الدفعة الإلكترونية ليست `paid` ولا `partially_refunded` فلا تُسترد (V2-021، DEC-513) |
+| `REFUND_AMOUNT_EXCEEDS_PAID` | 409 | الإصدار الثاني: الاسترداد مع ما سبقه وما ينتظر أكبر من المدفوع (V2-021، DEC-513) |
+| `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | 401 | سر Webhook بوابة الدفع غير صالح |
 
 ---
 
@@ -606,6 +612,7 @@
 |---|---|---|
 | GET | `/webhooks/whatsapp` | تحقق `hub.verify_token` |
 | POST | `/webhooks/whatsapp` | توقيع `X-Hub-Signature-256` على الجسم الخام |
+| POST | `/webhooks/payments/moyasar` | الإصدار الثاني (V2-021، DEC-511): سر الـWebhook المشترك (`secret_token`) في الجسم الخام، بمقارنة زمن ثابت |
 | GET | `/health/live` · `/health/ready` | عام (بلا بيانات) |
 | GET | `/metrics` | شبكة داخلية فقط |
 

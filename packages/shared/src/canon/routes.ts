@@ -16,7 +16,8 @@ export type HttpMethod = (typeof HTTP_METHODS)[number];
 
 /**
  * `public`: no session (login, MFA verify with an `mfa_token`, health).
- * `webhook`: WhatsApp webhook — `hub.verify_token` (GET) or `X-Hub-Signature-256` over the raw body (POST).
+ * `webhook`: WhatsApp webhook — `hub.verify_token` (GET) or `X-Hub-Signature-256` over the raw body (POST); the
+ * payment gateway's webhook — its shared secret inside the raw body (V2-021, DEC-511).
  * `internal`: internal network only (`/metrics`).
  */
 export const NON_PERMISSION_GUARDS = ['public', 'webhook', 'internal'] as const;
@@ -209,6 +210,8 @@ const ROWS: readonly Row[] = [
   // §9.8 Webhooks and health (outside /v1)
   ['GET', '/webhooks/whatsapp', 'webhook', 'none', '9.8'], // hub.verify_token
   ['POST', '/webhooks/whatsapp', 'webhook', 'none', '9.8'], // X-Hub-Signature-256 over the raw body
+  // V2-021 (DEC-511, DEC-512): the payment gateway's webhook — the shared secret inside the raw body
+  ['POST', '/webhooks/payments/moyasar', 'webhook', 'none', '9.8'],
   ['GET', '/health/live', 'public', 'none', '9.8'], // no data
   ['GET', '/health/ready', 'public', 'none', '9.8'], // no data
   ['GET', '/metrics', 'internal', 'none', '9.8'], // internal network only
@@ -233,6 +236,7 @@ const RATE_LIMIT_CLASS_OF: Readonly<Record<string, RateLimitClass>> = {
   'POST /v1/exports': 'export',
   'GET /webhooks/whatsapp': 'webhook',
   'POST /webhooks/whatsapp': 'webhook',
+  'POST /webhooks/payments/moyasar': 'webhook',
   'GET /health/live': 'health',
   'GET /health/ready': 'health',
   'GET /metrics': 'health',

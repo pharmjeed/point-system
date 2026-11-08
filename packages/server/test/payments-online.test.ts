@@ -1,5 +1,97 @@
+import { vatOfInclusive } from '@point/shared';
 import { describe, expect, it } from 'vitest';
-import { MoyasarGateway, normalizePayment, sanitizeWebhookBody } from '../src/index.js';
+import {
+  MoyasarGateway,
+  decideSync,
+  normalizePayment,
+  riyadhDate,
+  riyadhDayWindow,
+  sanitizeWebhookBody,
+  type GatewayPayment,
+} from '../src/index.js';
+
+const gp = (o: Partial<GatewayPayment> = {}): GatewayPayment => ({
+  id: 'pay-1',
+  status: 'paid',
+  amount: 2300,
+  currency: 'SAR',
+  refunded: 0,
+  createdAt: null,
+  updatedAt: null,
+  metadata: {},
+  source: {
+    type: 'creditcard',
+    company: 'visa',
+    last4: '1111',
+    failureCode: null,
+    transactionUrl: null,
+    token: null,
+  },
+  ...o,
+});
+const local = (status: Parameters<typeof decideSync>[0]['status'], refunded = 0) => ({
+  status,
+  amount_halalas: 2300,
+  refunded_halalas: refunded,
+  currency: 'SAR',
+});
+
+describe('the online payment machine (DEC-512)', () => {
+  it('moves forward with the gateway', () => {
+    expect(decideSync(local('initiated'), gp())).toEqual({ kind: 'apply', status: 'paid', refunded: 0 });
+    expect(decideSync(local('initiated'), gp({ status: 'failed' }))).toMatchObject({
+      kind: 'apply',
+      status: 'failed',
+    });
+    expect(decideSync(local('initiated'), gp({ status: 'authorized' }))).toMatchObject({
+      status: 'authorized',
+    });
+    expect(decideSync(local('authorized'), gp({ status: 'captured' }))).toMatchObject({ status: 'paid' });
+    // a partial refund leaves the gateway's payment `paid`
+    expect(decideSync(local('paid'), gp({ refunded: 500 }))).toEqual({
+      kind: 'apply',
+      status: 'partially_refunded',
+      refunded: 500,
+    });
+    expect(decideSync(local('partially_refunded', 500), gp({ refunded: 900 }))).toEqual({
+      kind: 'apply',
+      status: 'partially_refunded',
+      refunded: 900,
+    });
+    expect(decideSync(local('partially_refunded', 500), gp({ status: 'refunded', refunded: 2300 }))).toEqual({
+      kind: 'apply',
+      status: 'refunded',
+      refunded: 2300,
+    });
+    // a void after the charge gives the money back; before it, nothing was paid
+    expect(decideSync(local('paid'), gp({ status: 'voided' }))).toMatchObject({
+      status: 'refunded',
+      refunded: 2300,
+    });
+    expect(decideSync(local('initiated'), gp({ status: 'voided' }))).toMatchObject({ status: 'failed' });
+  });
+
+  it('never moves back on an older read (late or out-of-order delivery)', () => {
+    expect(decideSync(local('paid'), gp({ status: 'initiated' }))).toEqual({ kind: 'unchanged' });
+    expect(decideSync(local('refunded', 2300), gp({ refunded: 0 }))).toEqual({ kind: 'unchanged' });
+    expect(decideSync(local('partially_refunded', 900), gp({ refunded: 500 }))).toEqual({
+      kind: 'unchanged',
+    });
+    expect(decideSync(local('paid'), gp({ status: 'authorized' }))).toEqual({ kind: 'unchanged' });
+    expect(decideSync(local('paid'), gp())).toEqual({ kind: 'unchanged' });
+    // a card check or an abandoned page says nothing about the money
+    expect(decideSync(local('initiated'), gp({ status: 'verified' }))).toEqual({ kind: 'unchanged' });
+  });
+
+  it('a contradiction is a conflict, never applied', () => {
+    expect(decideSync(local('failed'), gp())).toMatchObject({ kind: 'conflict', reason: 'status' });
+    expect(decideSync(local('initiated'), gp({ amount: 2400 }))).toMatchObject({
+      kind: 'conflict',
+      reason: 'amount',
+    });
+    expect(decideSync(local('initiated'), gp({ currency: 'USD' }))).toMatchObject({ reason: 'currency' });
+  });
+});
 
 describe('what is kept of a gateway payload (docs/v2/04 §6)', () => {
   it('drops the shared secret, the card number, the name and a saved-card token', () => {
@@ -121,5 +213,22 @@ describe('the Moyasar adapter', () => {
     });
     const noType = Buffer.from(JSON.stringify({ id: 'e1', secret_token: 's1' }));
     expect(await gateway('k').verifyWebhook(noType)).toEqual({ ok: false, reason: 'malformed' });
+  });
+});
+
+describe('amounts and days', () => {
+  it('VAT inside a VAT-inclusive price (15%)', () => {
+    expect(vatOfInclusive(2300)).toBe(300);
+    expect(vatOfInclusive(1000)).toBe(130);
+    expect(vatOfInclusive(100)).toBe(13);
+  });
+
+  it('a Riyadh day is 21:00 UTC to 21:00 UTC', () => {
+    expect(riyadhDate(new Date('2026-10-27T20:59:59Z'))).toBe('2026-10-27');
+    expect(riyadhDate(new Date('2026-10-27T21:00:00Z'))).toBe('2026-10-28');
+    expect(riyadhDayWindow('2026-10-27')).toEqual({
+      from: new Date('2026-10-26T21:00:00.000Z'),
+      to: new Date('2026-10-27T20:59:59.999Z'),
+    });
   });
 });

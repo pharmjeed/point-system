@@ -267,12 +267,14 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
         // V2-002: the platform console's own sign-in steps (staff of the platform, never a customer, DEC-462)
         'POST /v1/platform/auth/login',
         'POST /v1/platform/auth/mfa/verify',
+        // V2-021: the payment gateway's signed (shared-secret) webhook, no customer page (DEC-511)
+        'POST /webhooks/payments/moyasar',
         'POST /webhooks/whatsapp',
       ].filter((x) => open.includes(x)),
     );
     expect(
       open.every((x) =>
-        /^(GET|POST) \/(health|webhooks\/whatsapp|v1\/(platform\/)?auth\/(login|mfa\/verify)$|v1\/customer\/auth\/(otp|verify|refresh)$)/.test(
+        /^(GET|POST) \/(health|webhooks\/(whatsapp|payments\/moyasar)$|v1\/(platform\/)?auth\/(login|mfa\/verify)$|v1\/customer\/auth\/(otp|verify|refresh)$)/.test(
           x,
         ),
       ),

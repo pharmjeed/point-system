@@ -106,6 +106,9 @@ export const metrics = {
   ),
   waChannelHealth: g('point_wa_channel_health', '0 healthy · 1 degraded · 2 down'),
   pushSend: c('point_push_send_total', 'Web Push sends', ['outcome']),
+  // V2-021 online payments (DEC-512, DEC-514)
+  paymentWebhooks: c('point_payment_webhooks_total', 'Payment gateway webhook deliveries', ['outcome']),
+  platformAlerts: c('point_platform_alerts_total', 'Platform finance alerts raised', ['type']),
   wsConnections: g('point_ws_connections', 'Open WebSocket connections', ['venue']),
   wsReconnects: c('point_ws_reconnects_total', 'WebSocket reconnects'),
   dbPoolInUse: g('point_db_pool_in_use', 'Database pool clients in use'),

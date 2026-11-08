@@ -48,6 +48,9 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
   let ops: Map<string, OpenApiOperation>;
 
   beforeAll(async () => {
+    // V2-021: a configured payment webhook secret (env://MOYASAR_WEBHOOK_SECRET), so that a forged delivery is the
+    // documented 401 and not the 503 of a deployment without one
+    process.env.MOYASAR_WEBHOOK_SECRET ??= 'openapi-sweep-payment-webhook-secret';
     t = await createTestApp();
     // every served route: /v1, /webhooks/whatsapp and /health (/metrics is the internal metrics server)
     routes = collectRoutes(t.app.get(DiscoveryService), t.app.get(MetadataScanner), t.app.get(Reflector));
@@ -153,7 +156,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     }
     // the 131 operations of 07 but the internal GET /metrics, the platform operations (V2-002, V2-003…) and the
     // customer operations (V2-010)
-    expect(routes).toHaveLength(134 + PLATFORM_ROUTES.length + CUSTOMER.length); // + the 4 V2-004 staff routes
+    expect(routes).toHaveLength(135 + PLATFORM_ROUTES.length + CUSTOMER.length); // + the 4 V2-004 staff routes, the payment webhook (V2-021)
     expect(seen).toContain('GET /v1/customer/me AUTH_UNAUTHENTICATED');
     expect(seen).toContain('GET /v1/customer/locations/{venueId} VENUE_NOT_LISTED');
     expect(seen).toContain('PATCH /v1/customer/me IDEMPOTENCY_KEY_REQUIRED');
@@ -161,6 +164,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
     expect(seen).toContain('POST /webhooks/whatsapp WA_WEBHOOK_SIGNATURE_INVALID');
+    expect(seen).toContain('POST /webhooks/payments/moyasar PAYMENT_WEBHOOK_SIGNATURE_INVALID');
     expect(problems).toEqual([]);
   });
 
@@ -188,7 +192,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     }
     // the 93 staff writes (82 with a requestBody, 11 without; V2-004 adds 3), the platform commands and the 7 customer
     // writes (V2-010)
-    expect(checked).toBe(93 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
+    expect(checked).toBe(94 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
     expect(problems).toEqual([]);
   });
 
@@ -198,7 +202,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     for (const r of routes) {
       const op = ops.get(`${r.method} ${r.path}`);
       // the webhook reads its raw body (signature first, 12 §4.1): no JSON parser runs before it
-      if (r.method === 'GET' || !op || r.path === '/webhooks/whatsapp') continue;
+      if (r.method === 'GET' || !op || r.path.startsWith('/webhooks/')) continue;
       const send = t.http()[r.method.toLowerCase() as 'post' | 'put' | 'patch' | 'delete'];
       const res = await send(r.path.replace(/\{[A-Za-z]+\}/g, DUMMY))
         .set(CSRF)

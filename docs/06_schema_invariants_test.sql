@@ -1,8 +1,8 @@
 -- =====================================================================
 -- docs/06_schema_invariants_test.sql — executable proof of the business invariants in 06_schema.sql
 -- Run on an EMPTY database built from the migrations (`pnpm db:invariants`; packages/db/migrations: the first one is
--- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, and 0009 the customer accounts,
--- V2-010):
+-- 06_schema.sql verbatim, 0008 adds the V2 platform tables checked at the end, V2-001, 0009 the customer accounts,
+-- V2-010, and 0012 the online payments, V2-020 / V2-021):
 --   psql -d point_test -v ON_ERROR_STOP=1 -f 06_schema_invariants_test.sql
 -- Every expect_fail() must print 'ok (rejected)'; the script ends with 'ALL INVARIANT TESTS PASSED'.
 -- Convert these into integration tests (Testcontainers) — see 17_Test_Acceptance_Plan.md.
@@ -201,4 +201,35 @@ SELECT expect_fail('two customers rows of one operator for the same account',
  $q$INSERT INTO customers(org_id,phone_e164,customer_account_id) VALUES ('00000000-0000-0000-0000-000000000001','+966500000952','00000000-0000-0000-0000-00000000ca01')$q$);
 SELECT expect_fail('customer audit row of a customer without account',
  $q$INSERT INTO customer_audit_log(actor_type,action,entity_type) VALUES ('customer','customer.auth.signed_in','customer_account')$q$);
+-- V2 online payments (0012_online_payments.sql, V2-020 / V2-021, DEC-510 … DEC-514): checks are only added here
+SELECT expect_fail('saved card stored as a card number instead of a gateway token',
+ $q$INSERT INTO customer_payment_methods(account_id,gateway,gateway_token,last4) VALUES ('00000000-0000-0000-0000-00000000ca01','moyasar','4111111111111111','1111')$q$);
+INSERT INTO online_payments(id,account_id,purpose,ticket_id,org_id,venue_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status,paid_at) VALUES
+ ('00000000-0000-0000-0000-00000000ab01','00000000-0000-0000-0000-00000000ca01','visit','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1',2300,300,'moyasar','00000000-0000-0000-0000-00000000ab91','pay-inv-1','paid',now());
+SELECT expect_fail('second successful online payment for the same ticket',
+ $q$INSERT INTO online_payments(account_id,purpose,ticket_id,org_id,venue_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status,paid_at) VALUES ('00000000-0000-0000-0000-00000000ca01','visit','00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1',2300,300,'moyasar','00000000-0000-0000-0000-00000000ab92','pay-inv-2','paid',now())$q$);
+SELECT expect_fail('the same gateway payment recorded twice',
+ $q$INSERT INTO online_payments(account_id,purpose,subscription_id,amount_halalas,vat_halalas,gateway,given_id,gateway_payment_id,status) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription',gen_random_uuid(),2300,300,'moyasar','00000000-0000-0000-0000-00000000ab93','pay-inv-1','authorized')$q$);
+SELECT expect_fail('visit payment without its ticket',
+ $q$INSERT INTO online_payments(account_id,purpose,amount_halalas,vat_halalas,gateway,given_id) VALUES ('00000000-0000-0000-0000-00000000ca01','visit',2300,300,'moyasar','00000000-0000-0000-0000-00000000ab94')$q$);
+SELECT expect_fail('online payment below the gateway minimum',
+ $q$INSERT INTO online_payments(account_id,purpose,subscription_id,amount_halalas,vat_halalas,gateway,given_id) VALUES ('00000000-0000-0000-0000-00000000ca01','subscription',gen_random_uuid(),99,0,'moyasar','00000000-0000-0000-0000-00000000ab95')$q$);
+SELECT expect_fail('refunded more than was paid',
+ $q$UPDATE online_payments SET refunded_halalas=2400, status='refunded' WHERE id='00000000-0000-0000-0000-00000000ab01'$q$);
+SELECT expect_fail('refunded amount on a payment still marked paid',
+ $q$UPDATE online_payments SET refunded_halalas=500 WHERE id='00000000-0000-0000-0000-00000000ab01'$q$);
+SELECT expect_fail('paid online payment without paid_at',
+ $q$UPDATE online_payments SET paid_at=NULL WHERE id='00000000-0000-0000-0000-00000000ab01'$q$);
+SELECT expect_fail('refund without a reason',
+ $q$INSERT INTO refunds(online_payment_id,amount_halalas,reason,issued_by) VALUES ('00000000-0000-0000-0000-00000000ab01',500,'','00000000-0000-0000-0000-00000000f001')$q$);
+SELECT expect_fail('refund issued by a staff user instead of a platform account',
+ $q$INSERT INTO refunds(online_payment_id,amount_halalas,reason,issued_by) VALUES ('00000000-0000-0000-0000-00000000ab01',500,'خطأ في السعر','00000000-0000-0000-0000-0000000000c0')$q$);
+INSERT INTO gateway_webhook_events(gateway,event_id,event_type,body_sha256,payload) VALUES ('moyasar','evt-1','payment_paid','sha1','{}');
+SELECT expect_fail('the same gateway webhook event stored twice',
+ $q$INSERT INTO gateway_webhook_events(gateway,event_id,event_type,body_sha256,payload) VALUES ('moyasar','evt-1','payment_paid','sha2','{}')$q$);
+SELECT expect_fail('gateway webhook payload carrying a card number',
+ $q$INSERT INTO gateway_webhook_events(gateway,event_id,event_type,body_sha256,payload) VALUES ('moyasar','evt-2','payment_paid','sha3','{"number":"4111111111111111"}')$q$);
+INSERT INTO platform_alerts(type,severity,dedupe_key) VALUES ('payment_unknown','critical','payment_unknown:pay-x');
+SELECT expect_fail('second live platform alert for the same key',
+ $q$INSERT INTO platform_alerts(type,severity,dedupe_key) VALUES ('payment_unknown','critical','payment_unknown:pay-x')$q$);
 SELECT 'ALL INVARIANT TESTS PASSED';

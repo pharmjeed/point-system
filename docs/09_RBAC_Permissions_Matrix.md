@@ -297,6 +297,7 @@ interface ActorContext {
 |---|---|---|---|
 | `GET /webhooks/whatsapp` | `hub.verify_token` بمقارنة ثابتة الزمن | — | `WA_WEBHOOK_VERIFY_FAILED` |
 | `POST /webhooks/whatsapp` | `X-Hub-Signature-256` على الجسم الخام | التفاصيل في الملف 08 §7 | `WA_WEBHOOK_SIGNATURE_INVALID` |
+| `POST /webhooks/payments/moyasar` | الإصدار الثاني: سر الـWebhook المشترك (`secret_token`) في الجسم الخام بمقارنة ثابتة الزمن (DEC-511) | `docs/v2/05` §4.1 | `PAYMENT_WEBHOOK_SIGNATURE_INVALID` |
 | `GET /health/live` · `GET /health/ready` | عام | بلا أي بيانات | — |
 | `GET /metrics` | الشبكة الداخلية فقط | لا يُنشر للإنترنت | — |
 | `/ws` | جلسة صالحة + `Origin` ضمن القائمة المسموحة | الغرف في §7 | `AUTH_UNAUTHENTICATED` |

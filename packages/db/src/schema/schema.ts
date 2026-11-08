@@ -2523,3 +2523,325 @@ export const v_pool_queue = pgView('v_pool_queue', {
 }).as(
   sql`SELECT t.dispatch_pool_id, t.id AS task_id, t.ticket_id, t.cycle_id, t.status, t.priority_at, t.seq, o.id AS active_offer_id, o.mode AS active_offer_mode, o.expires_at AS offer_expires_at FROM tasks t LEFT JOIN task_offers o ON o.task_id = t.id AND o.status = 'active'::text WHERE t.type = 'retrieve'::text AND (t.status = ANY (ARRAY['queued'::text, 'offered'::text, 'broadcast'::text])) ORDER BY t.dispatch_pool_id, t.priority_at, t.seq`,
 );
+
+export const customer_payment_methods = pgTable(
+  'customer_payment_methods',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    gateway: text().notNull(),
+    gateway_token: text().notNull(),
+    brand: text(),
+    last4: text(),
+    expires_month: integer(),
+    expires_year: integer(),
+    is_default: boolean().default(false).notNull(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_payment_methods_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+    uniqueIndex('uq_payment_methods_default')
+      .using('btree', table.account_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(is_default AND (removed_at IS NULL))`),
+    uniqueIndex('uq_payment_methods_token').using(
+      'btree',
+      table.gateway.asc().nullsLast().op('text_ops'),
+      table.gateway_token.asc().nullsLast().op('text_ops'),
+    ),
+
+    check('ck_payment_methods_brand', sql`brand ~ '^[a-z_]{2,20}$'::text`),
+    check('ck_payment_methods_gateway', sql`gateway = 'moyasar'::text`),
+    check('ck_payment_methods_last4', sql`last4 ~ '^[0-9]{4}$'::text`),
+    check('ck_payment_methods_month', sql`(expires_month >= 1) AND (expires_month <= 12)`),
+    check('ck_payment_methods_no_pan', sql`gateway_token !~ '[0-9]{13,}'::text`),
+    check('ck_payment_methods_token', sql`gateway_token ~ '^[A-Za-z0-9_-]{8,128}$'::text`),
+    check('ck_payment_methods_year', sql`(expires_year >= 2000) AND (expires_year <= 2100)`),
+  ],
+);
+
+export const online_payments = pgTable(
+  'online_payments',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    purpose: text().notNull(),
+    subscription_id: uuid(),
+    ticket_id: uuid(),
+    org_id: uuid(),
+    venue_id: uuid(),
+    payment_method_id: uuid(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    amount_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    vat_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    refunded_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    currency: text().default('SAR').notNull(),
+    gateway: text().notNull(),
+    given_id: uuid().notNull(),
+    gateway_payment_id: text(),
+    source_type: text(),
+    card_brand: text(),
+    card_last4: text(),
+    status: text().default('initiated').notNull(),
+    failure_code: text(),
+    authorized_at: timestamp({ withTimezone: true, mode: 'string' }),
+    paid_at: timestamp({ withTimezone: true, mode: 'string' }),
+    failed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    refunded_at: timestamp({ withTimezone: true, mode: 'string' }),
+    gateway_updated_at: timestamp({ withTimezone: true, mode: 'string' }),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_online_payments_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('timestamptz_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_online_payments_created').using(
+      'btree',
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_online_payments_org')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(org_id IS NOT NULL)`),
+    index('ix_online_payments_ticket')
+      .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(ticket_id IS NOT NULL)`),
+    uniqueIndex('uq_online_payments_ticket_paid')
+      .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
+      .where(
+        sql`((purpose = 'visit'::text) AND (status = ANY (ARRAY['paid'::text, 'partially_refunded'::text])))`,
+      ),
+
+    unique('uq_online_payments_gateway_id').on(table.gateway, table.gateway_payment_id),
+    unique('uq_online_payments_given_id').on(table.given_id),
+    check('ck_online_payments_amount', sql`amount_halalas >= 100`),
+    check('ck_online_payments_brand', sql`card_brand ~ '^[a-z_]{2,20}$'::text`),
+    check('ck_online_payments_currency', sql`currency = 'SAR'::text`),
+    check('ck_online_payments_failed_at', sql`(status <> 'failed'::text) OR (failed_at IS NOT NULL)`),
+    check('ck_online_payments_failure_code', sql`failure_code ~ '^[A-Za-z0-9_.:-]{1,64}$'::text`),
+    check('ck_online_payments_gateway', sql`gateway = 'moyasar'::text`),
+    check(
+      'ck_online_payments_gateway_id',
+      sql`(status = ANY (ARRAY['initiated'::text, 'failed'::text])) OR (gateway_payment_id IS NOT NULL)`,
+    ),
+    check('ck_online_payments_last4', sql`card_last4 ~ '^[0-9]{4}$'::text`),
+    check('ck_online_payments_no_pan', sql`gateway_payment_id !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_online_payments_paid_at',
+      sql`(status <> ALL (ARRAY['paid'::text, 'partially_refunded'::text, 'refunded'::text])) OR (paid_at IS NOT NULL)`,
+    ),
+    check('ck_online_payments_purpose', sql`purpose = ANY (ARRAY['visit'::text, 'subscription'::text])`),
+    check(
+      'ck_online_payments_refund_paid',
+      sql`(refunded_halalas = 0) OR (status = ANY (ARRAY['partially_refunded'::text, 'refunded'::text]))`,
+    ),
+    check(
+      'ck_online_payments_refunded',
+      sql`(refunded_halalas >= 0) AND (refunded_halalas <= amount_halalas)`,
+    ),
+    check(
+      'ck_online_payments_refunded_full',
+      sql`(status <> 'refunded'::text) OR (refunded_halalas = amount_halalas)`,
+    ),
+    check(
+      'ck_online_payments_refunded_less',
+      sql`(status <> 'partially_refunded'::text) OR (refunded_halalas < amount_halalas)`,
+    ),
+    check(
+      'ck_online_payments_refunded_part',
+      sql`(status <> 'partially_refunded'::text) OR (refunded_halalas > 0)`,
+    ),
+    check(
+      'ck_online_payments_source',
+      sql`source_type = ANY (ARRAY['token'::text, 'applepay'::text, 'creditcard'::text, 'stcpay'::text])`,
+    ),
+    check(
+      'ck_online_payments_status',
+      sql`status = ANY (ARRAY['initiated'::text, 'authorized'::text, 'paid'::text, 'failed'::text, 'partially_refunded'::text, 'refunded'::text])`,
+    ),
+    check(
+      'ck_online_payments_subscription',
+      sql`(purpose <> 'subscription'::text) OR (subscription_id IS NOT NULL)`,
+    ),
+    check('ck_online_payments_vat', sql`(vat_halalas >= 0) AND (vat_halalas < amount_halalas)`),
+    check('ck_online_payments_visit_org', sql`(purpose <> 'visit'::text) OR (org_id IS NOT NULL)`),
+    check('ck_online_payments_visit_ticket', sql`(purpose <> 'visit'::text) OR (ticket_id IS NOT NULL)`),
+    check('ck_online_payments_visit_venue', sql`(purpose <> 'visit'::text) OR (venue_id IS NOT NULL)`),
+  ],
+);
+
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    online_payment_id: uuid().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    amount_halalas: bigint({ mode: 'number' }).notNull(),
+    reason: text().notNull(),
+    issued_by: uuid().notNull(),
+    status: text().default('requested').notNull(),
+    gateway_refund_id: text(),
+    failure_code: text(),
+    request_id: text(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }),
+    completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_refunds_payment').using(
+      'btree',
+      table.online_payment_id.asc().nullsLast().op('timestamptz_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    unique('uq_refunds_gateway_id').on(table.gateway_refund_id),
+    check('ck_refunds_amount', sql`amount_halalas > 0`),
+    check('ck_refunds_completed', sql`(status = 'requested'::text) = (completed_at IS NULL)`),
+    check('ck_refunds_failure_code', sql`failure_code ~ '^[A-Za-z0-9_.:-]{1,64}$'::text`),
+    check('ck_refunds_no_pan', sql`reason !~ '[0-9]{13,}'::text`),
+    check('ck_refunds_reason', sql`(char_length(reason) >= 3) AND (char_length(reason) <= 500)`),
+    check(
+      'ck_refunds_status',
+      sql`status = ANY (ARRAY['requested'::text, 'succeeded'::text, 'failed'::text])`,
+    ),
+  ],
+);
+
+export const gateway_webhook_events = pgTable(
+  'gateway_webhook_events',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'gateway_webhook_events_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    gateway: text().notNull(),
+    event_id: text().notNull(),
+    event_type: text().notNull(),
+    gateway_payment_id: text(),
+    live: boolean(),
+    body_sha256: text().notNull(),
+    payload: jsonb().notNull(),
+    received_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    processed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    outcome: text(),
+    online_payment_id: uuid(),
+  },
+  (table) => [
+    index('ix_gateway_webhook_events_payment')
+      .using('btree', table.gateway_payment_id.asc().nullsLast().op('text_ops'))
+      .where(sql`(gateway_payment_id IS NOT NULL)`),
+    index('ix_gateway_webhook_events_pending')
+      .using('btree', table.received_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(processed_at IS NULL)`),
+
+    unique('uq_gateway_webhook_events').on(table.gateway, table.event_id),
+    check('ck_gateway_webhook_events_gateway', sql`gateway = 'moyasar'::text`),
+    check('ck_gateway_webhook_events_no_pan', sql`(payload)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_gateway_webhook_events_outcome',
+      sql`outcome = ANY (ARRAY['applied'::text, 'unchanged'::text, 'unknown_payment'::text, 'conflict'::text, 'not_at_gateway'::text, 'ignored'::text])`,
+    ),
+    check('ck_gateway_webhook_events_processed', sql`(processed_at IS NULL) = (outcome IS NULL)`),
+  ],
+);
+
+export const payment_reconciliation_runs = pgTable(
+  'payment_reconciliation_runs',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    gateway: text().notNull(),
+    run_date: date().notNull(),
+    status: text().default('running').notNull(),
+    started_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    finished_at: timestamp({ withTimezone: true, mode: 'string' }),
+    gateway_count: integer(),
+    local_count: integer(),
+    matched_count: integer(),
+    mismatch_count: integer(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    gateway_paid_halalas: bigint({ mode: 'number' }),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    local_paid_halalas: bigint({ mode: 'number' }),
+    mismatches: jsonb().default([]).notNull(),
+    failure_reason: text(),
+  },
+  (table) => [
+    index('ix_reconciliation_runs_date').using(
+      'btree',
+      table.gateway.asc().nullsLast().op('timestamptz_ops'),
+      table.run_date.asc().nullsLast().op('date_ops'),
+      table.started_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    check('ck_reconciliation_counts', sql`mismatch_count >= 0`),
+    check('ck_reconciliation_finished', sql`(status = 'running'::text) = (finished_at IS NULL)`),
+    check('ck_reconciliation_gateway', sql`gateway = 'moyasar'::text`),
+    check('ck_reconciliation_no_pan', sql`(mismatches)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_reconciliation_status',
+      sql`status = ANY (ARRAY['running'::text, 'matched'::text, 'mismatched'::text, 'failed'::text])`,
+    ),
+  ],
+);
+
+export const platform_alerts = pgTable(
+  'platform_alerts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    type: text().notNull(),
+    severity: text().notNull(),
+    status: text().default('open').notNull(),
+    dedupe_key: text().notNull(),
+    online_payment_id: uuid(),
+    details: jsonb().default({}).notNull(),
+    occurrences: integer().default(1).notNull(),
+    raised_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    last_seen_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
+    resolved_by: uuid(),
+    resolution_note: text(),
+  },
+  (table) => [
+    index('ix_platform_alerts_open')
+      .using('btree', table.raised_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(status <> 'resolved'::text)`),
+    uniqueIndex('uq_platform_alerts_live')
+      .using('btree', table.dedupe_key.asc().nullsLast().op('text_ops'))
+      .where(sql`(status <> 'resolved'::text)`),
+
+    check('ck_platform_alerts_no_pan', sql`(details)::text !~ '[0-9]{13,}'::text`),
+    check('ck_platform_alerts_occurrences', sql`occurrences >= 1`),
+    check('ck_platform_alerts_resolved', sql`(status = 'resolved'::text) = (resolved_at IS NOT NULL)`),
+    check(
+      'ck_platform_alerts_severity',
+      sql`severity = ANY (ARRAY['info'::text, 'warning'::text, 'critical'::text])`,
+    ),
+    check(
+      'ck_platform_alerts_status',
+      sql`status = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text])`,
+    ),
+    check(
+      'ck_platform_alerts_type',
+      sql`type = ANY (ARRAY['payment_unknown'::text, 'payment_mismatch'::text, 'payment_refund_failed'::text, 'payment_reconcile_failed'::text])`,
+    ),
+  ],
+);

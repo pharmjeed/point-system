@@ -140,7 +140,7 @@ describe('ROUTES vs docs/07_openapi.yaml', () => {
         .map((r) => routeKey(r.method as HttpMethod, r.path))
         .sort(),
     ).toEqual(ops.map((o) => routeKey(o.method as HttpMethod, o.path)).sort());
-    expect(ROUTES).toHaveLength(135); // canon §9 + the V2-004 public-profile routes (O-04)
+    expect(ROUTES).toHaveLength(136); // canon §9 + the V2-004 public-profile routes (O-04) + the payment webhook (V2-021)
   });
 
   it('matches x-permission and x-idempotency of every operation', () => {

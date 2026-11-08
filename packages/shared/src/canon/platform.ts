@@ -302,6 +302,15 @@ const PLATFORM_ROWS: readonly PRow[] = [
     'write',
     'V2-005',
   ],
+  // P-06 / P-08 refunds of online payments (V2-021, DEC-513): the gateway is called by the worker after COMMIT
+  [
+    'POST',
+    '/v1/platform/payments/{paymentId}/refunds',
+    'platform.refund_issue',
+    'required',
+    'command',
+    'V2-021',
+  ],
 ];
 
 /** The `/v1/platform/*` routes (docs/07_openapi.yaml tag `platform`), checked by test/platform.test.ts. */

@@ -36,6 +36,15 @@
 - **مصدر الحقيقة Webhook موقّع** يُخزَّن خامًا (`gateway_webhook_events`) ويُعالَج مرة واحدة؛ عودة العميل من صفحة الدفع لا تفعّل شيئًا وحدها.
 - مطابقة يومية: كل معاملة لدى البوابة تقابلها `online_payments`، وأي فرق يفتح تنبيهًا للمالية (P-08).
 
+### 3.1 ما بُني (V2-020 / V2-021، DEC-510 … DEC-514)
+
+- **البوابة:** Moyasar (DEC-460) عبر `PaymentGateway` في `packages/server/src/modules/payments-online/` بالعمليات `createPayment` (مصدر `token` لبطاقة رُمّزت على جهاز العميل بالمفتاح العام، أو `applepay`؛ ويرد صفحة 3-D Secure حين تطلبها البوابة)، `chargeSavedMethod` (رمز بطاقة محفوظة، للتجديد في V4)، `refund`، `fetchPayment`، `listPayments` (المطابقة)، `verifyWebhook`. المحوّل `MoyasarGateway` (HTTP Basic بالمفتاح السري اسمَ مستخدم وكلمة مرور فارغة، المبالغ بالهللة، `given_id` مفتاح تكرار الإنشاء، مهلة لكل استدعاء). بيانات البطاقة لا تصل خوادمنا أبدًا (SAQ-A): Moyasar نفسه يمنع إرسال بيانات البطاقة من الخادم.
+- **المحاكي:** `tools/payment-simulator` (DEC-510): واجهة Moyasar المزيفة (الرموز، الدفع، 3-D Secure، الاسترداد، القوائم بالصفحات) ومُرسل Webhook بالسر المشترك وبطاقات اختبار (ناجحة، 3-D Secure ثم ناجحة أو مرفوضة، مرفوضة)، ولوحة تحكم `/_sim/*` للاختبارات. `MOYASAR_MODE=simulator|live`: `live` في الإنتاج وحده، والمحاكي يرفض الإنتاج والمفاتيح الحية، والمحوّل يرفض إرسال مفتاح حي خارج الإنتاج.
+- **البيانات:** الترحيل `0012_online_payments.sql`: `customer_payment_methods` (رمز البوابة وعلامة البطاقة وآخر 4 أرقام والانتهاء فقط، `ck_payment_methods_no_pan`)، `online_payments` (الغرض `visit`/`subscription`، المبلغ شاملًا والضريبة، `refunded_halalas` التراكمي، `given_id` فريد، معرّف البوابة فريد، دفعة ناجحة واحدة لكل تذكرة `uq_online_payments_ticket_paid`)، `refunds` (لا تُحذف ولا يتغير منها إلا نتيجة البوابة، `trg_refunds_guard`)، `gateway_webhook_events` (خام منقّى، فريد `(gateway, event_id)`، `processed_at`/`outcome`)، `payment_reconciliation_runs`، `platform_alerts`. `subscription_id` بلا مفتاح أجنبي حتى جدول الاشتراكات (V2-031).
+- **آلة الحالات (DEC-512):** `initiated → authorized → paid | failed`، ثم `paid → partially_refunded → refunded`، أمامية فقط ومن سجل البوابة وحده (ردّ استدعائنا الموثّق أو قراءة الدفعة بعد Webhook)؛ الدفع يبدأ بثلاث خطوات بلا شبكة داخل معاملة (`OnlinePayments.start`: صف `initiated` ← البوابة ← تطبيق الرد)، والرفض `PAYMENT_FAILED` بعد حفظ `failed`.
+- **الاسترداد والمطابقة والتنبيه:** `POST /v1/platform/payments/{paymentId}/refunds` (DEC-513) و`job.payments_reconcile` اليومي (DEC-514)، وتنبيهات المالية في `platform_alerts` (`payment_unknown`، `payment_mismatch`، `payment_refund_failed`، `payment_reconcile_failed`) لأن `alerts` للمشغل ومشرفي مواقعه. التفاصيل في `05_API_Integrations.md` §4.1–4.2.
+- **لم يُبنَ بعد:** شاشات الدفع C-10/C-12 وأمر `POST /v1/customer/visits/{ticketId}/pay` وبوابة التسليم الموسعة (V2-022)، البطاقات المحفوظة C-18 (V2-023)، شاشات P-06/P-08 (V2-024)، الفاتورة لكل دفعة (V2-040)، وقيد «لا تجتمع دفعة إلكترونية مع `payments.recorded` لتذكرة واحدة» (يُفحص في أمر الدفع والتسليم، V2-022).
+
 ## 4. الضريبة والفواتير (V2-D13)
 
 - الأسعار المعروضة للعميل **شاملة ضريبة القيمة المضافة 15%**، وتُفصَل في الفاتورة.
@@ -58,6 +67,6 @@
 
 ## 6. الأمن والامتثال
 
-- لا بيانات بطاقة لدينا (SAQ-A)، ولا أرقام بطاقات في السجلات (فحص كما في `ck_payments_no_pan`)، وأسرار البوابة بالمراجع (`env://`/`sm://`) كأسرار واتساب.
+- لا بيانات بطاقة لدينا (SAQ-A)، ولا أرقام بطاقات في السجلات (فحص كما في `ck_payments_no_pan`)، وأسرار البوابة بالمراجع (`env://`/`sm://`) كأسرار واتساب. **مبني (V2-020):** `ck_payment_methods_no_pan` و`ck_online_payments_no_pan` و`ck_gateway_webhook_events_no_pan` و`ck_reconciliation_no_pan` و`ck_platform_alerts_no_pan` و`ck_refunds_no_pan` (لا 13 رقمًا متتاليًا)، وتنقية أجسام البوابة قبل الحفظ والتسجيل، واختبار يفحص كل جداول القاعدة وسطور السجل بحثًا عن أرقام بطاقات الاختبار.
 - نظام حماية البيانات الشخصية: موافقات مؤرخة بإصدار النص، حذف الحساب من التطبيق، وتقنيع بيانات العميل لدى المشغل (V2-D12).
 - حدود معدل على رمز التحقق والدفع، وكشف الاحتيال الأساسي: بطاقات كثيرة فاشلة لحساب واحد، أو حسابات كثيرة لجهاز واحد.
