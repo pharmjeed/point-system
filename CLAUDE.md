@@ -106,6 +106,7 @@ pnpm test:e2e          # Playwright (mobile viewports, RTL)
 pnpm test:race         # dispatch race suite RACE_LOOPS times in a row (50), then the schema invariants
 pnpm lint && pnpm typecheck
 pnpm ops:load          # load profile 17 H-08 / AC-13 (k6 + 50 drivers on Socket.IO, throwaway database), DEC-371
+pnpm ops:load:v2       # V2 load profile 17 H-08ب (customers, WhatsApp OTP, visits, payments, renewals; throwaway database), DEC-563
 pnpm ops:chaos         # chaos 17 H-03 / §12 / AC-06 against the production build (KP-1 … KP-5 also in CI on main), DEC-374
 pnpm ops:rehearsal     # automated rehearsal 17 H-10 step 1 / TC-036 (real processes + simulator, throwaway database), DEC-366
 pnpm ops:restore-drill # backup + restore drill TC-037 / H-09 (encrypted dump, fresh database, row counts), DEC-303
