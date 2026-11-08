@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { color, font, fontSize, radius, space } from '../theme/tokens';
 import { AppText } from './AppText';
+import { textStart } from './textStart';
 
 export interface FieldProps extends Omit<TextInputProps, 'style'> {
   label: string;
@@ -64,7 +65,7 @@ const styles = StyleSheet.create({
     fontFamily: font.regular,
     color: color.text,
     paddingVertical: space[2],
-    textAlign: 'left',
+    textAlign: textStart,
   },
   inputLtr: { fontFamily: font.mono, writingDirection: 'ltr' },
 });

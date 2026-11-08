@@ -13,9 +13,18 @@ config.resolver.unstable_conditionNames = [
   '@point/source',
 ];
 
+// V2-018 (DEC-551): the e2e web export only. Native modules without a web implementation are replaced for
+// `platform === 'web'` by the smallest stand-in under src/shims; iOS and Android resolve the real modules.
+const webShims = {
+  'expo-secure-store': path.resolve(__dirname, 'src/shims/expo-secure-store.web.ts'),
+};
+
 const upstream = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const resolve = upstream ?? context.resolveRequest;
+  if (platform === 'web' && Object.hasOwn(webShims, moduleName)) {
+    return { type: 'sourceFile', filePath: webShims[moduleName] };
+  }
   if (
     context.originModulePath.startsWith(sharedSrc) &&
     moduleName.startsWith('.') &&

@@ -51,7 +51,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     scheme: env('CUSTOMER_URL_SCHEME') ?? bundleId,
     version: '0.1.0',
     orientation: 'portrait',
-    platforms: ['ios', 'android'],
+    // The shipped app is iOS + Android only. `web` exists for the e2e harness alone (V2-018, DEC-550): a static export
+    // driven by Playwright in CI, never deployed — the customer never opens a web page (canon §1).
+    platforms: env('CUSTOMER_E2E_WEB') === '1' ? ['ios', 'android', 'web'] : ['ios', 'android'],
     icon: './assets/brand/icon-maskable-512.png',
     userInterfaceStyle: 'light',
     backgroundColor: surface,

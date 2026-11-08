@@ -315,6 +315,7 @@ export function PaySheet({
               <View style={styles.group}>
                 <Field
                   label={t.pay.cardNumber}
+                  testID="card-number"
                   value={number}
                   onChangeText={(v) => setNumber(formatCardNumber(v))}
                   keyboardType="number-pad"
@@ -325,6 +326,7 @@ export function PaySheet({
                 />
                 <Field
                   label={t.pay.expiry}
+                  testID="card-expiry"
                   value={expiry}
                   onChangeText={(v) => setExpiry(formatExpiry(v))}
                   keyboardType="number-pad"
@@ -339,6 +341,7 @@ export function PaySheet({
                 />
                 <Field
                   label={t.pay.cvc}
+                  testID="card-cvc"
                   value={cvc}
                   onChangeText={(v) => setCvc(v.replace(/[^0-9٠-٩]/g, '').slice(0, 4))}
                   keyboardType="number-pad"
@@ -348,6 +351,7 @@ export function PaySheet({
                 />
                 <Field
                   label={t.pay.cardName}
+                  testID="card-name"
                   value={name}
                   onChangeText={setName}
                   autoCapitalize="characters"

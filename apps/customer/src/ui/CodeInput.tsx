@@ -51,6 +51,7 @@ export function CodeInput({
         autoComplete="one-time-code"
         maxLength={CUSTOMER_OTP_LENGTH + 4}
         accessibilityLabel={label}
+        testID="code-input"
         style={styles.hidden}
       />
     </Pressable>

@@ -71,6 +71,7 @@ export default function Phone() {
       <AppText tone="muted">{t.phone.hint}</AppText>
       <Field
         label={t.phone.label}
+        testID="phone-input"
         value={value}
         onChangeText={(v) => setValue(sanitizePhoneInput(v))}
         onBlur={() => setTouched(true)}

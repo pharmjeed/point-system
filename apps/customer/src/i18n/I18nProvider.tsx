@@ -12,6 +12,7 @@ import { appConfig } from '../config';
 import { parseStoredLocale } from '../features/settings';
 import { flags } from '../session/secureStore';
 import { dictionaries, fmt, resolveLocale, type AppLocale, type Dictionary } from './index';
+import { applyDocumentDirection } from './documentDirection';
 import { isRtl } from './format';
 
 interface I18nValue {
@@ -34,6 +35,7 @@ const deviceLocale = () =>
 
 /** The next launch draws in the direction of the language (applies from the next start). */
 function alignDirection(locale: AppLocale) {
+  applyDocumentDirection(locale); // no-op on iOS/Android; `<html dir>` in the e2e web export (DEC-551)
   if (I18nManager.isRTL !== isRtl(locale)) {
     I18nManager.allowRTL(true);
     I18nManager.forceRTL(isRtl(locale));
