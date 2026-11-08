@@ -201,6 +201,20 @@ async function api(
     });
     return [201, { ...token, verification_url: null }];
   }
+  // V2-023 (DEC-524): the server reads a saved card's token (brand, last four, expiry) and deletes it when the card
+  // is removed — secret key only
+  if (parts[1] === 'tokens' && parts.length === 3 && (method === 'GET' || method === 'DELETE')) {
+    requireKey(state, req, ['secret']);
+    const t = state.tokens.get(parts[2] ?? '');
+    if (!t) throw fail(404, 'api_error', 'Object not found');
+    if (method === 'DELETE') {
+      state.tokens.delete(t.id);
+      state.deletedTokens.add(t.id);
+      return [204, ''];
+    }
+    const { card: _card, ...token } = t;
+    return [200, { ...token, verification_url: null }];
+  }
   if (parts[1] !== 'payments') throw fail(404, 'api_error', 'Not found');
   if (parts.length === 2 && method === 'POST') {
     const auth = requireKey(state, req, ['secret', 'publishable']);
@@ -263,6 +277,14 @@ async function control(
         return [201, state.tokenize({ number: String(b.number ?? '') }).id];
       case 'GET /payments':
         return [200, [...state.payments.values()]];
+      case 'GET /tokens':
+        return [
+          200,
+          {
+            active: [...state.tokens.keys()],
+            deleted: [...state.deletedTokens],
+          },
+        ];
       case 'POST /payments': {
         // a payment made outside this platform (e.g. on the dashboard): unknown to the server
         const p = state.createPayment({

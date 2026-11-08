@@ -6,6 +6,10 @@ import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import type { GatewayPayment } from '../domain/gateway.js';
 import { decideSync } from '../domain/status.js';
+import { confirmPendingCard, dropPendingCard } from './card-tokens.js';
+import { visitPaymentHook } from './visit-hook.js';
+
+const COUNTING = new Set<OnlinePaymentStatus>(['paid', 'partially_refunded']);
 
 type Q = Pick<Database, 'query'> | Pick<Tx, 'query'>;
 
@@ -134,6 +138,14 @@ export async function applyGatewayPayment(
     return { outcome: 'unchanged', payment: row };
   }
   const to = decision.status;
+  // V2-022 (DEC-522): the first time a visit payment counts, its ticket is collected by it — or, when another online
+  // payment of the ticket already counts, the move is held and the money goes back (DEC-523)
+  const visitHook = row.purpose === 'visit' ? visitPaymentHook() : null;
+  const startsCounting = COUNTING.has(to) && !COUNTING.has(row.status);
+  if (visitHook && startsCounting && (await visitHook.beforePaid(tx, row)) === 'hold') {
+    if (firstAnswer) await setGatewayId(tx, row, gp);
+    return { outcome: 'conflict', payment: (await paymentById(tx, row.id))! };
+  }
   const failure = to === 'failed' ? gp.source.failureCode : null;
   const updated = await tx.one<OnlinePaymentRow>(
     `UPDATE online_payments p SET
@@ -193,6 +205,13 @@ export async function applyGatewayPayment(
     accountId: row.account_id,
     metadata,
   });
+  // V2-022 / V2-023 (DEC-522, DEC-524): the ticket of a visit, and a card saved with this payment
+  if (startsCounting) {
+    await confirmPendingCard(tx, updated);
+    if (visitHook) await visitHook.afterPaid(tx, updated);
+  }
+  if (to === 'failed') await dropPendingCard(tx, updated);
+  if (to === 'refunded' && COUNTING.has(row.status) && visitHook) await visitHook.afterRefunded(tx, updated);
   return { outcome: 'applied', payment: updated };
 }
 

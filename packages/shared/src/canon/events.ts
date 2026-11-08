@@ -78,6 +78,9 @@ export const PAYMENT_EVENT_TYPES = [
   'payment.reversed',
   'payment.waived',
   'cash.handover_recorded',
+  // V2-022 (DEC-522): an online visit payment made the ticket collected (app_paid), and its full refund undid it
+  'payment.online_paid',
+  'payment.online_refunded',
 ] as const;
 
 export const ALERT_INCIDENT_EVENT_TYPES = [
@@ -153,6 +156,7 @@ export const JOB_TYPES = [
   'job.payment_webhook_process',
   'job.payment_refund_send',
   'job.payments_reconcile',
+  'job.payment_method_token_delete',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

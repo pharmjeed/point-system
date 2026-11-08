@@ -6,6 +6,7 @@ import type {
   GatewayPayment,
   GatewayPaymentPage,
   GatewayResult,
+  GatewayToken,
   PaymentGateway,
   WebhookVerification,
 } from '../domain/gateway.js';
@@ -94,6 +95,32 @@ export function normalizePayment(raw: unknown): GatewayPayment | null {
 }
 
 /**
+ * The gateway's token object (V2-023, DEC-524), as `GET /v1/tokens/{id}` answers it: `last_four`, `brand`,
+ * `month`/`year` (strings or numbers). Not confirmed against Moyasar's live documentation from this environment
+ * (the domain is blocked, as in DEC-510): the simulator implements this shape; review before H3.
+ */
+export function normalizeToken(raw: unknown): GatewayToken | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const t = raw as Record<string, unknown>;
+  const id = str(t.id);
+  if (!id) return null;
+  const num = (v: unknown): number | null => {
+    const n = typeof v === 'number' ? v : typeof v === 'string' && /^[0-9]{1,4}$/.test(v) ? Number(v) : NaN;
+    return Number.isInteger(n) ? n : null;
+  };
+  const year = num(t.year);
+  const last4 = str(t.last_four) ?? str(t.last4);
+  return {
+    id,
+    status: str(t.status) ?? 'unknown',
+    brand: str(t.brand)?.toLowerCase() ?? null,
+    last4: last4 && /^[0-9]{4}$/.test(last4) ? last4 : null,
+    month: num(t.month),
+    year: year !== null && year < 100 ? 2000 + year : year,
+  };
+}
+
+/**
  * The Moyasar adapter (V2-020, DEC-511) over its REST API: `POST /v1/payments` (amount in halalas, `given_id`,
  * `callback_url`, a `token` or `applepay` source — card data is never sent from a backend), `GET /v1/payments/{id}`,
  * `GET /v1/payments` (pages), `POST /v1/payments/{id}/refund`. Authentication is HTTP Basic with the secret key as
@@ -114,7 +141,7 @@ export class MoyasarGateway implements PaymentGateway {
   }
 
   private async request<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
     body: unknown,
     parse: (json: unknown) => T | null,
@@ -247,6 +274,16 @@ export class MoyasarGateway implements PaymentGateway {
           typeof next === 'number' ? next : next === null ? null : payments.length ? input.page + 1 : null,
       };
     });
+  }
+
+  fetchToken(token: string): Promise<GatewayResult<GatewayToken>> {
+    return this.request('GET', `tokens/${encodeURIComponent(token)}`, undefined, normalizeToken);
+  }
+
+  async deleteToken(token: string): Promise<GatewayResult<null>> {
+    // any 2xx answer (with or without a body) is a deletion
+    const r = await this.request('DELETE', `tokens/${encodeURIComponent(token)}`, undefined, () => ({}));
+    return r.ok ? { ok: true, status: r.status, value: null } : r;
   }
 
   async verifyWebhook(raw: Buffer): Promise<WebhookVerification> {

@@ -650,6 +650,9 @@ export const ticketEventText = {
   'payment.recorded': 'تسجيل التحصيل',
   'payment.reversed': 'عكس التحصيل',
   'payment.waived': 'إعفاء من الرسوم',
+  // V2-022 (DEC-522)
+  'payment.online_paid': 'دفع العميل في التطبيق',
+  'payment.online_refunded': 'استرداد دفعة التطبيق: الرسوم مستحقة',
   'incident.opened': 'فتح بلاغ',
   'incident.updated': 'تحديث بلاغ',
   'incident.resolved': 'حل بلاغ',

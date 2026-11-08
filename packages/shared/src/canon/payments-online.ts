@@ -41,6 +41,14 @@ export const ONLINE_PAYMENT_PAID_STATUSES = [
 export const ONLINE_PAYMENT_REFUNDABLE_STATUSES = ONLINE_PAYMENT_PAID_STATUSES;
 
 /** `refunds.status`: requested (committed, not yet at the gateway) → succeeded | failed. */
+/** `refunds.kind` (0014, DEC-523): issued by a platform user (P-06/P-08), or by the platform itself. */
+export const REFUND_KINDS = ['manual', 'system'] as const;
+export type RefundKind = (typeof REFUND_KINDS)[number];
+
+/** The reason of a system refund (`refunds.reason`, DEC-523). */
+export const SYSTEM_REFUND_REASONS = ['double_payment', 'not_due'] as const;
+export type SystemRefundReason = (typeof SYSTEM_REFUND_REASONS)[number];
+
 export const REFUND_STATUSES = ['requested', 'succeeded', 'failed'] as const;
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
 export const RefundStatusSchema = z.enum(REFUND_STATUSES);
@@ -79,6 +87,8 @@ export const PLATFORM_ALERT_TYPES = [
   'payment_mismatch',
   'payment_refund_failed',
   'payment_reconcile_failed',
+  // V2-022 (DEC-523): an online visit payment that succeeded for a ticket already paid, refunded by the platform
+  'payment_double',
 ] as const;
 export type PlatformAlertType = (typeof PLATFORM_ALERT_TYPES)[number];
 export const PlatformAlertTypeSchema = z.enum(PLATFORM_ALERT_TYPES);
@@ -88,6 +98,7 @@ export const PLATFORM_ALERT_SEVERITY: Record<PlatformAlertType, 'info' | 'warnin
   payment_mismatch: 'critical',
   payment_refund_failed: 'warning',
   payment_reconcile_failed: 'warning',
+  payment_double: 'warning',
 };
 
 /** The tables of migration 0012_online_payments.sql (outside canon §6, which lists the V1 tables). */

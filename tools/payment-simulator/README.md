@@ -30,6 +30,9 @@ pnpm --filter @point/payment-simulator dev        # part of `pnpm dev` (port 402
   A `creditcard` source is refused with the secret key, as Moyasar forbids card data from a backend.
 - `GET /v1/payments/{id}`, `GET /v1/payments?page&created[gte]&created[lte]&status` (`{ payments, meta }`).
 - `POST /v1/payments/{id}/refund` (`amount` optional): a partial refund keeps the payment `paid` with `refunded` set;
+- `GET /v1/tokens/{id}` and `DELETE /v1/tokens/{id}` (secret key, V2-023): a saved card's brand, last four and
+  expiry, and its deletion after the card is removed; `GET /_sim/tokens` lists the active and the deleted tokens.
+  Token ids never hold 13 digits in a row.
   the whole amount makes it `refunded`.
 
 ## Test cards

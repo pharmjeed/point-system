@@ -72,3 +72,17 @@ export { TicketTimelineQuery } from './ticket-timeline.js';
 
 // realtime ticket.updated projection (PNT-064 planners)
 export { wireTicketRealtime } from './realtime-projections.js';
+
+// V2-022 / V2-023 (DEC-521 … DEC-525): paying a visit in the app, the extended handover gate, saved cards. The
+// ticket effects of a visit payment register at load (api and worker).
+export { visitPaymentEffects } from './visit-payments.js';
+export {
+  VisitPayUseCase,
+  PaymentMethodsUseCase,
+  getCustomerPayment,
+  listPaymentMethods,
+  visitPayGivenId,
+  type VisitPayPlan,
+  type PaymentMethodPlan,
+} from './customer-payments.js';
+export { CustomerPaymentsHttpModule } from './http/customer-payments.controller.js';

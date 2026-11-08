@@ -1569,10 +1569,14 @@ describe('G4 — a full event through the real routes, closed with nothing open 
     expect(analytics.length).toBe(events.length);
     for (const a of analytics)
       expect(a.name).toBe(analyticsName(typeOf.get(a.source_event_id) as DomainEventType));
-    // every tracked server action of 15 §7 happened in this run
+    // every tracked server action of 15 §7 happened in this run — but the V2 online payments of the customer app
+    // (V2-022: payment.online_paid / payment.online_refunded), which a V1 event of paper and WhatsApp tickets never
+    // produces; their projection is proven by packages/server/test/analytics-projector.int.test.ts
+    const V2_APP_ONLY = new Set<string>(['payment.online_paid', 'payment.online_refunded']);
+    const V1_TYPES = DOMAIN_EVENT_TYPES.filter((t) => !V2_APP_ONLY.has(t));
     const seen = new Set(events.map((e) => e.type));
-    expect(DOMAIN_EVENT_TYPES.filter((t) => !seen.has(t))).toEqual([]);
-    expect(new Set(analytics.map((a) => a.name))).toEqual(new Set(DOMAIN_EVENT_TYPES.map(analyticsName)));
+    expect(V1_TYPES.filter((t) => !seen.has(t))).toEqual([]);
+    expect(new Set(analytics.map((a) => a.name))).toEqual(new Set(V1_TYPES.map(analyticsName)));
 
     // the allow-list (15 §3, §7): only the catalog's keys, no denylisted key, no phone, plate, code or key position
     const denied = new Set<string>(ANALYTICS_PII_DENYLIST);

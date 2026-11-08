@@ -7,6 +7,7 @@ import type { Logger } from '../../core/logging/logger.js';
 import type { JobHandler } from '../../core/outbox/dispatcher.js';
 import { ensureReconcileScheduled, paymentsReconcileJob } from './application/reconciliation.js';
 import { paymentRefundJob } from './application/refunds.js';
+import { paymentMethodTokenDeleteJob } from './application/card-tokens.js';
 import { paymentWebhookJob } from './application/webhooks.js';
 import { defaultPaymentsRuntime, PaymentsRuntime } from './runtime.js';
 
@@ -48,10 +49,25 @@ export {
   type ReconciliationResult,
 } from './application/reconciliation.js';
 export { platformOrgId } from './application/platform-org.js';
+// V2-022 / V2-023 (DEC-521 … DEC-525): the visit hook, saved cards' tokens, system refunds
+export {
+  registerVisitPaymentHook,
+  visitPaymentHook,
+  type VisitPaymentHook,
+} from './application/visit-hook.js';
+export {
+  confirmPendingCard,
+  dropPendingCard,
+  paymentMethodTokenDeleteJob,
+  queueTokenDeletion,
+} from './application/card-tokens.js';
+export { issueSystemRefund, paymentSummary } from './application/refunds.js';
+export { normalizeToken } from './infra/moyasar.js';
 export {
   PAYMENT_WEBHOOK_PROCESS_JOB,
   PAYMENT_REFUND_SEND_JOB,
   PAYMENTS_RECONCILE_JOB,
+  PAYMENT_METHOD_TOKEN_DELETE_JOB,
 } from './domain/jobs.js';
 
 type RuntimeOption = PaymentsRuntime | (() => PaymentsRuntime);
@@ -71,6 +87,7 @@ export function paymentsOnlineJobs(
     paymentWebhookJob(runtime),
     paymentRefundJob(runtime),
     paymentsReconcileJob(runtime, opts.reconcileCron ? { cron: opts.reconcileCron } : {}),
+    paymentMethodTokenDeleteJob(runtime),
   ];
 }
 

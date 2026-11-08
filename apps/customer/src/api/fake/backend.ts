@@ -42,14 +42,22 @@ import {
   type CustomerLocationSummary,
   type CustomerMe,
   type CustomerPass,
+  type CustomerPaymentMethod,
   type CustomerRouteKey,
+  type CustomerVisitPayment,
   type CustomerTokens,
   type CustomerVehicle,
 } from '@point/shared/customer';
 import type { z } from 'zod';
 import type { HttpRequest, HttpResponse, Transport } from '../transport';
 import { distanceMetres, isOpenAt } from './hours';
-import { FAKE_CONSENT_VERSIONS, FAKE_LOCATIONS } from './seed';
+import {
+  FAKE_CARD_ON_FILE_VERSION,
+  FAKE_CONSENT_VERSIONS,
+  FAKE_LOCATIONS,
+  FAKE_VISIT_FEE_HALALAS,
+} from './seed';
+import { parseFakeToken, type FakeCardBehaviour } from './tokens';
 
 export interface FakeBackendOptions {
   now?: () => number;
@@ -59,6 +67,8 @@ export interface FakeBackendOptions {
   latencyMs?: number;
   /** Phones whose account gets a sample visit in progress on C-06 (to see the card without the server). */
   demoVisitPhones?: readonly string[];
+  /** The seller named on the C-17 receipt data (the app's configured brand, never a literal here). */
+  brand?: { nameAr: string; nameEn: string };
 }
 
 interface Challenge {
@@ -85,6 +95,24 @@ interface Account {
   vehicles: CustomerVehicle[];
   /** V2-013: the entry pass secret (base64url), created by the first `GET /v1/customer/pass` */
   passSecret: string | null;
+  /** V2-023 (C-18): saved cards; the token stays here, the app sees brand/last4/expiry */
+  cards: Array<CustomerPaymentMethod & { token: string; behaviour: FakeCardBehaviour }>;
+}
+
+/** V2-022: a visit payment of the fake (the server's machine: initiated → paid | failed). */
+interface FakePayment {
+  id: string;
+  accountId: string;
+  ticketId: string;
+  status: 'initiated' | 'paid' | 'failed';
+  behaviour: FakeCardBehaviour;
+  brand: string | null;
+  last4: string | null;
+  createdAt: number;
+  paidAt: number | null;
+  /** a card kept by «حفظ البطاقة» once paid */
+  saveCard: { token: string; brand: string; last4: string; month: number; year: number } | null;
+  savedCardId: string | null;
 }
 
 interface Session {
@@ -140,6 +168,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   const replies = new Map<string, StoredReply>();
   const inbox: Array<{ phone: string; code: string; at: number }> = [];
   let requestSeq = 0;
+  const payments = new Map<string, FakePayment>();
 
   const base64Url = (bytes: number) => {
     const b = Array.from({ length: bytes }, () => Math.floor(random() * 256));
@@ -303,6 +332,116 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     ctx: { query: URLSearchParams; params: Record<string, string> },
   ) => unknown;
 
+  // ---- V2-022 / V2-023: visit payments and saved cards, with the server's rules (DEC-521 … DEC-525)
+
+  const DEMO_TICKET_ID = '3c9d6e2a-7b1f-4c8d-9e0a-1b2c3d4e5f60';
+  /** The 3-D Secure page of the fake is «answered» this long after it opened (the in-app browser returned). */
+  const FAKE_3DS_MS = 2000;
+
+  function cardView(c: Account['cards'][number]): CustomerPaymentMethod {
+    return {
+      id: c.id,
+      brand: c.brand,
+      last4: c.last4,
+      expires_month: c.expires_month,
+      expires_year: c.expires_year,
+      is_default: c.is_default,
+      created_at: c.created_at,
+    };
+  }
+
+  function keepCard(
+    account: Account,
+    card: { token: string; brand: string; last4: string; month: number; year: number },
+    behaviour: FakeCardBehaviour,
+    makeDefault = false,
+  ) {
+    const existing = account.cards.find((c) => c.token === card.token);
+    if (existing) return existing;
+    const first = account.cards.length === 0;
+    if (makeDefault) for (const c of account.cards) c.is_default = false;
+    const row = {
+      id: uuid(),
+      brand: card.brand,
+      last4: card.last4,
+      expires_month: card.month,
+      expires_year: card.year,
+      is_default: first || makeDefault,
+      created_at: iso(now()),
+      token: card.token,
+      behaviour,
+    };
+    account.cards.push(row);
+    return row;
+  }
+
+  function assertCardConsent(version: string | undefined) {
+    if (!version)
+      throw new Reject('CUSTOMER_CONSENT_REQUIRED', {
+        kind: 'card_on_file',
+        current_version: FAKE_CARD_ON_FILE_VERSION,
+      });
+    if (version !== FAKE_CARD_ON_FILE_VERSION)
+      throw new Reject('CUSTOMER_CONSENT_VERSION_STALE', {
+        kind: 'card_on_file',
+        current_version: FAKE_CARD_ON_FILE_VERSION,
+      });
+  }
+
+  /** The 3-D Secure page answered: paid (or failed for the 3-D Secure declined card), a saved card kept. */
+  function settlePayment(p: FakePayment, outcome?: 'success' | 'fail') {
+    if (p.status !== 'initiated') return;
+    const fail = outcome ? outcome === 'fail' : p.behaviour === 'tdd';
+    p.status = fail ? 'failed' : 'paid';
+    if (!fail) {
+      p.paidAt = now();
+      const account = accounts.get(p.accountId);
+      if (account && p.saveCard) p.savedCardId = keepCard(account, p.saveCard, 'ok').id;
+    }
+  }
+
+  function paymentView(p: FakePayment, transactionUrl: string | null = null): CustomerVisitPayment {
+    const venue = FAKE_LOCATIONS[0] as CustomerLocationDetail;
+    const amount = FAKE_VISIT_FEE_HALALAS;
+    const vat = amount - Math.round((amount * 10_000) / 11_500);
+    return {
+      payment_id: p.id,
+      ticket_id: p.ticketId,
+      status: p.status,
+      amount_halalas: amount,
+      vat_halalas: vat,
+      currency: 'SAR',
+      card_brand: p.brand,
+      card_last4: p.last4,
+      failure_code: p.status === 'failed' ? '51' : null,
+      transaction_url: p.status === 'initiated' ? transactionUrl : null,
+      callback_url: 'sa.point.app://pay/return',
+      paid_at: p.paidAt ? iso(p.paidAt) : null,
+      saved_payment_method_id: p.savedCardId,
+      receipt: p.paidAt
+        ? {
+            payment_id: p.id,
+            issued_at: iso(p.paidAt),
+            seller_name_ar: options.brand?.nameAr ?? '—',
+            seller_name_en: options.brand?.nameEn ?? '—',
+            venue_name_ar: venue.name_ar,
+            venue_name_en: venue.name_en,
+            operator_name_ar: venue.operator_name_ar,
+            operator_name_en: venue.operator_name_en,
+            description: 'visit',
+            amount_halalas: amount,
+            net_halalas: amount - vat,
+            vat_halalas: vat,
+            vat_rate_bp: 1500,
+            refunded_halalas: 0,
+            currency: 'SAR',
+            card_brand: p.brand,
+            card_last4: p.last4,
+          }
+        : null,
+    };
+  }
+
   const handlers: Record<CustomerRouteKey, Handler> = {
     otpRequest(req) {
       const raw = (req.body ?? {}) as { phone_e164?: unknown };
@@ -351,6 +490,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           consents: [],
           vehicles: [],
           passSecret: null,
+          cards: [],
         });
         accountByPhone.set(phone, accountId);
       }
@@ -565,6 +705,137 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       return { reauth_token: session.reauth.token, expires_at: iso(session.reauth.expiresAt) };
     },
 
+    // ---- V2-022 (C-12 → C-10) and V2-023 (C-18)
+
+    visitPay(req, { params }) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.visitPay.body, req.body);
+      if (!demoPhones.has(account.phone) || params.ticketId !== DEMO_TICKET_ID)
+        throw new Reject('RESOURCE_NOT_FOUND', { resource: 'visit' });
+      const mine = [...payments.values()].filter(
+        (p) => p.accountId === account.id && p.ticketId === params.ticketId,
+      );
+      const done = mine.find((p) => p.status === 'paid');
+      if (done) throw new Reject('PAYMENT_ALREADY_RECORDED', { online_payment_id: done.id, method: 'app' });
+      const live = mine.find((p) => p.status === 'initiated' && now() - p.createdAt < 15 * 60_000);
+      if (live)
+        throw new Reject('PAYMENT_IN_PROGRESS', {
+          online_payment_id: live.id,
+          retry_after_s: Math.ceil((live.createdAt + 15 * 60_000 - now()) / 1000),
+        });
+      if (body.save_card) assertCardConsent(body.card_on_file_version);
+      let behaviour: FakeCardBehaviour;
+      let brand: string | null;
+      let last4: string | null;
+      let saveCard: FakePayment['saveCard'] = null;
+      if (body.source.type === 'token') {
+        const info = parseFakeToken(body.source.token);
+        if (!info) throw new Reject('PAYMENT_FAILED', { failure_code: 'gateway_invalid_request_error' });
+        ({ behaviour, brand, last4 } = info);
+        if (body.save_card)
+          saveCard = {
+            token: body.source.token,
+            brand: info.brand,
+            last4: info.last4,
+            month: info.month,
+            year: info.year,
+          };
+      } else if (body.source.type === 'applepay') {
+        behaviour = /declined/i.test(body.source.token)
+          ? 'dec'
+          : /3ds/i.test(body.source.token)
+            ? 'tds'
+            : 'ok';
+        brand = 'visa';
+        last4 = '4242';
+      } else {
+        const id = body.source.payment_method_id;
+        const card = account.cards.find((c) => c.id === id);
+        if (!card) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'payment_method' });
+        ({ behaviour, brand, last4 } = card);
+      }
+      const p: FakePayment = {
+        id: uuid(),
+        accountId: account.id,
+        ticketId: params.ticketId as string,
+        status: 'initiated',
+        behaviour,
+        brand,
+        last4,
+        createdAt: now(),
+        paidAt: null,
+        saveCard,
+        savedCardId: null,
+      };
+      payments.set(p.id, p);
+      if (behaviour === 'dec') {
+        p.status = 'failed';
+        throw new Reject('PAYMENT_FAILED', { online_payment_id: p.id, failure_code: '51' });
+      }
+      if (behaviour === 'ok') {
+        settlePayment(p, 'success');
+        return paymentView(p);
+      }
+      return paymentView(p, `https://payments.fake.invalid/3ds/${p.id}`);
+    },
+
+    payment(req, { params }) {
+      const account = authenticate(req);
+      const p = payments.get(params.paymentId ?? '');
+      if (!p || p.accountId !== account.id)
+        throw new Reject('RESOURCE_NOT_FOUND', { resource: 'online_payment' });
+      // the customer answered the 3-D Secure page in the in-app browser (the webhook, on the server)
+      if (p.status === 'initiated' && now() - p.createdAt >= FAKE_3DS_MS) settlePayment(p);
+      return paymentView(p);
+    },
+
+    paymentMethods(req) {
+      const account = authenticate(req);
+      const items = [...account.cards]
+        .sort(
+          (a, b) => Number(b.is_default) - Number(a.is_default) || b.created_at.localeCompare(a.created_at),
+        )
+        .map(cardView);
+      return { items };
+    },
+
+    paymentMethodCreate(req) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.paymentMethodCreate.body, req.body);
+      assertCardConsent(body.card_on_file_version);
+      const info = parseFakeToken(body.token);
+      if (!info)
+        throw new Reject('VALIDATION_FAILED', { fields: [{ field: 'token', issue: 'unknown_token' }] });
+      const card = keepCard(
+        account,
+        { token: body.token, brand: info.brand, last4: info.last4, month: info.month, year: info.year },
+        info.behaviour,
+        body.make_default === true,
+      );
+      return cardView(card);
+    },
+
+    paymentMethodPatch(req, { params }) {
+      const account = authenticate(req);
+      parse(CUSTOMER_ROUTES.paymentMethodPatch.body, req.body);
+      const card = account.cards.find((c) => c.id === params.paymentMethodId);
+      if (!card) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'payment_method' });
+      for (const c of account.cards) c.is_default = c.id === card.id;
+      return cardView(card);
+    },
+
+    paymentMethodDelete(req, { params }) {
+      const account = authenticate(req);
+      const card = account.cards.find((c) => c.id === params.paymentMethodId);
+      if (!card) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'payment_method' });
+      account.cards = account.cards.filter((c) => c.id !== card.id);
+      if (card.is_default && account.cards.length) {
+        const newest = [...account.cards].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]!;
+        newest.is_default = true;
+      }
+      return { payment_method_id: card.id, removed_at: iso(now()) };
+    },
+
     meDelete(req) {
       const account = authenticate(req);
       const raw = (req.body ?? {}) as { reauth_token?: unknown };
@@ -667,7 +938,10 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       const checked = route.data.safeParse(data);
       if (!checked.success)
         throw new Error(`fake backend broke the ${found.key} contract: ${checked.error.message}`);
-      const status = req.method === 'POST' && found.key === 'vehicleCreate' ? 201 : 200;
+      const status =
+        req.method === 'POST' && ['vehicleCreate', 'visitPay', 'paymentMethodCreate'].includes(found.key)
+          ? 201
+          : 200;
       if (replyKey) replies.set(replyKey, { fingerprint, status, data: checked.data });
       return { status, body: envelope(checked.data, next === undefined ? {} : { next_cursor: next }) };
     } catch (e) {
@@ -698,6 +972,11 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     verifyPass(token: string, atMs = now()) {
       const secrets = [...accounts.values()].map((a) => a.passSecret).filter((s): s is string => !!s);
       return verifyPassToken({ token, secrets, nowMs: atMs });
+    },
+    /** The customer answers a 3-D Secure page of the fake (tests; the app's poll settles it after a moment). */
+    complete3ds(paymentId: string, outcome: 'success' | 'fail' = 'success') {
+      const p = payments.get(paymentId);
+      if (p) settlePayment(p, outcome);
     },
     /** Every message «sent» (tests). */
     get inbox(): ReadonlyArray<{ phone: string; code: string; at: number }> {

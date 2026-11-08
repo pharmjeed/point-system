@@ -28,6 +28,10 @@ pnpm --filter @point/customer start:fake   # الخادم الوهمي صراح�
 | `CUSTOMER_FORCE_LOCALE` | — | `ar` أو `en` لفرض اللغة في التطوير |
 | `CUSTOMER_ANDROID_GOOGLE_MAPS_API_KEY` | — | مفتاح Google Maps لأندرويد (خريطة `C-07`)؛ يُعطى للبناء من البيئة ولا يُحفظ في المستودع. بلا مفتاح تختفي الخريطة على أندرويد وتبقى القائمة بروابط «فتح في الخرائط»؛ iOS يرسم Apple Maps بلا مفتاح (DEC-506) |
 | `CUSTOMER_SUPPORT_WHATSAPP` / `CUSTOMER_SUPPORT_EMAIL` | — | «تواصل معنا» في `C-19`: رقم واتساب الدعم (أرقام E.164 بلا `+`) وبريده؛ بلا إعداد تظهر «قنوات الدعم تُضاف قريبًا» (DEC-509) |
+| `CUSTOMER_MOYASAR_PUBLISHABLE_KEY` | — | مفتاح Moyasar **العام** (`pk_…`) لترميز البطاقة على الجهاز (`C-10`، `C-18`)؛ مفتاح سري `sk_` يُرفض، و`pk_test_` يُرفض في بناء الإصدار ما لم يُعط `CUSTOMER_MOYASAR_ALLOW_TEST_KEY=true`. بلا مفتاح لا تُعرض إضافة البطاقة (DEC-524) |
+| `CUSTOMER_MOYASAR_BASE_URL` | `https://api.moyasar.com` | أصل الترميز (`tools/payment-simulator` في التطوير) |
+| `CUSTOMER_APPLE_PAY_MERCHANT_ID` | — | معرّف تاجر Apple Pay لبوينت؛ يُعرض Apple Pay فقط معه ومع موفّر PassKit أصلي (`ApplePayProvider`) في بناء التطوير |
+| `CUSTOMER_CARD_ON_FILE_VERSION` | `2026-11-01` | إصدار نص «حفظ البطاقة» (يطابق `CUSTOMER_CARD_ON_FILE_VERSION` في الخادم؛ الإصدار الأحدث يرده الخادم في الخطأ فيُعاد العرض) |
 
 نسخة الإصدار (`__DEV__ = false`) ترفض الخادم الوهمي ما لم يُطلب صراحة بـ`CUSTOMER_API_MODE=fake`، وترفض عنوان API بغير `https` (`src/configModel.ts`).
 
@@ -62,6 +66,19 @@ CUSTOMER_LIVE_API_URL=http://127.0.0.1:3000 WA_SIMULATOR_URL=http://127.0.0.1:40
 ```
 
 يسوق R1 كاملة (`C-02…C-06`) بعميل التطبيق ونقله نفسيهما (`src/api/client.ts` و`transport.ts`)، ويقرأ الرمز من صندوق المحاكي. شُغّل مرة على خادم محلي (api + worker + المحاكي على PostgreSQL 16) ونجح؛ ويغطي `apps/api/test/customer-api.int.test.ts` الرحلة نفسها وقواعد الرمز والجلسة في CI.
+
+## الدفع للزيارة والبطاقات المحفوظة (V2-022، V2-023)
+
+- **منطقة الدفع في `C-12`:** مكوّن منفصل `src/features/pay/` يُركَّب في شاشة الزيارة الجارية (مسار آخر يبنيها) بسطر واحد حين تكون رسوم الزيارة مستحقة (أهلية `none`، لم تُسلَّم):
+
+  ```tsx
+  import { PayDue } from '../features/pay';
+  <PayDue ticketId={visit.ticket_id} amountHalalas={fee} onPaid={reload} applePay={applePayProvider} />
+  ```
+
+  بطاقة «ادفع X ريال» ← ورقة الدفع (على نمط `C-10`): البطاقات المحفوظة، بطاقة جديدة تُرمَّز على الجهاز بالمفتاح العام (`tokenize.ts`، حمولة `createToken` في SDK Moyasar الرسمي، `save_only`) فلا تصل البطاقة خوادمنا، «حفظ البطاقة» بموافقة `card_on_file`، وApple Pay حين يُعطى موفّر أصلي. الخادم يحدد المبلغ. 3-D Secure يُفتح في متصفح داخلي (`expo-web-browser`) حتى `callback_url`، والنتيجة من استطلاع `GET /v1/customer/payments/{id}` (`payFlow.ts`).
+- **`C-18` وسائل الدفع:** `src/app/payment-methods.tsx` من «وسائل الدفع» في `C-19`.
+- **في الخادم الوهمي:** الزيارة التجريبية لرقم `+966500000099` برسوم 20 ريالًا؛ بطاقات المحاكي نفسها (`4111111111111111` ناجحة، `4000000000000002` 3-D Secure، `4201320000311101` مرفوضة، `4201320131000508` 3-D Secure ثم رفض، `4400000000000008` مدى).
 
 ## البنية
 

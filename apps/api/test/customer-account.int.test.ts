@@ -372,7 +372,14 @@ describe('V2-017 — C-20 delete the account (DEC-508)', () => {
       )
     ).rows;
     expect(audit).toEqual([
-      { metadata: { vehicles_removed: 2, sessions_revoked: 2, operator_customer_rows_kept: 1 } },
+      {
+        metadata: {
+          vehicles_removed: 2,
+          payment_methods_removed: 0,
+          sessions_revoked: 2,
+          operator_customer_rows_kept: 1,
+        },
+      },
     ]);
     expect(
       (

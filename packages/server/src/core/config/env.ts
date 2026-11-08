@@ -121,6 +121,12 @@ export const envSchema = z.object({
   CUSTOMER_TERMS_URL: z.string().default(''),
   CUSTOMER_PRIVACY_URL: z.string().default(''),
   CUSTOMER_MARKETING_URL: z.string().default(''),
+  // V2-022 / V2-023 (DEC-521, DEC-524): where the gateway sends the customer back after 3-D Secure (the app's deep
+  // link; reaching it changes nothing, DEC-512), the version of the «save the card» consent text (card_on_file), and
+  // how long an earlier payment of a visit that waits for 3-D Secure blocks a new one (PAYMENT_IN_PROGRESS)
+  CUSTOMER_PAY_CALLBACK_URL: z.string().min(1).default('sa.point.app://pay/return'),
+  CUSTOMER_CARD_ON_FILE_VERSION: z.string().min(1).max(40).default('2026-11-01'),
+  VISIT_PAYMENT_PENDING_S: int(900),
   // Express `trust proxy` (05 §14.2): hops in front of the api (1 = the reverse proxy), or a subnet list
   TRUST_PROXY: z.string().default('1'),
 

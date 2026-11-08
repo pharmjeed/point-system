@@ -14,6 +14,8 @@ export * from './routes.js';
 // V2-013: the entry pass (C-11 / O-01)
 export * from './pass.js';
 export * from './pass-contract.js';
+// V2-022 / V2-023: paying a visit in the app (C-10/C-12) and the saved cards (C-18)
+export * from './payments.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,

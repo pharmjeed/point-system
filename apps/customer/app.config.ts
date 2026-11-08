@@ -91,6 +91,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         whatsapp: env('CUSTOMER_SUPPORT_WHATSAPP') ?? null,
         email: env('CUSTOMER_SUPPORT_EMAIL') ?? null,
       },
+      // V2-022 / V2-023 (DEC-524): the device tokenizes the card with the publishable key only (never a secret key)
+      payments: {
+        moyasarPublishableKey: env('CUSTOMER_MOYASAR_PUBLISHABLE_KEY') ?? null,
+        moyasarBaseUrl: env('CUSTOMER_MOYASAR_BASE_URL') ?? 'https://api.moyasar.com',
+        applePayMerchantId: env('CUSTOMER_APPLE_PAY_MERCHANT_ID') ?? null,
+        cardOnFileVersion: env('CUSTOMER_CARD_ON_FILE_VERSION') ?? '2026-11-01',
+        allowTestKey: env('CUSTOMER_MOYASAR_ALLOW_TEST_KEY') === 'true',
+      },
     },
   };
 };

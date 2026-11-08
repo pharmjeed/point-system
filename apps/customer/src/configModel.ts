@@ -16,6 +16,18 @@ export interface AppConfig {
   support: { whatsapp: string | null; email: string | null };
   /** The app version shown on C-19 (app.config.ts `version`). */
   version: string;
+  /**
+   * V2-022 / V2-023 (DEC-524): the card is tokenized on the device with Moyasar's **publishable** key (`pk_…`, never
+   * a secret key) at `baseUrl` (`https://api.moyasar.com`, or tools/payment-simulator in development); without a key
+   * card entry is unavailable (fake mode tokenizes locally). Apple Pay needs the merchant id of POINT's certificate
+   * and a native PassKit sheet (a dev build), else it is not offered. `cardOnFileVersion`: the «حفظ البطاقة» text.
+   */
+  payments: {
+    moyasarPublishableKey: string | null;
+    moyasarBaseUrl: string;
+    applePayMerchantId: string | null;
+    cardOnFileVersion: string;
+  };
 }
 
 export class ConfigError extends Error {}
@@ -59,5 +71,24 @@ export function parseAppConfig(extra: unknown, isDev: boolean, version?: string 
       email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null,
     },
     version: str(version) ?? '0.0.0',
+    payments: parsePayments(e.payments, isDev),
+  };
+}
+
+function parsePayments(raw: unknown, isDev: boolean): AppConfig['payments'] {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  const key = str(p.moyasarPublishableKey);
+  // a secret key in the app would be a leak of POINT's gateway account: refused outright
+  if (key && !/^pk_(test|live)_[A-Za-z0-9]+$/.test(key))
+    throw new ConfigError('payments.moyasarPublishableKey must be a publishable key (pk_test_… / pk_live_…)');
+  if (key && !isDev && key.startsWith('pk_test_') && p.allowTestKey !== true)
+    throw new ConfigError('a release build does not take a test publishable key unless asked (allowTestKey)');
+  const baseUrl = str(p.moyasarBaseUrl) ?? 'https://api.moyasar.com';
+  if (!isDev && !baseUrl.startsWith('https://')) throw new ConfigError('release builds tokenize over https');
+  return {
+    moyasarPublishableKey: key,
+    moyasarBaseUrl: baseUrl.replace(/\/+$/, ''),
+    applePayMerchantId: str(p.applePayMerchantId),
+    cardOnFileVersion: str(p.cardOnFileVersion) ?? '2026-11-01',
   };
 }

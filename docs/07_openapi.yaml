@@ -11743,6 +11743,402 @@ paths:
       x-rate-limit-class: read
       x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
   # --- end V2-013 ---
+  # --- V2-022 / V2-023 (DEC-521 … DEC-525): paying a visit (C-10/C-12) and the saved cards (C-18) ---
+  /v1/customer/visits/{ticketId}/pay:
+    post:
+      operationId: customerVisitPay
+      summary: دفع الزيارة في التطبيق (C-12 / C-10)
+      tags: [Customer]
+      description: |-
+        C-12 → C-10 (V2-022، DEC-521): جلسة دفع لزيارة الحساب نفسه (تذكرة صفّ customers المربوط بالحساب، DEC-504). البطاقة تُرمَّز على الجهاز بالمفتاح العام (Moyasar POST /v1/tokens) أو رمز Apple Pay، والخادم يرسل الرمز وحده (SAQ-A، DEC-510). المبلغ يحدده الخادم: رسوم التذكرة (لقطة الحفل per_vehicle، شاملة الضريبة 15%) — ما يحصّله السائق نقدًا تمامًا؛ وسعر الموقع العام للعرض فقط. يُرفض: تذكرة حساب آخر أو غير موجودة RESOURCE_NOT_FOUND (resource: visit)؛ مسلّمة أو ملغاة أو مشمولة أو مُعفاة أو أقل من 1.00 ريال VISIT_NOT_PAYABLE (reason)؛ مدفوعة في التطبيق أو نقدًا/شبكة PAYMENT_ALREADY_RECORDED؛ دفعة سابقة تنتظر 3-D Secure PAYMENT_IN_PROGRESS (online_payment_id، retry_after_s)؛ الرفض من البوابة PAYMENT_FAILED بعد حفظ failed. save_card يحفظ البطاقة بعد نجاح هذه الدفعة فقط ويلزمه card_on_file_version الساري (CUSTOMER_CONSENT_REQUIRED / CUSTOMER_CONSENT_VERSION_STALE). الرد status (paid أو initiated مع transaction_url لصفحة 3-D Secure يفتحها التطبيق في متصفح داخلي حتى callback_url، أو failed)؛ العودة لا تغيّر شيئًا والحالة النهائية من Webhook البوابة بعد قراءتها (DEC-512)، يتابعها التطبيق بـGET /v1/customer/payments/{paymentId}. مفتاح التكرار نفسه لا ينشئ إلا دفعة واحدة (given_id مشتق منه).
+
+        الأثر: online_payments (initiated ثم الحالة من البوابة) + customer_account_consents/customer_payment_methods (save_card) + platform_audit_log/audit_log/customer_audit_log؛ عند paid: tickets.payment_status = collected وentitlement = app_paid + ticket_events/outbox payment.online_paid
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source:
+                  oneOf:
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [token]}
+                      token: {type: string, pattern: '^[A-Za-z0-9_-]{8,128}$'}
+                    required: [type, token]
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [applepay]}
+                      token: {type: string, minLength: 1, maxLength: 16000}
+                    required: [type, token]
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      type: {type: string, enum: [saved]}
+                      payment_method_id: {type: string, format: uuid}
+                    required: [type, payment_method_id]
+                    additionalProperties: false
+                save_card:
+                  type: boolean
+                card_on_file_version:
+                  type: string
+                  maxLength: 40
+              required: [source]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitPaymentEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '402':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYMENT_FAILED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | PAYMENT_ALREADY_RECORDED | VISIT_NOT_PAYABLE | PAYMENT_IN_PROGRESS | CUSTOMER_CONSENT_VERSION_STALE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED | CUSTOMER_CONSENT_REQUIRED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+        '504':
+          $ref: '#/components/responses/CustomerError'
+          description: DEPENDENCY_TIMEOUT
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_CONSENT_REQUIRED, CUSTOMER_CONSENT_VERSION_STALE, DEPENDENCY_TIMEOUT, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, PAYMENT_ALREADY_RECORDED, PAYMENT_FAILED, PAYMENT_IN_PROGRESS, RESOURCE_NOT_FOUND, VISIT_NOT_PAYABLE]
+  /v1/customer/payments/{paymentId}:
+    get:
+      operationId: customerPayment
+      summary: دفعة زيارة (C-12 / C-17)
+      tags: [Customer]
+      description: |-
+        C-12/C-17 (V2-022): دفعة زيارة للحساب نفسه (وإلا RESOURCE_NOT_FOUND)، يستطلعها التطبيق بعد 3-D Secure. receipt بيانات الفاتورة المبسطة (البائع، الموقع، المبلغ والضريبة منفصلة، البطاقة) من الدفعة نفسها بلا تخزين حتى مزود الفوترة (V2-040). transaction_url لا يعود هنا (يرد مرة في أمر الدفع).
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitPaymentEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, RESOURCE_NOT_FOUND]
+  /v1/customer/payment-methods:
+    get:
+      operationId: customerPaymentMethods
+      summary: البطاقات المحفوظة C-18
+      tags: [Customer]
+      description: |-
+        C-18 (V2-023، DEC-524): البطاقات المحفوظة للحساب (العلامة وآخر 4 أرقام والانتهاء فقط، لا رمز البوابة)، الافتراضية أولًا؛ لا تظهر بطاقة حُفظت مع دفعة لم تنجح بعد.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPaymentMethodListEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: none
+      x-rate-limit-class: read
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED]
+    post:
+      operationId: customerPaymentMethodCreate
+      summary: حفظ بطاقة C-18
+      tags: [Customer]
+      description: |-
+        C-18 (V2-023، DEC-524): حفظ بطاقة رُمّزت على الجهاز (Moyasar save_only) بموافقة card_on_file صريحة بالإصدار الساري (CUSTOMER_CONSENT_REQUIRED / CUSTOMER_CONSENT_VERSION_STALE). العلامة وآخر 4 أرقام والانتهاء يقرؤها الخادم من البوابة (GET /v1/tokens/{id}) لا من التطبيق؛ رمز لا تعرفه البوابة أو غير نشط VALIDATION_FAILED. الأولى تصير الافتراضية.
+
+        الأثر: customer_account_consents (card_on_file) + customer_payment_methods + customer_audit_log (customer.payment_method.saved)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  pattern: '^[A-Za-z0-9_-]{8,128}$'
+                card_on_file_version:
+                  type: string
+                  maxLength: 40
+                make_default:
+                  type: boolean
+              required: [token]
+              additionalProperties: false
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPaymentMethodEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS | CUSTOMER_CONSENT_VERSION_STALE
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED | CUSTOMER_CONSENT_REQUIRED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+        '504':
+          $ref: '#/components/responses/CustomerError'
+          description: DEPENDENCY_TIMEOUT
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, CUSTOMER_CONSENT_REQUIRED, CUSTOMER_CONSENT_VERSION_STALE, DEPENDENCY_TIMEOUT, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED]
+  /v1/customer/payment-methods/{paymentMethodId}:
+    patch:
+      operationId: customerPaymentMethodDefault
+      summary: البطاقة الافتراضية C-18
+      tags: [Customer]
+      description: |-
+        C-18 (V2-023): تعيين البطاقة الافتراضية (واحدة لكل حساب، uq_payment_methods_default). بطاقة حساب آخر أو محذوفة RESOURCE_NOT_FOUND.
+
+        الأثر: customer_payment_methods.is_default + customer_audit_log (customer.payment_method.default)
+      parameters:
+      - name: paymentMethodId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_default:
+                  type: boolean
+                  enum: [true]
+              required: [is_default]
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPaymentMethodEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND]
+    delete:
+      operationId: customerPaymentMethodDelete
+      summary: حذف بطاقة C-18
+      tags: [Customer]
+      description: |-
+        C-18 (V2-023، DEC-524): إزالة ناعمة (removed_at) تحت قفل صف الحساب، والأحدث المتبقية تصير الافتراضية؛ رمز البطاقة يُحذف لدى البوابة بعد COMMIT (job.payment_method_token_delete). بطاقة حساب آخر أو محذوفة سابقًا RESOURCE_NOT_FOUND.
+
+        الأثر: customer_payment_methods.removed_at + outbox job.payment_method_token_delete + customer_audit_log (customer.payment_method.removed)
+      parameters:
+      - name: paymentMethodId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPaymentMethodRemovedEnvelope'
+        '401':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_UNAUTHENTICATED | AUTH_SESSION_EXPIRED | AUTH_SESSION_REVOKED
+        '403':
+          $ref: '#/components/responses/CustomerError'
+          description: AUTH_ACCOUNT_DISABLED
+        '404':
+          $ref: '#/components/responses/CustomerError'
+          description: RESOURCE_NOT_FOUND
+        '409':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_IN_PROGRESS
+        '410':
+          $ref: '#/components/responses/CustomerError'
+          description: ACCOUNT_DELETED
+        '413':
+          $ref: '#/components/responses/CustomerError'
+          description: PAYLOAD_TOO_LARGE
+        '422':
+          $ref: '#/components/responses/CustomerError'
+          description: VALIDATION_FAILED | IDEMPOTENCY_KEY_REUSED
+        '428':
+          $ref: '#/components/responses/CustomerError'
+          description: IDEMPOTENCY_KEY_REQUIRED
+        '429':
+          $ref: '#/components/responses/CustomerRateLimited'
+          description: RATE_LIMITED
+        '500':
+          $ref: '#/components/responses/CustomerError'
+          description: INTERNAL_ERROR
+        '503':
+          $ref: '#/components/responses/CustomerError'
+          description: SERVICE_UNAVAILABLE
+      security:
+      - customerBearer: []
+      x-permission: customer
+      x-idempotency: required
+      x-rate-limit-class: write
+      x-error-codes: [ACCOUNT_DELETED, AUTH_ACCOUNT_DISABLED, AUTH_SESSION_EXPIRED, AUTH_SESSION_REVOKED, AUTH_UNAUTHENTICATED, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, RESOURCE_NOT_FOUND]
+  # --- end V2-022 / V2-023 ---
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsAppWebhook
@@ -17642,6 +18038,99 @@ components:
               type: string
               format: date-time
           required: [deleted, deleted_at]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerReceipt:
+      type: object
+      properties:
+        payment_id: {type: string, format: uuid}
+        issued_at: {type: string, format: date-time}
+        seller_name_ar: {type: string}
+        seller_name_en: {type: string}
+        venue_name_ar: {type: string}
+        venue_name_en: {type: [string, 'null']}
+        operator_name_ar: {type: string}
+        operator_name_en: {type: [string, 'null']}
+        description: {type: string, enum: [visit]}
+        amount_halalas: {type: integer}
+        net_halalas: {type: integer}
+        vat_halalas: {type: integer}
+        vat_rate_bp: {type: integer}
+        refunded_halalas: {type: integer}
+        currency: {type: string, enum: [SAR]}
+        card_brand: {type: [string, 'null']}
+        card_last4: {type: [string, 'null']}
+      required: [payment_id, issued_at, seller_name_ar, seller_name_en, venue_name_ar, venue_name_en, operator_name_ar, operator_name_en, description, amount_halalas, net_halalas, vat_halalas, vat_rate_bp, refunded_halalas, currency, card_brand, card_last4]
+    CustomerVisitPaymentEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            payment_id: {type: string, format: uuid}
+            ticket_id: {type: string, format: uuid}
+            status: {type: string, enum: [initiated, authorized, paid, failed, partially_refunded, refunded]}
+            amount_halalas: {type: integer}
+            vat_halalas: {type: integer}
+            currency: {type: string, enum: [SAR]}
+            card_brand: {type: [string, 'null']}
+            card_last4: {type: [string, 'null']}
+            failure_code: {type: [string, 'null']}
+            transaction_url: {type: [string, 'null']}
+            callback_url: {type: string}
+            paid_at: {type: [string, 'null'], format: date-time}
+            saved_payment_method_id: {type: [string, 'null'], format: uuid}
+            receipt:
+              oneOf:
+              - $ref: '#/components/schemas/CustomerReceipt'
+              - type: 'null'
+          required: [payment_id, ticket_id, status, amount_halalas, vat_halalas, currency, card_brand, card_last4, failure_code, transaction_url, callback_url, paid_at, saved_payment_method_id, receipt]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerPaymentMethod:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        brand: {type: [string, 'null']}
+        last4: {type: [string, 'null']}
+        expires_month: {type: [integer, 'null']}
+        expires_year: {type: [integer, 'null']}
+        is_default: {type: boolean}
+        created_at: {type: string, format: date-time}
+      required: [id, brand, last4, expires_month, expires_year, is_default, created_at]
+    CustomerPaymentMethodEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerPaymentMethod'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerPaymentMethodListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomerPaymentMethod'
+          required: [items]
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+    CustomerPaymentMethodRemovedEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            payment_method_id: {type: string, format: uuid}
+            removed_at: {type: string, format: date-time}
+          required: [payment_method_id, removed_at]
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]

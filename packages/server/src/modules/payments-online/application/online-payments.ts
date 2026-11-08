@@ -3,6 +3,7 @@ import { customerAudit } from '../../../core/audit/customer-audit.js';
 import { platformAudit } from '../../../core/audit/platform-audit.js';
 import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
+import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import {
   retryableFailure,
@@ -55,9 +56,26 @@ export class OnlinePayments {
 
   async start(input: StartPaymentInput): Promise<StartedPayment> {
     const id = newId();
-    const givenId = newId();
+    await this.db.transaction((tx) => this.begin(tx, { ...input, id, givenId: newId() }));
+    return this.send(id, input);
+  }
+
+  /** Steps 2 and 3 for a row written by `begin` once its transaction committed (V2-022, DEC-521). */
+  sendInitiated(
+    id: string,
+    input: Pick<StartPaymentInput, 'source' | 'callbackUrl' | 'amountHalalas' | 'purpose' | 'ticketId'>,
+  ): Promise<StartedPayment> {
+    return this.send(id, input);
+  }
+
+  /**
+   * Step 1 inside the caller's transaction: the `initiated` row with its given_id and its audit. The pay command
+   * of V2-022 writes it under the ticket lock, with its checks (DEC-521), then calls `sendInitiated` after COMMIT.
+   */
+  async begin(tx: Tx, input: StartPaymentInput & { id: string; givenId: string }): Promise<void> {
+    const { id, givenId } = input;
     const sourceType = input.source.type === 'saved' ? 'token' : input.source.type;
-    await this.db.transaction(async (tx) => {
+    {
       await tx.query(
         `INSERT INTO online_payments (id, account_id, purpose, subscription_id, ticket_id, org_id, venue_id,
                                       payment_method_id, amount_halalas, vat_halalas, gateway, given_id, source_type,
@@ -103,8 +121,7 @@ export class OnlinePayments {
         requestId: input.requestId ?? null,
         metadata,
       });
-    });
-    return this.send(id, input);
+    }
   }
 
   /** Sends an `initiated` row that never reached the gateway again, with its own given_id. */

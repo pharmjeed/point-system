@@ -21,7 +21,7 @@ const DEMO_VISIT_PHONES = ['+966500000099'];
 export function createApi(config: AppConfig, deviceId: string, onSignedOut: () => void): ApiBundle {
   const fake =
     config.api.mode === 'fake'
-      ? createFakeBackend({ latencyMs: 300, demoVisitPhones: DEMO_VISIT_PHONES })
+      ? createFakeBackend({ latencyMs: 300, demoVisitPhones: DEMO_VISIT_PHONES, brand: config.brand })
       : null;
   const transport = fake ? fake.transport : httpTransport({ baseUrl: config.api.baseUrl as string });
   const api = createCustomerApi({

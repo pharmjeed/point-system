@@ -491,7 +491,7 @@
 
 ### 4.19 الدفع الإلكتروني (الإصدار الثاني، V2-020 / V2-021)
 
-مدفوعات تطبيق العميل عبر بوابة الدفع (Moyasar، DEC-460، DEC-510 … DEC-514)، منفصلة عن التحصيل النقدي والشبكة (§4.10). `PAYMENT_ALREADY_RECORDED` (§4.10) يُرفع أيضًا لدفعة إلكترونية ناجحة ثانية للتذكرة نفسها (`uq_online_payments_ticket_paid`، §5.1).
+مدفوعات تطبيق العميل عبر بوابة الدفع (Moyasar، DEC-460، DEC-510 … DEC-514)، منفصلة عن التحصيل النقدي والشبكة (§4.10). `PAYMENT_ALREADY_RECORDED` (§4.10) يُرفع أيضًا لدفعة إلكترونية ناجحة ثانية للتذكرة نفسها (`uq_online_payments_ticket_paid`، §5.1)، ولتحصيل نقد/شبكة لتذكرة دُفعت في التطبيق أو دفع في التطبيق لتذكرة حُصّلت (V2-022، DEC-522: التفاصيل `online_payment_id` و`method: app` للدفعة الإلكترونية، والحارس المؤجل `uq_ticket_single_payment`). رموز تطبيق العميل لأمر الدفع (`VISIT_NOT_PAYABLE`، `PAYMENT_IN_PROGRESS`، `CUSTOMER_CONSENT_REQUIRED`) في كتالوج العميل (`docs/v2/05` §5).
 
 | الرمز | HTTP | إعادة | `message_ar` | `message_en` |
 |---|---|---|---|---|
@@ -543,6 +543,7 @@
 | `uq_claim_codes_live` | `claim_codes` | `VERSION_CONFLICT` (إعادة إرسال متزامنة) |
 | `uq_payments_ticket_recorded` | `payments` | `PAYMENT_ALREADY_RECORDED` |
 | `uq_online_payments_ticket_paid` | `online_payments` (V2-021، `0012`) | `PAYMENT_ALREADY_RECORDED` |
+| `uq_ticket_single_payment` | `online_payments` / `payments` (V2-022، `0014`، مشغّل قيد مؤجَّل `ticket_single_payment_guard`، DEC-522) | `PAYMENT_ALREADY_RECORDED` |
 | `uq_alerts_live_dedupe` | `alerts` | لا خطأ: تحديث التنبيه القائم لنفس الموقع والمفتاح (`details`) بدل إنشاء جديد — التفرد على `(venue_id, dedupe_key)` (DEC-46) |
 | `uq_outbox_dedupe_pending` | `outbox_events` | لا خطأ: `INSERT ... ON CONFLICT DO NOTHING` (المهمة معلّقة بالفعل) |
 

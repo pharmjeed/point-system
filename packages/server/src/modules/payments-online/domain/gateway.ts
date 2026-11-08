@@ -19,6 +19,24 @@ export interface PaymentGateway {
   listPayments(input: { from: Date; to: Date; page: number }): Promise<GatewayResult<GatewayPaymentPage>>;
   /** checks a webhook delivery's authenticity on the raw body; parses it only once that holds */
   verifyWebhook(raw: Buffer): Promise<WebhookVerification>;
+  /**
+   * A card token tokenized on the device (V2-023, DEC-524): brand, last four digits and expiry as the gateway knows
+   * them — what C-18 shows, never taken from the app. `GET /v1/tokens/{id}` with the secret key.
+   */
+  fetchToken(token: string): Promise<GatewayResult<GatewayToken>>;
+  /** Deletes a saved card's token at the gateway after it was removed here (`DELETE /v1/tokens/{id}`). */
+  deleteToken(token: string): Promise<GatewayResult<null>>;
+}
+
+/** A saved card's token as the gateway describes it (no card number: brand, last four, expiry). */
+export interface GatewayToken {
+  id: string;
+  /** the gateway's token status (Moyasar: initiated, active, inactive …); only `active` may be saved */
+  status: string;
+  brand: string | null;
+  last4: string | null;
+  month: number | null;
+  year: number | null;
 }
 
 export type GatewaySource =

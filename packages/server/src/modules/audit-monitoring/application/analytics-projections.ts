@@ -888,6 +888,15 @@ export const PROJECTIONS = {
       },
     };
   },
+  // V2-022 (DEC-522): the visit paid in the app (POINT's money, no method of the operator's), and its full refund
+  'payment.online_paid': async (ctx) => ({
+    ...ticketBase(ctx),
+    properties: { amount_halalas: int(ctx.p.amount_halalas) },
+  }),
+  'payment.online_refunded': async (ctx) => ({
+    ...ticketBase(ctx),
+    properties: { amount_halalas: int(ctx.p.amount_halalas) },
+  }),
   'payment.waived': async (ctx) => {
     const t = int(ctx.p.amount_halalas) === null ? await ticket(ctx.tx, ticketIdOf(ctx)) : null;
     return {

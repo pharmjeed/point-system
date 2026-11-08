@@ -26,6 +26,15 @@ import { CustomerHomeSchema } from './home.js';
 import { CustomerLocationDetailSchema, CustomerLocationListSchema } from './locations.js';
 import { CustomerPassSchema } from './pass-contract.js';
 import {
+  CustomerPaymentMethodCreateBodySchema,
+  CustomerPaymentMethodListSchema,
+  CustomerPaymentMethodPatchBodySchema,
+  CustomerPaymentMethodRemovedSchema,
+  CustomerPaymentMethodSchema,
+  CustomerVisitPayBodySchema,
+  CustomerVisitPaymentSchema,
+} from './payments.js';
+import {
   CustomerVehicleCreateBodySchema,
   CustomerVehicleListSchema,
   CustomerVehicleRemovedSchema,
@@ -189,6 +198,59 @@ export const CUSTOMER_ROUTES = {
     data: CustomerPassSchema,
   },
   // --- end V2-013 ---
+  // --- V2-022 / V2-023 (DEC-521 … DEC-525): paying a visit (C-10/C-12) and the saved cards (C-18) ---
+  visitPay: {
+    method: 'POST',
+    path: '/v1/customer/visits/{ticketId}/pay',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerVisitPayBodySchema,
+    data: CustomerVisitPaymentSchema,
+  },
+  payment: {
+    method: 'GET',
+    path: '/v1/customer/payments/{paymentId}',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerVisitPaymentSchema,
+  },
+  paymentMethods: {
+    method: 'GET',
+    path: '/v1/customer/payment-methods',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerPaymentMethodListSchema,
+  },
+  paymentMethodCreate: {
+    method: 'POST',
+    path: '/v1/customer/payment-methods',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerPaymentMethodCreateBodySchema,
+    data: CustomerPaymentMethodSchema,
+  },
+  paymentMethodPatch: {
+    method: 'PATCH',
+    path: '/v1/customer/payment-methods/{paymentMethodId}',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerPaymentMethodPatchBodySchema,
+    data: CustomerPaymentMethodSchema,
+  },
+  paymentMethodDelete: {
+    method: 'DELETE',
+    path: '/v1/customer/payment-methods/{paymentMethodId}',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    data: CustomerPaymentMethodRemovedSchema,
+  },
+  // --- end V2-022 / V2-023 ---
 } as const satisfies Record<string, CustomerRouteDef>;
 
 export type CustomerRouteKey = keyof typeof CUSTOMER_ROUTES;

@@ -150,6 +150,8 @@ describe('migrations', () => {
       '0007_alerts_manual_resolved_index.sql',
       '0009_customers_account_index.sql',
       '0010_tickets_customer_vehicle_index.sql',
+      '0014_visit_payments_live_index.sql',
+      '0014_visit_payments_system_refund_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -167,19 +169,23 @@ describe('migrations', () => {
       [
         [
           'ix_alerts_manual_resolved',
+          'ix_online_payments_ticket_live',
           'ix_tickets_customer_vehicle_open',
           'ix_whatsapp_inbound_org_received',
           'ix_whatsapp_messages_accepted',
           'uq_customers_org_account',
+          'uq_refunds_system',
         ],
       ],
     );
     expect(r.rows).toEqual([
       { name: 'ix_alerts_manual_resolved', valid: true },
+      { name: 'ix_online_payments_ticket_live', valid: true },
       { name: 'ix_tickets_customer_vehicle_open', valid: true },
       { name: 'ix_whatsapp_inbound_org_received', valid: true },
       { name: 'ix_whatsapp_messages_accepted', valid: true },
       { name: 'uq_customers_org_account', valid: true },
+      { name: 'uq_refunds_system', valid: true },
     ]);
   });
 

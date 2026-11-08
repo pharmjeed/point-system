@@ -177,6 +177,8 @@ flowchart LR
 | `payment_reversed` | `method`، `amount_halalas` int، `with_replacement` bool، `after_cash_handover` bool | KPI-11 |
 | `payment_waived` | `amount_halalas` int | KPI-11 |
 | `cash_handover_recorded` | `amount_halalas` int، `expected_halalas` int، `difference_halalas` int، `linked_payments_count` int | KPI-11، تسوية النقد (13 §10) |
+| `payment_online_paid` | `amount_halalas` int | الإصدار الثاني: الدفع لكل زيارة في التطبيق (V2-022، DEC-522) |
+| `payment_online_refunded` | `amount_halalas` int | الإصدار الثاني: استرداد كامل قبل التسليم أعاد التذكرة `due` (DEC-522) |
 
 ### 7.5 التنبيهات والوقائع والحفل والوردية
 

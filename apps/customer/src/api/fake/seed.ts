@@ -200,3 +200,8 @@ export const FAKE_CONSENT_VERSIONS = {
   privacy: '2026-11-01',
   marketing: '2026-11-01',
 } as const;
+
+/** V2-022 / V2-023: the «save the card» consent version (server: CUSTOMER_CARD_ON_FILE_VERSION). */
+export const FAKE_CARD_ON_FILE_VERSION = '2026-11-01';
+/** The demo visit's fee, VAT included (the server's ticket fee, 13 §4). */
+export const FAKE_VISIT_FEE_HALALAS = 2000;

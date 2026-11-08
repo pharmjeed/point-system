@@ -27,6 +27,11 @@ import {
   type CustomerMePatchBody,
   type CustomerOtpChallenge,
   type CustomerPass,
+  type CustomerPaymentMethod,
+  type CustomerPaymentMethodCreateBody,
+  type CustomerPaymentMethodRemoved,
+  type CustomerVisitPayBody,
+  type CustomerVisitPayment,
   type CustomerReauth,
   type CustomerRouteKey,
   type CustomerTokens,
@@ -276,6 +281,55 @@ export function createCustomerApi(opts: CustomerApiOptions) {
      */
     async reauthVerify(code: string): Promise<CustomerReauth> {
       return (await call('reauthVerify', { body: { code } })).data;
+    },
+
+    // ---- V2-022 (C-12 → C-10) and V2-023 (C-18)
+
+    /**
+     * Pays a visit: the server decides the amount (the ticket's fee, VAT included). `status` `initiated` with a
+     * `transaction_url` = 3-D Secure in an in-app browser, then poll `payment()` (the return changes nothing).
+     */
+    async payVisit(
+      ticketId: string,
+      body: CustomerVisitPayBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerVisitPayment> {
+      return (await call('visitPay', { params: { ticketId }, body, idempotencyKey })).data;
+    },
+
+    async payment(paymentId: string): Promise<CustomerVisitPayment> {
+      return (await call('payment', { params: { paymentId } })).data;
+    },
+
+    async paymentMethods(): Promise<CustomerPaymentMethod[]> {
+      return (await call('paymentMethods')).data.items;
+    },
+
+    async addPaymentMethod(
+      body: CustomerPaymentMethodCreateBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerPaymentMethod> {
+      return (await call('paymentMethodCreate', { body, idempotencyKey })).data;
+    },
+
+    async setDefaultPaymentMethod(
+      paymentMethodId: string,
+      idempotencyKey?: string,
+    ): Promise<CustomerPaymentMethod> {
+      return (
+        await call('paymentMethodPatch', {
+          params: { paymentMethodId },
+          body: { is_default: true },
+          idempotencyKey,
+        })
+      ).data;
+    },
+
+    async removePaymentMethod(
+      paymentMethodId: string,
+      idempotencyKey?: string,
+    ): Promise<CustomerPaymentMethodRemoved> {
+      return (await call('paymentMethodDelete', { params: { paymentMethodId }, idempotencyKey })).data;
     },
 
     /**

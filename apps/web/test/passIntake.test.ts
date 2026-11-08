@@ -83,6 +83,14 @@ describe('entitlementBadgeOf (O-02)', () => {
     });
     expect(entitlementBadgeOf('subscription', null)?.text).toBe(entitlementBadge.subscription);
     expect(entitlementBadgeOf('app_paid', { amountHalalas: 2000 })?.text).toBe(entitlementBadge.appPaid);
+    // V2-022 (O-03, DEC-522): a visit paid in the app is `collected` with `app_paid`: D-11 shows «مدفوع في
+    // التطبيق» and asks for no cash (nothing is due)
+    const paid = { payment_status: 'collected', fee_halalas: 2000 };
+    expect(dueOf(paid)).toBeNull();
+    expect(entitlementBadgeOf('app_paid', dueOf(paid))).toEqual({
+      tone: 'included',
+      text: entitlementBadge.appPaid,
+    });
   });
 
   it('«يدفع X» while the fee is due, nothing once it is not', () => {

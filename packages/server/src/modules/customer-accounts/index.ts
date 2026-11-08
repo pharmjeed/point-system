@@ -9,6 +9,7 @@ export { customerOtpSendHandler } from './application/otp-sender.js';
 export { pointChannel, type PointChannel } from './application/point-channel.js';
 export { buildCustomerMe, consentTexts, type ConsentTexts } from './application/account-views.js';
 export { distanceMetres } from './application/locations.js';
+export { lockCustomerAccount } from './application/account-service.js';
 export { deletedPhoneHash, hasVisitInProgress } from './application/account-deletion.js';
 // V2-013 / V2-014 (DEC-500, DEC-504): the entry pass verified at intake, and the account's visits across operators
 export {

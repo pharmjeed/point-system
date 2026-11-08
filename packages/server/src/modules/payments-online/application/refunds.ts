@@ -1,4 +1,10 @@
-import { ONLINE_PAYMENT_REFUNDABLE_STATUSES, type RefundIssueBody, type RefundStatus } from '@point/shared';
+import {
+  ONLINE_PAYMENT_REFUNDABLE_STATUSES,
+  type RefundIssueBody,
+  type RefundKind,
+  type RefundStatus,
+  type SystemRefundReason,
+} from '@point/shared';
 import { PAYMENT_REFUND_SEND_JOB } from '../domain/jobs.js';
 import type { PlatformActorContext } from '../../../core/actor-context/platform-actor.js';
 import { raisePlatformAlert } from '../../../core/alerts/platform-alerts.js';
@@ -25,7 +31,9 @@ interface RefundRow {
   online_payment_id: string;
   amount_halalas: number;
   reason: string;
-  issued_by: string;
+  /** NULL for a system refund (DEC-523) */
+  issued_by: string | null;
+  kind: RefundKind;
   status: RefundStatus;
   failure_code: string | null;
   sent_at: Date | null;
@@ -34,7 +42,7 @@ interface RefundRow {
 }
 
 const REFUND_COLUMNS = `r.id, r.online_payment_id, r.amount_halalas::float8 AS amount_halalas, r.reason, r.issued_by,
-  r.status, r.failure_code, r.sent_at, r.completed_at, r.created_at`;
+  r.kind, r.status, r.failure_code, r.sent_at, r.completed_at, r.created_at`;
 
 const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
 
@@ -45,6 +53,7 @@ export function refundView(r: RefundRow) {
     amount_halalas: r.amount_halalas,
     reason: r.reason,
     issued_by: r.issued_by,
+    kind: r.kind,
     status: r.status,
     failure_code: r.failure_code,
     created_at: iso(r.created_at)!,
@@ -159,6 +168,75 @@ export class RefundsService {
     });
     return { refund: refundView(r), payment: paymentSummary(p) };
   }
+}
+
+/**
+ * A refund the platform issues by itself (V2-022, DEC-523): an online visit payment the gateway charged for a ticket
+ * that no longer owes it — collected in cash/POS first (`double_payment`), or not due any more (`not_due`: waived,
+ * voided, included) — or a second online payment of a ticket another one already paid (`double_payment`). The whole
+ * amount, once per payment (`uq_refunds_system`), through the refund path of DEC-513 (`job.payment_refund_send`
+ * after COMMIT), audited for the platform, the operator (a visit) and the customer, with a `payment_double` platform
+ * alert for finance. The caller holds the payment row's lock. Returns the refund id, or null when one exists.
+ */
+export async function issueSystemRefund(
+  tx: Tx,
+  p: OnlinePaymentRow,
+  reason: SystemRefundReason,
+  details: Record<string, unknown> = {},
+): Promise<string | null> {
+  const existing = await tx.maybeOne<{ id: string }>(
+    `SELECT id FROM refunds WHERE online_payment_id = $1 AND kind = 'system'`,
+    [p.id],
+  );
+  if (existing) return null;
+  const orgId = await platformOrgId(tx);
+  if (!orgId) throw new AppError('SERVICE_UNAVAILABLE');
+  const id = newId();
+  await tx.query(
+    `INSERT INTO refunds (id, online_payment_id, amount_halalas, reason, issued_by, kind, created_at)
+     VALUES ($1, $2, $3, $4, NULL, 'system', $5)`,
+    [id, p.id, p.amount_halalas, reason, tx.now],
+  );
+  await enqueue(tx, {
+    type: PAYMENT_REFUND_SEND_JOB,
+    orgId,
+    aggregate: { type: 'refund', id },
+    orderingKey: `refund:${p.id}`,
+    payload: { refund_id: id },
+  });
+  const metadata = {
+    online_payment_id: p.id,
+    amount_halalas: p.amount_halalas,
+    payment_amount_halalas: p.amount_halalas,
+    full: true,
+    kind: 'system',
+    ticket_id: p.ticket_id,
+    ...details,
+  };
+  await platformAudit(tx, {
+    actor: { type: 'system', id: null, name: 'payments' },
+    action: 'refund.issue',
+    entityType: 'refund',
+    entityId: id,
+    orgId: p.org_id,
+    reason,
+    metadata,
+  });
+  await customerAudit(tx, {
+    actor: { type: 'system', name: 'payments' },
+    action: 'refund.issue',
+    entityType: 'refund',
+    entityId: id,
+    accountId: p.account_id,
+    metadata: { ...metadata, reason },
+  });
+  await raisePlatformAlert(tx, {
+    type: 'payment_double',
+    dedupeKey: `payment_double:${p.id}`,
+    onlinePaymentId: p.id,
+    details: { online_payment_id: p.id, ticket_id: p.ticket_id, refund_id: id, reason, ...details },
+  });
+  return id;
 }
 
 async function finishRefund(

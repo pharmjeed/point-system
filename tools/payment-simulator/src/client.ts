@@ -51,6 +51,11 @@ export class PaymentSimulatorClient {
     return t.id;
   }
 
+  /** The tokens the gateway holds and those deleted by the server (V2-023: a removed card's token leaves). */
+  tokens(): Promise<{ active: string[]; deleted: string[] }> {
+    return this.call('GET', '/_sim/tokens');
+  }
+
   payment(id: string): Promise<SimPayment> {
     return this.call('GET', `/_sim/payments/${encodeURIComponent(id)}`);
   }

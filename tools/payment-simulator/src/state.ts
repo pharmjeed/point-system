@@ -70,9 +70,22 @@ interface PaymentMeta {
 }
 
 /** In-memory state of one simulator: tokens, payments, webhook deliveries. */
+/**
+ * A token id like Moyasar's (`token_` + base62-like characters). Never 13 digits in a row: the server refuses
+ * anything that could be a card number (ck_payment_methods_no_pan), and a random id must not trip it in tests.
+ */
+function tokenId(): string {
+  for (;;) {
+    const id = `token_${randomBytes(18).toString('base64url').replace(/[-_]/g, 'x')}`;
+    if (!/[0-9]{13,}/.test(id)) return id;
+  }
+}
+
 export class PaymentSimulatorState {
   config: PaymentSimulatorConfig;
   readonly tokens = new Map<string, SimToken>();
+  /** tokens deleted with `DELETE /v1/tokens/{id}` (V2-023): tests check that a removed card left the gateway */
+  readonly deletedTokens = new Set<string>();
   readonly payments = new Map<string, SimPayment>();
   readonly meta = new Map<string, PaymentMeta>();
   readonly deliveries: WebhookDelivery[] = [];
@@ -97,6 +110,7 @@ export class PaymentSimulatorState {
 
   reset(): void {
     this.tokens.clear();
+    this.deletedTokens.clear();
     this.payments.clear();
     this.meta.clear();
     this.deliveries.length = 0;
@@ -112,7 +126,7 @@ export class PaymentSimulatorState {
     if (!card) throw new Error('unknown test card');
     const at = this.iso();
     const t: SimToken = {
-      id: `token_${randomBytes(12).toString('hex')}`,
+      id: tokenId(),
       status: 'active',
       brand: card.company,
       funding: 'debit',

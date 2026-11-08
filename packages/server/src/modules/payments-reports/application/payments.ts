@@ -57,12 +57,26 @@ export async function recordedPaymentOf(
   ]);
 }
 
-/** PAYMENT_ALREADY_RECORDED with the details of 13 §16. */
+/**
+ * PAYMENT_ALREADY_RECORDED with the details of 13 §16. A ticket the customer paid in the app (V2-022, DEC-522) has no
+ * `payments` row: its details name the online payment (`method: 'app'`, nobody of the operator collected it).
+ */
 export async function alreadyRecorded(tx: Pick<Tx, 'maybeOne'>, ticketId: string): Promise<AppError> {
   const p = await recordedPaymentOf(tx, ticketId);
+  if (p)
+    return new AppError('PAYMENT_ALREADY_RECORDED', {
+      payment_id: p.id,
+      method: p.method,
+      collected_by: p.collected_by,
+    });
+  const online = await tx.maybeOne<{ id: string }>(
+    `SELECT id FROM online_payments
+      WHERE ticket_id = $1 AND purpose = 'visit' AND status IN ('paid','partially_refunded')`,
+    [ticketId],
+  );
   return new AppError(
     'PAYMENT_ALREADY_RECORDED',
-    p ? { payment_id: p.id, method: p.method, collected_by: p.collected_by } : {},
+    online ? { online_payment_id: online.id, method: 'app', collected_by: null } : {},
   );
 }
 

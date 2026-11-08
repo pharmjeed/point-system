@@ -102,6 +102,11 @@ describe('online payments on the payment simulator (V2-020 / V2-021)', () => {
   };
   const visit = async (amount = 2300) => {
     const ticket = await createTicket(t, { venue: 'RMS' });
+    // V2-022 (DEC-522): a visit payment collects its ticket's fee; these tickets owe exactly the amount paid
+    await t.db.query(`UPDATE tickets SET payment_status = 'due', fee_halalas = $2 WHERE id = $1`, [
+      ticket.id,
+      amount,
+    ]);
     return { ticket, amount };
   };
   const start = async (card: string, amount = 2300) => {

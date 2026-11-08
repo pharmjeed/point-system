@@ -4,6 +4,7 @@ import {
   customerTokenSession,
   type CustomerActorContext,
 } from '../../../core/actor-context/customer-actor.js';
+import { queueTokenDeletion } from '../../payments-online/index.js';
 import { customerAudit } from '../../../core/audit/customer-audit.js';
 import { hmacHex, safeEqual } from '../../../core/crypto/crypto.js';
 import type { Database } from '../../../core/db/database.js';
@@ -98,11 +99,17 @@ export async function deleteCustomerAccount(
     `UPDATE customer_vehicles SET removed_at = $2 WHERE account_id = $1 AND removed_at IS NULL`,
     [actor.accountId, tx.now],
   );
-  // V2-021: the saved cards (gateway tokens) can never be charged again; deleting the token at the gateway itself
-  // comes with C-18 (V2-023). The online payments stay: financial records are kept (DEC-508).
-  await tx.query(
-    `UPDATE customer_payment_methods SET removed_at = $2, is_default = false WHERE account_id = $1 AND removed_at IS NULL`,
+  // V2-021: the saved cards (gateway tokens) can never be charged again; V2-023 (DEC-524): their tokens are deleted
+  // at the gateway after COMMIT (job.payment_method_token_delete). The online payments stay: financial records are
+  // kept (DEC-508).
+  const cards = await tx.query<{ id: string }>(
+    `UPDATE customer_payment_methods SET removed_at = $2, is_default = false WHERE account_id = $1 AND removed_at IS NULL
+     RETURNING id`,
     [actor.accountId, tx.now],
+  );
+  await queueTokenDeletion(
+    tx,
+    cards.rows.map((c) => c.id),
   );
   const sessions = await tx.query(
     `UPDATE customer_account_sessions SET revoked_at = $2, revoked_reason = 'account_closed'
@@ -138,6 +145,7 @@ export async function deleteCustomerAccount(
     userAgent: client.userAgent ?? null,
     metadata: {
       vehicles_removed: vehicles.rowCount ?? 0,
+      payment_methods_removed: cards.rowCount ?? 0,
       sessions_revoked: sessions.rowCount ?? 0,
       // the operators' rows stay theirs (V2-D12): only how many, never which
       operator_customer_rows_kept: linked.n,

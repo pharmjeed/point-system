@@ -314,18 +314,20 @@
 - السائق: `driver.duty_started` · `driver.break_started` · `driver.break_ended` · `driver.duty_ended` · `driver.availability_changed` · `driver.connection_changed` · `driver.transfer_requested` · `driver.transfer_blocked` · `driver.transferred` · `driver.disabled` · `driver.enabled`
 - العهدة: `custody.changed`
 - التسليم: `handover.code_issued` · `handover.code_attempt_failed` · `handover.code_locked` · `handover.completed` · `handover.exception_approved`
-- الدفع: `payment.recorded` · `payment.reversed` · `payment.waived` · `cash.handover_recorded`
+- الدفع: `payment.recorded` · `payment.reversed` · `payment.waived` · `cash.handover_recorded` · `payment.online_paid` · `payment.online_refunded`
 - التنبيهات والوقائع: `alert.raised` · `alert.acknowledged` · `alert.resolved` · `incident.opened` · `incident.updated` · `incident.resolved`
 - الحفل والوردية: `event.opened` · `event.closing_started` · `event.closed` · `shift.opened` · `shift.closed` (إلغاء حفل `draft` تدقيق فقط بلا حدث نطاقي)
 - واتساب: `wa.inbound_received` · `wa.button_pressed` · `wa.message_status_changed` · `wa.channel_health_changed` · `wa.customer_opted_out`
 
 ### 7.2 أنواع المهام المؤجلة (Jobs) في `outbox_events.type`
 
-`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile`
+`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.payment_method_token_delete`
 
 > الإصدار الثاني (V2-010، DEC-496): `job.customer_otp_send` يرسل رمز دخول تطبيق العميل بقالب المصادقة على رقم بوينت بعد COMMIT (المعاملة تكتب الرمز مجزأً ونسخته المشفرة الوحيدة وصف outbox فقط).
 
 > الإصدار الثاني (V2-021، DEC-512 … DEC-514): `job.payment_webhook_process` يعالج تسليم Webhook بوابة الدفع المخزَّن مرة واحدة (يقرأ الدفعة من البوابة خارج أي معاملة ثم يطبقها)؛ `job.payment_refund_send` يرسل الاسترداد للبوابة بعد COMMIT؛ `job.payments_reconcile` المطابقة اليومية مع البوابة (`PAYMENTS_RECONCILE_CRON_UTC`).
+
+> الإصدار الثاني (V2-022/V2-023، DEC-522، DEC-524): `payment.online_paid` دفعة إلكترونية لزيارة صارت `paid` فصارت التذكرة `collected` بأهلية `app_paid` (في معاملة انتقال الدفعة نفسها، يكتبها العامل بعد قراءة البوابة أو رد إنشاء بلا 3-D Secure)؛ `payment.online_refunded` استرداد كامل لتلك الدفعة قبل التسليم أعاد التذكرة `due` بأهلية `none`. `job.payment_method_token_delete` يحذف رمز بطاقة محفوظة لدى البوابة بعد COMMIT إزالتها (C-18 أو حذف الحساب).
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.
 

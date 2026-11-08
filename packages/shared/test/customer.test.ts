@@ -37,7 +37,18 @@ describe('docs/v2/05 §1: every customer route of the contracts is documented', 
     const required = Object.entries(CUSTOMER_ROUTES)
       .filter(([, r]) => r.idempotency === 'required')
       .map(([k]) => k);
-    expect(required).toEqual(['mePatch', 'consents', 'vehicleCreate', 'vehicleDelete', 'meDelete']);
+    expect(required).toEqual([
+      'mePatch',
+      'consents',
+      'vehicleCreate',
+      'vehicleDelete',
+      'meDelete',
+      // V2-022 / V2-023 (DEC-521, DEC-524)
+      'visitPay',
+      'paymentMethodCreate',
+      'paymentMethodPatch',
+      'paymentMethodDelete',
+    ]);
     // signed-in auth calls: logout, and the re-verification of C-20 (V2-017, DEC-507)
     const signedIn = ['/v1/customer/auth/logout', '/v1/customer/auth/reauth/verify'];
     for (const r of Object.values(CUSTOMER_ROUTES)) {

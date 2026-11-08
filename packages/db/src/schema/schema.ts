@@ -2591,6 +2591,10 @@ export const customer_payment_methods = pgTable(
     is_default: boolean().default(false).notNull(),
     removed_at: timestamp({ withTimezone: true, mode: 'string' }),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    // V2-022 (0014, DEC-524): the payment that must succeed before a card saved with it is shown or charged
+    pending_payment_id: uuid(),
+    // V2-023 (0014, DEC-524): when the token was deleted at the gateway after the card was removed
+    gateway_deleted_at: timestamp({ withTimezone: true, mode: 'string' }),
   },
   (table) => [
     index('ix_payment_methods_account')
@@ -2610,6 +2614,11 @@ export const customer_payment_methods = pgTable(
     ),
 
     check('ck_payment_methods_brand', sql`brand ~ '^[a-z_]{2,20}$'::text`),
+    check(
+      'ck_payment_methods_deleted_removed',
+      sql`(gateway_deleted_at IS NULL) OR (removed_at IS NOT NULL)`,
+    ),
+    check('ck_payment_methods_pending_default', sql`(pending_payment_id IS NULL) OR (is_default = false)`),
     check('ck_payment_methods_gateway', sql`gateway = 'moyasar'::text`),
     check('ck_payment_methods_last4', sql`last4 ~ '^[0-9]{4}$'::text`),
     check('ck_payment_methods_month', sql`(expires_month >= 1) AND (expires_month <= 12)`),
@@ -2674,6 +2683,15 @@ export const online_payments = pgTable(
     index('ix_online_payments_ticket')
       .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
       .where(sql`(ticket_id IS NOT NULL)`),
+    index('ix_online_payments_ticket_live')
+      .using(
+        'btree',
+        table.ticket_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(
+        sql`((purpose = 'visit'::text) AND (status = ANY (ARRAY['initiated'::text, 'authorized'::text])))`,
+      ),
     uniqueIndex('uq_online_payments_ticket_paid')
       .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
       .where(
@@ -2746,7 +2764,8 @@ export const refunds = pgTable(
     // You can use { mode: "bigint" } if numbers are exceeding js number limitations
     amount_halalas: bigint({ mode: 'number' }).notNull(),
     reason: text().notNull(),
-    issued_by: uuid().notNull(),
+    // NULL for a system refund (V2-022, 0014, DEC-523)
+    issued_by: uuid(),
     status: text().default('requested').notNull(),
     gateway_refund_id: text(),
     failure_code: text(),
@@ -2754,8 +2773,13 @@ export const refunds = pgTable(
     sent_at: timestamp({ withTimezone: true, mode: 'string' }),
     completed_at: timestamp({ withTimezone: true, mode: 'string' }),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    // manual (a platform user, P-06 / P-08) or system (the double payment of V2-022; 0014, DEC-523)
+    kind: text().default('manual').notNull(),
   },
   (table) => [
+    uniqueIndex('uq_refunds_system')
+      .using('btree', table.online_payment_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(kind = 'system'::text)`),
     index('ix_refunds_payment').using(
       'btree',
       table.online_payment_id.asc().nullsLast().op('timestamptz_ops'),
@@ -2766,6 +2790,9 @@ export const refunds = pgTable(
     check('ck_refunds_amount', sql`amount_halalas > 0`),
     check('ck_refunds_completed', sql`(status = 'requested'::text) = (completed_at IS NULL)`),
     check('ck_refunds_failure_code', sql`failure_code ~ '^[A-Za-z0-9_.:-]{1,64}$'::text`),
+    check('ck_refunds_issued_by', sql`(kind <> 'manual'::text) OR (issued_by IS NOT NULL)`),
+    check('ck_refunds_kind', sql`kind = ANY (ARRAY['manual'::text, 'system'::text])`),
+    check('ck_refunds_system_actor', sql`(kind = 'manual'::text) OR (issued_by IS NULL)`),
     check('ck_refunds_no_pan', sql`reason !~ '[0-9]{13,}'::text`),
     check('ck_refunds_reason', sql`(char_length(reason) >= 3) AND (char_length(reason) <= 500)`),
     check(

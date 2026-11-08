@@ -54,3 +54,6 @@ FEATURE_MODULES.push(CustomerAccountsHttpModule);
 
 import { PaymentsOnlineHttpModule } from '@point/server';
 FEATURE_MODULES.push(PaymentsOnlineHttpModule);
+
+import { CustomerPaymentsHttpModule } from '@point/server';
+FEATURE_MODULES.push(CustomerPaymentsHttpModule);

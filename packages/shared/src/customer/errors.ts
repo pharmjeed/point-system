@@ -23,6 +23,10 @@ export const CUSTOMER_ERROR_CODES = [
   'CUSTOMER_VEHICLE_IN_ACTIVE_VISIT',
   'CUSTOMER_ACCOUNT_VISIT_ACTIVE',
   'CUSTOMER_REAUTH_REQUIRED',
+  // V2-022 / V2-023 (DEC-521, DEC-524): paying a visit in the app, saving a card
+  'VISIT_NOT_PAYABLE',
+  'PAYMENT_IN_PROGRESS',
+  'CUSTOMER_CONSENT_REQUIRED',
 ] as const;
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[number];
 export const CustomerErrorCodeSchema = z.enum(CUSTOMER_ERROR_CODES);
@@ -45,6 +49,10 @@ export const CUSTOMER_REUSED_ERROR_CODES = [
   'RATE_LIMITED',
   'INTERNAL_ERROR',
   'SERVICE_UNAVAILABLE',
+  // V2-022 (DEC-521): the gateway declined, the ticket is paid already (online or cash/POS), the gateway is slow
+  'PAYMENT_FAILED',
+  'PAYMENT_ALREADY_RECORDED',
+  'DEPENDENCY_TIMEOUT',
 ] as const satisfies readonly ErrorCode[];
 export type CustomerReusedErrorCode = (typeof CUSTOMER_REUSED_ERROR_CODES)[number];
 
@@ -55,7 +63,9 @@ export type CustomerApiErrorCode = CustomerErrorCode | CustomerReusedErrorCode;
  * The V2 catalog, in the shape of 08 (`ErrorDef`). Arabic text is customer-facing (V2-D01). `details`:
  * `CUSTOMER_OTP_INVALID` → `{ attempts_left }`; `CUSTOMER_OTP_LOCKED` → `{ locked_until }`;
  * `CUSTOMER_VEHICLE_LIMIT` → `{ max }`; `RATE_LIMITED` on `POST /v1/customer/auth/otp` → `{ retry_after_s }`;
- * `CUSTOMER_REAUTH_REQUIRED` → `{ reason: 'missing' | 'invalid' | 'expired' }`.
+ * `CUSTOMER_REAUTH_REQUIRED` → `{ reason: 'missing' | 'invalid' | 'expired' }`; `VISIT_NOT_PAYABLE` → `{ reason:
+ * 'delivered' | 'voided' | 'not_due' | 'entitlement' | 'below_minimum' | 'not_received' }`; `PAYMENT_IN_PROGRESS` →
+ * `{ online_payment_id, retry_after_s }`; `CUSTOMER_CONSENT_REQUIRED` → `{ kind: 'card_on_file', current_version }`.
  */
 export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<ErrorDef, 'alert'>>> = {
   CUSTOMER_OTP_INVALID: {
@@ -135,6 +145,30 @@ export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<Err
     log: 'info',
     message: 'Confirm with a new verification code first.',
     message_ar: 'أكّد أولًا برمز تحقق جديد.',
+  },
+  // V2-022 (DEC-521): nothing to pay in the app for this visit (included, delivered, waived …)
+  VISIT_NOT_PAYABLE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'There is nothing to pay in the app for this visit.',
+    message_ar: 'لا يوجد ما يُدفع في التطبيق لهذه الزيارة.',
+  },
+  // V2-022 (DEC-521): an earlier payment of this visit still waits for the bank (3-D Secure)
+  PAYMENT_IN_PROGRESS: {
+    http: 409,
+    retryable: true,
+    log: 'info',
+    message: 'A payment for this visit is still in progress. Try again in a few minutes.',
+    message_ar: 'هناك عملية دفع جارية لهذه الزيارة. حاول بعد دقائق.',
+  },
+  // V2-022 / V2-023 (DEC-524): a card is kept only with the explicit card_on_file consent
+  CUSTOMER_CONSENT_REQUIRED: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'Agree to keep the card for later payments first.',
+    message_ar: 'وافق أولًا على حفظ البطاقة للمدفوعات القادمة.',
   },
 };
 

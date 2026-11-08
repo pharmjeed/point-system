@@ -355,6 +355,13 @@ describe('AnalyticsProjector', () => {
       },
       'payment.waived': { ticket_id: r.ticket, waived_by: U['SUP-R'], reason: 'vip' },
       'cash.handover_recorded': { cash_handover_id: r.cashHandover },
+      // V2-022 (DEC-522): the visit paid in the app, and its full refund before the handover
+      'payment.online_paid': { ticket_id: r.ticket, online_payment_id: randomUUID(), amount_halalas: 2000 },
+      'payment.online_refunded': {
+        ticket_id: r.ticket,
+        online_payment_id: randomUUID(),
+        amount_halalas: 2000,
+      },
       'alert.raised': {
         alert_id: r.alert,
         type: 'request_unaccepted',

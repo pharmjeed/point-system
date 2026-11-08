@@ -315,6 +315,11 @@ CREATE TABLE online_payments (                  -- مدفوعات البوابة
 );
 -- دفعة ناجحة واحدة لكل تذكرة
 CREATE UNIQUE INDEX uq_online_payments_ticket_paid ON online_payments(ticket_id) WHERE purpose = 'visit' AND status = 'paid';
+-- V2-022 / V2-023 (0014, DEC-522 … DEC-524): refunds.kind manual|system (a system refund has no issued_by,
+-- uq_refunds_system), the deferred guard ticket_single_payment_guard (uq_ticket_single_payment: an online visit
+-- payment that counts and a payments.recorded never coexist for one ticket, unless the online one has a system
+-- refund), ix_online_payments_ticket_live, platform_alerts.type + payment_double, customer_payment_methods
+-- .pending_payment_id (a card saved with a payment, shown once it is paid) and .gateway_deleted_at.
 
 CREATE TABLE refunds (                          -- بسبب ومُصدِر، إلحاقي
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

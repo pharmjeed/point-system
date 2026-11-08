@@ -59,6 +59,8 @@ const UNIQUE_RULES: Record<string, Rule> = {
   uq_payments_ticket_recorded: 'PAYMENT_ALREADY_RECORDED',
   // V2-021: one successful online payment per ticket (0012_online_payments.sql)
   uq_online_payments_ticket_paid: 'PAYMENT_ALREADY_RECORDED',
+  // V2-022 (DEC-522): an online payment and a cash/POS payment never both count for one ticket (0014, deferred)
+  uq_ticket_single_payment: 'PAYMENT_ALREADY_RECORDED',
   // 08 §5.2
   users_org_id_employee_code_key: {
     code: 'VALIDATION_FAILED',

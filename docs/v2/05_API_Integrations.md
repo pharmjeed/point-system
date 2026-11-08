@@ -15,10 +15,10 @@
 | `GET /v1/customer/visits[/{ticketId}]` | الزيارات، والجارية بحالتها الحية وصورها |
 | `POST /v1/customer/visits/{ticketId}/request` | طلب السيارة (نفس أمر الطلب في 10، بفاعل العميل) |
 | `GET /v1/customer/visits/{ticketId}/handover-code` | رمز التسليم عند الجاهزية فقط (DEC-38) |
-| `POST /v1/customer/visits/{ticketId}/pay` | جلسة دفع للزيارة |
+| `POST /v1/customer/visits/{ticketId}/pay` · `GET /v1/customer/payments/{paymentId}` | جلسة دفع للزيارة، وحالتها بعد 3-D Secure (§1.5، V2-022) |
 | `POST /v1/customer/visits/{ticketId}/rating` | التقييم |
 | `POST /v1/customer/subscriptions` · `GET /v1/customer/subscriptions` · `POST …/{id}/cancel` · `POST …/{id}/resume` · `PUT …/{id}/vehicles` | الاشتراكات |
-| `GET/POST/DELETE /v1/customer/payment-methods[/{id}]` | البطاقات المحفوظة (رموز البوابة) |
+| `GET/POST /v1/customer/payment-methods` · `PATCH/DELETE /v1/customer/payment-methods/{paymentMethodId}` | البطاقات المحفوظة (رموز البوابة، §1.5، V2-023) |
 | `GET /v1/customer/invoices[/{id}]` | الفواتير وPDF |
 | `POST /v1/customer/devices` | رمز الإشعارات للجهاز |
 | `GET /v1/customer/home` | قراءة واحدة لشاشة `C-06`: الزيارة الجارية، الاشتراكات الحية، أقرب المواقع (DEC-482) |
@@ -75,6 +75,14 @@
   الخادم يقبل التوقيع بالسر الحالي أو السابق في مهلته، ثم الخطوة الحالية ± 1 (`PASS_EXPIRED` بـ`stale`/`future` خارجها)، ثم خطوة أكبر من آخر خطوة استُعملت في استلام (`already_used`)؛ وغير ذلك `PASS_INVALID` (`malformed` / `bad_signature` / `account_unavailable` لحساب معلّق أو محذوف أو بلا بطاقة).
 - **زيارات الحساب** (V2-014، DEC-504): `listAccountVisits` على الخادم هي مصدر `current_visit` في `GET /v1/customer/home` وقراءات الزيارة الجارية للسيارة والحساب؛ مساراها `GET /v1/customer/visits[/{ticketId}]` مع `C-12`/`C-16` (V2-015، V2-017).
 
+### 1.5 الدفع للزيارة والبطاقات المحفوظة (V2-022، V2-023، DEC-521 … DEC-525)
+
+- **`POST /v1/customer/visits/{ticketId}/pay`** (`C-12` ← `C-10`، Bearer، `Idempotency-Key`) بالجسم `{ source: { type: 'token', token } | { type: 'applepay', token } | { type: 'saved', payment_method_id }, save_card?, card_on_file_version? }`. البطاقة تُرمَّز على الجهاز بالمفتاح العام (`POST /v1/tokens` لدى Moyasar) أو يسلّم الجهاز رمز Apple Pay، ولا تصل بيانات البطاقة الخادم أبدًا (SAQ-A، DEC-510)؛ والخادم يرسل الرمز وحده. **المبلغ يحدده الخادم:** رسوم التذكرة (`tickets.fee_halalas`، لقطة الحفل `per_vehicle`، شاملة الضريبة 15%) — ما يحصّله السائق نقدًا تمامًا؛ و`pay_per_visit_halalas` للموقع سعر عرض في `C-07`/`C-08` لا يُحصَّل وحده (DEC-521). الرفض: تذكرة حساب آخر أو غير موجودة `RESOURCE_NOT_FOUND` (`resource: visit`)؛ `VISIT_NOT_PAYABLE` (409) بـ`reason` (`delivered`، `voided`، `entitlement` لأهلية غير `none`، `not_due` لرسوم `not_required`/`waived`، `below_minimum` لأقل من 1.00 ريال)؛ مدفوعة في التطبيق أو نقدًا/شبكة `PAYMENT_ALREADY_RECORDED` (بـ`payment_id`/`method`/`collected_by` للنقد، وبـ`online_payment_id` و`method: app` للتطبيق)؛ دفعة سابقة للزيارة تنتظر 3-D Secure منذ أقل من `VISIT_PAYMENT_PENDING_S` (15 دقيقة) `PAYMENT_IN_PROGRESS` (409، `online_payment_id`، `retry_after_s`)؛ رفض البوابة `PAYMENT_FAILED` (402) بعد حفظ `failed`. `save_card` (لبطاقة `token` فقط) يلزمه `card_on_file_version` الساري (`CUSTOMER_CARD_ON_FILE_VERSION`) وإلا `CUSTOMER_CONSENT_REQUIRED` (422) أو `CUSTOMER_CONSENT_VERSION_STALE`. الرد `201` `CustomerVisitPayment`: `{ payment_id, ticket_id, status, amount_halalas, vat_halalas, currency, card_brand, card_last4, failure_code, transaction_url, callback_url, paid_at, saved_payment_method_id, receipt }`؛ `initiated` مع `transaction_url` يفتحه التطبيق في متصفح داخلي حتى يصل `callback_url` (رابط التطبيق `CUSTOMER_PAY_CALLBACK_URL`)، و**العودة لا تغيّر شيئًا**: الحالة النهائية من Webhook البوابة بعد قراءتها (DEC-512). المفتاح نفسه لا ينشئ إلا دفعة واحدة (`given_id` مشتق من الحساب والمفتاح).
+- **`GET /v1/customer/payments/{paymentId}`** (قراءة): دفعة الحساب نفسه (وإلا `RESOURCE_NOT_FOUND`)، يستطلعها التطبيق بعد 3-D Secure؛ `receipt` بيانات الفاتورة المبسطة (`C-17`) من الدفعة نفسها بلا تخزين جديد حتى مزود الفوترة (V2-040).
+- **`GET /v1/customer/payment-methods`** · **`POST …`** (`{ token, card_on_file_version, make_default? }`، رمز `save_only` من الجهاز؛ العلامة وآخر 4 أرقام والانتهاء من البوابة `GET /v1/tokens/{id}`، والأولى افتراضية) · **`PATCH …/{paymentMethodId}`** (`{ is_default: true }`) · **`DELETE …/{paymentMethodId}`** (إزالة ناعمة، وحذف الرمز لدى البوابة بعد COMMIT بـ`job.payment_method_token_delete`). بطاقة حساب آخر أو محذوفة `RESOURCE_NOT_FOUND` (`resource: payment_method`). حذف الحساب (§1.3) يزيل البطاقات ويحذف رموزها لدى البوابة كذلك.
+- **بوابة التسليم (O-03):** دفعة `paid` تجعل التذكرة `collected` بأهلية `app_paid` في معاملة انتقالها (DEC-522)، فلا يطلب D-11 نقدًا وتظهر «مدفوع في التطبيق»؛ ودفعة `initiated` غير مدفوعة: يحصّل السائق نقدًا، وإن نجحت بعد ذلك تُسترد كاملة تلقائيًا (`double_payment`، DEC-523).
+- **الاتصال الفوري للعميل** (`visit.updated`) وإشعاراته مع `C-12` (مسار آخر)؛ حتى ذلك يستطلع التطبيق `GET /v1/customer/payments/{paymentId}`.
+
 ## 2. مسارات المشغل الجديدة (تحت `/v1` كما هي)
 
 | المسار | الوظيفة |
@@ -112,7 +120,7 @@
 
 رموز العميل المعتمدة في V2-011 بنصوصها ورمز HTTP في `CUSTOMER_ERROR_CATALOG` (`packages/shared/src/customer/errors.ts`، DEC-482)، ومعها رموز 08 التي يعيدها مسار العميل كما هي (`CUSTOMER_REUSED_ERROR_CODES`).
 
-`CUSTOMER_OTP_INVALID`، `CUSTOMER_OTP_EXPIRED`، `CUSTOMER_OTP_LOCKED`، `CUSTOMER_CONSENT_VERSION_STALE`، `CUSTOMER_VEHICLE_LIMIT`، `CUSTOMER_VEHICLE_DUPLICATE`، `PASS_INVALID`، `PASS_EXPIRED`، `SUBSCRIPTION_NOT_ACTIVE`، `SUBSCRIPTION_VEHICLE_NOT_COVERED`، `SUBSCRIPTION_ALREADY_EXISTS`، `PAYMENT_REQUIRED`، `PAYMENT_FAILED`، `PAYMENT_ALREADY_RECORDED`، `VENUE_NOT_LISTED`، `OPERATOR_SUSPENDED`، `ACCOUNT_DELETED`، `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT`، `CUSTOMER_ACCOUNT_VISIT_ACTIVE`، `CUSTOMER_REAUTH_REQUIRED` (V2-012/V2-017، §1.3).
+`CUSTOMER_OTP_INVALID`، `CUSTOMER_OTP_EXPIRED`، `CUSTOMER_OTP_LOCKED`، `CUSTOMER_CONSENT_VERSION_STALE`، `CUSTOMER_VEHICLE_LIMIT`، `CUSTOMER_VEHICLE_DUPLICATE`، `PASS_INVALID`، `PASS_EXPIRED`، `SUBSCRIPTION_NOT_ACTIVE`، `SUBSCRIPTION_VEHICLE_NOT_COVERED`، `SUBSCRIPTION_ALREADY_EXISTS`، `PAYMENT_REQUIRED`، `PAYMENT_FAILED`، `PAYMENT_ALREADY_RECORDED`، `VENUE_NOT_LISTED`، `OPERATOR_SUSPENDED`، `ACCOUNT_DELETED`، `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT`، `CUSTOMER_ACCOUNT_VISIT_ACTIVE`، `CUSTOMER_REAUTH_REQUIRED` (V2-012/V2-017، §1.3). `VISIT_NOT_PAYABLE`، `PAYMENT_IN_PROGRESS`، `CUSTOMER_CONSENT_REQUIRED` (V2-022/V2-023، §1.5)؛ ويعيد مسار العميل أيضًا `PAYMENT_FAILED` و`PAYMENT_ALREADY_RECORDED` و`DEPENDENCY_TIMEOUT` من 08 كما هي.
 
 ## 6. واتساب في الإصدار الثاني (V2-D02)
 
