@@ -182,13 +182,17 @@ describe('V2-012 — C-15 remove a vehicle (DEC-505)', () => {
   it('a vehicle in a visit in progress is refused (in_active_visit) until the visit ends', async () => {
     const s = await signIn();
     const car = await addVehicle(s, '4821');
+    w.clock.advance(1000); // «oldest first»: distinct created_at
     const other = await addVehicle(s, '12');
     const { ticketId } = await visitInProgress(s);
-    expect(
-      (await getAs(CUSTOMER_ROUTES.vehicles.path, s.access_token)).body.data.items.map(
-        (v: { in_active_visit: boolean }) => v.in_active_visit,
-      ),
-    ).toEqual([true, false]);
+    const listed = (await getAs(CUSTOMER_ROUTES.vehicles.path, s.access_token)).body.data.items as {
+      id: string;
+      in_active_visit: boolean;
+    }[];
+    expect(listed.map((v) => [v.id, v.in_active_visit])).toEqual([
+      [car.id, true],
+      [other.id, false],
+    ]);
     const r = await del(`/v1/customer/vehicles/${car.id}`, s.access_token);
     expect(r.status).toBe(409);
     expect(err(r).code).toBe('CUSTOMER_VEHICLE_IN_ACTIVE_VISIT');
