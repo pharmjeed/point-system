@@ -178,6 +178,8 @@
 
 ## 7. المتاجر
 
+> **V2-052:** الإعداد والنصوص والتصريحات وخطوات النشر في `docs/v2/store/` (`RELEASE_CHECKLIST.md` أولًا)، وEAS في `apps/customer/eas.json` (DEC-565 … DEC-569).
+
 | المتطلب | Apple App Store | Google Play |
 |---|---|---|
 | حساب مطوّر باسم المنشأة | Apple Developer Program (منظمة، رقم D-U-N-S) | Google Play Console (منظمة) |

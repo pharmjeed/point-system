@@ -149,6 +149,8 @@ jobs:
         run: pnpm --filter @point/customer run export
         env:
           CI: '1'
+      - name: Store icon matches the brand vector (V2-052, DEC-567)
+        run: pnpm --filter @point/customer run store:icon -- --check
 
   e2e:
     name: e2e (Playwright 360/390/430, RTL · G1 on the real API)
