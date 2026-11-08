@@ -36,7 +36,15 @@ const FINANCE = platformMe('platform_finance', [
 ]);
 const ADMIN = platformMe('platform_admin', ['platform.operator_read', 'platform.venue_review']);
 
-const plan = (over: Record<string, unknown> = {}) => ({
+interface MockPlan {
+  plan_id: string;
+  status: string;
+  replaced_by_plan_id: string | null;
+  retired_at: string | null;
+  [field: string]: unknown;
+}
+
+const plan = (over: Record<string, unknown> = {}): MockPlan => ({
   plan_id: PLAN,
   venue_id: VENUE,
   name_ar: 'سيارة واحدة',
