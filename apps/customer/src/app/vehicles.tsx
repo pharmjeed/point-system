@@ -12,11 +12,12 @@ import { canAddVehicle, removeIssueFromError, vehicleRow } from '../features/veh
 import { useI18n } from '../i18n/I18nProvider';
 import { newIdempotencyKey } from '../session/secureStore';
 import { useSession } from '../session/SessionProvider';
-import { color, font, fontSize, space } from '../theme/tokens';
+import { color, font, space } from '../theme/tokens';
 import { AppText } from '../ui/AppText';
 import { Button } from '../ui/Button';
-import { Banner, Card } from '../ui/Controls';
+import { Banner, Card, IconBadge } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
+import { PlateBadge } from '../ui/PlateBadge';
 import { Screen } from '../ui/Screen';
 import { SkeletonList } from '../ui/Skeleton';
 import { EmptyState } from '../ui/EmptyState';
@@ -100,8 +101,13 @@ export default function Vehicles() {
         const row = vehicleRow(v, t);
         return (
           <Card key={row.id}>
-            <AppText style={styles.plate}>{row.plate}</AppText>
-            {row.details ? <AppText tone="muted">{row.details}</AppText> : null}
+            <View style={styles.head}>
+              <IconBadge name="car-front" />
+              <View style={styles.flex}>
+                <PlateBadge plate={row.plate} size="lg" />
+                {row.details ? <AppText tone="muted">{row.details}</AppText> : null}
+              </View>
+            </View>
             {row.inActiveVisit ? (
               <View style={styles.badge} accessibilityRole="text">
                 <AppText variant="small" style={styles.badgeText}>
@@ -115,6 +121,7 @@ export default function Vehicles() {
             {row.canRemove ? (
               <Button
                 label={t.vehicles.remove}
+                icon="trash"
                 variant="secondary"
                 size="md"
                 loading={busy === row.id}
@@ -132,7 +139,8 @@ export default function Vehicles() {
 }
 
 const styles = StyleSheet.create({
-  plate: { fontFamily: font.mono, ...fontSize.xl },
+  head: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  flex: { flex: 1, gap: space[2] },
   badge: { gap: space[1] },
   badgeText: { color: color.warningText, fontFamily: font.semibold },
 });

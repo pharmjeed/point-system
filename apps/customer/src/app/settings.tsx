@@ -156,6 +156,7 @@ export default function Settings() {
       <View style={styles.actions}>
         <Button
           label={t.settings.signOut}
+          icon="log-out"
           variant="secondary"
           size="md"
           loading={busy === 'signout'}
@@ -164,6 +165,7 @@ export default function Settings() {
         />
         <Button
           label={t.settings.paymentMethods}
+          icon="credit-card"
           variant="secondary"
           size="md"
           onPress={() => router.push('/payment-methods')}
@@ -171,6 +173,7 @@ export default function Settings() {
         />
         <Button
           label={t.settings.invoices}
+          icon="receipt"
           variant="secondary"
           size="md"
           onPress={() => router.push('/invoices')}
@@ -178,6 +181,7 @@ export default function Settings() {
         />
         <Button
           label={t.settings.deleteAccount}
+          icon="trash"
           variant="ghost"
           size="md"
           onPress={() => router.push('/delete-account')}

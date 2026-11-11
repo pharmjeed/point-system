@@ -260,8 +260,8 @@ const styles = StyleSheet.create({
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   tile: {
     flexGrow: 1,
-    flexBasis: '30%',
-    minWidth: 96,
+    flexBasis: '45%',
+    minWidth: 140,
     padding: space[3],
     gap: space[1],
     borderRadius: radius.md,

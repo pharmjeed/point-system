@@ -58,7 +58,14 @@ describe('C-12 stage tracker (DEC-570)', () => {
   });
 
   it('marks the stages done, current and to come from the status and the timeline', () => {
-    expect(states(visit('parking', { received: 0 }))).toEqual(['done', 'current', 'todo', 'todo', 'todo', 'todo']);
+    expect(states(visit('parking', { received: 0 }))).toEqual([
+      'done',
+      'current',
+      'todo',
+      'todo',
+      'todo',
+      'todo',
+    ]);
     expect(states(visit('parked', { received: 0, parked: 5 }))).toEqual([
       'done',
       'done',
@@ -85,7 +92,9 @@ describe('C-12 stage tracker (DEC-570)', () => {
       'todo',
     ]);
     expect(
-      states(visit('ready', { received: 0, parked: 5, requested: 60, accepted: 61, on_the_way: 62, ready: 64 })),
+      states(
+        visit('ready', { received: 0, parked: 5, requested: 60, accepted: 61, on_the_way: 62, ready: 64 }),
+      ),
     ).toEqual(['done', 'done', 'done', 'done', 'current', 'todo']);
     expect(
       states(
@@ -115,7 +124,9 @@ describe('C-12 stage tracker (DEC-570)', () => {
 
   it('fills the rail up to the last reached stage', () => {
     expect(trackerProgress(trackerStages(visit('parked', { received: 0, parked: 5 })))).toBeCloseTo(0.2);
-    expect(trackerProgress(trackerStages(visit('ready', { received: 0, parked: 5, ready: 64 })))).toBeCloseTo(0.8);
+    expect(trackerProgress(trackerStages(visit('ready', { received: 0, parked: 5, ready: 64 })))).toBeCloseTo(
+      0.8,
+    );
     expect(trackerProgress([])).toBe(0);
   });
 

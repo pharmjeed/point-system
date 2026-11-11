@@ -107,7 +107,9 @@ const styles = StyleSheet.create({
     flex: 1,
     // a browser input keeps an intrinsic width (its `size`): let the row decide (the web export at 360 px)
     minWidth: 0,
-    // the box draws the focus (2 px `focus` border), not the browser's own outline
+    // the box draws the focus (2 px `focus` border), not the browser's own outline (a `solid` 0 width: the browser's
+    // `auto` focus style ignores a width)
+    outlineStyle: 'solid',
     outlineWidth: 0,
     ...fontSize.base,
     fontFamily: font.regular,
