@@ -1,6 +1,7 @@
 /**
  * C-03 رمز التحقق: six digits delivered on WhatsApp (DEC-460), «إعادة الإرسال» after the server's 60 s, the
  * attempts left from the server, and the 15-minute stop after five wrong codes. No automatic submit (03 §3.11).
+ * V2-UX (DEC-576): the step head, the six boxes with their caret, the resend countdown with a timer icon.
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -22,12 +23,12 @@ import { isolate } from '../i18n';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSession } from '../session/SessionProvider';
 import { space } from '../theme/tokens';
-import { AppText } from '../ui/AppText';
 import { Button } from '../ui/Button';
 import { CodeInput } from '../ui/CodeInput';
 import { Banner } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
 import { Screen } from '../ui/Screen';
+import { StepHeader } from '../ui/StepHeader';
 
 export default function Otp() {
   const params = useLocalSearchParams<{
@@ -140,6 +141,7 @@ export default function Otp() {
             label={canResend(state, now) ? t.otp.resend : f(t.otp.resendIn, { seconds })}
             variant="secondary"
             size="md"
+            icon={canResend(state, now) ? 'refresh' : 'timer'}
             loading={busy === 'resend'}
             loadingLabel={t.common.sending}
             disabled={!canResend(state, now)}
@@ -150,10 +152,12 @@ export default function Otp() {
       }
     >
       <DevBanner />
-      <AppText variant="title" accessibilityRole="header">
-        {t.otp.title}
-      </AppText>
-      <AppText tone="muted">{f(t.otp.sentTo, { phone: isolate(state.phoneMasked) })}</AppText>
+      <StepHeader
+        icon="message-circle"
+        title={t.otp.title}
+        hint={f(t.otp.sentTo, { phone: isolate(state.phoneMasked) })}
+        step={2}
+      />
       <View style={styles.code}>
         <CodeInput
           value={code}

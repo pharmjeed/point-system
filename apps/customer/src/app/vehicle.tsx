@@ -22,7 +22,7 @@ import {
 import { useI18n } from '../i18n/I18nProvider';
 import { newIdempotencyKey } from '../session/secureStore';
 import { useSession } from '../session/SessionProvider';
-import { AppText } from '../ui/AppText';
+import { StepHeader } from '../ui/StepHeader';
 import { Button } from '../ui/Button';
 import { Banner, ChoiceChips } from '../ui/Controls';
 import { Field } from '../ui/Field';
@@ -101,10 +101,12 @@ export default function Vehicle() {
         </>
       }
     >
-      <AppText variant="title" accessibilityRole="header">
-        {t.vehicle.title}
-      </AppText>
-      <AppText tone="muted">{t.vehicle.hint}</AppText>
+      <StepHeader
+        icon="car-front"
+        title={t.vehicle.title}
+        hint={t.vehicle.hint}
+        {...(fromList ? {} : { step: 4 })}
+      />
       <PlateInput
         digits={form.digits}
         letters={form.letters}

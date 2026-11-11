@@ -3,11 +3,15 @@
  * yearly saving), the covered car(s) — 1 … the plan's cars, chosen from «سياراتي» — the terms, then «متابعة إلى الدفع»
  * opens C-10 (the pay sheet of C-12 in its subscription mode: a saved card, or a new card kept for the renewals; Apple
  * Pay is not offered). Paid → C-14. Every price, date and refusal comes from the server.
+ *
+ * V2-UX (DEC-579): the cycle as a segmented control with the yearly saving on its segment, the plans as selectable
+ * cards (name, the price large, the cars, the saving badge; a tick when chosen), the covered cars, and a summary card
+ * with the total; «متابعة إلى الدفع» in the sticky bottom sheet. Skeletons while loading.
  */
 import type { CustomerLocationDetail, CustomerVehicle } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { isApiError } from '../../api/errors';
 import { errorText } from '../../features/errorText';
 import { PaySheet } from '../../features/pay';
@@ -19,15 +23,21 @@ import {
   toggleVehicle,
   type Cycle,
 } from '../../features/subscriptions';
+import { bestYearlySaving } from '../../features/ux';
+import { fmt } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useSession } from '../../session/SessionProvider';
-import { color, space } from '../../theme/tokens';
+import { color, font, fontSize, radius, shadow, space } from '../../theme/tokens';
+import { FadeIn } from '../../ui/Animated';
 import { AppText } from '../../ui/AppText';
 import { Button } from '../../ui/Button';
-import { Banner, Card, Checkbox, ChoiceChips } from '../../ui/Controls';
+import { Banner, Card, Checkbox, IconBadge, SegmentedControl } from '../../ui/Controls';
+import { Icon } from '../../ui/Icon';
+import { Touchable } from '../../ui/Touchable';
 import { DevBanner } from '../../ui/DevBanner';
 import { Screen } from '../../ui/Screen';
 import { ScreenHeader } from '../../ui/ScreenHeader';
+import { SkeletonList } from '../../ui/Skeleton';
 
 export default function Subscribe() {
   const { venueId } = useLocalSearchParams<{ venueId: string }>();
@@ -74,6 +84,7 @@ export default function Subscribe() {
   const max = loc?.plans.find((p) => p.plan_id === planId)?.vehicles_included ?? 1;
   const cars = coverableVehicles(vehicles ?? []);
   const venue = loc ? (locale === 'en' && loc.name_en ? loc.name_en : loc.name_ar) : '';
+  const saving = loc ? bestYearlySaving(loc.plans) : null;
 
   const choosePlan = (id: string | null) => {
     setPlanId(id);
@@ -92,7 +103,7 @@ export default function Subscribe() {
     <Screen
       footer={
         loc && plans.length > 0 && cars.length > 0 ? (
-          <Button label={t.subscribe.pay} onPress={proceed} testID="subscribe-pay" />
+          <Button label={t.subscribe.pay} icon="credit-card" onPress={proceed} testID="subscribe-pay" />
         ) : undefined
       }
     >
@@ -103,18 +114,20 @@ export default function Subscribe() {
       />
       <DevBanner />
       {failure ? <Banner tone={loc ? 'warning' : 'danger'}>{failure}</Banner> : null}
-      {!loc && !failure ? (
-        <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} />
-      ) : null}
+      {!loc && !failure ? <SkeletonList label={t.common.loading} count={3} /> : null}
       {loc && cycles.length > 0 ? (
         <>
           {cycles.length > 1 ? (
-            <ChoiceChips
+            <SegmentedControl
               label={t.subscribe.cycle}
-              options={cycles.map((c) => ({ value: c, label: t.subscribe[c] }))}
+              options={cycles.map((c) => ({
+                value: c,
+                label: t.subscribe[c],
+                badge: c === 'yearly' && saving !== null ? fmt(t.subscribe.saving, { pct: saving }) : null,
+              }))}
               value={cycle}
               onChange={(c) => {
-                if (!c) return;
+                if (c === cycle) return;
                 setCycle(c);
                 setPlanId(null);
               }}
@@ -122,20 +135,49 @@ export default function Subscribe() {
           ) : null}
           <View style={styles.group} accessibilityRole="radiogroup" accessibilityLabel={t.subscribe.plan}>
             <AppText variant="label">{t.subscribe.plan}</AppText>
-            {plans.map((p) => (
-              <Card key={p.planId} accent={p.planId === planId}>
-                <Checkbox
-                  label={`${p.title} · ${p.priceText}`}
-                  checked={p.planId === planId}
-                  onChange={(on) => choosePlan(on ? p.planId : null)}
-                  detail={
-                    <AppText variant="small" tone="muted">
-                      {p.saving ? `${p.vehicles} · ${p.saving}` : p.vehicles}
-                    </AppText>
-                  }
-                />
-              </Card>
-            ))}
+            {plans.map((p, i) => {
+              const on = p.planId === planId;
+              return (
+                <FadeIn key={p.planId} index={i} swapKey={cycle}>
+                  <Touchable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={`${p.title} · ${p.priceText}`}
+                    onPress={() => choosePlan(on ? null : p.planId)}
+                    feedback="select"
+                    style={({ pressed }) => [
+                      styles.plan,
+                      on && styles.planOn,
+                      pressed && !on && { backgroundColor: color.surface2 },
+                    ]}
+                  >
+                    <View style={styles.planHead}>
+                      <IconBadge name="calendar-check" size={40} />
+                      <View style={styles.flex}>
+                        <AppText variant="bodyStrong">{p.title}</AppText>
+                        <AppText variant="small" tone="muted">
+                          {p.vehicles}
+                        </AppText>
+                      </View>
+                      <View style={[styles.radio, on && styles.radioOn]}>
+                        {on ? <Icon name="check" size={16} tint={color.onPrimary} strokeWidth={3} /> : null}
+                      </View>
+                    </View>
+                    <View style={styles.planFoot}>
+                      <AppText style={styles.planPrice}>{p.priceText}</AppText>
+                      {p.saving ? (
+                        <View style={styles.saving}>
+                          <Icon name="badge-percent" size={14} tint={color.successText} />
+                          <AppText variant="caption" style={styles.savingText}>
+                            {p.saving}
+                          </AppText>
+                        </View>
+                      ) : null}
+                    </View>
+                  </Touchable>
+                </FadeIn>
+              );
+            })}
           </View>
           <View style={styles.group}>
             <AppText variant="label">{t.subscribe.vehicles}</AppText>
@@ -169,13 +211,20 @@ export default function Subscribe() {
             )}
           </View>
           <Card>
-            <AppText variant="small" tone="muted">
-              {t.subscribe.terms}
-            </AppText>
-            {plan ? (
-              <AppText variant="bodyStrong">
-                {t.subscribe.total}: {plan.priceText}
+            <View style={styles.planHead}>
+              <Icon name="info" size={18} tint={color.textMuted} />
+              <AppText variant="small" tone="muted" style={styles.flex}>
+                {t.subscribe.terms}
               </AppText>
+            </View>
+            {plan ? (
+              <FadeIn swapKey={plan.planId}>
+                <View style={styles.total}>
+                  <AppText style={styles.totalText}>
+                    {t.subscribe.total}: {plan.priceText}
+                  </AppText>
+                </View>
+              </FadeIn>
             ) : null}
           </Card>
           {issue ? <Banner tone="warning">{issue}</Banner> : null}
@@ -205,5 +254,52 @@ export default function Subscribe() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   group: { gap: space[2] },
+  plan: {
+    backgroundColor: color.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.border,
+    padding: space[4],
+    gap: space[3],
+    boxShadow: shadow.sm,
+  },
+  planOn: {
+    borderColor: color.primary,
+    borderWidth: 2,
+    backgroundColor: color.primarySubtle,
+    boxShadow: shadow.md,
+  },
+  planHead: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  planFoot: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[2] },
+  planPrice: { fontFamily: font.bold, ...fontSize.xl, color: color.text },
+  radio: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.full,
+    borderWidth: 2,
+    borderColor: color.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.surface,
+  },
+  radioOn: { backgroundColor: color.primary, borderColor: color.primary },
+  saving: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    paddingHorizontal: space[2],
+    paddingVertical: space[0.5],
+    borderRadius: radius.full,
+    backgroundColor: color.successSubtle,
+  },
+  savingText: { color: color.successText },
+  total: {
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+    paddingTop: space[3],
+    marginTop: space[1],
+  },
+  totalText: { fontFamily: font.bold, ...fontSize.lg, color: color.text },
 });

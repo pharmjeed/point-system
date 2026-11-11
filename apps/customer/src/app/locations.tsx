@@ -2,11 +2,15 @@
  * C-07 المواقع (V2-012): search, the filters of 01 (subscribed / accepts subscription / open now), the list with
  * «فتح في الخرائط» on every location, and a map view where the build can draw one (Apple Maps on iOS; Google Maps
  * on Android only with a key in the build, DEC-506). A location opens C-08.
+ *
+ * V2-UX (DEC-577): a search field with its icon, the filter chips, location cards (`LocationCard`: open-now chip,
+ * distance, «يقبل الاشتراك», «مشترك» for the account's own subscriptions — read once from C-14's list — and the
+ * «from» price), skeletons while loading and an empty state with its icon.
  */
 import type { CustomerLocationSummary } from '@point/shared/customer';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform } from 'react-native';
 import { appConfig } from '../config';
 import { errorText } from '../features/errorText';
 import { locationRow } from '../features/home';
@@ -21,16 +25,18 @@ import {
 } from '../features/locations';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSession } from '../session/SessionProvider';
-import { color, radius, space } from '../theme/tokens';
-import { AppText } from '../ui/AppText';
+import { FadeIn } from '../ui/Animated';
 import { Button } from '../ui/Button';
-import { Banner, Card, ChoiceChips } from '../ui/Controls';
+import { Banner, ChoiceChips } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
+import { EmptyState } from '../ui/EmptyState';
 import { Field } from '../ui/Field';
+import { LocationCard } from '../ui/LocationCard';
 import { LocationsMap } from '../ui/LocationsMap';
 import { openInMaps } from '../ui/openLinks';
 import { Screen } from '../ui/Screen';
 import { ScreenHeader } from '../ui/ScreenHeader';
+import { SkeletonList } from '../ui/Skeleton';
 
 type LocationsView = 'list' | 'map';
 
@@ -48,6 +54,22 @@ export default function Locations() {
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const request = useRef(0);
+  const [subscribed, setSubscribed] = useState<ReadonlySet<string>>(new Set());
+
+  // the «مشترك» badge: the account's live subscriptions (C-14's read), best effort
+  useEffect(() => {
+    let alive = true;
+    session.api
+      .subscriptions()
+      .then((list) => {
+        const live = list.filter((s) => s.status !== 'canceled' && s.status !== 'expired');
+        if (alive) setSubscribed(new Set(live.map((s) => s.venue_id)));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [session.api]);
 
   const load = useCallback(
     async (more: boolean, from: string | null) => {
@@ -90,6 +112,7 @@ export default function Locations() {
         label={t.locations.searchLabel}
         value={search}
         onChangeText={setSearch}
+        icon="search"
         placeholder={t.locations.searchPlaceholder}
         returnKeyType="search"
         maxLength={60}
@@ -116,48 +139,36 @@ export default function Locations() {
       ) : null}
       {failure ? <Banner tone="danger">{`${t.locations.loadFailed} ${failure}`}</Banner> : null}
       {notice ? <Banner tone="warning">{notice}</Banner> : null}
-      {loading === 'first' && items.length === 0 ? (
-        <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} />
-      ) : null}
+      {loading === 'first' && items.length === 0 ? <SkeletonList label={t.common.loading} count={3} /> : null}
       {!loading && !failure && items.length === 0 ? (
-        <Card>
-          <AppText tone="muted">{emptyText(search, chip, t)}</AppText>
-        </Card>
+        <EmptyState icon="map-pin" text={emptyText(search, chip, t)} />
       ) : null}
       {canMap && view === 'map' && items.length > 0 ? (
         <LocationsMap pins={mapPins(items, t, locale)} label={t.locations.viewMap} onOpen={open} />
       ) : null}
-      {items.map((loc) => {
+      {items.map((loc, i) => {
         const row = locationRow(loc, t, locale);
         return (
-          <View key={row.id} style={styles.item}>
-            <Pressable
-              accessibilityRole="button"
+          <FadeIn key={row.id} index={i}>
+            <LocationCard
+              loc={loc}
+              row={row}
+              subscribed={subscribed.has(loc.venue_id)}
               accessibilityLabel={`${row.title}${t.locations.listSeparator}${row.operator}`}
-              accessibilityHint={t.locations.details}
               onPress={() => open(row.id)}
-              style={({ pressed }) => [styles.press, pressed && { backgroundColor: color.primarySubtle }]}
-            >
-              <AppText variant="bodyStrong">{row.title}</AppText>
-              <AppText variant="small" tone="muted">
-                {row.operator}
-              </AppText>
-              {row.facts.length ? <AppText variant="small">{row.facts.join(' · ')}</AppText> : null}
-              {row.price ? (
-                <AppText variant="small" tone="primary">
-                  {row.price}
-                </AppText>
-              ) : null}
-            </Pressable>
-            {loc.lat !== null && loc.lng !== null ? (
-              <Button
-                label={t.locations.openInMaps}
-                variant="ghost"
-                size="md"
-                onPress={() => void maps(loc, row.title)}
-              />
-            ) : null}
-          </View>
+              footer={
+                loc.lat !== null && loc.lng !== null ? (
+                  <Button
+                    label={t.locations.openInMaps}
+                    icon="map"
+                    variant="ghost"
+                    size="md"
+                    onPress={() => void maps(loc, row.title)}
+                  />
+                ) : null
+              }
+            />
+          </FadeIn>
         );
       })}
       {cursor ? (
@@ -173,14 +184,3 @@ export default function Locations() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  item: {
-    backgroundColor: color.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: color.border,
-    overflow: 'hidden',
-  },
-  press: { padding: space[4], gap: space[1] },
-});

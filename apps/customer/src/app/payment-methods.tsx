@@ -7,7 +7,7 @@
 import type { CustomerPaymentMethod } from '@point/shared/customer';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { appConfig } from '../config';
 import { errorText } from '../features/errorText';
 import { formatCardNumber, formatExpiry, validateCard, type CardIssue } from '../features/pay/card';
@@ -16,13 +16,15 @@ import { createCardTokenizer } from '../features/pay/tokenize';
 import { useI18n } from '../i18n/I18nProvider';
 import { newIdempotencyKey } from '../session/secureStore';
 import { useSession } from '../session/SessionProvider';
-import { color, font, space } from '../theme/tokens';
+import { font, space } from '../theme/tokens';
 import { AppText } from '../ui/AppText';
 import { Button } from '../ui/Button';
 import { Banner, Card, Checkbox } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
 import { Field } from '../ui/Field';
 import { Screen } from '../ui/Screen';
+import { SkeletonList } from '../ui/Skeleton';
+import { EmptyState } from '../ui/EmptyState';
 import { ScreenHeader } from '../ui/ScreenHeader';
 
 type Message = { tone: 'success' | 'danger' | 'warning'; text: string };
@@ -135,11 +137,9 @@ export default function PaymentMethods() {
       <AppText variant="small" tone="muted">
         {t.paymentMethods.note}
       </AppText>
-      {!items ? <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} /> : null}
+      {!items ? <SkeletonList label={t.common.loading} count={2} avatar /> : null}
       {items && items.length === 0 && !adding ? (
-        <Card>
-          <AppText tone="muted">{t.paymentMethods.empty}</AppText>
-        </Card>
+        <EmptyState icon="credit-card" text={t.paymentMethods.empty} />
       ) : null}
       {items?.map((c) => {
         const row = cardRow(c, t);

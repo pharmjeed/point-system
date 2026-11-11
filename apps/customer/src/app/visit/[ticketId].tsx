@@ -6,35 +6,76 @@
  * delivery. It reads the visit again on every `visit.updated` of the customer socket, on every (re)connection and
  * when it comes back into view: the server is the source of truth. Offline, the request is refused with the WhatsApp
  * and driver alternatives (01 §4).
+ *
+ * V2-UX (DEC-570): the hero screen of the app — a status hero (the car's state as a picture, the big status title,
+ * one line of explanation, the venue, operator and plate, the time since the request), the six-stage tracker, then
+ * the code, payment, photos and the detailed timeline; the one primary action of the state («اطلب السيارة», «اعرض
+ * الرمز» with the code itself, or «قيّم الخدمة») lives in the sticky bottom sheet, and each change of state
+ * cross-fades the hero and the sheet. Behaviour and copy are V2-015's.
  */
 import type { CustomerHandoverCode, CustomerVisitDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '../../api/errors';
 import { NetworkError } from '../../api/transport';
 import { appConfig } from '../../config';
 import { CommandKey } from '../../features/commandKey';
 import { errorText } from '../../features/errorText';
 import { shouldOfferPush } from '../../features/push';
+import { elapsedView, heroKind, trackerProgress, trackerStages, type HeroKind } from '../../features/ux';
 import { codeSecondsLeft, helpLink, visitView } from '../../features/visit';
 import { fmt, isolate } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
 import { usePush } from '../../push/usePush';
 import { flags, newIdempotencyKey } from '../../session/secureStore';
 import { useSession } from '../../session/SessionProvider';
-import { color, font, fontSize, radius, space } from '../../theme/tokens';
+import { color, font, fontSize, radius, shadow, space, statusColor } from '../../theme/tokens';
+import { FadeIn, Pulse } from '../../ui/Animated';
 import { AppText } from '../../ui/AppText';
 import { Button } from '../../ui/Button';
-import { Banner, Card } from '../../ui/Controls';
+import { Banner, Card, IconBadge } from '../../ui/Controls';
 import { DevBanner } from '../../ui/DevBanner';
+import { haptic } from '../../ui/haptics';
+import { Icon, type IconName } from '../../ui/Icon';
 import { openLink } from '../../ui/openLinks';
+import { PlateBadge } from '../../ui/PlateBadge';
 import { RatingSheet } from '../../ui/RatingSheet';
 import { Screen } from '../../ui/Screen';
 import { ScreenHeader } from '../../ui/ScreenHeader';
+import { SkeletonList } from '../../ui/Skeleton';
+import { StageTracker, StepTimeline } from '../../ui/VisitTracker';
 import { VisitPaymentSlot } from '../../ui/VisitPaymentSlot';
 
 type Message = { tone: 'success' | 'danger' | 'warning' | 'info'; text: string } | null;
+
+/** The picture of the hero for each kind of state (the design system's status icons, DEC-49). */
+const HERO_ICON: Record<HeroKind, IconName> = {
+  parking: 'circle-parking',
+  parked: 'square-parking',
+  waiting: 'bell-ring',
+  moving: 'navigation',
+  ready: 'circle-check',
+  done: 'check-check',
+  void: 'circle-x',
+};
+
+/**
+ * The hero's colours: a soft band and a solid disc of the status family (brand §4.3 `status.*`, the semantic roles) —
+ * never a large blue surface (03 §2.2).
+ */
+const HERO_TINT: Record<HeroKind, { band: string; disc: string }> = {
+  parking: { band: statusColor.received.bg, disc: statusColor.received.fg },
+  parked: { band: statusColor.parked.bg, disc: statusColor.parked.fg },
+  waiting: { band: statusColor.requested.bg, disc: statusColor.requested.fg },
+  moving: { band: color.primarySubtle, disc: color.primary },
+  ready: { band: color.successSubtle, disc: color.success },
+  done: { band: statusColor.parked.bg, disc: statusColor.delivered.fg },
+  void: { band: statusColor.voided.bg, disc: statusColor.voided.fg },
+};
+
+/** States where something is happening right now: the picture breathes. */
+const LIVE: ReadonlySet<HeroKind> = new Set<HeroKind>(['parking', 'waiting', 'moving', 'ready']);
 
 export default function VisitScreen() {
   const { ticketId } = useLocalSearchParams<{ ticketId: string }>();
@@ -89,12 +130,25 @@ export default function VisitScreen() {
     [session.events, ticketId, load],
   );
 
-  // the code's countdown, and its card again when the code is shown
+  const elapsed = visit ? elapsedView(visit, t, now) : null;
+  const ticking = code !== null || elapsed?.live === true;
+
+  // the code's countdown and the time since the request tick every second
   useEffect(() => {
-    if (!code) return;
+    if (!ticking) return;
+    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [code]);
+  }, [ticking]);
+
+  // the car reached the gate: a success buzz (the screen says it too)
+  const lastStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visit) return;
+    if (lastStatus.current && lastStatus.current !== visit.status && visit.status === 'ready')
+      haptic.success();
+    lastStatus.current = visit.status;
+  }, [visit]);
 
   useEffect(() => {
     void flags.pushOffered().then(setOffered);
@@ -108,11 +162,13 @@ export default function VisitScreen() {
       const r = await session.api.requestVisit(ticketId, key.for('request'));
       key.reset();
       setVisit(r.visit);
+      haptic.success();
       setMessage({
         tone: 'success',
         text: r.outcome === 'requested_early' ? t.visit.requestedEarly : t.visit.requested,
       });
     } catch (e) {
+      haptic.error();
       if (e instanceof NetworkError) setMessage({ tone: 'warning', text: t.visit.offline });
       else if (e instanceof ApiError && e.code === 'RETRIEVAL_ALREADY_ACTIVE') {
         key.reset();
@@ -176,18 +232,99 @@ export default function VisitScreen() {
       offered,
       visitOpen: visit.open,
     });
+  const stages = visit ? trackerStages(visit) : [];
+  const kind = visit ? heroKind(visit.status) : 'parked';
+  const tint = HERO_TINT[kind];
+
+  // the sticky sheet: the one primary action of the state, then «مساعدة»
+  const primary =
+    view && view.canRequest ? (
+      <Button
+        label={t.visit.request}
+        icon="car-front"
+        loading={busy}
+        loadingLabel={t.common.sending}
+        onPress={confirmRequest}
+        testID="visit-request"
+      />
+    ) : view && view.showCode ? (
+      <View style={styles.codePanel}>
+        <View style={styles.codeHead}>
+          <IconBadge name="shield-check" size={40} />
+          <View style={styles.flex}>
+            <AppText variant="label">{t.visit.code.title}</AppText>
+            <AppText variant="small" tone="muted">
+              {t.visit.code.hint}
+            </AppText>
+          </View>
+        </View>
+        {code ? (
+          <FadeIn swapKey={code.code}>
+            <View style={styles.codeBox}>
+              <AppText style={styles.code} center accessibilityRole="text">
+                {isolate(code.code)}
+              </AppText>
+            </View>
+            <AppText variant="small" tone="muted" center style={styles.codeExpiry}>
+              {fmt(t.visit.code.expiresIn, {
+                minutes: isolate(String(Math.ceil(codeSecondsLeft(code.expires_at, now) / 60))),
+              })}
+            </AppText>
+            <Button
+              label={t.visit.code.hide}
+              icon="eye-off"
+              variant="ghost"
+              size="md"
+              onPress={() => setCode(null)}
+            />
+          </FadeIn>
+        ) : (
+          <>
+            <View style={[styles.codeBox, styles.codeBoxMasked]} aria-hidden>
+              <AppText style={[styles.code, styles.codeMasked]} center>
+                {'••••••'}
+              </AppText>
+            </View>
+            <Button
+              label={t.visit.code.show}
+              icon="eye"
+              loading={codeBusy}
+              loadingLabel={t.visit.code.loading}
+              onPress={() => void showCode()}
+              testID="visit-show-code"
+            />
+          </>
+        )}
+      </View>
+    ) : view && view.canRate ? (
+      <Button label={t.visit.rate} icon="star" variant="secondary" onPress={() => setRating(true)} />
+    ) : null;
+
+  const footerKey = view
+    ? view.canRequest
+      ? 'request'
+      : view.showCode
+        ? 'code'
+        : view.canRate
+          ? 'rate'
+          : 'help'
+    : null;
 
   return (
     <Screen
+      footerKey={footerKey}
       footer={
-        view && view.canRequest ? (
-          <Button
-            label={t.visit.request}
-            loading={busy}
-            loadingLabel={t.common.sending}
-            onPress={confirmRequest}
-            testID="visit-request"
-          />
+        visit && view ? (
+          <>
+            {primary}
+            <Button
+              label={t.visit.help}
+              icon="message-circle"
+              variant="ghost"
+              size="md"
+              onPress={() => void help()}
+            />
+          </>
         ) : undefined
       }
     >
@@ -199,58 +336,91 @@ export default function VisitScreen() {
           <AppText>{t.visit.gone}</AppText>
         </Card>
       ) : null}
-      {!visit && !gone ? (
-        <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} />
-      ) : null}
+      {!visit && !gone ? <SkeletonList label={t.common.loading} hero count={1} /> : null}
       {visit && view ? (
         <>
-          <Card accent>
-            <AppText variant="cardTitle" accessibilityRole="header">
-              {view.title}
-            </AppText>
-            <AppText>{view.venue}</AppText>
-            <AppText variant="small" tone="muted">
-              {view.operator}
-            </AppText>
-            {view.plate ? <AppText style={styles.mono}>{view.plate}</AppText> : null}
-            {view.vehicle ? <AppText tone="muted">{view.vehicle}</AppText> : null}
-            {view.waiting ? <AppText tone="primary">{view.waiting}</AppText> : null}
-          </Card>
+          <FadeIn swapKey={visit.status}>
+            <View style={styles.hero}>
+              <View style={[styles.heroBand, { backgroundColor: tint.band }]}>
+                {LIVE.has(kind) ? (
+                  <Pulse size={88} tint={tint.disc}>
+                    <View style={[styles.heroDisc, { backgroundColor: tint.disc }]}>
+                      <Icon name={HERO_ICON[kind]} size={44} tint={color.onPrimary} />
+                    </View>
+                  </Pulse>
+                ) : (
+                  <View style={[styles.heroDisc, { backgroundColor: tint.disc }]}>
+                    <Icon name={HERO_ICON[kind]} size={44} tint={color.onPrimary} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.heroBody}>
+                <AppText variant="display" accessibilityRole="header">
+                  {view.title}
+                </AppText>
+                {view.waiting ? (
+                  <AppText variant="bodyStrong" tone="primary">
+                    {view.waiting}
+                  </AppText>
+                ) : null}
+                {elapsed ? (
+                  <View style={styles.elapsed}>
+                    <Icon name={elapsed.live ? 'timer' : 'clock'} size={18} tint={color.textMuted} />
+                    <AppText variant="small" tone="muted">
+                      {elapsed.label}
+                    </AppText>
+                    <AppText style={styles.elapsedValue}>{isolate(elapsed.value)}</AppText>
+                  </View>
+                ) : null}
+                <View style={styles.divider} />
+                <View style={styles.place}>
+                  <IconBadge name="building" size={40} />
+                  <View style={styles.flex}>
+                    <AppText variant="bodyStrong">{view.venue}</AppText>
+                    <AppText variant="small" tone="muted">
+                      {view.operator}
+                    </AppText>
+                  </View>
+                </View>
+                {view.plate || view.vehicle ? (
+                  <View style={styles.car}>
+                    {view.plate ? <PlateBadge plate={view.plate} /> : null}
+                    {view.vehicle ? (
+                      <AppText variant="small" tone="muted" style={styles.flex}>
+                        {view.vehicle}
+                      </AppText>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </FadeIn>
 
-          {view.showCode ? (
-            <Card accent>
-              <AppText variant="label">{t.visit.code.title}</AppText>
-              <AppText tone="muted">{t.visit.code.hint}</AppText>
-              {code ? (
-                <>
-                  <AppText style={styles.code} center accessibilityRole="text">
-                    {isolate(code.code)}
-                  </AppText>
-                  <AppText variant="small" tone="muted" center>
-                    {fmt(t.visit.code.expiresIn, {
-                      minutes: isolate(String(Math.ceil(codeSecondsLeft(code.expires_at, now) / 60))),
-                    })}
-                  </AppText>
-                  <Button label={t.visit.code.hide} variant="ghost" size="md" onPress={() => setCode(null)} />
-                </>
-              ) : (
-                <Button
-                  label={t.visit.code.show}
-                  loading={codeBusy}
-                  loadingLabel={t.visit.code.loading}
-                  onPress={() => void showCode()}
-                  testID="visit-show-code"
-                />
-              )}
+          <FadeIn index={1}>
+            <Card>
+              <StageTracker stages={stages} progress={trackerProgress(stages)} />
             </Card>
-          ) : null}
+          </FadeIn>
+
           {view.handoverNote ? <Banner tone="info">{view.handoverNote}</Banner> : null}
 
           {offerPush ? (
             <Card>
-              <AppText variant="label">{t.visit.pushOfferTitle}</AppText>
-              <AppText tone="muted">{t.visit.pushOfferBody}</AppText>
-              <Button label={t.visit.pushOfferEnable} size="md" onPress={() => void answerOffer(true)} />
+              <View style={styles.place}>
+                <IconBadge name="bell-ring" size={40} />
+                <View style={styles.flex}>
+                  <AppText variant="label">{t.visit.pushOfferTitle}</AppText>
+                  <AppText variant="small" tone="muted">
+                    {t.visit.pushOfferBody}
+                  </AppText>
+                </View>
+              </View>
+              <Button
+                label={t.visit.pushOfferEnable}
+                variant="secondary"
+                size="md"
+                onPress={() => void answerOffer(true)}
+              />
               <Button
                 label={t.visit.pushOfferLater}
                 variant="ghost"
@@ -260,39 +430,23 @@ export default function VisitScreen() {
             </Card>
           ) : null}
 
-          <Card>
-            {view.steps.map((s) => (
-              <View key={s.step} style={styles.step} accessibilityRole="text">
-                <View
-                  style={[
-                    styles.dot,
-                    s.state === 'done' && styles.dotDone,
-                    s.state === 'current' && styles.dotCurrent,
-                  ]}
-                />
-                <AppText
-                  style={styles.flex}
-                  variant={s.state === 'current' ? 'bodyStrong' : 'body'}
-                  tone={s.state === 'todo' ? 'muted' : 'default'}
-                >
-                  {s.label}
-                </AppText>
-                {s.time ? (
-                  <AppText variant="small" tone="muted">
-                    {s.time}
-                  </AppText>
-                ) : null}
-              </View>
-            ))}
-          </Card>
-
           {/* V2-022 (payments stream): the «ادفع» area lives inside this slot */}
           <VisitPaymentSlot visit={visit} onPaid={() => void load()} />
+
+          <FadeIn index={2}>
+            <Card>
+              <StepTimeline steps={view.steps} />
+            </Card>
+          </FadeIn>
 
           {visit.photos.length > 0 ? (
             <View style={styles.section}>
               <AppText variant="label">{t.visit.photos}</AppText>
-              <ScrollView horizontal contentContainerStyle={styles.photos}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.photos}
+              >
                 {visit.photos.map((p, i) => (
                   <Image
                     key={p.url}
@@ -305,16 +459,13 @@ export default function VisitScreen() {
             </View>
           ) : null}
 
-          {view.canRate ? (
-            <Button label={t.visit.rate} variant="secondary" size="md" onPress={() => setRating(true)} />
-          ) : null}
-          <Button label={t.visit.help} variant="ghost" size="md" onPress={() => void help()} />
           <RatingSheet
             ticketId={visit.ticket_id}
             visible={rating}
             onClose={() => setRating(false)}
             onRated={() => {
               setRating(false);
+              haptic.success();
               setMessage({ tone: 'success', text: t.rating.thanks });
               void load();
             }}
@@ -327,12 +478,48 @@ export default function VisitScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  mono: { fontFamily: font.mono, ...fontSize.lg },
-  code: { fontFamily: font.monoSemibold, ...fontSize.display, letterSpacing: 6, color: color.text },
-  step: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 32 },
-  dot: { width: 12, height: 12, borderRadius: radius.full, borderWidth: 2, borderColor: color.borderStrong },
-  dotDone: { backgroundColor: color.success, borderColor: color.success },
-  dotCurrent: { backgroundColor: color.primary, borderColor: color.primary },
+  hero: {
+    backgroundColor: color.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: color.border,
+    overflow: 'hidden',
+    boxShadow: shadow.md,
+  },
+  heroBand: { alignItems: 'center', justifyContent: 'center', paddingVertical: space[6] },
+  heroDisc: {
+    width: 88,
+    height: 88,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBody: { padding: space[4], gap: space[2] },
+  elapsed: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  elapsedValue: { fontFamily: font.monoSemibold, ...fontSize.base, color: color.text },
+  divider: { height: 1, backgroundColor: color.border, marginVertical: space[1] },
+  place: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  car: { flexDirection: 'row', alignItems: 'center', gap: space[3], flexWrap: 'wrap' },
+  codePanel: { gap: space[3] },
+  codeHead: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  codeBox: {
+    backgroundColor: color.primarySubtle,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.primary,
+    paddingVertical: space[3],
+  },
+  codeBoxMasked: { backgroundColor: color.surface2, borderColor: color.border },
+  // the letter spacing also follows the last digit: the same space before the first keeps the code centred
+  code: {
+    fontFamily: font.monoSemibold,
+    ...fontSize.display,
+    letterSpacing: 10,
+    paddingLeft: 10,
+    color: color.text,
+  },
+  codeMasked: { color: color.textDisabled },
+  codeExpiry: { marginTop: space[2] },
   section: { gap: space[2] },
   photos: { gap: space[2] },
   photo: { width: 220, height: 150, borderRadius: radius.lg, backgroundColor: color.surface2 },

@@ -27,6 +27,7 @@ import { Button } from '../ui/Button';
 import { Banner, Card, Checkbox } from '../ui/Controls';
 import { Field } from '../ui/Field';
 import { Screen } from '../ui/Screen';
+import { StepHeader } from '../ui/StepHeader';
 
 export default function Profile() {
   const { t, f, locale } = useI18n();
@@ -109,9 +110,7 @@ export default function Profile() {
         />
       }
     >
-      <AppText variant="title" accessibilityRole="header">
-        {t.profile.title}
-      </AppText>
+      <StepHeader icon="shield-check" title={t.profile.title} step={3} />
       <Field
         label={t.profile.nameLabel}
         testID="profile-name"

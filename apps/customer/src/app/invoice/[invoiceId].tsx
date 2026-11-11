@@ -8,7 +8,7 @@ import type { CustomerInvoiceDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import QRCode from 'qrcode';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { errorText } from '../../features/errorText';
 import { invoiceDetail } from '../../features/invoices';
 import { qrRuns } from '../../features/pass';
@@ -21,6 +21,7 @@ import { Banner, Card } from '../../ui/Controls';
 import { DevBanner } from '../../ui/DevBanner';
 import { openLink } from '../../ui/openLinks';
 import { Screen } from '../../ui/Screen';
+import { SkeletonList } from '../../ui/Skeleton';
 import { ScreenHeader } from '../../ui/ScreenHeader';
 
 const QR_SIZE = 200;
@@ -75,7 +76,7 @@ export default function Invoice() {
       <DevBanner />
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
       {!view ? (
-        <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} />
+        <SkeletonList label={t.common.loading} hero count={1} />
       ) : (
         <>
           <Card>

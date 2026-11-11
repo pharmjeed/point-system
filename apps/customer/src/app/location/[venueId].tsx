@@ -3,24 +3,32 @@
  * of the screen, DEC-494), the operator line «تشغيل: …» (V2-D01), open now, the week's hours, the address with
  * «فتح في الخرائط», and the prices — per visit, and since V2-032 the monthly and yearly prices of the plans sold here
  * with «اشترك», which opens C-09 (DEC-534; it replaces DEC-506's «قريبًا»).
+ *
+ * V2-UX (DEC-577): a hero header (the photos, or the building mark on a soft band) with the operator and the open-now
+ * chip; the address with its map button; the week's hours with today highlighted; the prices as tiles (the yearly
+ * one with its saving badge); «اشترك» in the sticky bottom sheet. Skeletons while loading.
  */
 import type { CustomerLocationDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { isApiError } from '../../api/errors';
 import { errorText } from '../../features/errorText';
 import { hoursLines, locationDetailView } from '../../features/locations';
+import { bestYearlySaving } from '../../features/ux';
 import { fmt } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useSession } from '../../session/SessionProvider';
-import { color, radius, space } from '../../theme/tokens';
+import { color, font, fontSize, radius, shadow, space } from '../../theme/tokens';
+import { FadeIn } from '../../ui/Animated';
 import { AppText } from '../../ui/AppText';
 import { Button } from '../../ui/Button';
-import { Banner, Card } from '../../ui/Controls';
+import { Banner, Card, IconBadge } from '../../ui/Controls';
+import { Icon } from '../../ui/Icon';
 import { openInMaps } from '../../ui/openLinks';
 import { Screen } from '../../ui/Screen';
 import { ScreenHeader } from '../../ui/ScreenHeader';
+import { SkeletonList } from '../../ui/Skeleton';
 
 export default function LocationDetail() {
   const { venueId } = useLocalSearchParams<{ venueId: string }>();
@@ -62,93 +70,146 @@ export default function LocationDetail() {
     if (!ok) setNotice(t.locations.openInMapsFailed);
   };
 
+  const saving = loc && loc.subscriptions_enabled ? bestYearlySaving(loc.plans) : null;
+
   return (
-    <Screen>
+    <Screen
+      footer={
+        loc && view?.canSubscribe ? (
+          <Button
+            label={t.subscribe.action}
+            icon="calendar-check"
+            onPress={() => router.push({ pathname: '/subscribe/[venueId]', params: { venueId } })}
+            testID="location-subscribe"
+          />
+        ) : undefined
+      }
+    >
       <ScreenHeader
         title={view?.title ?? t.locations.title}
         backLabel={t.common.back}
         onBack={() => router.back()}
       />
       {failure ? <Banner tone="danger">{failure}</Banner> : null}
-      {!loc && !failure ? (
-        <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} />
-      ) : null}
+      {!loc && !failure ? <SkeletonList label={t.common.loading} hero count={2} /> : null}
       {loc && view ? (
         <>
-          {loc.photo_urls.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.photos}
-            >
-              {loc.photo_urls.map((uri, i) => (
-                <Image
-                  key={uri}
-                  source={{ uri }}
-                  style={styles.photo}
-                  accessible
-                  accessibilityLabel={fmt(t.locations.photo, { n: i + 1, count: loc.photo_urls.length })}
-                />
-              ))}
-            </ScrollView>
-          ) : null}
-          <AppText tone="muted">{view.operator}</AppText>
-          {view.openNow ? (
-            <AppText variant="bodyStrong" tone={loc.open_now ? 'success' : 'danger'}>
-              {view.openNow}
-            </AppText>
-          ) : null}
+          <FadeIn>
+            <View style={styles.hero}>
+              {loc.photo_urls.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.photos}
+                >
+                  {loc.photo_urls.map((uri, i) => (
+                    <Image
+                      key={uri}
+                      source={{ uri }}
+                      style={styles.photo}
+                      accessible
+                      accessibilityLabel={fmt(t.locations.photo, { n: i + 1, count: loc.photo_urls.length })}
+                    />
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.heroBand}>
+                  <IconBadge name="building" size={72} bg={color.surface} />
+                </View>
+              )}
+              <View style={styles.heroBody}>
+                <AppText tone="muted">{view.operator}</AppText>
+                {view.openNow ? (
+                  <View
+                    style={[
+                      styles.openChip,
+                      { backgroundColor: loc.open_now ? color.successSubtle : color.dangerSubtle },
+                    ]}
+                  >
+                    <Icon name="clock" size={16} tint={loc.open_now ? color.successText : color.dangerText} />
+                    <AppText variant="bodyStrong" tone={loc.open_now ? 'success' : 'danger'}>
+                      {view.openNow}
+                    </AppText>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </FadeIn>
 
-          <Card>
-            <AppText variant="cardTitle" accessibilityRole="header">
-              {t.locations.address}
-            </AppText>
-            {view.address ? <AppText>{view.address}</AppText> : null}
-            {loc.lat !== null || view.address ? (
-              <Button
-                label={t.locations.openInMaps}
-                variant="secondary"
-                size="md"
-                onPress={() => void maps()}
-              />
-            ) : null}
-          </Card>
-
-          <Card>
-            <AppText variant="cardTitle" accessibilityRole="header">
-              {t.locations.hours}
-            </AppText>
-            {hoursLines(loc.opening_hours, t, Date.now()).map((h) => (
-              <View key={h.day} style={styles.hoursRow}>
-                <AppText variant={h.today ? 'bodyStrong' : 'body'} style={styles.flex}>
-                  {h.today ? `${h.label} (${t.locations.today})` : h.label}
+          <FadeIn index={1}>
+            <Card>
+              <View style={styles.cardHead}>
+                <IconBadge name="map-pin" size={36} />
+                <AppText variant="cardTitle" accessibilityRole="header" style={styles.flex}>
+                  {t.locations.address}
                 </AppText>
-                <AppText variant={h.today ? 'bodyStrong' : 'body'}>{h.text}</AppText>
               </View>
-            ))}
-          </Card>
+              {view.address ? <AppText>{view.address}</AppText> : null}
+              {loc.lat !== null || view.address ? (
+                <Button
+                  label={t.locations.openInMaps}
+                  icon="map"
+                  variant="secondary"
+                  size="md"
+                  onPress={() => void maps()}
+                />
+              ) : null}
+            </Card>
+          </FadeIn>
 
-          <Card>
-            <AppText variant="cardTitle" accessibilityRole="header">
-              {t.locations.prices}
-            </AppText>
-            {view.prices.map((p) => (
-              <View key={p.label} style={styles.hoursRow}>
-                <AppText style={styles.flex}>{p.label}</AppText>
-                <AppText variant="bodyStrong">{p.value}</AppText>
+          <FadeIn index={2}>
+            <Card>
+              <View style={styles.cardHead}>
+                <IconBadge name="clock" size={36} />
+                <AppText variant="cardTitle" accessibilityRole="header" style={styles.flex}>
+                  {t.locations.hours}
+                </AppText>
               </View>
-            ))}
-            <AppText variant="small" tone="muted">
-              {t.locations.vatNote}
-            </AppText>
-            {view.canSubscribe ? (
-              <Button
-                label={t.subscribe.action}
-                onPress={() => router.push({ pathname: '/subscribe/[venueId]', params: { venueId } })}
-                testID="location-subscribe"
-              />
-            ) : null}
-          </Card>
+              {hoursLines(loc.opening_hours, t, Date.now()).map((h) => (
+                <View key={h.day} style={[styles.hoursRow, h.today && styles.today]}>
+                  <AppText variant={h.today ? 'bodyStrong' : 'body'} style={styles.flex}>
+                    {h.today ? `${h.label} (${t.locations.today})` : h.label}
+                  </AppText>
+                  <AppText style={[styles.hours, h.today && styles.hoursToday]}>{h.text}</AppText>
+                </View>
+              ))}
+            </Card>
+          </FadeIn>
+
+          <FadeIn index={3}>
+            <Card>
+              <View style={styles.cardHead}>
+                <IconBadge name="wallet" size={36} />
+                <AppText variant="cardTitle" accessibilityRole="header" style={styles.flex}>
+                  {t.locations.prices}
+                </AppText>
+              </View>
+              <View style={styles.tiles}>
+                {view.prices.map((p) => {
+                  const yearly = p.label === t.locations.yearly;
+                  return (
+                    <View key={p.label} style={[styles.tile, yearly && saving !== null && styles.tileBest]}>
+                      {yearly && saving !== null ? (
+                        <View style={styles.saveBadge}>
+                          <Icon name="badge-percent" size={14} tint={color.onPrimary} />
+                          <AppText variant="caption" style={styles.saveText}>
+                            {fmt(t.subscribe.saving, { pct: saving })}
+                          </AppText>
+                        </View>
+                      ) : null}
+                      <AppText variant="small" tone="muted">
+                        {p.label}
+                      </AppText>
+                      <AppText style={styles.price}>{p.value}</AppText>
+                    </View>
+                  );
+                })}
+              </View>
+              <AppText variant="small" tone="muted">
+                {t.locations.vatNote}
+              </AppText>
+            </Card>
+          </FadeIn>
           {notice ? <Banner tone="warning">{notice}</Banner> : null}
         </>
       ) : null}
@@ -158,7 +219,67 @@ export default function LocationDetail() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  photos: { gap: space[2] },
+  hero: {
+    backgroundColor: color.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: color.border,
+    overflow: 'hidden',
+    boxShadow: shadow.md,
+  },
+  heroBand: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: space[8],
+    backgroundColor: color.primarySubtle,
+  },
+  heroBody: { padding: space[4], gap: space[2] },
+  openChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: space[1] + space[0.5],
+    paddingHorizontal: space[3],
+    paddingVertical: space[1],
+    borderRadius: radius.full,
+  },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginBottom: space[1] },
+  photos: { gap: space[2], padding: space[2] },
   photo: { width: 280, height: 180, borderRadius: radius.lg, backgroundColor: color.surface2 },
-  hoursRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 32 },
+  hoursRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    minHeight: 36,
+    paddingHorizontal: space[2],
+    borderRadius: radius.sm,
+  },
+  today: { backgroundColor: color.primarySubtle },
+  hours: { fontFamily: font.mono, ...fontSize.sm, color: color.text },
+  hoursToday: { fontFamily: font.monoSemibold, color: color.primaryText },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
+  tile: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    minWidth: 96,
+    padding: space[3],
+    gap: space[1],
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.bg,
+  },
+  tileBest: { borderColor: color.primary, borderWidth: 2, backgroundColor: color.primarySubtle },
+  saveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: space[1],
+    paddingHorizontal: space[2],
+    paddingVertical: space[0.5],
+    borderRadius: radius.full,
+    backgroundColor: color.primary,
+  },
+  saveText: { color: color.onPrimary },
+  price: { fontFamily: font.bold, ...fontSize.lg, color: color.text },
 });

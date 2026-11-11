@@ -8,7 +8,7 @@
 import type { CustomerSubscription, CustomerVehicle } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { isApiError } from '../api/errors';
 import { errorText } from '../features/errorText';
 import { PaySheet } from '../features/pay';
@@ -16,12 +16,14 @@ import { coverableVehicles, subscriptionCard, toggleVehicle } from '../features/
 import { useI18n } from '../i18n/I18nProvider';
 import { newIdempotencyKey } from '../session/secureStore';
 import { useSession } from '../session/SessionProvider';
-import { color, space } from '../theme/tokens';
+import { space } from '../theme/tokens';
 import { AppText } from '../ui/AppText';
 import { Button } from '../ui/Button';
 import { Banner, Card, Checkbox } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
 import { Screen } from '../ui/Screen';
+import { SkeletonList } from '../ui/Skeleton';
+import { EmptyState } from '../ui/EmptyState';
 import { ScreenHeader } from '../ui/ScreenHeader';
 
 type Message = { tone: 'success' | 'danger' | 'warning'; text: string };
@@ -111,17 +113,21 @@ export default function Subscriptions() {
       <ScreenHeader title={t.subscriptions.title} backLabel={t.common.back} onBack={() => router.back()} />
       <DevBanner />
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
-      {!items ? <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} /> : null}
+      {!items ? <SkeletonList label={t.common.loading} count={2} /> : null}
       {items && items.length === 0 ? (
-        <Card>
-          <AppText tone="muted">{t.subscriptions.empty}</AppText>
-          <Button
-            label={t.subscriptions.browse}
-            variant="secondary"
-            size="md"
-            onPress={() => router.push('/locations')}
-          />
-        </Card>
+        <EmptyState
+          icon="calendar-check"
+          text={t.subscriptions.empty}
+          action={
+            <Button
+              label={t.subscriptions.browse}
+              icon="map"
+              variant="secondary"
+              size="md"
+              onPress={() => router.push('/locations')}
+            />
+          }
+        />
       ) : null}
       {items?.map((s) => {
         const card = subscriptionCard(s, t, locale);

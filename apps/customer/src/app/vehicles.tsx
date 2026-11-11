@@ -6,7 +6,7 @@
 import { CUSTOMER_VEHICLES_MAX, type CustomerVehicle } from '@point/shared/customer';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { errorText } from '../features/errorText';
 import { canAddVehicle, removeIssueFromError, vehicleRow } from '../features/vehicles';
 import { useI18n } from '../i18n/I18nProvider';
@@ -18,6 +18,8 @@ import { Button } from '../ui/Button';
 import { Banner, Card } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
 import { Screen } from '../ui/Screen';
+import { SkeletonList } from '../ui/Skeleton';
+import { EmptyState } from '../ui/EmptyState';
 import { ScreenHeader } from '../ui/ScreenHeader';
 
 export default function Vehicles() {
@@ -92,12 +94,8 @@ export default function Vehicles() {
       <ScreenHeader title={t.vehicles.title} backLabel={t.vehicles.back} onBack={() => router.back()} />
       <DevBanner />
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
-      {!items ? <ActivityIndicator color={color.primary} accessibilityLabel={t.common.loading} /> : null}
-      {items && items.length === 0 ? (
-        <Card>
-          <AppText tone="muted">{t.vehicles.empty}</AppText>
-        </Card>
-      ) : null}
+      {!items ? <SkeletonList label={t.common.loading} count={2} avatar /> : null}
+      {items && items.length === 0 ? <EmptyState icon="car" text={t.vehicles.empty} /> : null}
       {items?.map((v) => {
         const row = vehicleRow(v, t);
         return (

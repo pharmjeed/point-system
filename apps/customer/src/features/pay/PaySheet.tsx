@@ -9,21 +9,31 @@
  * here and tokenized on the device with the gateway's publishable key (tokenize.ts) — the card never reaches POINT's
  * servers — with «حفظ البطاقة» (explicit `card_on_file` consent). The server decides the amount; this screen only
  * shows it. 3-D Secure opens in an in-app browser; the result comes from the server (payFlow.ts).
+ *
+ * V2-UX (DEC-579): the sheet rises from the bottom over a dimmed screen (rounded top, a grab handle), the total in a
+ * summary block, the saved cards as selectable rows with a card icon and a tick, one primary «ادفع» button; once the
+ * server confirms, a success mark springs in with the confirmation sentence and the sheet closes by itself a moment
+ * later (the same `onPaid` as before). The pay area of C-12 is a card with the wallet icon and a secondary button.
  */
 import type { CustomerPaymentMethod, CustomerPaymentSource } from '@point/shared/customer';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { appConfig } from '../../config';
 import { isolate } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
 import { newIdempotencyKey } from '../../session/secureStore';
 import { useSession } from '../../session/SessionProvider';
-import { color, radius, space } from '../../theme/tokens';
+import { color, font, fontSize, radius, space } from '../../theme/tokens';
 import { AppText } from '../../ui/AppText';
 import { Button } from '../../ui/Button';
-import { Banner, Card, Checkbox } from '../../ui/Controls';
+import { Banner, Card, Checkbox, IconBadge } from '../../ui/Controls';
 import { Field } from '../../ui/Field';
+import { haptic } from '../../ui/haptics';
+import { Icon } from '../../ui/Icon';
+import { Sheet } from '../../ui/Sheet';
+import { SuccessCheck } from '../../ui/SuccessCheck';
+import { Touchable } from '../../ui/Touchable';
 import { CommandKey } from '../commandKey';
 import { formatCardNumber, formatExpiry, sar, validateCard, type CardIssue } from './card';
 import { cardRow, orderCards } from './methods';
@@ -55,21 +65,38 @@ export function PayDue({ ticketId, amountHalalas, onPaid, applePay }: PayDueProp
   if (done)
     return (
       <Card>
-        <AppText variant="bodyStrong" tone="success">
-          {t.pay.paidBadge}
-        </AppText>
+        <View style={styles.row}>
+          <IconBadge name="circle-check" size={40} tint={color.successText} bg={color.successSubtle} />
+          <AppText variant="bodyStrong" tone="success">
+            {t.pay.paidBadge}
+          </AppText>
+        </View>
       </Card>
     );
   return (
     <Card accent>
-      <AppText variant="cardTitle" accessibilityRole="header">
-        {f(t.pay.due, { amount })}
-      </AppText>
+      <View style={styles.row}>
+        <IconBadge name="wallet" size={44} />
+        <View style={styles.flex}>
+          <AppText variant="cardTitle" accessibilityRole="header">
+            {f(t.pay.due, { amount })}
+          </AppText>
+          <AppText variant="small" tone="muted">
+            {t.pay.vatIncluded}
+          </AppText>
+        </View>
+      </View>
       <AppText variant="small" tone="muted">
-        {t.pay.vatIncluded}
+        {t.pay.dueHint}
       </AppText>
-      <AppText tone="muted">{t.pay.dueHint}</AppText>
-      <Button label={f(t.pay.payNow, { amount })} onPress={() => setOpen(true)} testID="pay-due-open" />
+      <Button
+        label={f(t.pay.payNow, { amount })}
+        icon="credit-card"
+        variant="secondary"
+        size="md"
+        onPress={() => setOpen(true)}
+        testID="pay-due-open"
+      />
       <PaySheet
         visible={open}
         ticketId={ticketId}
@@ -129,6 +156,8 @@ export function PaySheet({
   const [issues, setIssues] = useState<CardIssue[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const [succeeded, setSucceeded] = useState<string | null>(null);
+  const closing = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [applePayReady, setApplePayReady] = useState(false);
   const [consentVersion, setConsentVersion] = useState(appConfig.payments.cardOnFileVersion);
   const key = useRef(new CommandKey(newIdempotencyKey)).current;
@@ -139,9 +168,27 @@ export function PaySheet({
   const amount = sar(amountHalalas);
   const cardsAvailable = appConfig.api.mode === 'fake' || !!appConfig.payments.moyasarPublishableKey;
 
+  useEffect(
+    () => () => {
+      if (closing.current) clearTimeout(closing.current);
+    },
+    [],
+  );
+
+  /** the server confirmed: the success mark, then the sheet closes by itself */
+  const succeed = (text: string) => {
+    haptic.success();
+    setSucceeded(text);
+    closing.current = setTimeout(() => {
+      closing.current = null;
+      onPaid();
+    }, SUCCESS_MS);
+  };
+
   useEffect(() => {
     if (!visible) return;
     setMessage(null);
+    setSucceeded(null);
     session.api
       .paymentMethods()
       .then((list) => {
@@ -192,19 +239,18 @@ export function PaySheet({
     switch (outcome.kind) {
       case 'paid':
         key.reset();
-        setMessage({ tone: 'success', text: t.pay.paid });
-        onPaid();
+        succeed(t.pay.paid);
         return;
       case 'already_paid':
         key.reset();
-        setMessage({ tone: 'success', text: t.pay.alreadyPaid });
-        onPaid();
+        succeed(t.pay.alreadyPaid);
         return;
       case 'pending':
         setMessage({ tone: 'info', text: t.pay.pending });
         return;
       case 'failed':
         key.reset();
+        haptic.error();
         setMessage({ tone: 'danger', text: t.pay.failed });
         return;
       case 'in_progress':
@@ -262,18 +308,34 @@ export function PaySheet({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <ScrollView style={styles.backdrop} keyboardShouldPersistTaps="handled">
-        <View style={styles.sheet} accessibilityViewIsModal>
+    <Sheet visible={visible} onRequestClose={busy || succeeded ? () => undefined : onClose}>
+      {succeeded ? (
+        <View style={styles.success} accessibilityLiveRegion="polite">
+          <SuccessCheck />
+          <AppText variant="title" center accessibilityRole="header">
+            {title ?? t.pay.sheetTitle}
+          </AppText>
+          <AppText center tone="success" variant="bodyStrong">
+            {succeeded}
+          </AppText>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
           <AppText variant="title" accessibilityRole="header">
             {title ?? t.pay.sheetTitle}
           </AppText>
-          <AppText variant="bodyStrong">
-            {t.pay.total}: {f(t.pay.amountLabel, { amount: isolate(amount) })}
-          </AppText>
-          <AppText variant="small" tone="muted">
-            {t.pay.vatIncluded}
-          </AppText>
+          <View style={styles.summary}>
+            <IconBadge name="receipt" size={40} />
+            <View style={styles.flex}>
+              <AppText variant="small" tone="muted">
+                {t.pay.total}
+              </AppText>
+              <AppText style={styles.amount}>{f(t.pay.amountLabel, { amount: isolate(amount) })}</AppText>
+            </View>
+            <AppText variant="caption" tone="muted" style={styles.vat}>
+              {t.pay.vatIncluded}
+            </AppText>
+          </View>
           {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
 
           {applePayReady ? (
@@ -287,26 +349,48 @@ export function PaySheet({
                 const row = cardRow(c, t);
                 const on = selected === c.id;
                 return (
-                  <Pressable
+                  <Touchable
                     key={c.id}
                     accessibilityRole="radio"
                     accessibilityState={{ selected: on }}
                     onPress={() => setSelected(c.id)}
+                    feedback="select"
+                    pressScale={0.99}
                     style={[styles.option, on && styles.optionOn]}
                   >
-                    <AppText variant="bodyStrong">{row.title}</AppText>
-                    {row.expires ? <AppText tone="muted">{row.expires}</AppText> : null}
-                  </Pressable>
+                    <Icon name="credit-card" size={22} tint={on ? color.primaryText : color.textMuted} />
+                    <View style={styles.flex}>
+                      <AppText variant="bodyStrong">{row.title}</AppText>
+                      {row.expires ? (
+                        <AppText variant="small" tone="muted">
+                          {row.expires}
+                        </AppText>
+                      ) : null}
+                    </View>
+                    <View style={[styles.tick, on && styles.tickOn]}>
+                      {on ? <Icon name="check" size={14} tint={color.onPrimary} strokeWidth={3} /> : null}
+                    </View>
+                  </Touchable>
                 );
               })}
-              <Pressable
+              <Touchable
                 accessibilityRole="radio"
                 accessibilityState={{ selected: selected === 'new' }}
                 onPress={() => setSelected('new')}
+                feedback="select"
+                pressScale={0.99}
                 style={[styles.option, selected === 'new' && styles.optionOn]}
               >
-                <AppText variant="bodyStrong">{t.pay.newCard}</AppText>
-              </Pressable>
+                <Icon name="plus" size={22} tint={selected === 'new' ? color.primaryText : color.textMuted} />
+                <View style={styles.flex}>
+                  <AppText variant="bodyStrong">{t.pay.newCard}</AppText>
+                </View>
+                <View style={[styles.tick, selected === 'new' && styles.tickOn]}>
+                  {selected === 'new' ? (
+                    <Icon name="check" size={14} tint={color.onPrimary} strokeWidth={3} />
+                  ) : null}
+                </View>
+              </Touchable>
             </View>
           ) : null}
 
@@ -374,9 +458,12 @@ export function PaySheet({
             )
           ) : null}
 
-          <AppText variant="small" tone="muted">
-            {t.pay.secureNote}
-          </AppText>
+          <View style={styles.row}>
+            <Icon name="shield-check" size={18} tint={color.successText} />
+            <AppText variant="small" tone="muted" style={styles.flex}>
+              {t.pay.secureNote}
+            </AppText>
+          </View>
           <Button
             label={f(t.pay.payNow, { amount })}
             loading={busy}
@@ -384,25 +471,55 @@ export function PaySheet({
             disabled={selected === 'new' && !cardsAvailable}
             onPress={() => void payWithCard()}
             testID="pay-sheet-submit"
+            icon="credit-card"
           />
           <Button label={t.pay.cancel} variant="ghost" size="md" onPress={onClose} disabled={busy} />
-        </View>
-      </ScrollView>
-    </Modal>
+        </ScrollView>
+      )}
+    </Sheet>
   );
 }
 
+/** How long the success mark stays before the sheet closes by itself (DEC-579). */
+const SUCCESS_MS = 1400;
+
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: color.surface },
-  sheet: { padding: space[4], gap: space[3] },
+  flex: { flex: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  sheetBody: { padding: space[4], paddingTop: space[2], gap: space[3] },
+  summary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    padding: space[3],
+    borderRadius: radius.lg,
+    backgroundColor: color.bg,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  amount: { fontFamily: font.bold, ...fontSize['2xl'], color: color.text },
+  vat: { maxWidth: 96 },
+  success: { alignItems: 'center', gap: space[3], padding: space[8], paddingBottom: space[12] },
   group: { gap: space[2] },
   option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
     borderWidth: 1,
     borderColor: color.border,
     borderRadius: radius.md,
     padding: space[3],
-    minHeight: 48,
-    gap: space[1],
+    minHeight: 56,
   },
-  optionOn: { borderColor: color.primary, borderWidth: 2 },
+  optionOn: { borderColor: color.primary, borderWidth: 2, backgroundColor: color.primarySubtle },
+  tick: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.full,
+    borderWidth: 2,
+    borderColor: color.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tickOn: { backgroundColor: color.primary, borderColor: color.primary },
 });
