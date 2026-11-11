@@ -126,6 +126,10 @@ export const ar = {
     settings: 'الإعدادات',
     openVisit: 'افتح حالة سيارتك',
     myVisits: 'زياراتي',
+    // V2-UX (DEC-576): the greeting's time of day and the quick actions row
+    morning: 'صباح الخير',
+    evening: 'مساء الخير',
+    quickActions: 'اختصارات',
   },
   // C-07 / C-08 (V2-012)
   locations: {
@@ -169,6 +173,9 @@ export const ar = {
     photo: 'صورة {n} من {count}',
     notListed: 'هذا الموقع غير متاح في التطبيق.',
     listSeparator: '، ',
+    // V2-UX (DEC-577)
+    subscribedBadge: 'مشترك',
+    plans: 'الباقات',
   },
   // C-15 (V2-012)
   vehicles: {
@@ -298,6 +305,18 @@ export const ar = {
     pushOfferBody: 'فعّل الإشعارات لتعرف متى قُبل طلبك ومتى تصل سيارتك إلى البوابة.',
     pushOfferEnable: 'فعّل الإشعارات',
     pushOfferLater: 'لاحقًا',
+    // V2-UX (DEC-570): the stage tracker (short names, apart from the timeline's) and the time under the hero
+    tracker: 'مراحل الزيارة',
+    stages: {
+      received: 'استلام',
+      parked: 'صف',
+      requested: 'طلب',
+      on_the_way: 'إحضار',
+      ready: 'جاهزة',
+      delivered: 'تسليم',
+    },
+    stageState: { done: 'تمت', current: 'الآن', todo: 'لاحقًا' },
+    since: { requested: 'منذ طلبك', ready: 'وصلت البوابة', received: 'استلمناها' },
   },
   rating: {
     title: 'قيّم الخدمة',
@@ -346,6 +365,8 @@ export const ar = {
     unavailable: 'افتح البطاقة مرة واحدة مع الاتصال بالإنترنت لتعمل بعدها بلا اتصال.',
     retry: 'إعادة المحاولة',
     qrLabel: 'رمز بطاقة الدخول',
+    // V2-UX (DEC-578)
+    brightness: 'نرفع سطوع الشاشة تلقائيًا ما دامت البطاقة ظاهرة.',
   },
   ticketStatus: {
     received: 'استلمنا سيارتك',

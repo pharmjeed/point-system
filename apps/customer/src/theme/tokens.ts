@@ -31,6 +31,7 @@ export function px(value: string): number {
 
 const tree = raw as unknown as Json;
 const semanticLight = (raw.semantic as unknown as { light: Record<string, { $value: string }> }).light;
+const semanticDark = (raw.semantic as unknown as { dark: Record<string, { $value: string }> }).dark;
 
 function role(name: string): string {
   const entry = semanticLight[name];
@@ -65,6 +66,74 @@ export const color = {
   dangerText: role('danger-text'),
   infoSubtle: role('info-subtle'),
   infoText: role('info-text'),
+  // V2-UX (DEC-571): the roles the redesigned screens add — the amber of «مطلوبة», the navy of the hero
+  warning: role('warning'),
+  onWarning: role('on-warning'),
+  info: role('info'),
+  surfaceInverse: role('surface-inverse'),
+  /**
+   * Text on the navy `surface-inverse` card of C-06 (DEC-571): the dark theme's own text roles, which are defined
+   * for exactly that background family (brand §4.4; 8.97:1 for the muted one).
+   */
+  textOnInverse: resolveTokenValue(tree, (semanticDark['text'] as { $value: string }).$value),
+  textOnInverseMuted: resolveTokenValue(tree, (semanticDark['text-muted'] as { $value: string }).$value),
+  primaryOnInverse: resolveTokenValue(tree, (semanticDark['primary-text'] as { $value: string }).$value),
+} as const;
+
+type StatusKey =
+  | 'received'
+  | 'parking'
+  | 'parked'
+  | 'requested'
+  | 'assigned'
+  | 'assigned_waiting'
+  | 'retrieving'
+  | 'ready'
+  | 'delivered'
+  | 'reparking'
+  | 'voided';
+
+/**
+ * Ticket status colours of brand §4.3 (`status.<status>.light.bg/fg`, the `StatusChip` of 03 §3.3): always shown
+ * with the status text and an icon, never colour alone.
+ */
+export const statusColor = Object.fromEntries(
+  Object.entries(raw.status as unknown as Record<StatusKey, { light: { bg: string; fg: string } }>).map(
+    ([k, v]) => [k, { bg: resolveTokenValue(tree, v.light.bg), fg: resolveTokenValue(tree, v.light.fg) }],
+  ),
+) as Record<StatusKey, { bg: string; fg: string }>;
+
+/** `"200ms"` → 200. */
+export function ms(value: string): number {
+  const m = /^(\d+(?:\.\d+)?)ms$/.exec(value);
+  if (!m) throw new Error(`not a duration in ms: ${value}`);
+  return Number(m[1]);
+}
+
+/** `"cubic-bezier(.2,0,0,1)"` → [0.2, 0, 0, 1] (the control points React Native's `Easing.bezier` takes). */
+export function bezier(value: string): [number, number, number, number] {
+  const m = /^cubic-bezier\(([^)]+)\)$/.exec(value.replace(/\s+/g, ''));
+  const parts = m ? (m[1] as string).split(',').map(Number) : [];
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n)))
+    throw new Error(`not a cubic-bezier: ${value}`);
+  return parts as [number, number, number, number];
+}
+
+/** Motion of 03 §2.7: 120 ms presses, 200 ms cards and toasts, 320 ms sheets; the standard and emphasized curves. */
+export const motion = {
+  fast: ms(raw.motion['duration-fast']),
+  base: ms(raw.motion['duration-base']),
+  slow: ms(raw.motion['duration-slow']),
+  standard: bezier(raw.motion['ease-standard']),
+  emphasized: bezier(raw.motion['ease-emphasized']),
+  exit: bezier(raw.motion['ease-exit']),
+} as const;
+
+/** Light shadows of 03 §2.5 as CSS `box-shadow` strings (React Native ≥ 0.76 and react-native-web read `boxShadow`). */
+export const shadow = {
+  sm: raw.shadow.light.sm,
+  md: raw.shadow.light.md,
+  lg: raw.shadow.light.lg,
 } as const;
 
 function scale<K extends string>(group: Record<K, { $value: string }>): Record<K, number> {
@@ -95,6 +164,7 @@ export const layout = {
   buttonLg: px(raw.layout['button-lg']),
   topbarH: px(raw.layout['topbar-h']),
   shellMaxW: px(raw.layout['shell-max-w']),
+  bottomnavH: px(raw.layout['bottomnav-h']),
   focusRingW: px(raw.layout['focus-ring-w']),
 } as const;
 

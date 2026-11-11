@@ -16,3 +16,5 @@ playwright-report/
 *.mobileprovision
 # store screenshots (V2-052, scripts/store-screenshots.mjs): reviewed by the owner, uploaded by hand, never committed
 store-screenshots/
+# before set of the V2-UX redesign (DEC-570): kept locally for the owner, never committed
+store-screenshots-before/

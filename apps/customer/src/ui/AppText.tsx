@@ -9,15 +9,30 @@ import { color, font, fontSize } from '../theme/tokens';
 import { textStart } from './textStart';
 
 export type TextVariant =
-  'display' | 'title' | 'cardTitle' | 'body' | 'bodyStrong' | 'small' | 'label' | 'mono';
+  | 'hero'
+  | 'display'
+  | 'title'
+  | 'cardTitle'
+  | 'body'
+  | 'bodyStrong'
+  | 'small'
+  | 'smallStrong'
+  | 'caption'
+  | 'label'
+  | 'mono';
 
 const variants: Record<TextVariant, TextStyle> = {
+  // V2-UX (DEC-571): the status title of the C-12 hero and the amounts of C-09/C-10
+  hero: { ...fontSize['4xl'], fontFamily: font.bold },
   display: { ...fontSize['3xl'], fontFamily: font.bold },
   title: { ...fontSize['2xl'], fontFamily: font.bold },
   cardTitle: { ...fontSize.xl, fontFamily: font.semibold },
   body: { ...fontSize.base, fontFamily: font.regular },
   bodyStrong: { ...fontSize.base, fontFamily: font.semibold },
   small: { ...fontSize.sm, fontFamily: font.regular },
+  smallStrong: { ...fontSize.sm, fontFamily: font.semibold },
+  // tracker labels and badges only (03 §2.3: non-critical hints)
+  caption: { ...fontSize.xs, fontFamily: font.medium },
   label: { ...fontSize.base, fontFamily: font.semibold },
   mono: { ...fontSize.base, fontFamily: font.mono },
 };

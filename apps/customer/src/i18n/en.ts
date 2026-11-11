@@ -158,6 +158,9 @@ export const en: Dictionary = {
     settings: 'Settings',
     openVisit: 'Open your car’s status',
     myVisits: 'My visits',
+    morning: 'Good morning',
+    evening: 'Good evening',
+    quickActions: 'Shortcuts',
   },
   locations: {
     title: 'Locations',
@@ -201,6 +204,8 @@ export const en: Dictionary = {
     photo: 'Photo {n} of {count}',
     notListed: 'This location is not available in the app.',
     listSeparator: ', ',
+    subscribedBadge: 'Subscribed',
+    plans: 'Plans',
   },
   vehicles: {
     title: 'My cars',
@@ -327,6 +332,17 @@ export const en: Dictionary = {
       'Turn on notifications to know when your request is accepted and when your car reaches the gate.',
     pushOfferEnable: 'Turn on notifications',
     pushOfferLater: 'Later',
+    tracker: 'Visit stages',
+    stages: {
+      received: 'Intake',
+      parked: 'Parking',
+      requested: 'Request',
+      on_the_way: 'Bringing',
+      ready: 'Ready',
+      delivered: 'Handover',
+    },
+    stageState: { done: 'done', current: 'now', todo: 'to come' },
+    since: { requested: 'Since your request', ready: 'At the gate since', received: 'Received at' },
   },
   rating: {
     title: 'Rate the service',
@@ -373,6 +389,7 @@ export const en: Dictionary = {
     unavailable: 'Open the pass once while online; it then works without a connection.',
     retry: 'Try again',
     qrLabel: 'Entry pass code',
+    brightness: 'Screen brightness goes up while the pass is shown.',
   },
   ticketStatus: {
     received: 'We received your car',
