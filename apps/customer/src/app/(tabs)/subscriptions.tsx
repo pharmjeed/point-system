@@ -9,22 +9,22 @@ import type { CustomerSubscription, CustomerVehicle } from '@point/shared/custom
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
-import { isApiError } from '../api/errors';
-import { errorText } from '../features/errorText';
-import { PaySheet } from '../features/pay';
-import { coverableVehicles, subscriptionCard, toggleVehicle } from '../features/subscriptions';
-import { useI18n } from '../i18n/I18nProvider';
-import { newIdempotencyKey } from '../session/secureStore';
-import { useSession } from '../session/SessionProvider';
-import { space } from '../theme/tokens';
-import { AppText } from '../ui/AppText';
-import { Button } from '../ui/Button';
-import { Banner, Card, Checkbox } from '../ui/Controls';
-import { DevBanner } from '../ui/DevBanner';
-import { Screen } from '../ui/Screen';
-import { SkeletonList } from '../ui/Skeleton';
-import { EmptyState } from '../ui/EmptyState';
-import { ScreenHeader } from '../ui/ScreenHeader';
+import { isApiError } from '../../api/errors';
+import { errorText } from '../../features/errorText';
+import { PaySheet } from '../../features/pay';
+import { coverableVehicles, subscriptionCard, toggleVehicle } from '../../features/subscriptions';
+import { useI18n } from '../../i18n/I18nProvider';
+import { newIdempotencyKey } from '../../session/secureStore';
+import { useSession } from '../../session/SessionProvider';
+import { space } from '../../theme/tokens';
+import { AppText } from '../../ui/AppText';
+import { Button } from '../../ui/Button';
+import { Banner, Card, Checkbox } from '../../ui/Controls';
+import { DevBanner } from '../../ui/DevBanner';
+import { Screen } from '../../ui/Screen';
+import { SkeletonList } from '../../ui/Skeleton';
+import { EmptyState } from '../../ui/EmptyState';
+import { ScreenHeader } from '../../ui/ScreenHeader';
 
 type Message = { tone: 'success' | 'danger' | 'warning'; text: string };
 
@@ -109,8 +109,8 @@ export default function Subscriptions() {
   const cars = coverableVehicles(vehicles);
 
   return (
-    <Screen>
-      <ScreenHeader title={t.subscriptions.title} backLabel={t.common.back} onBack={() => router.back()} />
+    <Screen tab>
+      <ScreenHeader title={t.subscriptions.title} />
       <DevBanner />
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
       {!items ? <SkeletonList label={t.common.loading} count={2} /> : null}

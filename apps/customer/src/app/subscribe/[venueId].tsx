@@ -238,7 +238,8 @@ export default function Subscribe() {
           onClose={() => setPaying(false)}
           onPaid={() => {
             setPaying(false);
-            router.replace({ pathname: '/subscriptions', params: { notice: 'subscribed', venue } });
+            // back down to the tabs, on «اشتراكاتي» (DEC-582): C-08 and C-07 are not left under it
+            router.dismissTo({ pathname: '/subscriptions', params: { notice: 'subscribed', venue } });
           }}
           subscription={{
             start: (body, idempotencyKey) =>

@@ -1,6 +1,6 @@
 /**
  * C-12 سيارتي الآن (V2-015; docs/v2/01 R3/R4, DEC-516 … DEC-520): the live state with its timeline, the intake photos
- * (short-lived links read again on every display), «اطلب السيارة» after a confirmation, the waiting and ready states,
+ * (short-lived links read again on every display), «اطلب السيارة», the waiting and ready states,
  * the handover code card while the car is ready (fetched on demand, kept in memory only — DEC-38), «مساعدة» (the
  * support WhatsApp of the build), the payment area (VisitPaymentSlot: V2-022 adds «ادفع» there), and C-13 after the
  * delivery. It reads the visit again on every `visit.updated` of the customer socket, on every (re)connection and
@@ -12,17 +12,22 @@
  * the code, payment, photos and the detailed timeline; the one primary action of the state («اطلب السيارة», «اعرض
  * الرمز» with the code itself, or «قيّم الخدمة») lives in the sticky bottom sheet, and each change of state
  * cross-fades the hero and the sheet. Behaviour and copy are V2-015's.
+ *
+ * V2-UX option B (DEC-583, DEC-584): «اطلب السيارة» is a slide-to-confirm control (`SwipeToConfirm`, test id
+ * `request-car-swipe`) and the swipe is the confirmation — the dialog that preceded the request is gone, except for
+ * screen readers and the keyboard, which reach the command through that same dialog. The command is shared with
+ * C-06 (`requestCar`). Opened with `show=code` (C-06's «اعرض رمز التسليم»), the code is fetched once it is available.
  */
 import type { CustomerHandoverCode, CustomerVisitDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '../../api/errors';
-import { NetworkError } from '../../api/transport';
 import { appConfig } from '../../config';
 import { CommandKey } from '../../features/commandKey';
 import { errorText } from '../../features/errorText';
 import { shouldOfferPush } from '../../features/push';
+import { requestCar } from '../../features/requestCar';
 import { elapsedView, heroKind, trackerProgress, trackerStages, type HeroKind } from '../../features/ux';
 import { codeSecondsLeft, helpLink, visitView } from '../../features/visit';
 import { fmt, isolate } from '../../i18n';
@@ -44,6 +49,7 @@ import { RatingSheet } from '../../ui/RatingSheet';
 import { Screen } from '../../ui/Screen';
 import { ScreenHeader } from '../../ui/ScreenHeader';
 import { SkeletonList } from '../../ui/Skeleton';
+import { SwipeToConfirm } from '../../ui/SwipeToConfirm';
 import { StageTracker, StepTimeline } from '../../ui/VisitTracker';
 import { VisitPaymentSlot } from '../../ui/VisitPaymentSlot';
 
@@ -78,7 +84,8 @@ const HERO_TINT: Record<HeroKind, { band: string; disc: string }> = {
 const LIVE: ReadonlySet<HeroKind> = new Set<HeroKind>(['parking', 'waiting', 'moving', 'ready']);
 
 export default function VisitScreen() {
-  const { ticketId } = useLocalSearchParams<{ ticketId: string }>();
+  // `show=code`: opened from C-06's «اعرض رمز التسليم» (DEC-581) — fetch the code once it is available
+  const { ticketId, show } = useLocalSearchParams<{ ticketId: string; show?: string }>();
   const { t, f, locale } = useI18n();
   const session = useSession();
   const router = useRouter();
@@ -86,7 +93,6 @@ export default function VisitScreen() {
   const [visit, setVisit] = useState<CustomerVisitDetail | null>(null);
   const [gone, setGone] = useState(false);
   const [message, setMessage] = useState<Message>(null);
-  const [busy, setBusy] = useState(false);
   const [code, setCode] = useState<CustomerHandoverCode | null>(null);
   const [codeBusy, setCodeBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -154,37 +160,25 @@ export default function VisitScreen() {
     void flags.pushOffered().then(setOffered);
   }, []);
 
+  // the swipe is the confirmation (DEC-584): no dialog before the command; the control stays busy until it settles
   const request = async () => {
     if (!ticketId) return;
-    setBusy(true);
     setMessage(null);
-    try {
-      const r = await session.api.requestVisit(ticketId, key.for('request'));
-      key.reset();
+    const r = await requestCar(session.api, ticketId, key, t);
+    if (r.kind === 'requested') {
       setVisit(r.visit);
       haptic.success();
-      setMessage({
-        tone: 'success',
-        text: r.outcome === 'requested_early' ? t.visit.requestedEarly : t.visit.requested,
-      });
-    } catch (e) {
-      haptic.error();
-      if (e instanceof NetworkError) setMessage({ tone: 'warning', text: t.visit.offline });
-      else if (e instanceof ApiError && e.code === 'RETRIEVAL_ALREADY_ACTIVE') {
-        key.reset();
-        setMessage({ tone: 'info', text: t.visit.alreadyRequested });
-      } else setMessage({ tone: 'danger', text: errorText(e, t, locale) });
-      await load();
-    } finally {
-      setBusy(false);
+      setMessage({ tone: 'success', text: r.text });
+      return;
     }
+    haptic.error();
+    setMessage(
+      r.kind === 'refused'
+        ? { tone: 'danger', text: errorText(r.error, t, locale) }
+        : { tone: r.kind === 'offline' ? 'warning' : 'info', text: r.text },
+    );
+    await load();
   };
-
-  const confirmRequest = () =>
-    Alert.alert(t.visit.requestConfirmTitle, t.visit.requestConfirmBody, [
-      { text: t.visit.requestCancel, style: 'cancel' },
-      { text: t.visit.requestConfirm, onPress: () => void request() },
-    ]);
 
   const showCode = async () => {
     if (!ticketId) return;
@@ -199,6 +193,15 @@ export default function VisitScreen() {
       setCodeBusy(false);
     }
   };
+
+  // from C-06's «اعرض رمز التسليم»: the code is fetched once, as if «اعرض الرمز» had been pressed here
+  const autoCode = useRef(false);
+  const codeAvailable = visit?.handover.code_available === true;
+  useEffect(() => {
+    if (show !== 'code' || autoCode.current || !codeAvailable) return;
+    autoCode.current = true;
+    void showCode();
+  }, [show, codeAvailable, showCode]);
 
   const help = async () => {
     const link = helpLink(appConfig.support.whatsapp, t);
@@ -239,13 +242,19 @@ export default function VisitScreen() {
   // the sticky sheet: the one primary action of the state, then «مساعدة»
   const primary =
     view && view.canRequest ? (
-      <Button
-        label={t.visit.request}
-        icon="car-front"
-        loading={busy}
-        loadingLabel={t.common.sending}
-        onPress={confirmRequest}
-        testID="visit-request"
+      <SwipeToConfirm
+        testID="request-car-swipe"
+        label={t.visit.swipe}
+        accessibilityLabel={t.visit.request}
+        accessibilityHint={t.visit.swipeHint}
+        confirm={{
+          title: t.visit.requestConfirmTitle,
+          body: t.visit.requestConfirmBody,
+          ok: t.visit.requestConfirm,
+          cancel: t.visit.requestCancel,
+        }}
+        busyLabel={t.common.sending}
+        onConfirm={request}
       />
     ) : view && view.showCode ? (
       <View style={styles.codePanel}>

@@ -6,24 +6,24 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
-import { appConfig } from '../config';
-import { CommandKey } from '../features/commandKey';
-import { errorText } from '../features/errorText';
-import { pushSettingState } from '../features/push';
-import { settingsView, type LinkItem } from '../features/settings';
-import { usePush } from '../push/usePush';
-import { dictionaries, isolate, type AppLocale } from '../i18n';
-import { useI18n } from '../i18n/I18nProvider';
-import { newIdempotencyKey } from '../session/secureStore';
-import { useSession } from '../session/SessionProvider';
-import { space } from '../theme/tokens';
-import { AppText } from '../ui/AppText';
-import { Button } from '../ui/Button';
-import { Banner, Card, ChoiceChips } from '../ui/Controls';
-import { DevBanner } from '../ui/DevBanner';
-import { openLink } from '../ui/openLinks';
-import { Screen } from '../ui/Screen';
-import { ScreenHeader } from '../ui/ScreenHeader';
+import { appConfig } from '../../config';
+import { CommandKey } from '../../features/commandKey';
+import { errorText } from '../../features/errorText';
+import { pushSettingState } from '../../features/push';
+import { settingsView, type LinkItem } from '../../features/settings';
+import { usePush } from '../../push/usePush';
+import { dictionaries, isolate, type AppLocale } from '../../i18n';
+import { useI18n } from '../../i18n/I18nProvider';
+import { newIdempotencyKey } from '../../session/secureStore';
+import { useSession } from '../../session/SessionProvider';
+import { space } from '../../theme/tokens';
+import { AppText } from '../../ui/AppText';
+import { Button } from '../../ui/Button';
+import { Banner, Card, ChoiceChips } from '../../ui/Controls';
+import { DevBanner } from '../../ui/DevBanner';
+import { openLink } from '../../ui/openLinks';
+import { Screen } from '../../ui/Screen';
+import { ScreenHeader } from '../../ui/ScreenHeader';
 
 export default function Settings() {
   const { t, f, locale, setLocale } = useI18n();
@@ -93,8 +93,8 @@ export default function Settings() {
   };
 
   return (
-    <Screen>
-      <ScreenHeader title={t.settings.title} backLabel={t.settings.back} onBack={() => router.back()} />
+    <Screen tab>
+      <ScreenHeader title={t.settings.title} />
       <DevBanner />
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
 

@@ -1,8 +1,10 @@
 /**
- * R3/R4 — the visit (docs/v2/01 §1): C-06 «الزيارة الجارية» → C-12 live status → «اطلب السيارة» with its
- * confirmation → accepted / on the way / ready as the fake driver moves (the browser clock) → the handover code
- * (6 digits, never before «جاهزة») → delivered → C-13 rating → C-16. And the pay-per-visit sheet (C-10 for a
- * visit): a new card saved with consent → «مدفوع في التطبيق», the card in C-18 and the simplified invoice in C-17.
+ * R3/R4 — the visit (docs/v2/01 §1): C-06 «الزيارة الجارية» → C-12 live status → «اطلب السيارة» by swiping (a
+ * short drag springs back and asks nothing; the swipe is the confirmation, no dialog: DEC-583, DEC-584) → accepted /
+ * on the way / ready as the fake driver moves (the browser clock) → the handover code (6 digits, never before
+ * «جاهزة») → delivered → C-13 rating → C-16. The same swipe on C-06's live card (option B, DEC-580 … DEC-582) and
+ * its keyboard path (Enter → the confirmation dialog). And the pay-per-visit sheet (C-10 for a visit): a new card
+ * saved with consent → «مدفوع في التطبيق», the card in C-18 and the simplified invoice in C-17.
  *
  * The fake backend gives `DEMO_VISIT_PHONE` a parked car at a location with a per-visit fee (README).
  */
@@ -16,6 +18,8 @@ import {
   heading,
   shown,
   signUp,
+  swipeToRequest,
+  tab,
   test,
   tpl,
 } from './support/app';
@@ -24,9 +28,11 @@ import type { Page } from '@playwright/test';
 async function openVisit(page: Page) {
   await signUp(page, { phone: DEMO_VISIT_PHONE });
   await button(page, ar.vehicle.skip).click();
-  const card = page.getByRole('button', { name: new RegExp(`^${ar.home.currentVisit} `) });
+  const card = page.getByRole('button', {
+    name: new RegExp(`^${ar.home.currentVisit} ${ar.ticketStatus.parked}`),
+  });
   await expect(card).toBeVisible();
-  await expect(card).toContainText(ar.ticketStatus.parked);
+  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
   await card.click();
   await expect(heading(page, ar.visit.title)).toBeVisible();
   await expectRtlPhone(page);
@@ -44,14 +50,28 @@ test('C-12: request the car, follow it to the gate, show the handover code, rate
   // no code before the car is ready
   await expect(button(page, ar.visit.code.show)).toHaveCount(0);
 
-  // «اطلب السيارة» asks first (the native Alert; the browser dialog in the web export)
-  page.once('dialog', async (d) => {
-    expect(d.message()).toContain(ar.visit.requestConfirmTitle);
-    expect(d.message()).toContain(ar.visit.requestConfirmBody);
-    await d.accept();
+  // «اطلب السيارة» is a swipe (DEC-583): the knob is the one element screen readers meet, named «اطلب السيارة»;
+  // the pill shows the instruction
+  const control = page.getByRole('button', { name: ar.visit.request, exact: true });
+  await expect(control).toBeVisible();
+  await expect(control).toHaveAttribute('data-testid', 'request-car-swipe-knob');
+  await expect(page.getByTestId('request-car-swipe').filter({ visible: true })).toContainText(ar.visit.swipe);
+  // the swipe is the confirmation (DEC-584): no dialog at any point
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => {
+    dialogs.push(d.message());
+    void d.dismiss();
   });
-  await button(page, ar.visit.request).click();
+  // a short drag springs back and requests nothing
+  await swipeToRequest(page, 0.5);
+  await page.waitForTimeout(600);
+  await expect(page.getByText(ar.visit.requested, { exact: true })).toHaveCount(0);
+  await expect(control).toBeVisible();
+  await expect(shown(page.getByText(ar.visit.waiting.requested, { exact: true }))).toHaveCount(0);
+  // all the way: requested
+  await swipeToRequest(page);
   await expect(page.getByText(ar.visit.requested, { exact: true })).toBeVisible();
+  expect(dialogs).toEqual([]);
   await expect(page.getByText(ar.visit.waiting.requested, { exact: true })).toBeVisible();
   await expect(button(page, ar.visit.request)).toHaveCount(0);
 
@@ -84,9 +104,9 @@ test('C-12: request the car, follow it to the gate, show the handover code, rate
   await sheet.getByRole('button', { name: ar.rating.submit }).click();
   await expect(page.getByText(ar.rating.thanks, { exact: true })).toBeVisible();
 
-  // C-16: the visit is in the history, rated
+  // C-16 (a tab since DEC-582): the visit is in the history, rated
   await button(page, ar.visit.back).click();
-  await button(page, ar.home.myVisits).click();
+  await tab(page, ar.tabs.visits).click();
   await expect(heading(page, ar.visits.title)).toBeVisible();
   // one row: the place, the Riyadh date (Western digits), the duration, and «قيّمتها»
   const row = page.getByRole('button', { name: /\d{1,2}\/\d{1,2}\/\d{4}/ });
@@ -122,7 +142,7 @@ test('C-12 → C-10: pay the visit with a new card saved for later; C-18 and C-1
 
   // C-18: the saved card, last 4 digits only
   await button(page, ar.visit.back).click();
-  await button(page, ar.home.settings).click();
+  await tab(page, ar.tabs.account).click();
   await button(page, ar.settings.paymentMethods).click();
   await expect(heading(page, ar.paymentMethods.title)).toBeVisible();
   await expect(page.getByText(/•••• [\u2066-\u2069]?1111/)).toBeVisible();
@@ -140,4 +160,61 @@ test('C-12 → C-10: pay the visit with a new card saved for later; C-18 and C-1
   await expect(page.getByLabel(ar.invoices.qrLabel)).toBeVisible();
   await expect(button(page, ar.invoices.pdf)).toBeVisible();
   await expectRtlPhone(page);
+});
+
+test('C-06: the live card — a short drag does nothing, Enter asks first, the swipe requests; ready opens the code', async ({
+  app: page,
+}) => {
+  test.slow();
+  await signUp(page, { phone: DEMO_VISIT_PHONE });
+  await button(page, ar.vehicle.skip).click();
+  // parked: the road on its first stop and the swipe on the card (no dialog for the swipe itself)
+  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
+  await expect(
+    page.getByRole('progressbar', {
+      name: tpl(ar.home.road + ': ' + ar.home.stopNow, { stop: ar.home.stops.parked }),
+    }),
+  ).toBeVisible();
+  const control = page.getByRole('button', { name: ar.visit.request, exact: true });
+  await expect(control).toBeVisible();
+  await expectRtlPhone(page);
+
+  await swipeToRequest(page, 0.4);
+  await page.waitForTimeout(600);
+  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
+  await expect(control).toBeVisible();
+
+  // the keyboard reaches the same command through the confirmation dialog: «ليس الآن» keeps the car parked
+  await control.focus();
+  page.once('dialog', async (d) => {
+    expect(d.message()).toContain(ar.visit.requestConfirmTitle);
+    await d.dismiss();
+  });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(600);
+  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
+
+  // the swipe all the way: requested, the car moves to «في الطريق», the time since the request ticks
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => {
+    dialogs.push(d.message());
+    void d.dismiss();
+  });
+  await swipeToRequest(page);
+  await expect(page.getByText(ar.visit.requested, { exact: true })).toBeVisible();
+  await expect(heading(page, ar.home.hero.requested.title)).toBeVisible();
+  await expect(control).toHaveCount(0);
+  await expect(page.getByRole('button', { name: new RegExp(`^${ar.visit.since.requested} `) })).toBeVisible();
+  expect(dialogs).toEqual([]);
+  await expectRtlPhone(page);
+
+  await page.clock.fastForward('00:20');
+  await expect(heading(page, ar.home.hero.coming.title)).toBeVisible({ timeout: 15_000 });
+  await page.clock.fastForward('01:15');
+  await expect(heading(page, ar.home.hero.ready.title)).toBeVisible({ timeout: 15_000 });
+  await expectRtlPhone(page);
+  // «اعرض رمز التسليم» opens C-12 with the code already fetched
+  await button(page, ar.home.showCode).click();
+  await expect(heading(page, ar.visit.title)).toBeVisible();
+  await expect(page.getByText(/^[\u2066-\u2069]?\d{6}[\u2066-\u2069]?$/)).toBeVisible();
 });

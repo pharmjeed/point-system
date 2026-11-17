@@ -2,7 +2,7 @@
  * R2 — subscribing (docs/v2/01 §1) and its management (R6): C-08 «اشترك» → C-09 cycle (with the yearly saving),
  * plan, covered car, short terms → C-10 for a subscription (a new card, always kept for the renewal) → C-14 active
  * with its renewal date → cancel the renewal (confirmed) and resume it → change the covered car once a period;
- * C-06 lists the subscription.
+ * C-06 lists the subscription. Since option B (DEC-582) the way in is C-06's «اشترك ووفّر» and C-14 is a tab.
  */
 import type { Page } from '@playwright/test';
 import {
@@ -16,16 +16,16 @@ import {
   heading,
   shown,
   signUp,
+  tab,
   test,
   tpl,
 } from './support/app';
 
 async function openSubscribable(page: Page): Promise<string> {
-  await button(page, ar.home.allLocations).click();
-  await page
-    .getByRole('radiogroup', { name: ar.locations.filterLabel })
-    .getByRole('radio', { name: ar.locations.filters.subscribable })
-    .click();
+  // C-06's «اشترك ووفّر» chip opens C-07 on «يقبل الاشتراك» (DEC-582)
+  await button(page, ar.home.subscribeSave).click();
+  await expect(heading(page, ar.locations.title)).toBeVisible();
+  // already filtered: the first location sells subscriptions (its C-08 shows the monthly price below)
   const row = page.getByRole('button', { name: new RegExp(ar.locations.listSeparator) }).first();
   const venue = (await row.getAttribute('aria-label'))?.split(ar.locations.listSeparator)[0] ?? '';
   await row.click();
@@ -41,7 +41,8 @@ test('C-08 → C-09 → C-10 → C-14: subscribe yearly with a new card, cancel 
   await signUp(page);
   await addVehicle(page, '1111', ['A', 'B', 'D']);
   await expectHome(page);
-  await expect(shown(page.getByText(ar.home.noSubscriptions, { exact: true }))).toBeVisible();
+  // no subscription yet: no «اشتراكاتي» section on C-06 (the chip «اشترك ووفّر» stands for it)
+  await expect(heading(page, ar.home.subscriptions)).toHaveCount(0);
 
   const venue = await openSubscribable(page);
   await button(page, ar.subscribe.action).click();
@@ -95,18 +96,15 @@ test('C-08 → C-09 → C-10 → C-14: subscribe yearly with a new card, cancel 
   await expect(shown(page.getByText(ar.subscriptions.done.resumed, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(tpl(ar.subscriptions.renewsOn)))).toBeVisible();
 
-  // C-06 shows it under «اشتراكاتي» (back through C-08 and C-07)
-  await button(page, ar.common.back).click();
-  await expect(heading(page, venue)).toBeVisible();
-  await button(page, ar.common.back).click();
-  await expect(heading(page, ar.locations.title)).toBeVisible();
-  await button(page, ar.common.back).click();
+  // C-14 is a tab (DEC-582): the flow came back down to the tabs; C-06 shows the subscription under «اشتراكاتي»
+  await expect(tab(page, ar.tabs.subscriptions)).toHaveAttribute('aria-selected', 'true');
+  await expect(button(page, ar.common.back)).toHaveCount(0);
+  await tab(page, ar.tabs.home).click();
   await expectHome(page);
-  await expect(shown(page.getByText(ar.home.noSubscriptions, { exact: true }))).toHaveCount(0);
-  await page
-    .getByRole('button', { name: new RegExp(venue) })
-    .first()
-    .click();
+  await expect(heading(page, ar.home.subscriptions)).toBeVisible();
+  // the subscription card (above the nearby locations, which carry the same name) opens the C-14 tab
+  await page.getByRole('button', { name: venue, exact: true }).filter({ visible: true }).first().click();
+  await expect(tab(page, ar.tabs.subscriptions)).toHaveAttribute('aria-selected', 'true');
   await expect(heading(page, ar.subscriptions.title)).toBeVisible();
 });
 

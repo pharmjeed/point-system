@@ -51,6 +51,8 @@ export const color = {
   textDisabled: role('text-disabled'),
   textInverse: role('text-inverse'),
   primary: role('primary'),
+  // V2-UX option B (DEC-580): the darker circle of the C-06 hero
+  primaryHover: role('primary-hover'),
   primaryPressed: role('primary-pressed'),
   primarySubtle: role('primary-subtle'),
   primaryText: role('primary-text'),

@@ -510,7 +510,7 @@ describe('V2-012 / V2-017 — copy and identity', () => {
       'src/app/locations.tsx',
       'src/app/location/[venueId].tsx',
       'src/app/vehicles.tsx',
-      'src/app/settings.tsx',
+      'src/app/(tabs)/settings.tsx',
       'src/app/delete-account.tsx',
       'src/ui/ScreenHeader.tsx',
       'src/ui/LocationsMap.tsx',

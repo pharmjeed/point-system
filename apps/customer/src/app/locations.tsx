@@ -8,7 +8,7 @@
  * «from» price), skeletons while loading and an empty state with its icon.
  */
 import type { CustomerLocationSummary } from '@point/shared/customer';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { appConfig } from '../config';
@@ -44,9 +44,13 @@ export default function Locations() {
   const { t, locale } = useI18n();
   const session = useSession();
   const router = useRouter();
+  // «اشترك ووفّر» on C-06 opens the list on «يقبل الاشتراك» (V2-UX option B, DEC-582)
+  const { filter } = useLocalSearchParams<{ filter?: string }>();
   const canMap = mapAvailable(Platform.OS, appConfig);
   const [search, setSearch] = useState('');
-  const [chip, setChip] = useState<LocationFilterChip>('all');
+  const [chip, setChip] = useState<LocationFilterChip>(() =>
+    LOCATION_FILTER_CHIPS.includes(filter as LocationFilterChip) ? (filter as LocationFilterChip) : 'all',
+  );
   const [view, setView] = useState<LocationsView>('list');
   const [items, setItems] = useState<CustomerLocationSummary[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);

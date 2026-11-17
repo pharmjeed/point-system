@@ -33,7 +33,11 @@ test('R1: welcome, WhatsApp code, consents, first vehicle, home', async ({ app: 
 
   // C-06
   await expectHome(page);
-  await expect(page.getByText(tpl(ar.home.greeting, { name: 'سارة' }))).toBeVisible();
+  // option B (DEC-580): the hero greets by the time of day and the name, welcomes with the brand, and has the tabs
+  await expect(page.getByText(tpl(ar.home.greetingTime, { name: 'سارة' }))).toBeVisible();
+  await expect(heading(page, tpl(ar.home.hero.none.title))).toBeVisible();
+  for (const name of [ar.tabs.home, ar.tabs.visits, ar.tabs.subscriptions, ar.tabs.account])
+    await expect(page.getByRole('tab', { name, exact: true })).toBeVisible();
 });
 
 test('R1: the vehicle can be skipped, and C-06 offers to add it', async ({ app: page }) => {

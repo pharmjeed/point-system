@@ -17,13 +17,14 @@ import {
   heading,
   shown,
   signUp,
+  tab,
   test,
   tpl,
 } from './support/app';
 import type { Page } from '@playwright/test';
 
 async function openSettings(page: Page) {
-  await button(page, ar.home.settings).click();
+  await tab(page, ar.tabs.account).click();
   await expect(heading(page, ar.settings.title)).toBeVisible();
 }
 

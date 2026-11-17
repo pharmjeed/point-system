@@ -11,6 +11,7 @@ import {
   expectHome,
   expectRtlPhone,
   heading,
+  passButton,
   shown,
   signUp,
   test,
@@ -101,7 +102,7 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   await expectHome(page);
 
   // one car: shown under the code
-  await page.getByRole('button', { name: ar.home.pass, exact: true }).click();
+  await passButton(page).click();
   await expect(heading(page, ar.pass.title)).toBeVisible();
   const qr = page.getByRole('img', { name: ar.pass.qrLabel });
   await expect(qr).toBeVisible();
@@ -121,7 +122,7 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   await button(page, ar.vehicles.add).click();
   await addVehicle(page, '2222', ['R', 'S', 'T']);
   await button(page, ar.vehicles.back).click();
-  await page.getByRole('button', { name: ar.home.pass, exact: true }).click();
+  await passButton(page).click();
   const cars = page.getByRole('radiogroup', { name: ar.pass.vehicle }).getByRole('radio');
   await expect(cars).toHaveCount(2);
   const shown1 = await qr.innerHTML();
