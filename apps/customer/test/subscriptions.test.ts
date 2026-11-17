@@ -6,6 +6,7 @@
 import type { CustomerLocationPlan, CustomerSubscription } from '@point/shared/customer';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/errors';
+import { FAKE_LOCATIONS } from '../src/api/fake/seed';
 import { fakeTokenize } from '../src/api/fake/tokens';
 import { checkoutSubscription, type SubscriptionCheckoutRequest } from '../src/features/pay/payFlow';
 import { pushRoute } from '../src/features/push';
@@ -26,6 +27,7 @@ const card = (number: string) => ({ number, month: 12, year: 2030, cvc: '123', n
 const CONSENT = '2026-11-01';
 
 const plan = (over: Partial<CustomerLocationPlan> = {}): CustomerLocationPlan => ({
+  ...FAKE_LOCATIONS[0]!.plans[0]!,
   plan_id: OLAYA_PLAN,
   name_ar: 'اشتراك سيارة واحدة',
   vehicles_included: 1,
@@ -99,6 +101,17 @@ describe('C-14 cards (pure)', () => {
     ended_at: null,
     ended_reason: null,
     created_at: '2026-11-07T09:00:00.000Z',
+    policy: FAKE_LOCATIONS[0]!.plans[0]!.policy,
+    service_start_on: null,
+    service_end_on: null,
+    remaining_days: null,
+    eligibility: null,
+    freeze: null,
+    freezes_left: 0,
+    can_freeze: false,
+    can_unfreeze: false,
+    renew_plan_id: null,
+    refund_due_at: null,
   };
 
   it('says the state and the one line that matters now', () => {

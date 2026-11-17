@@ -10,6 +10,7 @@ import BellRing from 'lucide-react-native/icons/bell-ring';
 import Bookmark from 'lucide-react-native/icons/bookmark';
 import Building2 from 'lucide-react-native/icons/building-2';
 import CalendarCheck from 'lucide-react-native/icons/calendar-check';
+import CalendarDays from 'lucide-react-native/icons/calendar-days';
 import Car from 'lucide-react-native/icons/car';
 import CarFront from 'lucide-react-native/icons/car-front';
 import Check from 'lucide-react-native/icons/check';
@@ -25,6 +26,7 @@ import CreditCard from 'lucide-react-native/icons/credit-card';
 import Eye from 'lucide-react-native/icons/eye';
 import EyeOff from 'lucide-react-native/icons/eye-off';
 import FileText from 'lucide-react-native/icons/file-text';
+import GraduationCap from 'lucide-react-native/icons/graduation-cap';
 import Globe from 'lucide-react-native/icons/globe';
 import History from 'lucide-react-native/icons/history';
 import House from 'lucide-react-native/icons/house';
@@ -34,6 +36,7 @@ import LogOut from 'lucide-react-native/icons/log-out';
 import MapIcon from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import MessageCircle from 'lucide-react-native/icons/message-circle';
+import MessageSquareWarning from 'lucide-react-native/icons/message-square-warning';
 import Navigation from 'lucide-react-native/icons/navigation';
 import Plus from 'lucide-react-native/icons/plus';
 import QrCode from 'lucide-react-native/icons/qr-code';
@@ -44,6 +47,7 @@ import Search from 'lucide-react-native/icons/search';
 import Settings from 'lucide-react-native/icons/settings';
 import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import Smartphone from 'lucide-react-native/icons/smartphone';
+import Snowflake from 'lucide-react-native/icons/snowflake';
 import SquareParking from 'lucide-react-native/icons/square-parking';
 import Star from 'lucide-react-native/icons/star';
 import Sun from 'lucide-react-native/icons/sun';
@@ -64,6 +68,11 @@ const ICONS = {
   bookmark: Bookmark,
   building: Building2,
   'calendar-check': CalendarCheck,
+  // V2-036 (DEC-605): the counted days, the student plan, the freeze, the complaints
+  'calendar-days': CalendarDays,
+  'graduation-cap': GraduationCap,
+  snowflake: Snowflake,
+  'message-warning': MessageSquareWarning,
   car: Car,
   'car-front': CarFront,
   check: Check,

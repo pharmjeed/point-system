@@ -94,6 +94,7 @@ export interface SubscriptionCard {
 }
 
 const TONE: Record<CustomerSubscription['status'], SubscriptionCard['tone']> = {
+  pending_eligibility: 'warning',
   pending_payment: 'warning',
   active: 'success',
   past_due: 'danger',

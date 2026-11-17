@@ -6,6 +6,7 @@ import {
   CirclePause,
   CircleSlash,
   Clock,
+  GraduationCap,
   Repeat,
   Snowflake,
   TrendingDown,
@@ -26,7 +27,8 @@ import {
 import { paths, platformSubscriptionPath } from '@/app/paths';
 import { Button, Card, DataTable, EmptyState, KpiStrip, Select } from '@/components';
 import { StateChip } from '@/features/common/StateChip';
-import { QueryError, Section } from '@/features/supervisor/ui';
+import { QueryError, ReasonDialog, Section } from '@/features/supervisor/ui';
+import { useStaffCommand } from '@/features/supervisor/useStaffCommand';
 import { errorMessagesAr } from '@/i18n/errors';
 import { p07 } from '@/i18n/ar.staff';
 import { fmt } from '@/i18n/fmt';
@@ -36,6 +38,7 @@ import { platformCan } from './platformModel';
 
 const DAYS = 30;
 const TONE: Record<SubscriptionStatus, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
+  pending_eligibility: 'warning',
   pending_payment: 'info',
   active: 'success',
   past_due: 'warning',
@@ -44,6 +47,7 @@ const TONE: Record<SubscriptionStatus, 'success' | 'warning' | 'danger' | 'info'
   frozen: 'info',
 };
 const ICON = {
+  pending_eligibility: GraduationCap,
   pending_payment: Clock,
   active: CircleCheck,
   past_due: CirclePause,
@@ -63,6 +67,15 @@ const pct = (bp: number) => `${(bp / 100).toFixed(2)}%`;
 /** The note under a subscription's state: cancel at the end, the grace, the freeze, the end. */
 export function subscriptionNote(s: PlatformSubscription): string | null {
   if (s.ended_reason) return p07.endedReason[s.ended_reason] ?? s.ended_reason;
+  // V2-036: an application waiting for its decision, a counted-day term
+  if (s.status === 'pending_eligibility' && s.student_number_masked)
+    return `${p07.annex.eligibilityStatus.pending} · ${s.student_number_masked}`;
+  if (s.service_start_on && s.service_end_on && (s.status === 'active' || s.status === 'frozen'))
+    return fmt(p07.annex.countedPeriod, {
+      start: s.service_start_on,
+      end: s.service_end_on,
+      n: s.remaining_days ?? 0,
+    });
   if (s.status === 'frozen' && s.frozen_at)
     return `${fmt(p07.frozenSince, { date: formatDate(s.frozen_at) })} · ${s.frozen_reason ? p07.frozenReason[s.frozen_reason] : ''}`;
   if (s.status === 'past_due' && s.grace_ends_at)
@@ -320,6 +333,25 @@ export function PlatformSubscriptionPage() {
 
 function SubscriptionView({ s, back }: { s: PlatformSubscriptionDetail; back: ReactNode }) {
   const note = subscriptionNote(s);
+  const me = usePlatformAccount();
+  const [dialog, setDialog] = useState<'approve' | 'reject' | 'refund' | null>(null);
+  const invalidate = [subscriptionKeys.one(s.subscription_id), ['platform', 'subscriptions']];
+  const decide = useStaffCommand(
+    (input: { decision: 'approve' | 'reject'; reason: string }, key: string) =>
+      subscriptionsApi.decideEligibility(
+        s.subscription_id,
+        input.decision === 'reject' ? input : { decision: 'approve' },
+        key,
+      ),
+    { successMessage: p07.annex.done.approved, invalidate, onSuccess: () => setDialog(null) },
+  );
+  const refund = useStaffCommand(
+    (reason: string, key: string) => subscriptionsApi.exceptionalRefund(s.subscription_id, reason, key),
+    { invalidate, onSuccess: () => setDialog(null) },
+  );
+  const canDecide = s.status === 'pending_eligibility' && platformCan(me, 'platform.subscription_manage');
+  const canRefund =
+    (s.status === 'active' || s.status === 'frozen') && platformCan(me, 'platform.refund_issue');
   return (
     <div className="st-page" data-testid="platform-subscription">
       {back}
@@ -343,7 +375,141 @@ function SubscriptionView({ s, back }: { s: PlatformSubscriptionDetail; back: Re
           · {s.operator_name_ar} · {fmt(p07.vehicles, { n: s.covered_vehicles })}
         </p>
         {note ? <p className="m-0 text-sm">{note}</p> : null}
+        {s.refund_due_at ? (
+          <p className="m-0 text-sm">{fmt(p07.annex.refundDue, { date: formatDate(s.refund_due_at) })}</p>
+        ) : null}
+        {canDecide || canRefund ? (
+          <div className="st-row-actions">
+            {canDecide ? (
+              <>
+                <Button compact iconStart={CircleCheck} onClick={() => setDialog('approve')}>
+                  {p07.annex.approve}
+                </Button>
+                <Button variant="secondary" compact onClick={() => setDialog('reject')}>
+                  {p07.annex.reject}
+                </Button>
+              </>
+            ) : null}
+            {canRefund ? (
+              <Button variant="secondary" compact onClick={() => setDialog('refund')}>
+                {p07.annex.exceptional}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </Card>
+      {s.eligibility ? (
+        <Section title={p07.annex.eligibility}>
+          <p className="m-0">
+            <span className="font-bold">{p07.annex.studentNumber}:</span>{' '}
+            <bdi dir="ltr" className="pt-num">
+              {s.eligibility.student_number}
+            </bdi>
+          </p>
+          <p className="m-0">
+            <span className="font-bold">{p07.annex.studentName}:</span> {s.eligibility.student_name}
+          </p>
+          <p className="m-0 text-sm text-text-muted">
+            {p07.annex.eligibilityStatus[s.eligibility.status]}
+            {s.eligibility.source ? ` · ${p07.annex.eligibilitySource[s.eligibility.source]}` : ''}
+            {s.eligibility.decision_reason ? ` · ${s.eligibility.decision_reason}` : ''}
+          </p>
+        </Section>
+      ) : null}
+      {s.freezes?.length ? (
+        <Section title={p07.annex.freezes}>
+          <ul className="st-list m-0 p-0">
+            {s.freezes.map((f) => (
+              <li key={f.freeze_id} className="list-none">
+                <bdi dir="ltr" className="pt-num">
+                  {fmt(p07.annex.freezeLine, {
+                    start: f.starts_on,
+                    end: f.returns_on,
+                    days: f.used_days ?? f.days,
+                    status: f.status,
+                  })}
+                </bdi>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+      {s.purchase_consents?.length ? (
+        <Section title={p07.annex.consents}>
+          <ul className="st-list m-0 p-0">
+            {s.purchase_consents.map((c) => (
+              <li key={`${c.period_seq}-${c.created_at}`} className="list-none text-sm">
+                {fmt(p07.annex.consentLine, {
+                  terms: c.terms_version,
+                  privacy: c.privacy_version,
+                  net: formatHalalas(c.net_halalas),
+                  vat: formatHalalas(c.vat_halalas),
+                  total: formatHalalas(c.price_halalas),
+                  nonRefund: c.non_refundable ? p07.annex.nonRefund : '',
+                })}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+      {s.refunds?.length ? (
+        <Section title={p07.annex.refunds}>
+          <ul className="st-list m-0 p-0">
+            {s.refunds.map((r) => (
+              <li key={r.refund_id} className="list-none">
+                <bdi dir="ltr" className="pt-num">
+                  {formatHalalas(r.amount_halalas)}
+                </bdi>{' '}
+                · {r.status} · {formatDateTime(r.created_at)}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+      <ReasonDialog
+        id="p07-approve"
+        open={dialog === 'approve'}
+        onOpenChange={(o) => {
+          if (!o) setDialog(null);
+        }}
+        title={p07.annex.approveTitle}
+        body={p07.annex.approveBody}
+        confirmLabel={p07.annex.approve}
+        withReason={false}
+        pending={decide.pending}
+        error={decide.message}
+        onConfirm={() => decide.run({ decision: 'approve', reason: '' })}
+      />
+      <ReasonDialog
+        id="p07-reject"
+        open={dialog === 'reject'}
+        onOpenChange={(o) => {
+          if (!o) setDialog(null);
+        }}
+        title={p07.annex.rejectTitle}
+        body={p07.annex.rejectBody}
+        confirmLabel={p07.annex.reject}
+        destructive
+        pending={decide.pending}
+        reasonError={decide.fields.reason ?? null}
+        error={decide.message}
+        onConfirm={(reason) => decide.run({ decision: 'reject', reason })}
+      />
+      <ReasonDialog
+        id="p07-exceptional"
+        open={dialog === 'refund'}
+        onOpenChange={(o) => {
+          if (!o) setDialog(null);
+        }}
+        title={p07.annex.exceptionalTitle}
+        body={p07.annex.exceptionalBody}
+        confirmLabel={p07.annex.exceptional}
+        destructive
+        pending={refund.pending}
+        reasonError={refund.fields.reason ?? null}
+        error={refund.message}
+        onConfirm={(reason) => refund.run(reason)}
+      />
       <Section title={p07.periods}>
         <ul className="st-list m-0 p-0">
           {s.periods.map((p) => (

@@ -10,6 +10,7 @@ import {
   Scale,
   Tags,
   Users,
+  MessageSquareWarning,
 } from 'lucide-react';
 import { Navigate, Outlet, useNavigate, useOutletContext } from 'react-router';
 import { ApiError } from '@/api/errors';
@@ -50,6 +51,7 @@ const NAV_ICON = {
   subscriptions: Repeat,
   settlements: Scale,
   invoices: FileText,
+  complaints: MessageSquareWarning,
 } as const;
 const NAV_PATH = {
   overview: paths.platform,
@@ -61,6 +63,7 @@ const NAV_PATH = {
   subscriptions: paths.platformSubscriptions,
   settlements: paths.platformSettlements,
   invoices: paths.platformInvoices,
+  complaints: paths.platformComplaints,
 } as const;
 
 /**

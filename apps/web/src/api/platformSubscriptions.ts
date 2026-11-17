@@ -6,10 +6,28 @@ import { api, apiFetch } from './client';
  * masked. Field names follow the contract.
  */
 export type SubscriptionStatus =
-  'pending_payment' | 'active' | 'past_due' | 'canceled' | 'expired' | 'frozen';
+  'pending_eligibility' | 'pending_payment' | 'active' | 'past_due' | 'canceled' | 'expired' | 'frozen';
+
+/** V2-036 (docs/v2/04 §7, DEC-590): a plan's policies, the V4 behaviour by default. */
+export interface PlanPolicies {
+  term_kind: 'calendar' | 'service_days';
+  service_days: number | null;
+  service_weekdays: number[] | null;
+  renewal_mode: 'auto' | 'manual';
+  daily_visit_limit: number | null;
+  refund_policy: 'prorated_on_termination' | 'non_refundable';
+  closure_policy: 'freeze' | 'continue';
+  freeze_max_times: number;
+  freeze_max_days: number | null;
+  eligibility: 'none' | 'student_id_review';
+  capacity: number | null;
+  audience_ar: string | null;
+  vehicle_change: 'once_per_period' | 'any_time';
+}
 export type BillingCycle = 'monthly' | 'yearly';
 
-export interface PlatformPlan {
+export interface PlatformPlan extends PlanPolicies {
+  seats_taken: number;
   plan_id: string;
   venue_id: string;
   name_ar: string;
@@ -48,6 +66,7 @@ export interface PlanInput {
   yearly_price_halalas: number | null;
   replaces_plan_id?: string;
   reason?: string;
+  policies?: Partial<PlanPolicies>;
 }
 
 export interface PlatformSubscription {
@@ -72,7 +91,7 @@ export interface PlatformSubscription {
   grace_ends_at: string | null;
   renewal_attempts: number;
   frozen_at: string | null;
-  frozen_reason: 'operator_suspended' | 'venue_inactive' | null;
+  frozen_reason: 'operator_suspended' | 'venue_inactive' | 'customer_freeze' | null;
   frozen_days_total: number;
   periods_paid: number;
   visits: number;
@@ -80,10 +99,57 @@ export interface PlatformSubscription {
   ended_at: string | null;
   ended_reason: string | null;
   created_at: string;
+  // V2-036
+  policy?: Omit<PlanPolicies, 'capacity' | 'audience_ar'>;
+  service_start_on?: string | null;
+  service_end_on?: string | null;
+  remaining_days?: number | null;
+  eligibility_status?: 'pending' | 'approved' | 'rejected' | null;
+  student_number_masked?: string | null;
+  refund_due_at?: string | null;
 }
 
 export interface PlatformSubscriptionDetail extends PlatformSubscription {
   covered_vehicles: number;
+  eligibility?: {
+    status: 'pending' | 'approved' | 'rejected';
+    source: 'review' | 'list' | 'reuse' | null;
+    student_number: string;
+    student_name: string;
+    decided_at: string | null;
+    decision_reason: string | null;
+    created_at: string;
+  } | null;
+  freezes?: {
+    freeze_id: string;
+    period_seq: number;
+    status: string;
+    starts_on: string;
+    returns_on: string;
+    days: number;
+    used_days: number | null;
+    ended_on: string | null;
+    end_reason: string | null;
+  }[];
+  purchase_consents?: {
+    period_seq: number;
+    terms_version: string;
+    privacy_version: string;
+    price_halalas: number;
+    net_halalas: number;
+    vat_halalas: number;
+    non_refundable: boolean;
+    valuables_notice: boolean;
+    created_at: string;
+  }[];
+  refunds?: {
+    refund_id: string;
+    amount_halalas: number;
+    status: string;
+    kind: string;
+    created_at: string;
+    completed_at: string | null;
+  }[];
   periods: {
     seq: number;
     starts_at: string;
@@ -153,7 +219,22 @@ async function page<T>(path: string, filters: object, cursor?: string, signal?: 
 
 const enc = encodeURIComponent;
 
+/** V2-036 (DEC-599): an announced holiday or closure of a venue. */
+export interface VenueClosure {
+  closure_id: string;
+  venue_id: string;
+  kind: 'holiday' | 'closure';
+  starts_on: string;
+  ends_on: string;
+  reason_ar: string;
+  created_at: string;
+  canceled_at: string | null;
+  cancel_reason: string | null;
+}
+
 export const subscriptionKeys = {
+  closures: (venueId: string) => ['platform', 'venue-closures', venueId] as const,
+  eligible: (venueId: string) => ['platform', 'eligible-students', venueId] as const,
   plans: (q: string) => ['platform', 'plans', q] as const,
   list: (f: SubscriptionFilters) => ['platform', 'subscriptions', f] as const,
   one: (id: string) => ['platform', 'subscription', id] as const,
@@ -163,8 +244,13 @@ export const subscriptionKeys = {
 export const subscriptionsApi = {
   plans: (q: string, cursor?: string, signal?: AbortSignal) =>
     page<PlanVenue>('/v1/platform/plans', q ? { q } : {}, cursor, signal),
-  createPlan: async (body: PlanInput, key: string) =>
-    (await api.post<PlatformPlan>('/v1/platform/plans', { body, idempotencyKey: key })).data,
+  createPlan: async ({ policies, ...body }: PlanInput, key: string) =>
+    (
+      await api.post<PlatformPlan>('/v1/platform/plans', {
+        body: { ...body, ...policies },
+        idempotencyKey: key,
+      })
+    ).data,
   retirePlan: async (planId: string, reason: string, key: string) =>
     (
       await api.post<PlatformPlan>(`/v1/platform/plans/${enc(planId)}/retire`, {
@@ -176,6 +262,66 @@ export const subscriptionsApi = {
     page<PlatformSubscription>('/v1/platform/subscriptions', f, cursor, signal),
   one: async (id: string, signal?: AbortSignal) =>
     (await api.get<PlatformSubscriptionDetail>(`/v1/platform/subscriptions/${enc(id)}`, { signal })).data,
+  // V2-036 (DEC-596 … DEC-600)
+  decideEligibility: async (
+    id: string,
+    body: { decision: 'approve' | 'reject'; reason?: string },
+    key: string,
+  ) =>
+    (
+      await api.post<PlatformSubscriptionDetail>(`/v1/platform/subscriptions/${enc(id)}/eligibility`, {
+        body,
+        idempotencyKey: key,
+      })
+    ).data,
+  exceptionalRefund: async (id: string, reason: string, key: string) =>
+    (
+      await api.post<{ amount_halalas: number; remaining_days: number | null }>(
+        `/v1/platform/subscriptions/${enc(id)}/exceptional-refund`,
+        { body: { reason }, idempotencyKey: key },
+      )
+    ).data,
+  eligibleSummary: async (venueId: string, signal?: AbortSignal) =>
+    (
+      await api.get<{ venue_id: string; listed: number; pending_applications: number }>(
+        `/v1/platform/venues/${enc(venueId)}/eligible-students`,
+        { signal },
+      )
+    ).data,
+  importEligible: async (
+    venueId: string,
+    body: { mode: 'add' | 'remove'; student_numbers: string[] },
+    key: string,
+  ) =>
+    (
+      await api.post<{ changed: number; approved: number; listed: number }>(
+        `/v1/platform/venues/${enc(venueId)}/eligible-students`,
+        { body, idempotencyKey: key },
+      )
+    ).data,
+  closures: async (venueId: string, signal?: AbortSignal) =>
+    (
+      await api.get<{ items: VenueClosure[] }>(`/v1/platform/venue-closures?venue_id=${enc(venueId)}`, {
+        signal,
+      })
+    ).data.items,
+  createClosure: async (
+    body: {
+      venue_id: string;
+      kind: 'holiday' | 'closure';
+      starts_on: string;
+      ends_on: string;
+      reason_ar: string;
+    },
+    key: string,
+  ) => (await api.post<VenueClosure>('/v1/platform/venue-closures', { body, idempotencyKey: key })).data,
+  cancelClosure: async (closureId: string, reason: string, key: string) =>
+    (
+      await api.post<VenueClosure>(`/v1/platform/venue-closures/${enc(closureId)}/cancel`, {
+        body: { reason },
+        idempotencyKey: key,
+      })
+    ).data,
   report: async (days: number, signal?: AbortSignal) =>
     (await api.get<SubscriptionsReport>(`/v1/platform/subscriptions/report?days=${days}`, { signal })).data,
 };

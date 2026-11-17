@@ -67,7 +67,7 @@ function customerView(c: ComplaintRow): CustomerComplaint {
 }
 
 /**
- * C-21 / C-22 «الشكاوى» (V2-037; DEC-603; annex clauses 5 and 6 «تسجل الشكاوى برقم مرجعي … عبر تطبيق بوينت»): the
+ * C-21 / C-22 «الشكاوى» (V2-037; DEC-603; annex clauses 5 and 6 «تسجل الشكاوى برقم مرجعي … عبر التطبيق»): the
  * account's complaints and a new one, with its reference at once. A complaint may name one of the account's own visits
  * (through the operator's `customers` row linked to it) or subscriptions; its venue and operator come from them so the
  * platform knows where it happened. The text is the customer's: it is never written to an audit log.

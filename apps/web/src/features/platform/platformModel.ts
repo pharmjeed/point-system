@@ -25,7 +25,10 @@ export type PlatformPermission =
   | 'platform.plan_manage'
   | 'platform.subscription_read'
   | 'platform.settlement_manage'
-  | 'platform.invoice_read';
+  | 'platform.invoice_read'
+  // V2-036 / V2-037 (DEC-596, DEC-604)
+  | 'platform.subscription_manage'
+  | 'platform.complaint_manage';
 
 export const platformCan = (me: PlatformMe, permission: PlatformPermission) =>
   me.permissions.includes(permission);
@@ -39,7 +42,8 @@ export type PlatformDestination =
   | 'plans'
   | 'subscriptions'
   | 'settlements'
-  | 'invoices';
+  | 'invoices'
+  | 'complaints';
 
 /**
  * The console's destinations for this account (P-02 / P-03 need `platform.operator_read`, P-04
@@ -58,6 +62,8 @@ export function platformNav(me: PlatformMe): PlatformDestination[] {
     // V2-041 / V2-040: P-09 with `platform.settlement_manage`, P-10 with `platform.invoice_read`
     ...(platformCan(me, 'platform.settlement_manage') ? (['settlements'] as const) : []),
     ...(platformCan(me, 'platform.invoice_read') ? (['invoices'] as const) : []),
+    // V2-037: P-13 with `platform.complaint_manage` (every platform role)
+    ...(platformCan(me, 'platform.complaint_manage') ? (['complaints'] as const) : []),
   ];
 }
 

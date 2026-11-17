@@ -1,6 +1,6 @@
 /**
  * Customer complaints (docs/v2/01 C-21/C-22, docs/v2/02 P-13; DEC-603, DEC-604; annex clauses 5 and 6: «تسجل الشكاوى
- * برقم مرجعي … وتكون … الشكاوى عبر تطبيق بوينت»). A complaint is registered from the app with a reference number
+ * برقم مرجعي … وتكون … الشكاوى عبر التطبيق»). A complaint is registered from the app with a reference number
  * (`PT-C-000123`, from the sequence of `customer_complaints.ref_seq`), the customer follows its status, and the
  * platform console moves it (P-13) with an audited note. Nothing of a complaint is deleted.
  */

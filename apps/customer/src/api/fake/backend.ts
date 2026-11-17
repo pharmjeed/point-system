@@ -5,7 +5,10 @@
  * Saudi plate normalisation, the 5-vehicle limit, `Idempotency-Key` replay, and the 08 error envelope; and since
  * V2-012/V2-017 the vehicle removal (C-15), the re-verification proof and the account deletion (C-20); since
  * V2-015/V2-016 the visits (C-12, C-16, C-13, ./visits.ts) with their live updates, and the push registration;
- * since V2-032 the subscriptions (C-09, C-10, C-14) with the server's machine, reduced to what the app sees.
+ * since V2-032 the subscriptions (C-09, C-10, C-14) with the server's machine, reduced to what the app sees; since
+ * V2-036 / V2-037 the subscriptions annex (counted-day terms, eligibility — approved on a read 5 s after the
+ * application, rejected when the student number ends with 9 —, the purchase consent, the freeze, capacity) and the
+ * complaints with a reference number.
  *
  * The WhatsApp message is not sent anywhere: it lands in `inbox` (the role of tools/wa-simulator), and the app
  * shows the code on C-03 in development only. Never used by a release build unless explicitly configured
@@ -35,6 +38,17 @@ import {
   PASS_TOKEN_PREFIX,
   saudiPlateDisplay,
   verifyPassToken,
+  addDays,
+  countServiceDays,
+  freezeRequestCheck,
+  maskOfWeekdays,
+  remainingServiceDays,
+  resumedTermEnd,
+  riyadhDate,
+  serviceTerm,
+  complaintReference,
+  type CustomerComplaint,
+  type CustomerLocationPlan,
   type CustomerApiErrorCode,
   type CustomerConsentKind,
   type CustomerConsentState,
@@ -62,6 +76,7 @@ import {
   FAKE_CARD_ON_FILE_VERSION,
   FAKE_CONSENT_VERSIONS,
   FAKE_LOCATIONS,
+  FAKE_SUBSCRIPTION_TERMS_VERSION,
   FAKE_VISIT_FEE_HALALAS,
 } from './seed';
 import { parseFakeToken, type FakeCardBehaviour } from './tokens';
@@ -266,7 +281,15 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     loc: CustomerLocationDetail,
     from?: { lat: number; lng: number },
   ): CustomerLocationSummary {
-    const { address: _a, timezone: _t, opening_hours, photo_urls: _p, plans: _pl, ...rest } = loc;
+    const {
+      address: _a,
+      timezone: _t,
+      opening_hours,
+      photo_urls: _p,
+      plans: _pl,
+      closures: _c,
+      ...rest
+    } = loc;
     return {
       ...rest,
       open_now: isOpenAt(opening_hours, now()),
@@ -555,9 +578,44 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     endedAt: number | null;
     endedReason: CustomerSubscription['ended_reason'];
     payments: FakeSubPayment[];
+    // V2-036
+    serviceStart: string | null;
+    serviceEnd: string | null;
+    frozenRemaining: number | null;
+    eligibility: {
+      status: 'pending' | 'approved' | 'rejected';
+      source: 'review' | 'list' | 'reuse' | null;
+      number: string;
+      decidedAt: number | null;
+      reason: string | null;
+      appliedAt: number;
+    } | null;
+    freeze: {
+      id: string;
+      status: 'scheduled' | 'active' | 'completed' | 'withdrawn';
+      startsOn: string;
+      returnsOn: string;
+      days: number;
+      usedDays: number | null;
+      endedOn: string | null;
+    } | null;
   }
   const subscriptions = new Map<string, FakeSubscription>();
+  /** the statuses C-06 lists (an application waiting for its decision is shown on C-14 only) */
   const LIVE_SUB = new Set(['pending_payment', 'active', 'past_due', 'frozen']);
+  const LIVE_ANY = new Set(['pending_eligibility', 'pending_payment', 'active', 'past_due', 'frozen']);
+  const FAKE_REVIEW_MS = 5000;
+  const DAY = 86_400_000;
+  const planOf = (sub: Pick<FakeSubscription, 'venueId' | 'planId'>) =>
+    FAKE_LOCATIONS.find((l) => l.venue_id === sub.venueId)?.plans.find((p) => p.plan_id === sub.planId) as
+      CustomerLocationPlan | undefined;
+  const maskOf = (plan: CustomerLocationPlan | undefined) =>
+    plan?.policy.service_weekdays ? maskOfWeekdays(plan.policy.service_weekdays) : null;
+  const midnight = (day: string) => Date.parse(`${day}T00:00:00+03:00`);
+  const today = () => riyadhDate(new Date(now()));
+  /** live subscriptions holding a seat of a plan (DEC-598) */
+  const seatsTaken = (planId: string) =>
+    [...subscriptions.values()].filter((x) => x.planId === planId && LIVE_SUB.has(x.status)).length;
 
   /** The calendar months of a period (the server uses the Riyadh calendar; the fake adds UTC months). */
   function addMonths(ms: number, months: number): number {
@@ -578,6 +636,41 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
 
   /** The machine's timers, lazily on every read: the 30-minute checkout, the 3-D Secure answer, the period end. */
   function advanceSub(sub: FakeSubscription) {
+    const e = sub.eligibility;
+    if (sub.status === 'pending_eligibility' && e && now() - e.appliedAt >= FAKE_REVIEW_MS) {
+      e.decidedAt = now();
+      e.source = 'review';
+      if (e.number.endsWith('9')) {
+        e.status = 'rejected';
+        e.reason = 'الرقم غير مسجل لدى الجامعة';
+        sub.status = 'canceled';
+        sub.endedAt = now();
+        sub.endedReason = 'eligibility_rejected';
+      } else {
+        e.status = 'approved';
+        sub.status = 'pending_payment';
+        sub.pendingExpiresAt = now() + 7 * DAY;
+      }
+    }
+    const mask = maskOf(planOf(sub));
+    const f = sub.freeze;
+    if (f && mask !== null) {
+      if (f.status === 'scheduled' && now() >= midnight(f.startsOn) && sub.status === 'active') {
+        f.status = 'active';
+        sub.status = 'frozen';
+        sub.frozenRemaining = remainingServiceDays(
+          f.startsOn,
+          { startOn: sub.serviceStart!, endOn: sub.serviceEnd! },
+          mask,
+        );
+      }
+      if (f.status === 'active' && now() >= midnight(f.returnsOn) && sub.status === 'frozen') {
+        f.status = 'completed';
+        f.usedDays = countServiceDays(f.startsOn, f.returnsOn, mask);
+        f.endedOn = f.returnsOn;
+        unfreezeFake(sub, f.returnsOn, mask);
+      }
+    }
     for (const p of sub.payments)
       if (p.status === 'initiated' && now() - p.createdAt >= FAKE_3DS_MS) settleSubPayment(sub, p);
     if (sub.status === 'pending_payment' && sub.pendingExpiresAt !== null && now() >= sub.pendingExpiresAt) {
@@ -585,11 +678,30 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       sub.endedAt = now();
       sub.endedReason = 'pending_expired';
     }
+    if (
+      sub.status === 'active' &&
+      sub.periodEnd !== null &&
+      now() >= sub.periodEnd &&
+      planOf(sub)?.policy.renewal_mode === 'manual'
+    ) {
+      sub.status = 'expired';
+      sub.endedAt = sub.periodEnd;
+      sub.endedReason = 'term_completed';
+    }
     if (sub.status === 'active' && sub.periodEnd !== null && now() >= sub.periodEnd && sub.cancelAtEnd) {
       sub.status = 'canceled';
       sub.endedAt = sub.periodEnd;
       sub.endedReason = 'period_end';
     }
+  }
+
+  function unfreezeFake(sub: FakeSubscription, resumeOn: string, mask: number) {
+    const remaining = sub.frozenRemaining ?? 0;
+    const end = remaining > 0 ? resumedTermEnd(resumeOn, remaining, mask) : (sub.serviceEnd as string);
+    sub.serviceEnd = end;
+    sub.periodEnd = midnight(addDays(end, 1));
+    sub.frozenRemaining = null;
+    sub.status = 'active';
   }
 
   function settleSubPayment(sub: FakeSubscription, p: FakeSubPayment, outcome?: 'success' | 'fail') {
@@ -605,6 +717,15 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       sub.periodStart = now();
       sub.periodEnd = addMonths(now(), sub.cycle === 'yearly' ? 12 : 1);
       sub.pendingExpiresAt = null;
+      const plan = planOf(sub);
+      const mask = maskOf(plan);
+      if (plan?.policy.term_kind === 'service_days' && mask !== null && plan.policy.service_days) {
+        const term = serviceTerm(new Date(now()), plan.policy.service_days, mask);
+        sub.serviceStart = term.startOn;
+        sub.serviceEnd = term.endOn;
+        sub.periodStart = midnight(term.startOn);
+        sub.periodEnd = midnight(addDays(term.endOn, 1));
+      }
     } else if (sub.status === 'past_due' && sub.periodEnd !== null) {
       sub.status = 'active';
       sub.periodStart = sub.periodEnd;
@@ -661,7 +782,29 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     advanceSub(sub);
     const venue = FAKE_LOCATIONS.find((l) => l.venue_id === sub.venueId) as CustomerLocationDetail;
     const plan = venue.plans.find((p) => p.plan_id === sub.planId);
-    const live = LIVE_SUB.has(sub.status);
+    const live = LIVE_ANY.has(sub.status);
+    const manual = plan?.policy.renewal_mode === 'manual';
+    const mask = maskOf(plan);
+    const f = sub.freeze;
+    const term =
+      sub.serviceStart && sub.serviceEnd ? { startOn: sub.serviceStart, endOn: sub.serviceEnd } : null;
+    const projected =
+      f && term && mask !== null
+        ? f.status === 'scheduled'
+          ? resumedTermEnd(f.returnsOn, remainingServiceDays(f.startsOn, term, mask), mask)
+          : f.status === 'active'
+            ? resumedTermEnd(f.returnsOn, sub.frozenRemaining ?? 0, mask)
+            : null
+        : null;
+    const freezeUsed = f && f.status !== 'withdrawn' ? 1 : 0;
+    const freezesLeft = live ? Math.max(0, (plan?.policy.freeze_max_times ?? 0) - freezeUsed) : 0;
+    const renewable =
+      manual &&
+      !live &&
+      sub.serviceStart !== null &&
+      ![...subscriptions.values()].some(
+        (x) => x.accountId === sub.accountId && x.venueId === sub.venueId && LIVE_ANY.has(x.status),
+      );
     const latest = sub.payments.at(-1);
     return {
       subscription_id: sub.id,
@@ -693,18 +836,94 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       frozen_reason: null,
       can_change_vehicles:
         (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'frozen') &&
-        (sub.vehiclesChangedAt === null ||
+        (plan?.policy.vehicle_change === 'any_time' ||
+          sub.vehiclesChangedAt === null ||
           sub.periodStart === null ||
           sub.vehiclesChangedAt < sub.periodStart),
-      can_cancel: live && !sub.cancelAtEnd,
-      can_resume: (sub.status === 'active' || sub.status === 'frozen') && sub.cancelAtEnd,
+      can_cancel:
+        live && !sub.cancelAtEnd && !(manual && (sub.status === 'active' || sub.status === 'frozen')),
+      can_resume: !manual && (sub.status === 'active' || sub.status === 'frozen') && sub.cancelAtEnd,
       can_pay: sub.status === 'pending_payment' || sub.status === 'past_due',
       latest_payment: latest ? subPaymentView(sub, latest) : null,
       ended_at: sub.endedAt === null ? null : iso(sub.endedAt),
       ended_reason: sub.endedReason,
       created_at: iso(sub.createdAt),
+      policy: plan?.policy ?? FAKE_LOCATIONS[0]!.plans[0]!.policy,
+      service_start_on: sub.serviceStart,
+      service_end_on: sub.serviceEnd,
+      remaining_days:
+        term && mask !== null
+          ? sub.status === 'frozen'
+            ? (sub.frozenRemaining ?? 0)
+            : sub.status === 'active'
+              ? remainingServiceDays(today(), term, mask)
+              : null
+          : null,
+      eligibility: sub.eligibility
+        ? {
+            status: sub.eligibility.status,
+            source: sub.eligibility.source,
+            student_number_masked: `${'•'.repeat(Math.min(6, Math.max(0, sub.eligibility.number.length - 3)))}${sub.eligibility.number.slice(-3)}`,
+            decided_at: sub.eligibility.decidedAt === null ? null : iso(sub.eligibility.decidedAt),
+            reason: sub.eligibility.reason,
+          }
+        : null,
+      freeze:
+        f && live && f.status !== 'withdrawn'
+          ? {
+              freeze_id: f.id,
+              status: f.status,
+              starts_on: f.startsOn,
+              returns_on: f.returnsOn,
+              days: f.days,
+              used_days: f.usedDays,
+              ended_on: f.endedOn,
+              projected_end_on: projected,
+            }
+          : null,
+      freezes_left: freezesLeft,
+      can_freeze:
+        sub.status === 'active' &&
+        term !== null &&
+        freezesLeft > 0 &&
+        !(f && (f.status === 'scheduled' || f.status === 'active')),
+      can_unfreeze: !!f && (f.status === 'scheduled' || (f.status === 'active' && sub.status === 'frozen')),
+      renew_plan_id: renewable ? sub.planId : null,
+      refund_due_at: null,
     };
   }
+
+  /** The purchase consent of a plan that needs it (DEC-601): versions in force and the non-refund accepted. */
+  function assertPurchaseConsent(
+    plan: CustomerLocationPlan,
+    consent: { terms_version: string; privacy_version: string; non_refundable: boolean } | undefined,
+  ) {
+    const p = plan.policy;
+    const required =
+      p.refund_policy === 'non_refundable' || p.renewal_mode === 'manual' || p.eligibility !== 'none';
+    if (!consent) {
+      if (required)
+        throw new Reject('CUSTOMER_CONSENT_REQUIRED', {
+          kind: 'subscription_terms',
+          current_version: FAKE_SUBSCRIPTION_TERMS_VERSION,
+        });
+      return;
+    }
+    if (consent.terms_version !== FAKE_SUBSCRIPTION_TERMS_VERSION)
+      throw new Reject('CUSTOMER_CONSENT_VERSION_STALE', {
+        kind: 'subscription_terms',
+        current_version: FAKE_SUBSCRIPTION_TERMS_VERSION,
+      });
+    if (p.refund_policy === 'non_refundable' && !consent.non_refundable)
+      throw new Reject('CUSTOMER_CONSENT_REQUIRED', {
+        kind: 'subscription_terms',
+        current_version: FAKE_SUBSCRIPTION_TERMS_VERSION,
+      });
+  }
+
+  // ---- V2-037: complaints with a reference number
+  const complaints: Array<CustomerComplaint & { accountId: string }> = [];
+  let complaintSeq = 120;
 
   function ownSub(account: Account, id: string | undefined): FakeSubscription {
     const sub = subscriptions.get(id ?? '');
@@ -722,25 +941,36 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       save_card?: boolean | undefined;
       card_on_file_version?: string | undefined;
     },
+    manual = false,
   ) {
-    if (body.source.type === 'applepay')
-      throw new Reject('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'applepay' });
+    if (body.source.type === 'applepay') {
+      if (!manual) throw new Reject('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'applepay' });
+      return {
+        behaviour: 'ok' as FakeCardBehaviour,
+        brand: 'applepay' as string | null,
+        last4: null,
+        saveCard: null,
+      };
+    }
     if (body.source.type === 'token') {
-      if (!body.save_card) throw new Reject('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'token' });
-      assertCardConsent(body.card_on_file_version);
+      if (!body.save_card && !manual)
+        throw new Reject('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'token' });
+      if (body.save_card) assertCardConsent(body.card_on_file_version);
       const info = parseFakeToken(body.source.token);
       if (!info) throw new Reject('PAYMENT_FAILED', { failure_code: 'gateway_invalid_request_error' });
       return {
         behaviour: info.behaviour,
         brand: info.brand as string | null,
         last4: info.last4 as string | null,
-        saveCard: {
-          token: body.source.token,
-          brand: info.brand,
-          last4: info.last4,
-          month: info.month,
-          year: info.year,
-        },
+        saveCard: body.save_card
+          ? {
+              token: body.source.token,
+              brand: info.brand,
+              last4: info.last4,
+              month: info.month,
+              year: info.year,
+            }
+          : null,
       };
     }
     const card = account.cards.find(
@@ -1008,7 +1238,24 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       authenticate(req);
       const loc = FAKE_LOCATIONS.find((l) => l.venue_id === params.venueId);
       if (!loc) throw new Reject('VENUE_NOT_LISTED');
-      return { ...loc, open_now: isOpenAt(loc.opening_hours, now()) };
+      for (const x of subscriptions.values()) advanceSub(x);
+      return {
+        ...loc,
+        open_now: isOpenAt(loc.opening_hours, now()),
+        plans: loc.plans.map((p) => {
+          const mask = maskOf(p);
+          const term =
+            p.policy.term_kind === 'service_days' && mask !== null && p.policy.service_days
+              ? serviceTerm(new Date(now()), p.policy.service_days, mask)
+              : null;
+          return {
+            ...p,
+            sold_out: p.sold_out || seatsTaken(p.plan_id) >= 50,
+            term_preview: term ? { starts_on: term.startOn, ends_on: term.endOn } : null,
+          };
+        }),
+        closures: loc.closures.filter((c) => c.ends_on >= today()),
+      };
     },
 
     home(req, { query }) {
@@ -1041,7 +1288,8 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
               venue_id: v.venue_id,
               venue_name_ar: v.venue_name_ar,
               venue_name_en: v.venue_name_en,
-              status: v.status,
+              // C-06 lists the live subscriptions (an application waiting for its decision is C-14's)
+              status: v.status as Exclude<typeof v.status, 'pending_eligibility'>,
               billing_cycle: v.billing_cycle,
               current_period_end: v.current_period_end,
               cancel_at_period_end: v.cancel_at_period_end,
@@ -1344,11 +1592,19 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         throw new Reject('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
       for (const x of subscriptions.values()) advanceSub(x);
       const live = [...subscriptions.values()].find(
-        (x) => x.accountId === account.id && x.venueId === venue.venue_id && LIVE_SUB.has(x.status),
+        (x) => x.accountId === account.id && x.venueId === venue.venue_id && LIVE_ANY.has(x.status),
       );
       if (live)
         throw new Reject('SUBSCRIPTION_ALREADY_EXISTS', { subscription_id: live.id, status: live.status });
-      const src = subSource(account, body);
+      if (plan.policy.eligibility !== 'none')
+        throw new Reject('SUBSCRIPTION_ELIGIBILITY_REQUIRED', {
+          plan_id: plan.plan_id,
+          eligibility: plan.policy.eligibility,
+        });
+      assertPurchaseConsent(plan, body.purchase_consent);
+      if (plan.sold_out)
+        throw new Reject('SUBSCRIPTION_CAPACITY_REACHED', { plan_id: plan.plan_id, capacity: 0 });
+      const src = subSource(account, body, plan.policy.renewal_mode === 'manual');
       const sub: FakeSubscription = {
         id: uuid(),
         accountId: account.id,
@@ -1368,6 +1624,11 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         endedAt: null,
         endedReason: null,
         payments: [],
+        serviceStart: null,
+        serviceEnd: null,
+        frozenRemaining: null,
+        eligibility: null,
+        freeze: null,
       };
       subscriptions.set(sub.id, sub);
       return chargeSub(sub, src, price);
@@ -1388,13 +1649,26 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           current_status: sub.status,
           command: 'subscription.pay',
         });
-      return chargeSub(sub, subSource(account, body), sub.price);
+      const plan = planOf(sub);
+      if (plan && sub.status === 'pending_payment') assertPurchaseConsent(plan, body.purchase_consent);
+      return chargeSub(sub, subSource(account, body, plan?.policy.renewal_mode === 'manual'), sub.price);
     },
 
     subscriptionCancel(req, { params }) {
       const account = authenticate(req);
       const sub = ownSub(account, params.subscriptionId);
-      if (sub.status === 'pending_payment' || sub.status === 'past_due') {
+      const manual = planOf(sub)?.policy.renewal_mode === 'manual';
+      if (sub.status === 'pending_eligibility') {
+        sub.status = 'canceled';
+        sub.endedAt = now();
+        sub.endedReason = 'abandoned';
+      } else if (manual && (sub.status === 'active' || sub.status === 'frozen'))
+        throw new Reject('SUBSCRIPTION_NOT_ACTIVE', {
+          subscription_id: sub.id,
+          current_status: sub.status,
+          command: 'subscription.cancel',
+        });
+      else if (sub.status === 'pending_payment' || sub.status === 'past_due') {
         sub.endedReason = sub.status === 'pending_payment' ? 'abandoned' : 'past_due_canceled';
         sub.status = 'canceled';
         sub.endedAt = now();
@@ -1454,6 +1728,177 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         sub.vehiclesChangedAt = now();
       }
       return subView(sub, account);
+    },
+
+    // ---- V2-036 (C-09, C-14): the application, the customer's freeze
+
+    subscriptionApply(req) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.subscriptionApply.body, req.body);
+      const venue = FAKE_LOCATIONS.find((l) => l.plans.some((p) => p.plan_id === body.plan_id));
+      const plan = venue?.plans.find((p) => p.plan_id === body.plan_id);
+      if (!venue || !plan) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'subscription_plan' });
+      if (plan.policy.eligibility === 'none')
+        throw new Reject('VALIDATION_FAILED', {
+          fields: [{ field: 'plan_id', issue: 'no_eligibility_check' }],
+        });
+      if (!body.vehicle_ids.every((id) => account.vehicles.some((v) => v.id === id)))
+        throw new Reject('RESOURCE_NOT_FOUND', { resource: 'customer_vehicle' });
+      for (const x of subscriptions.values()) advanceSub(x);
+      const live = [...subscriptions.values()].find(
+        (x) => x.accountId === account.id && x.venueId === venue.venue_id && LIVE_ANY.has(x.status),
+      );
+      if (live)
+        throw new Reject('SUBSCRIPTION_ALREADY_EXISTS', { subscription_id: live.id, status: live.status });
+      if (plan.sold_out)
+        throw new Reject('SUBSCRIPTION_CAPACITY_REACHED', { plan_id: plan.plan_id, capacity: 0 });
+      const reused = [...subscriptions.values()].some(
+        (x) =>
+          x.accountId === account.id &&
+          x.venueId === venue.venue_id &&
+          x.eligibility?.status === 'approved' &&
+          x.eligibility.number === body.student_number,
+      );
+      const sub: FakeSubscription = {
+        id: uuid(),
+        accountId: account.id,
+        venueId: venue.venue_id,
+        planId: plan.plan_id,
+        cycle: 'monthly',
+        status: reused ? 'pending_payment' : 'pending_eligibility',
+        price: plan.monthly_price_halalas ?? 0,
+        vehiclesIncluded: plan.vehicles_included,
+        vehicleIds: [...body.vehicle_ids],
+        periodStart: null,
+        periodEnd: null,
+        cancelAtEnd: false,
+        vehiclesChangedAt: null,
+        pendingExpiresAt: reused ? now() + 7 * DAY : null,
+        createdAt: now(),
+        endedAt: null,
+        endedReason: null,
+        payments: [],
+        serviceStart: null,
+        serviceEnd: null,
+        frozenRemaining: null,
+        eligibility: {
+          status: reused ? 'approved' : 'pending',
+          source: reused ? 'reuse' : null,
+          number: body.student_number,
+          decidedAt: reused ? now() : null,
+          reason: null,
+          appliedAt: now(),
+        },
+        freeze: null,
+      };
+      subscriptions.set(sub.id, sub);
+      return subView(sub, account);
+    },
+
+    subscriptionFreeze(req, { params }) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.subscriptionFreeze.body, req.body);
+      const sub = ownSub(account, params.subscriptionId);
+      const plan = planOf(sub);
+      const mask = maskOf(plan);
+      if (!plan || mask === null || !plan.policy.freeze_max_days || !sub.serviceStart || !sub.serviceEnd)
+        throw new Reject('SUBSCRIPTION_FREEZE_UNAVAILABLE', { reason: 'not_offered' });
+      if (sub.status !== 'active') throw new Reject('SUBSCRIPTION_FREEZE_UNAVAILABLE', { reason: 'status' });
+      if (sub.freeze && (sub.freeze.status === 'scheduled' || sub.freeze.status === 'active'))
+        throw new Reject('SUBSCRIPTION_FREEZE_UNAVAILABLE', { reason: 'live' });
+      if (sub.freeze && sub.freeze.status === 'completed')
+        throw new Reject('SUBSCRIPTION_FREEZE_UNAVAILABLE', { reason: 'used' });
+      const r = freezeRequestCheck({
+        today: today(),
+        startsOn: body.starts_on,
+        returnsOn: body.returns_on,
+        term: { startOn: sub.serviceStart, endOn: sub.serviceEnd },
+        mask,
+        maxDays: plan.policy.freeze_max_days,
+      });
+      if (!r.ok)
+        throw new Reject('SUBSCRIPTION_FREEZE_INVALID', {
+          issue: r.issue,
+          max_days: plan.policy.freeze_max_days,
+        });
+      sub.freeze = {
+        id: uuid(),
+        status: 'scheduled',
+        startsOn: body.starts_on,
+        returnsOn: body.returns_on,
+        days: r.days,
+        usedDays: null,
+        endedOn: null,
+      };
+      return subView(sub, account);
+    },
+
+    subscriptionUnfreeze(req, { params }) {
+      const account = authenticate(req);
+      const sub = ownSub(account, params.subscriptionId);
+      const f = sub.freeze;
+      const mask = maskOf(planOf(sub));
+      if (!f || mask === null || (f.status !== 'scheduled' && f.status !== 'active'))
+        throw new Reject('SUBSCRIPTION_FREEZE_UNAVAILABLE', { reason: 'status' });
+      if (f.status === 'scheduled') {
+        f.status = 'withdrawn';
+        f.endedOn = today();
+      } else {
+        f.status = 'completed';
+        f.usedDays = countServiceDays(f.startsOn, today(), mask);
+        f.endedOn = today();
+        unfreezeFake(sub, today(), mask);
+      }
+      return subView(sub, account);
+    },
+
+    // ---- V2-037 (C-21, C-22)
+
+    complaints(req) {
+      const account = authenticate(req);
+      const items = complaints
+        .filter((c) => c.accountId === account.id)
+        .map(({ accountId: _a, ...c }) => c)
+        .reverse();
+      return { items };
+    },
+
+    complaintCreate(req) {
+      const account = authenticate(req);
+      const body = parse(CUSTOMER_ROUTES.complaintCreate.body, req.body);
+      let venue: CustomerLocationDetail | undefined;
+      if (body.subscription_id) {
+        const sub = subscriptions.get(body.subscription_id);
+        if (!sub || sub.accountId !== account.id)
+          throw new Reject('RESOURCE_NOT_FOUND', { resource: 'subscription' });
+        venue = FAKE_LOCATIONS.find((l) => l.venue_id === sub.venueId);
+      }
+      const c: CustomerComplaint & { accountId: string } = {
+        accountId: account.id,
+        complaint_id: uuid(),
+        reference: complaintReference(++complaintSeq),
+        category: body.category,
+        status: 'open',
+        body: body.body,
+        ticket_id: body.ticket_id ?? null,
+        subscription_id: body.subscription_id ?? null,
+        venue_name_ar: venue?.name_ar ?? null,
+        venue_name_en: venue?.name_en ?? null,
+        resolution_note: null,
+        created_at: iso(now()),
+        updated_at: iso(now()),
+      };
+      complaints.push(c);
+      const { accountId: _a, ...view } = c;
+      return view;
+    },
+
+    complaint(req, { params }) {
+      const account = authenticate(req);
+      const c = complaints.find((x) => x.complaint_id === params.complaintId && x.accountId === account.id);
+      if (!c) throw new Reject('RESOURCE_NOT_FOUND', { resource: 'complaint' });
+      const { accountId: _a, ...view } = c;
+      return view;
     },
 
     devices(req) {
@@ -1561,6 +2006,8 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           'paymentMethodCreate',
           'subscribe',
           'subscriptionPay',
+          'subscriptionApply',
+          'complaintCreate',
         ].includes(found.key)
           ? 201
           : 200;

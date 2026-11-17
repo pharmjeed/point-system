@@ -269,7 +269,7 @@ describe('locations and home (C-06)', () => {
     expect(first.items).toHaveLength(4);
     expect(first.nextCursor).not.toBeNull();
     const second = await ctx.api.locations({ limit: 4, cursor: first.nextCursor as string });
-    expect(second.items).toHaveLength(2);
+    expect(second.items).toHaveLength(3); // 7 locations since the university of V2-036;
     expect(second.nextCursor).toBeNull();
     const detail = await ctx.api.location(first.items[0]?.venue_id as string);
     expect(detail.timezone).toBe('Asia/Riyadh');

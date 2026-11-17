@@ -247,6 +247,13 @@ export const routes: RouteObject[] = [
                 .PlatformSubscriptionPage,
             }),
           },
+          // P-13 (V2-037)
+          {
+            path: paths.platformComplaints,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformComplaintsPage')).PlatformComplaintsPage,
+            }),
+          },
         ],
       },
       ...galleryRoutes,

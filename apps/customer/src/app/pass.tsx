@@ -208,6 +208,13 @@ export default function Pass() {
               {t.pass.brightness}
             </AppText>
           </View>
+          {/* V2-036 (annex clause 6, DEC-605): the valuables reminder at the handover of the car */}
+          <View style={styles.hintRow}>
+            <Icon name="car" size={18} tint={color.textMuted} />
+            <AppText variant="small" tone="muted" style={styles.flex}>
+              {t.annex.valuables}
+            </AppText>
+          </View>
         </>
       )}
     </Screen>

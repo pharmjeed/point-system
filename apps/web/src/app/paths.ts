@@ -26,6 +26,7 @@ export const paths = {
   platformPayments: '/platform/payments', // P-08 (V2-024); …/reconciliation, …/alerts, …/:paymentId
   platformPlans: '/platform/plans', // P-05 (V2-030)
   platformSubscriptions: '/platform/subscriptions', // P-07 (V2-035); one subscription is …/:subscriptionId
+  platformComplaints: '/platform/complaints', // P-13 (V2-037)
   platformSettlements: '/platform/settlements', // P-09 (V2-041); one statement is /platform/settlements/:statementId
   platformInvoices: '/platform/invoices', // P-10 (V2-040); one document is /platform/invoices/:invoiceId
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)

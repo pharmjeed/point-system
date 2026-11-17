@@ -35,6 +35,10 @@ import {
   type CustomerVisitPayBody,
   type CustomerOnlinePayment,
   type CustomerSubscribeBody,
+  type CustomerComplaint,
+  type CustomerComplaintCreateBody,
+  type CustomerSubscriptionApplyBody,
+  type CustomerSubscriptionFreezeBody,
   type CustomerSubscription,
   type CustomerSubscriptionCheckout,
   type CustomerSubscriptionPayBody,
@@ -455,6 +459,49 @@ export function createCustomerApi(opts: CustomerApiOptions) {
           idempotencyKey,
         })
       ).data;
+    },
+
+    // ---- V2-036 (C-09, C-14): the subscriptions annex — eligibility application, the customer's freeze
+    /** C-09 «أرسل طلب الاشتراك»: a plan checked for eligibility (pending until the platform decides). */
+    async applySubscription(
+      body: CustomerSubscriptionApplyBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerSubscription> {
+      return (await call('subscriptionApply', { body, idempotencyKey })).data;
+    },
+
+    /** C-14 «تجميد»: a freeze asked ahead (start and return days, Asia/Riyadh). */
+    async freezeSubscription(
+      subscriptionId: string,
+      body: CustomerSubscriptionFreezeBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerSubscription> {
+      return (await call('subscriptionFreeze', { params: { subscriptionId }, body, idempotencyKey })).data;
+    },
+
+    /** C-14 «إلغاء التجميد» / «أعد التفعيل الآن». */
+    async unfreezeSubscription(
+      subscriptionId: string,
+      idempotencyKey?: string,
+    ): Promise<CustomerSubscription> {
+      return (await call('subscriptionUnfreeze', { params: { subscriptionId }, body: {}, idempotencyKey }))
+        .data;
+    },
+
+    // ---- V2-037 (C-21, C-22): complaints with a reference number
+    async complaints(): Promise<CustomerComplaint[]> {
+      return (await call('complaints')).data.items;
+    },
+
+    async complaint(complaintId: string): Promise<CustomerComplaint> {
+      return (await call('complaint', { params: { complaintId } })).data;
+    },
+
+    async createComplaint(
+      body: CustomerComplaintCreateBody,
+      idempotencyKey?: string,
+    ): Promise<CustomerComplaint> {
+      return (await call('complaintCreate', { body, idempotencyKey })).data;
     },
 
     /**

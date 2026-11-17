@@ -122,6 +122,11 @@ export interface SubscriptionSheetCheckout {
   start: SubscriptionCheckoutRequest['start'];
   /** the subscription the checkout created or paid (C-14 opens it) */
   onSubscription?: (subscriptionId: string | null) => void;
+  /**
+   * V2-036 (DEC-595): a plan renewed by hand is never charged again — the card is kept only if the customer wants it,
+   * and Apple Pay is offered as for a visit
+   */
+  manualRenewal?: boolean;
 }
 
 export function PaySheet({
@@ -152,7 +157,8 @@ export function PaySheet({
   const [expiry, setExpiry] = useState('');
   const [cvc, setCvc] = useState('');
   const [name, setName] = useState('');
-  const [save, setSave] = useState(!!subscription);
+  const keepsCard = !!subscription && !subscription.manualRenewal;
+  const [save, setSave] = useState(keepsCard);
   const [issues, setIssues] = useState<CardIssue[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
@@ -197,9 +203,9 @@ export function PaySheet({
         setSelected(ordered[0]?.id ?? 'new');
       })
       .catch(() => setCards([]));
-    if (!subscription && applePay && Platform.OS === 'ios' && appConfig.payments.applePayMerchantId)
+    if (!keepsCard && applePay && Platform.OS === 'ios' && appConfig.payments.applePayMerchantId)
       applePay.available().then(setApplePayReady, () => setApplePayReady(false));
-  }, [visible, session.api, applePay, subscription]);
+  }, [visible, session.api, applePay, keepsCard]);
 
   const run = async (source: CustomerPaymentSource, saveCard: boolean, signature: string) => {
     setBusy(true);
@@ -216,7 +222,7 @@ export function PaySheet({
         {
           start: subscription.start,
           source,
-          saveCard: source.type === 'token' ? true : saveCard,
+          saveCard: source.type === 'token' && keepsCard ? true : saveCard,
           cardOnFileVersion: consentVersion,
           idempotencyKey: key.for(signature),
         },
@@ -443,12 +449,12 @@ export function PaySheet({
                   error={issues.includes('name') ? t.pay.issues.name : null}
                 />
                 <Checkbox
-                  label={subscription ? t.pay.saveForRenewal : t.pay.saveCard}
+                  label={keepsCard ? t.pay.saveForRenewal : t.pay.saveCard}
                   checked={save}
-                  onChange={subscription ? () => setSave(true) : setSave}
+                  onChange={keepsCard ? () => setSave(true) : setSave}
                   detail={
                     <AppText variant="small" tone="muted">
-                      {subscription ? t.pay.saveForRenewalDetail : t.pay.saveCardDetail}
+                      {keepsCard ? t.pay.saveForRenewalDetail : t.pay.saveCardDetail}
                     </AppText>
                   }
                 />
