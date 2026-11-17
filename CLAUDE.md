@@ -40,7 +40,7 @@ This file is your operating manual. The specification lives in `docs/` (Arabic p
 | — | `docs/v2/` | V2 (customer app, subscriptions, operators; DEC-459) — **approved** by the owner (DEC-460, gate H0); built phase by phase from `06_Delivery_Plan.md` |
 | — | `docs/design/README.md`, `docs/design/system/` | the published design system «بوينت · POINT» (Claude Design): every component's look, states and both themes. Read the README first: values come from `brand/tokens`, behaviour and props from 02/03/07 (DEC-49, DEC-50) |
 
-**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-550`) in `docs/DECISIONS.md` and fix the affected file in the same change.
+**Precedence when documents disagree:** the canon wins on *names*; the specialised file wins on *details*; the source architecture wins on *intent*. Record any resolution as a new decision (next free number: `DEC-610`) in `docs/DECISIONS.md` and fix the affected file in the same change.
 
 ## 3. Non-negotiables (full list: canon §2)
 
