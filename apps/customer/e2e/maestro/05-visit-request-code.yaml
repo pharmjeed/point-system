@@ -1,7 +1,7 @@
 # R3 on a device (mirrors e2e/visit-pay.spec.ts): the demo number gets a parked car (README «الخادم الوهمي»); the fake
 # driver accepts after 15 s, is on the way at 45 s, at the gate at 90 s and hands over 3 min later — real time here.
-# Native only: the request confirmation is the native Alert; the push offer appears only in a build with an EAS
-# project (CUSTOMER_EAS_PROJECT_ID) and then shows the OS permission dialog.
+# Native only: the swipe on a real touch screen (and the haptic tick); the push offer appears only in a build with an
+# EAS project (CUSTOMER_EAS_PROJECT_ID) and then shows the OS permission dialog.
 appId: sa.point.app
 name: C-12/C-13 — request the car, handover code, rating
 tags: [h2, r3]
@@ -22,10 +22,15 @@ tags: [h2, r3]
       - tapOn:
           text: 'Allow|السماح'
           optional: true
-- tapOn:
-    id: visit-request
-- assertVisible: 'اطلب سيارتك الآن؟'
-- tapOn: 'نعم، اطلبها'
+# «اطلب السيارة» is a swipe (DEC-583) and the swipe is the confirmation (DEC-584): the knob is dragged from the
+# start edge to the end edge — right to left in Arabic — and no dialog follows
+- assertVisible: 'اسحب لطلب السيارة'
+- swipe:
+    from:
+      id: request-car-swipe-knob
+    direction: LEFT
+    duration: 600
+- assertNotVisible: 'اطلب سيارتك الآن؟'
 - assertVisible: 'سجّلنا طلبك.'
 - extendedWaitUntil:
     visible: 'قُبل طلبك، وسائقنا في طريقه إلى سيارتك.'

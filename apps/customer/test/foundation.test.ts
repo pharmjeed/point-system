@@ -115,8 +115,13 @@ describe('design tokens come from brand/tokens (DEC-49)', () => {
       'src/ui/CodeInput.tsx',
       'src/ui/PlateInput.tsx',
       'src/ui/Screen.tsx',
-      'src/app/home.tsx',
+      'src/app/(tabs)/home.tsx',
+      'src/app/(tabs)/_layout.tsx',
       'src/app/welcome.tsx',
+      // V2-UX option B (DEC-580 … DEC-584)
+      'src/ui/SwipeToConfirm.tsx',
+      'src/ui/CarRoad.tsx',
+      'src/ui/TabBar.tsx',
     ];
     for (const f of files) {
       const text = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');

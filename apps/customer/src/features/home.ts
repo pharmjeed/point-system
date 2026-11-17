@@ -1,22 +1,32 @@
 /**
- * C-06 view model (01 C-06): «بطاقة الدخول» first as the big action, the visit in progress above everything when
- * there is one, my subscriptions (C-14 since V2-032), then the nearby locations. Pure.
+ * C-06 view model (01 C-06). Since V2-UX option B «البطاقة الحية» (DEC-580 … DEC-582): the blue hero with the car on
+ * its road, the live card with the one action of the moment («بطاقة الدخول» without a visit), the chips (entry pass,
+ * subscribe and save, my cars), my subscriptions when there are any (C-14), then the nearby locations. Pure.
  */
-import type { CustomerHome, CustomerLocationSummary } from '@point/shared/customer';
+import type { CustomerHome, CustomerHomeVisit, CustomerLocationSummary } from '@point/shared/customer';
 import { fmt, isolate, type AppLocale, type Dictionary } from '../i18n';
 import { formatDistance, formatMoney, formatTime } from '../i18n/format';
 
-export type HomeSection = 'visit' | 'pass' | 'subscriptions' | 'nearby';
+export type HomeSection = 'card' | 'chips' | 'subscriptions' | 'nearby';
 
-/** «الزيارة الجارية فوق كل شيء». */
+/**
+ * The live card first (the visit in progress, or «بطاقة الدخول»), the chips, then my subscriptions — only when there
+ * are some: «اشترك ووفّر» among the chips replaces the empty state — and the nearby locations.
+ */
 export function homeSections(home: CustomerHome): HomeSection[] {
-  return home.current_visit
-    ? ['visit', 'pass', 'subscriptions', 'nearby']
-    : ['pass', 'subscriptions', 'nearby'];
+  return home.subscriptions.length > 0
+    ? ['card', 'chips', 'subscriptions', 'nearby']
+    : ['card', 'chips', 'nearby'];
 }
 
-export function greeting(home: CustomerHome, dict: Dictionary): string {
-  return home.display_name ? fmt(dict.home.greeting, { name: home.display_name }) : dict.home.greetingNoName;
+/** The hero's small line: «مساء الخير، سارة» (the time of day alone without a name). */
+export function greeting(
+  home: Pick<CustomerHome, 'display_name'> | null,
+  dict: Dictionary,
+  part: 'morning' | 'evening',
+): string {
+  const time = dict.home[part];
+  return home?.display_name ? fmt(dict.home.greetingTime, { part: time, name: home.display_name }) : time;
 }
 
 export interface LocationRow {
@@ -68,4 +78,83 @@ export function visitCard(home: CustomerHome, dict: Dictionary, locale: AppLocal
     plate: v.plate_display ? isolate(v.plate_display) : null,
     since: isolate(formatTime(v.received_at)),
   };
+}
+
+/**
+ * V2-UX option B «البطاقة الحية» (DEC-580, DEC-581): what the blue hero says and where the car stands on its road
+ * of three stops (متوقفة · في الطريق · جاهزة), from the visit's status. The map of the ticket statuses:
+ *
+ * | status | stage | stop |
+ * |---|---|---|
+ * | `received`, `parking` | `parking` (`early` once requested while parking) | 0 متوقفة (1 when early) |
+ * | `reparking` | `reparking` | 0 |
+ * | `parked` | `parked` | 0 |
+ * | `requested` | `requested` | 1 في الطريق |
+ * | `assigned`, `assigned_waiting`, `retrieving` | `coming` | 1 |
+ * | `ready` | `ready` | 2 جاهزة |
+ *
+ * No visit (or a closed one, which `current_visit` never holds) is `none`: the welcome and no road.
+ */
+export type HomeStage =
+  'none' | 'parking' | 'reparking' | 'parked' | 'early' | 'requested' | 'coming' | 'ready';
+
+export const HOME_STOPS = ['parked', 'coming', 'ready'] as const;
+export type HomeStop = (typeof HOME_STOPS)[number];
+
+export function homeStage(status: CustomerHomeVisit['status'] | null, pendingEarly = false): HomeStage {
+  switch (status) {
+    case 'received':
+    case 'parking':
+      return pendingEarly ? 'early' : 'parking';
+    case 'reparking':
+      return 'reparking';
+    case 'parked':
+      return 'parked';
+    case 'requested':
+      return 'requested';
+    case 'assigned':
+    case 'assigned_waiting':
+    case 'retrieving':
+      return 'coming';
+    case 'ready':
+      return 'ready';
+    default:
+      return 'none';
+  }
+}
+
+/** The stop the car icon stands on (0 … 2), or null without a road. */
+export function homeStop(stage: HomeStage): number | null {
+  switch (stage) {
+    case 'none':
+      return null;
+    case 'parking':
+    case 'reparking':
+    case 'parked':
+      return 0;
+    case 'early':
+    case 'requested':
+    case 'coming':
+      return 1;
+    case 'ready':
+      return 2;
+  }
+}
+
+/** The one primary action of the live card for the stage and what C-12's read allows. */
+export type HomeAction = 'pass' | 'swipe' | 'elapsed' | 'code' | 'open';
+
+export interface HomeActionDetail {
+  request: { can_request: boolean; requested_at: string | null };
+  handover: { code_available: boolean };
+}
+
+export function homeAction(stage: HomeStage, detail: HomeActionDetail | null): HomeAction {
+  if (stage === 'none') return 'pass';
+  // without C-12's read (still loading, or it failed) the card opens C-12, which reads it again
+  if (!detail) return 'open';
+  const stop = homeStop(stage);
+  if (stop === 0) return detail.request.can_request ? 'swipe' : 'open';
+  if (stop === 1) return detail.request.requested_at ? 'elapsed' : 'open';
+  return detail.handover.code_available ? 'code' : 'open';
 }

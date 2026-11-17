@@ -78,11 +78,22 @@ export async function expectRtlPhone(page: Page): Promise<void> {
       }
       return false;
     };
+    // a decoration hidden from screen readers may bleed out of a box that clips it (the C-06 hero's circle, DEC-580);
+    // that box itself must stay on screen
+    const decoration = (el: HTMLElement): boolean => {
+      if (!el.closest('[aria-hidden="true"]')) return false;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (getComputedStyle(p).overflow !== 'hidden') continue;
+        const r = p.getBoundingClientRect();
+        return r.left >= -1 && r.right <= width + 1;
+      }
+      return false;
+    };
     const wide: string[] = [];
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('#root *'))) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
-      if ((r.right > width + 1 || r.left < -1) && !clipped(el))
+      if ((r.right > width + 1 || r.left < -1) && !clipped(el) && !decoration(el))
         wide.push(
           `${el.tagName} ${Math.round(r.left)}…${Math.round(r.right)} ${el.textContent?.slice(0, 30) ?? ''}`,
         );
@@ -162,8 +173,41 @@ export function chip(page: Page, group: string, index: number): Locator {
   return page.getByRole('radiogroup', { name: group }).getByRole('radio').nth(index);
 }
 
-/** C-06 reached and drawn. */
+/**
+ * C-06 reached and drawn (V2-UX option B, DEC-580 … DEC-582): the hero's title, the «بطاقة الدخول» chip (and the
+ * card's own button without a visit), and the tab bar on «الرئيسية».
+ */
 export async function expectHome(page: Page): Promise<void> {
-  await expect(page.getByRole('button', { name: ar.home.pass, exact: true })).toBeVisible();
+  await expect(passButton(page)).toBeVisible();
+  await expect(tab(page, ar.tabs.home)).toHaveAttribute('aria-selected', 'true');
   await expectRtlPhone(page);
+}
+
+/** «بطاقة الدخول» on C-06: the card's button without a visit, else the chip (the first visible one). */
+export const passButton = (page: Page): Locator =>
+  page.getByRole('button', { name: ar.home.pass, exact: true }).filter({ visible: true }).first();
+
+/** A tab of the bottom bar (DEC-582). */
+export const tab = (page: Page, name: string): Locator => page.getByRole('tab', { name, exact: true });
+
+/**
+ * A real drag of the swipe-to-request knob (DEC-583): mouse down on the knob, moved in steps toward the far edge of
+ * the track (right to left in Arabic) — all the way, or `fraction` of it — and released.
+ */
+export async function swipeToRequest(page: Page, fraction = 1): Promise<void> {
+  const control = page.getByTestId('request-car-swipe').filter({ visible: true });
+  const knob = page.getByTestId('request-car-swipe-knob').filter({ visible: true });
+  await expect(knob).toBeVisible();
+  const k = await knob.boundingBox();
+  const t = await control.boundingBox();
+  if (!k || !t) throw new Error('the swipe control is not on screen');
+  const rtl = (await page.locator('html').getAttribute('dir')) === 'rtl';
+  const x0 = k.x + k.width / 2;
+  const y = k.y + k.height / 2;
+  const end = rtl ? t.x + k.width / 2 : t.x + t.width - k.width / 2;
+  const x1 = x0 + (end - x0) * fraction;
+  await page.mouse.move(x0, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 12, y);
+  await page.mouse.up();
 }

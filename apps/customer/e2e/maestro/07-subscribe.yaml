@@ -9,8 +9,9 @@ tags: [h2, r2]
     env:
       PHONE: '512340007'
 - runFlow: subflows/add-vehicle.yaml
+# C-06's «اشترك ووفّر» chip opens C-07 on «يقبل الاشتراك» (option B, DEC-582)
 - tapOn:
-    id: home-locations
+    id: home-subscribe
 - tapOn: 'برج الأعمال — العليا.*'
 - tapOn:
     id: location-subscribe

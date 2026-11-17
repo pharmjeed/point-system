@@ -33,6 +33,7 @@ import {
   vehicleIssueFromError,
 } from '../src/features/vehicle';
 import { ar } from '../src/i18n/ar';
+import { en } from '../src/i18n/en';
 import { onboard, setup, signIn } from './helpers';
 
 const T0 = Date.parse('2026-11-07T09:00:00Z');
@@ -236,14 +237,30 @@ describe('C-05 vehicle', () => {
 });
 
 describe('C-06 home', () => {
-  it('puts the visit in progress above everything, then the pass', async () => {
+  it('puts the live card first, then the chips; subscriptions only when there are some', async () => {
     const ctx = setup({ demoVisitPhones: ['+966512345678'] });
     await onboard(ctx);
     await ctx.api.addVehicle({ plate: { digits: '1234', letters_ar: 'ا ب ح' } });
     const home = await ctx.api.home();
-    expect(homeSections(home)).toEqual(['visit', 'pass', 'subscriptions', 'nearby']);
-    expect(homeSections({ ...home, current_visit: null })).toEqual(['pass', 'subscriptions', 'nearby']);
-    expect(greeting(home, ar)).toBe('مرحبًا سارة');
+    expect(homeSections(home)).toEqual(['card', 'chips', 'nearby']);
+    const sub = { subscription_id: 'x', venue_id: 'y', venue_name_ar: 'م', venue_name_en: null } as const;
+    expect(
+      homeSections({
+        ...home,
+        subscriptions: [
+          {
+            ...sub,
+            status: 'active',
+            billing_cycle: 'monthly',
+            current_period_end: null,
+            cancel_at_period_end: false,
+          },
+        ],
+      }),
+    ).toEqual(['card', 'chips', 'subscriptions', 'nearby']);
+    expect(greeting(home, ar, 'evening')).toBe('مساء الخير، سارة');
+    expect(greeting({ display_name: null }, ar, 'morning')).toBe('صباح الخير');
+    expect(greeting(home, en, 'evening')).toBe('Good evening, سارة');
     const card = visitCard(home, ar, 'ar');
     expect(card?.status).toBe(ar.ticketStatus.parked);
     expect(card?.plate).toBe('⁨1234 ا ب ح⁩');

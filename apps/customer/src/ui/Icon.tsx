@@ -13,6 +13,7 @@ import CalendarCheck from 'lucide-react-native/icons/calendar-check';
 import Car from 'lucide-react-native/icons/car';
 import CarFront from 'lucide-react-native/icons/car-front';
 import Check from 'lucide-react-native/icons/check';
+import ChevronsRight from 'lucide-react-native/icons/chevrons-right';
 import CheckCheck from 'lucide-react-native/icons/check-check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import CircleAlert from 'lucide-react-native/icons/circle-alert';
@@ -26,7 +27,9 @@ import EyeOff from 'lucide-react-native/icons/eye-off';
 import FileText from 'lucide-react-native/icons/file-text';
 import Globe from 'lucide-react-native/icons/globe';
 import History from 'lucide-react-native/icons/history';
+import House from 'lucide-react-native/icons/house';
 import Info from 'lucide-react-native/icons/info';
+import KeyRound from 'lucide-react-native/icons/key-round';
 import LogOut from 'lucide-react-native/icons/log-out';
 import MapIcon from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
@@ -47,6 +50,7 @@ import Sun from 'lucide-react-native/icons/sun';
 import Timer from 'lucide-react-native/icons/timer';
 import Trash2 from 'lucide-react-native/icons/trash-2';
 import TriangleAlert from 'lucide-react-native/icons/triangle-alert';
+import User from 'lucide-react-native/icons/user';
 import UserCheck from 'lucide-react-native/icons/user-check';
 import Wallet from 'lucide-react-native/icons/wallet';
 import { View } from 'react-native';
@@ -65,6 +69,7 @@ const ICONS = {
   check: Check,
   'check-check': CheckCheck,
   go: ChevronRight,
+  'go-swipe': ChevronsRight,
   'circle-alert': CircleAlert,
   'circle-check': CircleCheck,
   'circle-parking': CircleParking,
@@ -76,7 +81,9 @@ const ICONS = {
   'file-text': FileText,
   globe: Globe,
   history: History,
+  house: House,
   info: Info,
+  key: KeyRound,
   'log-out': LogOut,
   map: MapIcon,
   'map-pin': MapPin,
@@ -97,14 +104,18 @@ const ICONS = {
   timer: Timer,
   trash: Trash2,
   'triangle-alert': TriangleAlert,
+  user: User,
   'user-check': UserCheck,
   wallet: Wallet,
 } as const;
 
 export type IconName = keyof typeof ICONS;
 
-/** Written left to right and mirrored in RTL: «back» points to the start of the line, «go» to its end (DEC-85). */
-const DIRECTIONAL: ReadonlySet<IconName> = new Set<IconName>(['back', 'go']);
+/**
+ * Written left to right and mirrored in RTL: «back» points to the start of the line, «go» and the swipe's double
+ * chevron (DEC-583) to its end (DEC-85).
+ */
+const DIRECTIONAL: ReadonlySet<IconName> = new Set<IconName>(['back', 'go', 'go-swipe']);
 
 export function Icon({
   name,

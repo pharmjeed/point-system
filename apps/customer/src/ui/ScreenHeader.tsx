@@ -3,7 +3,7 @@
  * title as the header (03 §5: one header per screen, back reachable with a 48 target). V2-UX (DEC-573): the back
  * action is a round surface button with the Lucide arrow, mirrored in RTL so it points to the start of the line
  * (DEC-85) on iOS, Android and the web export alike; an optional `subtitle` (the venue of C-12) and `action` (an
- * icon button at the end).
+ * icon button at the end). The root screens of the tab bar (C-14, C-16, C-19; DEC-582) show the title alone.
  */
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -52,14 +52,15 @@ export function ScreenHeader({
   action,
 }: {
   title: string;
-  backLabel: string;
-  onBack: () => void;
+  /** both or neither: the root screens of the tab bar (V2-UX option B, DEC-582) have no back action */
+  backLabel?: string;
+  onBack?: () => void;
   subtitle?: string;
   action?: ReactNode;
 }) {
   return (
     <View style={styles.row}>
-      <IconButton icon="back" label={backLabel} onPress={onBack} />
+      {onBack && backLabel ? <IconButton icon="back" label={backLabel} onPress={onBack} /> : null}
       <View style={styles.titles}>
         <AppText variant="title" accessibilityRole="header" numberOfLines={2}>
           {title}

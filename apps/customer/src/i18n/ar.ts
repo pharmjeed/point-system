@@ -130,6 +130,32 @@ export const ar = {
     morning: 'صباح الخير',
     evening: 'مساء الخير',
     quickActions: 'اختصارات',
+    // V2-UX option B «البطاقة الحية» (DEC-580 … DEC-582): the blue hero with the car on its road, the live card, chips
+    greetingTime: '{part}، {name}',
+    hero: {
+      none: { title: 'أهلًا بك في {brand}', body: 'اعرض بطاقة الدخول للسائق ويستلم سيارتك' },
+      parking: { title: 'نصف سيارتك الآن', body: 'تستطيع طلبها متى شئت' },
+      reparking: { title: 'أُعيد صف سيارتك', body: 'اطلبها من جديد متى شئت' },
+      parked: { title: 'سيارتك متوقفة', body: 'اطلبها قبل خروجك بدقائق' },
+      requested: { title: 'طلبت سيارتك', body: 'بانتظار قبول سائق لطلبك' },
+      early: { title: 'طلبت سيارتك', body: 'نحضرها فور انتهاء صفها' },
+      coming: { title: 'سيارتك في الطريق', body: 'السائق يحضرها إلى البوابة' },
+      ready: { title: 'سيارتك جاهزة', body: 'أعط السائق رمز التسليم' },
+    },
+    road: 'مسار سيارتك',
+    stops: { parked: 'متوقفة', coming: 'في الطريق', ready: 'جاهزة' },
+    stopNow: 'سيارتك الآن: {stop}',
+    nearest: 'أقرب موقع لك',
+    subscribeSave: 'اشترك ووفّر',
+    showCode: 'اعرض رمز التسليم',
+  },
+  // V2-UX option B (DEC-582): the bottom tab bar of the signed-in area
+  tabs: {
+    label: 'التنقل الرئيسي',
+    home: 'الرئيسية',
+    visits: 'زياراتي',
+    subscriptions: 'اشتراكاتي',
+    account: 'حسابي',
   },
   // C-07 / C-08 (V2-012)
   locations: {
@@ -251,6 +277,9 @@ export const ar = {
     requestConfirmBody: 'سيتجه سائقنا إلى سيارتك ويحضرها إلى البوابة.',
     requestConfirm: 'نعم، اطلبها',
     requestCancel: 'ليس الآن',
+    // V2-UX (DEC-583, DEC-584): the swipe that replaces the button and its dialog; the dialog stays for screen readers
+    swipe: 'اسحب لطلب السيارة',
+    swipeHint: 'اسحب أو انقر مرتين للتأكيد',
     requested: 'سجّلنا طلبك.',
     requestedEarly: 'سجّلنا طلبك، ونحضر سيارتك فور انتهاء صفها.',
     alreadyRequested: 'طلبت سيارتك مسبقًا.',

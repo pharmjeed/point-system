@@ -3,11 +3,14 @@
  */
 import { Image, StyleSheet } from 'react-native';
 import mark from '../../assets/brand/point-mark-512.png';
+import markWhite from '../../assets/brand/point-mark-white-512.png';
 import stacked from '../../assets/brand/point-logo-stacked-1024.png';
 
 const sources = {
   stacked: { file: stacked, ratio: 1024 / 1271 },
   mark: { file: mark, ratio: 512 / 544 },
+  // the white mark of brand/logo for the blue C-06 hero (V2-UX option B, DEC-580)
+  markWhite: { file: markWhite, ratio: 512 / 544 },
 } as const;
 
 export function Logo({
