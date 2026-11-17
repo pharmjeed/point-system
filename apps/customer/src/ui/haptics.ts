@@ -12,7 +12,9 @@ const safe = (run: () => Promise<void>) => {
 
 export const haptic = {
   tap: () => safe(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
-  /** the swipe reached the end (DEC-583): a firmer tick than a tap; the server's answer brings `success` */
+  /** each second of the hold to request the car (3 · 2 · 1, DEC-621): the lightest tick */
+  tick: () => safe(() => Haptics.selectionAsync()),
+  /** the hold reached the end (DEC-621): a firmer tick than a tap; the server's answer brings `success` */
   confirm: () => safe(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)),
   select: () => safe(() => Haptics.selectionAsync()),
   success: () => safe(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)),

@@ -200,7 +200,8 @@ async function journey(page, locale, deviceName, base, dir) {
   await groups.nth(1).getByRole('radio').first().click(); // colour
   await groups.nth(2).getByRole('radio').first().click(); // type
   await page.getByTestId('vehicle-submit').filter({ visible: true }).click();
-  await page.getByTestId('home-pass').filter({ visible: true }).waitFor();
+  // C-06 (option A «زر واحد», DEC-620): the demo car is parked, the circle says «اطلب سيارتك» (hold 3 s)
+  await page.getByTestId('request-car-hold').filter({ visible: true }).waitFor();
   await shot('01-home');
 
   await page.getByTestId('home-visit').filter({ visible: true }).click();
@@ -208,7 +209,12 @@ async function journey(page, locale, deviceName, base, dir) {
   await shot('02-visit-live');
   await page.goBack();
 
-  await page.getByTestId('home-pass').filter({ visible: true }).click();
+  // C-11: with a visit in progress C-06's circle is the request, not the pass; the pass is opened by its route
+  // (the in-app history, so the fake backend in the page keeps the session)
+  await page.evaluate(() => {
+    globalThis.history.pushState(null, '', '/pass');
+    globalThis.dispatchEvent(new globalThis.PopStateEvent('popstate'));
+  });
   await page.getByTestId('pass-qr').filter({ visible: true }).waitFor();
   await shot('03-entry-pass');
   await page.goBack();

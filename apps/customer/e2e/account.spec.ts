@@ -15,17 +15,16 @@ import {
   expectHome,
   expectRtlPhone,
   heading,
+  openAccount,
   shown,
   signUp,
-  tab,
   test,
   tpl,
 } from './support/app';
 import type { Page } from '@playwright/test';
 
 async function openSettings(page: Page) {
-  await tab(page, ar.tabs.account).click();
-  await expect(heading(page, ar.settings.title)).toBeVisible();
+  await openAccount(page);
 }
 
 async function addCard(page: Page, number: string) {

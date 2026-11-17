@@ -1,25 +1,13 @@
 /**
- * C-06 view model (01 C-06). Since V2-UX option B «البطاقة الحية» (DEC-580 … DEC-582): the blue hero with the car on
- * its road, the live card with the one action of the moment («بطاقة الدخول» without a visit), the chips (entry pass,
- * subscribe and save, my cars), my subscriptions when there are any (C-14), then the nearby locations. Pure.
+ * C-06 view model (01 C-06). Since V2-UX option A «زر واحد» (DEC-620 … DEC-627): the greeting, the status pill over
+ * the one circle that changes with the visit (its stage, colour and action below), the venue and plate or the nearest
+ * location under it, and the shortcuts. Pure.
  */
 import type { CustomerHome, CustomerHomeVisit, CustomerLocationSummary } from '@point/shared/customer';
 import { fmt, isolate, type AppLocale, type Dictionary } from '../i18n';
 import { formatDistance, formatMoney, formatTime } from '../i18n/format';
 
-export type HomeSection = 'card' | 'chips' | 'subscriptions' | 'nearby';
-
-/**
- * The live card first (the visit in progress, or «بطاقة الدخول»), the chips, then my subscriptions — only when there
- * are some: «اشترك ووفّر» among the chips replaces the empty state — and the nearby locations.
- */
-export function homeSections(home: CustomerHome): HomeSection[] {
-  return home.subscriptions.length > 0
-    ? ['card', 'chips', 'subscriptions', 'nearby']
-    : ['card', 'chips', 'nearby'];
-}
-
-/** The hero's small line: «مساء الخير، سارة» (the time of day alone without a name). */
+/** The greeting as one sentence (what screen readers hear): «مساء الخير، سارة» (the time of day alone without a name). */
 export function greeting(
   home: Pick<CustomerHome, 'display_name'> | null,
   dict: Dictionary,
@@ -81,8 +69,8 @@ export function visitCard(home: CustomerHome, dict: Dictionary, locale: AppLocal
 }
 
 /**
- * V2-UX option B «البطاقة الحية» (DEC-580, DEC-581): what the blue hero says and where the car stands on its road
- * of three stops (متوقفة · في الطريق · جاهزة), from the visit's status. The map of the ticket statuses:
+ * The visit's stage on C-06 (DEC-581, kept by option A, DEC-620): what the status pill says, the circle's colour and
+ * its stop (0 parked, 1 on the way, 2 ready), from the visit's status. The map of the ticket statuses:
  *
  * | status | stage | stop |
  * |---|---|---|
@@ -93,13 +81,10 @@ export function visitCard(home: CustomerHome, dict: Dictionary, locale: AppLocal
  * | `assigned`, `assigned_waiting`, `retrieving` | `coming` | 1 |
  * | `ready` | `ready` | 2 جاهزة |
  *
- * No visit (or a closed one, which `current_visit` never holds) is `none`: the welcome and no road.
+ * No visit (or a closed one, which `current_visit` never holds) is `none`: «عند وصولك» and the entry pass.
  */
 export type HomeStage =
   'none' | 'parking' | 'reparking' | 'parked' | 'early' | 'requested' | 'coming' | 'ready';
-
-export const HOME_STOPS = ['parked', 'coming', 'ready'] as const;
-export type HomeStop = (typeof HOME_STOPS)[number];
 
 export function homeStage(status: CustomerHomeVisit['status'] | null, pendingEarly = false): HomeStage {
   switch (status) {
@@ -123,7 +108,7 @@ export function homeStage(status: CustomerHomeVisit['status'] | null, pendingEar
   }
 }
 
-/** The stop the car icon stands on (0 … 2), or null without a road. */
+/** The stop of the stage (0 … 2), or null without a visit. */
 export function homeStop(stage: HomeStage): number | null {
   switch (stage) {
     case 'none':
@@ -141,8 +126,11 @@ export function homeStop(stage: HomeStage): number | null {
   }
 }
 
-/** The one primary action of the live card for the stage and what C-12's read allows. */
-export type HomeAction = 'pass' | 'swipe' | 'elapsed' | 'code' | 'open';
+/**
+ * What the circle does for the stage and what C-12's read allows (DEC-620): open the entry pass, **hold to request**
+ * (DEC-621), open C-12 with the time since the request, show the handover code, or open C-12.
+ */
+export type HomeAction = 'pass' | 'hold' | 'elapsed' | 'code' | 'open';
 
 export interface HomeActionDetail {
   request: { can_request: boolean; requested_at: string | null };
@@ -151,10 +139,23 @@ export interface HomeActionDetail {
 
 export function homeAction(stage: HomeStage, detail: HomeActionDetail | null): HomeAction {
   if (stage === 'none') return 'pass';
-  // without C-12's read (still loading, or it failed) the card opens C-12, which reads it again
+  // without C-12's read (still loading, or it failed) the circle opens C-12, which reads it again
   if (!detail) return 'open';
   const stop = homeStop(stage);
-  if (stop === 0) return detail.request.can_request ? 'swipe' : 'open';
+  if (stop === 0) return detail.request.can_request ? 'hold' : 'open';
   if (stop === 1) return detail.request.requested_at ? 'elapsed' : 'open';
   return detail.handover.code_available ? 'code' : 'open';
+}
+
+/** The circle's colour family (the mockup of option A): blue at rest and parked, navy while it comes, green when ready. */
+export type HomeTone = 'blue' | 'navy' | 'green';
+
+export function homeTone(stage: HomeStage): HomeTone {
+  const stop = homeStop(stage);
+  return stop === 2 ? 'green' : stop === 1 ? 'navy' : 'blue';
+}
+
+/** «481 927»: the six digits of the handover code in two groups of three (the mockup of option A); else as it is. */
+export function codeGroups(code: string): string {
+  return /^\d{6}$/.test(code) ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
 }

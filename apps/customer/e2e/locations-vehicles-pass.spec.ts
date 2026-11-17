@@ -22,7 +22,8 @@ test('C-07 → C-08: search, filter, open a location with its hours and prices',
   await signUp(page);
   await addVehicle(page);
   await expectHome(page);
-  await expect(page.getByRole('heading', { name: ar.home.nearby })).toBeVisible();
+  // option A (DEC-627): the nearest location under the circle, the full list from the top bar
+  await expect(page.getByRole('button', { name: tpl(ar.home.nearestLine) })).toBeVisible();
 
   await button(page, ar.home.allLocations).click();
   await expect(heading(page, ar.locations.title)).toBeVisible();

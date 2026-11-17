@@ -13,6 +13,7 @@ tags: [h2, r1]
     visible:
       id: home-pass
     timeout: 10000
-- assertVisible: 'مرحبًا سارة'
+- assertVisible: 'سارة'
+- assertVisible: 'عند وصولك'
 - assertVisible: 'بطاقة الدخول'
 - takeScreenshot: r1-home

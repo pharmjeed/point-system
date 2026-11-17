@@ -1,7 +1,13 @@
 # R3 on a device (mirrors e2e/visit-pay.spec.ts): the demo number gets a parked car (README «الخادم الوهمي»); the fake
 # driver accepts after 15 s, is on the way at 45 s, at the gate at 90 s and hands over 3 min later — real time here.
-# Native only: the swipe on a real touch screen (and the haptic tick); the push offer appears only in a build with an
-# EAS project (CUSTOMER_EAS_PROJECT_ID) and then shows the OS permission dialog.
+# Native only: the 3-second hold on a real touch screen (and the haptic ticks); the push offer appears only in a build
+# with an EAS project (CUSTOMER_EAS_PROJECT_ID) and then shows the OS permission dialog.
+#
+# The hold (DEC-621, DEC-628): Maestro's `longPressOn` holds for a fixed time of about 3 s — the very threshold of the
+# request — so it is not used. The hold is a `swipe` that starts and ends on the same point with a 3.6 s duration (a
+# press that stays put), at the centre of C-06's big circle: 50 % across and about 50 % down on every phone size the
+# app supports (the circle is 196 pt across, so the point stays inside it). The compact circle of C-12 is checked to
+# be there; its hold runs in the web e2e (e2e/visit-pay.spec.ts).
 appId: sa.point.app
 name: C-12/C-13 — request the car, handover code, rating
 tags: [h2, r3]
@@ -11,6 +17,7 @@ tags: [h2, r3]
     env:
       PHONE: '500000099'
 - tapOn: 'تخطَّ الآن'
+- assertVisible: 'سيارتك متوقفة بأمان'
 - tapOn:
     id: home-visit
 - assertVisible: 'سيارتي الآن'
@@ -22,16 +29,23 @@ tags: [h2, r3]
       - tapOn:
           text: 'Allow|السماح'
           optional: true
-# «اطلب السيارة» is a swipe (DEC-583) and the swipe is the confirmation (DEC-584): the knob is dragged from the
-# start edge to the end edge — right to left in Arabic — and no dialog follows
-- assertVisible: 'اسحب لطلب السيارة'
+# C-12: «اطلب السيارة» is the compact hold circle (DEC-624)
+- assertVisible:
+    id: request-car-hold
+- assertVisible: 'اضغط مطولًا على الدائرة 3 ثوانٍ'
+- tapOn: 'رجوع'
+# C-06: hold the big circle 3.6 s; the hold is the confirmation (DEC-622) and no dialog follows
+- assertVisible:
+    id: request-car-hold
 - swipe:
-    from:
-      id: request-car-swipe-knob
-    direction: LEFT
-    duration: 600
+    start: 50%, 50%
+    end: 50%, 50%
+    duration: 3600
 - assertNotVisible: 'اطلب سيارتك الآن؟'
 - assertVisible: 'سجّلنا طلبك.'
+- assertVisible: 'طلبت سيارتك'
+- tapOn:
+    id: home-visit
 - extendedWaitUntil:
     visible: 'قُبل طلبك، وسائقنا في طريقه إلى سيارتك.'
     timeout: 40000

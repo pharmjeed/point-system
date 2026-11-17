@@ -7,21 +7,21 @@ import type { CustomerVisitSummary } from '@point/shared/customer';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { errorText } from '../../features/errorText';
-import { visitRow } from '../../features/visit';
-import { useI18n } from '../../i18n/I18nProvider';
-import { useSession } from '../../session/SessionProvider';
-import { color, radius, shadow, space } from '../../theme/tokens';
-import { AppText } from '../../ui/AppText';
-import { Button } from '../../ui/Button';
-import { Banner, IconBadge } from '../../ui/Controls';
-import { DevBanner } from '../../ui/DevBanner';
-import { EmptyState } from '../../ui/EmptyState';
-import { Icon } from '../../ui/Icon';
-import { Screen } from '../../ui/Screen';
-import { SkeletonList } from '../../ui/Skeleton';
-import { Touchable } from '../../ui/Touchable';
-import { ScreenHeader } from '../../ui/ScreenHeader';
+import { errorText } from '../features/errorText';
+import { visitRow } from '../features/visit';
+import { useI18n } from '../i18n/I18nProvider';
+import { useSession } from '../session/SessionProvider';
+import { color, radius, shadow, space } from '../theme/tokens';
+import { AppText } from '../ui/AppText';
+import { Button } from '../ui/Button';
+import { Banner, IconBadge } from '../ui/Controls';
+import { DevBanner } from '../ui/DevBanner';
+import { EmptyState } from '../ui/EmptyState';
+import { Icon } from '../ui/Icon';
+import { Screen } from '../ui/Screen';
+import { SkeletonList } from '../ui/Skeleton';
+import { Touchable } from '../ui/Touchable';
+import { ScreenHeader } from '../ui/ScreenHeader';
 
 export default function Visits() {
   const { t, locale } = useI18n();
@@ -60,8 +60,12 @@ export default function Visits() {
   );
 
   return (
-    <Screen tab>
-      <ScreenHeader title={t.visits.title} />
+    <Screen>
+      <ScreenHeader
+        title={t.visits.title}
+        backLabel={t.visits.back}
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/home'))}
+      />
       <DevBanner />
       {failure ? <Banner tone="danger">{failure}</Banner> : null}
       {!items && loading ? <SkeletonList label={t.common.loading} count={4} avatar /> : null}

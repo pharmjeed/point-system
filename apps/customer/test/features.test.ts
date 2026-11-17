@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/errors';
 import { NetworkError } from '../src/api/transport';
 import { CommandKey } from '../src/features/commandKey';
-import { greeting, homeSections, locationRow, visitCard } from '../src/features/home';
+import { greeting, locationRow, visitCard } from '../src/features/home';
 import { nextDestination } from '../src/features/onboarding';
 import {
   applyResendError,
@@ -237,27 +237,11 @@ describe('C-05 vehicle', () => {
 });
 
 describe('C-06 home', () => {
-  it('puts the live card first, then the chips; subscriptions only when there are some', async () => {
+  it('greets by the time of day and the name, and describes the visit in progress', async () => {
     const ctx = setup({ demoVisitPhones: ['+966512345678'] });
     await onboard(ctx);
     await ctx.api.addVehicle({ plate: { digits: '1234', letters_ar: 'ا ب ح' } });
     const home = await ctx.api.home();
-    expect(homeSections(home)).toEqual(['card', 'chips', 'nearby']);
-    const sub = { subscription_id: 'x', venue_id: 'y', venue_name_ar: 'م', venue_name_en: null } as const;
-    expect(
-      homeSections({
-        ...home,
-        subscriptions: [
-          {
-            ...sub,
-            status: 'active',
-            billing_cycle: 'monthly',
-            current_period_end: null,
-            cancel_at_period_end: false,
-          },
-        ],
-      }),
-    ).toEqual(['card', 'chips', 'subscriptions', 'nearby']);
     expect(greeting(home, ar, 'evening')).toBe('مساء الخير، سارة');
     expect(greeting({ display_name: null }, ar, 'morning')).toBe('صباح الخير');
     expect(greeting(home, en, 'evening')).toBe('Good evening, سارة');

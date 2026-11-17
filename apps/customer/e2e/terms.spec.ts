@@ -21,7 +21,7 @@ import {
   heading,
   shown,
   signUp,
-  tab,
+  openAccount,
   test,
   tpl,
 } from './support/app';
@@ -45,8 +45,7 @@ test('C-24 from «حسابي»: the version, the contents jump to a section, the
   await signUp(page);
   await button(page, ar.vehicle.skip).click();
   await expectHome(page);
-  await tab(page, ar.tabs.account).click();
-  await expect(heading(page, ar.settings.title)).toBeVisible();
+  await openAccount(page);
   await visibleTestId(page, 'settings-terms').click();
 
   await expect(heading(page, ar.terms.title)).toBeVisible();

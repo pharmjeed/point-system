@@ -125,6 +125,13 @@ export default function Subscribe() {
   const closures = loc ? closureLines(loc.closures, t) : [];
   const applying = !!annex?.needsEligibility && !payId;
 
+  // done: back down to the home screen, then «اشتراكاتي» above it (DEC-626) — C-07 … C-09 (or a second C-14 when
+  // opened from C-14) are not left under it
+  const toSubscriptions = (notice: 'applied' | 'subscribed') => {
+    router.dismissTo('/home');
+    router.push({ pathname: '/subscriptions', params: { notice, venue } });
+  };
+
   const choosePlan = (id: string | null) => {
     if (payId) return; // paying an approved application: its plan is fixed
     setPlanId(id);
@@ -177,7 +184,7 @@ export default function Subscribe() {
         setPayId(s.subscription_id);
         setNotice(t.annex.done.approved);
         setPaying(true);
-      } else router.replace({ pathname: '/subscriptions', params: { notice: 'applied', venue } });
+      } else toSubscriptions('applied');
     } catch (e) {
       const fields = isApiError(e, 'VALIDATION_FAILED')
         ? ((e.details as { fields?: { field?: string; issue?: string }[] }).fields ?? [])
@@ -489,7 +496,7 @@ export default function Subscribe() {
           onClose={() => setPaying(false)}
           onPaid={() => {
             setPaying(false);
-            router.replace({ pathname: '/subscriptions', params: { notice: 'subscribed', venue } });
+            toSubscriptions('subscribed');
           }}
           subscription={{
             manualRenewal: planRow.policy.renewal_mode === 'manual',

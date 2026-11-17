@@ -13,15 +13,18 @@
  * الرمز» with the code itself, or «قيّم الخدمة») lives in the sticky bottom sheet, and each change of state
  * cross-fades the hero and the sheet. Behaviour and copy are V2-015's.
  *
- * V2-UX option B (DEC-583, DEC-584): «اطلب السيارة» is a slide-to-confirm control (`SwipeToConfirm`, test id
- * `request-car-swipe`) and the swipe is the confirmation — the dialog that preceded the request is gone, except for
- * screen readers and the keyboard, which reach the command through that same dialog. The command is shared with
- * C-06 (`requestCar`). Opened with `show=code` (C-06's «اعرض رمز التسليم»), the code is fetched once it is available.
+ * V2-UX option A (DEC-621, DEC-624): «اطلب السيارة» is the same hold as the home screen's circle in a compact form —
+ * a small circle in the bottom sheet (`HoldCircle`, test id `request-car-hold`) held 3 seconds while its ring fills,
+ * with the words beside it («اضغط مطولًا على الدائرة 3 ثوانٍ» → «استمر بالضغط… 2» → «جارٍ الإرسال…», or the hint
+ * after a short hold). The hold is the confirmation (DEC-622); screen readers and the keyboard reach the command
+ * through the confirmation dialog. The command is shared with C-06 (`requestCar`); when the server accepts it the
+ * circle shows a check with the light burst, then the sheet moves on. Opened with `show=code`, the code is fetched
+ * once it is available.
  */
 import type { CustomerHandoverCode, CustomerVisitDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '../../api/errors';
 import { appConfig } from '../../config';
 import { CommandKey } from '../../features/commandKey';
@@ -42,14 +45,15 @@ import { Button } from '../../ui/Button';
 import { Banner, Card, IconBadge } from '../../ui/Controls';
 import { DevBanner } from '../../ui/DevBanner';
 import { haptic } from '../../ui/haptics';
+import { HoldCircle, type HoldCircleState } from '../../ui/HoldCircle';
 import { Icon, type IconName } from '../../ui/Icon';
+import { useReducedMotion } from '../../ui/motion';
 import { openLink } from '../../ui/openLinks';
 import { PlateBadge } from '../../ui/PlateBadge';
 import { RatingSheet } from '../../ui/RatingSheet';
 import { Screen } from '../../ui/Screen';
 import { ScreenHeader } from '../../ui/ScreenHeader';
 import { SkeletonList } from '../../ui/Skeleton';
-import { SwipeToConfirm } from '../../ui/SwipeToConfirm';
 import { StageTracker, StepTimeline } from '../../ui/VisitTracker';
 import { VisitPaymentSlot } from '../../ui/VisitPaymentSlot';
 
@@ -98,6 +102,10 @@ export default function VisitScreen() {
   const [now, setNow] = useState(Date.now());
   const [rating, setRating] = useState(false);
   const [offered, setOffered] = useState(true);
+  const [hold, setHold] = useState<HoldCircleState>({ phase: 'idle', count: 3, hint: false });
+  const [burst, setBurst] = useState(0);
+  const [celebrate, setCelebrate] = useState(false);
+  const reduced = useReducedMotion();
   const key = useRef(new CommandKey(newIdempotencyKey)).current;
   const ratingShown = useRef(false);
 
@@ -160,15 +168,20 @@ export default function VisitScreen() {
     void flags.pushOffered().then(setOffered);
   }, []);
 
-  // the swipe is the confirmation (DEC-584): no dialog before the command; the control stays busy until it settles
+  // the hold is the confirmation (DEC-622): no dialog before the command; the circle stays busy until it settles
   const request = async () => {
     if (!ticketId) return;
     setMessage(null);
     const r = await requestCar(session.api, ticketId, key, t);
     if (r.kind === 'requested') {
-      setVisit(r.visit);
       haptic.success();
       setMessage({ tone: 'success', text: r.text });
+      // the check and the light burst on the circle, then the sheet moves on (at once under reduce motion)
+      setCelebrate(true);
+      setBurst((n) => n + 1);
+      if (!reduced) await new Promise((done) => setTimeout(done, 750));
+      setVisit(r.visit);
+      setCelebrate(false);
       return;
     }
     haptic.error();
@@ -242,20 +255,47 @@ export default function VisitScreen() {
   // the sticky sheet: the one primary action of the state, then «مساعدة»
   const primary =
     view && view.canRequest ? (
-      <SwipeToConfirm
-        testID="request-car-swipe"
-        label={t.visit.swipe}
-        accessibilityLabel={t.visit.request}
-        accessibilityHint={t.visit.swipeHint}
-        confirm={{
-          title: t.visit.requestConfirmTitle,
-          body: t.visit.requestConfirmBody,
-          ok: t.visit.requestConfirm,
-          cancel: t.visit.requestCancel,
-        }}
-        busyLabel={t.common.sending}
-        onConfirm={request}
-      />
+      <View style={styles.holdRow}>
+        <HoldCircle
+          size={76}
+          compact
+          tint={color.primary}
+          mode={celebrate ? 'tap' : 'hold'}
+          disabled={celebrate}
+          onHoldComplete={request}
+          onHoldChange={setHold}
+          burstKey={burst}
+          confirm={{
+            title: t.visit.requestConfirmTitle,
+            body: t.visit.requestConfirmBody,
+            ok: t.visit.requestConfirm,
+            cancel: t.visit.requestCancel,
+          }}
+          accessibilityLabel={t.visit.request}
+          accessibilityHint={t.visit.holdHint}
+          testID="request-car-hold"
+          contentKey={celebrate ? 'done' : 'request'}
+          renderHolding={(count) => <AppText style={styles.holdCount}>{String(count)}</AppText>}
+          sending={celebrate ? undefined : <ActivityIndicator color={color.onPrimary} />}
+        >
+          <Icon name={celebrate ? 'check' : 'car'} size={30} tint={color.onPrimary} />
+        </HoldCircle>
+        {/* the words beside the circle, for the eye: the circle carries the name and the hint for screen readers */}
+        <View style={styles.flex} aria-hidden>
+          <AppText variant="label">{t.visit.request}</AppText>
+          <AppText variant="small" tone={hold.hint ? 'primary' : 'muted'}>
+            {celebrate
+              ? t.visit.requested
+              : hold.phase === 'holding'
+                ? `${t.home.holding} ${hold.count}`
+                : hold.phase === 'sending'
+                  ? t.common.sending
+                  : hold.hint
+                    ? t.home.holdHint
+                    : t.visit.holdCaption}
+          </AppText>
+        </View>
+      </View>
     ) : view && view.showCode ? (
       <View style={styles.codePanel}>
         <View style={styles.codeHead}>
@@ -509,6 +549,8 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: color.border, marginVertical: space[1] },
   place: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   car: { flexDirection: 'row', alignItems: 'center', gap: space[3], flexWrap: 'wrap' },
+  holdRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  holdCount: { fontFamily: font.monoSemibold, ...fontSize['3xl'], color: color.onPrimary },
   codePanel: { gap: space[3] },
   codeHead: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   codeBox: {

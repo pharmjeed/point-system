@@ -23,7 +23,7 @@ tags: [h2, r4]
     timeout: 20000
 - tapOn: 'رجوع'
 - tapOn:
-    id: home-settings
+    id: home-account
 - tapOn:
     id: settings-payment-methods
 - assertVisible: '.*•••• .?1111.?'

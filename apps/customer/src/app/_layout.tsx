@@ -37,11 +37,8 @@ function PushDeepLinks() {
     if (!signedIn) return;
     return onNotificationTap((data) => {
       const route = pushRoute(data);
-      // C-14 is a tab (DEC-582): switch to it instead of stacking a second set of tabs; C-12 opens above them
-      if (route) {
-        if (route.pathname === '/subscriptions') router.navigate(route);
-        else router.push(route);
-      }
+      // C-12 of the visit or C-14 of the subscription, pushed above the current screen (no tab bar since DEC-626)
+      if (route) router.push(route);
     });
   }, [router, signedIn]);
   return null;

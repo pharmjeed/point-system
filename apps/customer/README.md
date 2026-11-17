@@ -103,8 +103,8 @@ assets/brand/        نسخ كما هي من brand/app-icons و brand/logo/point
 src/app/             الشاشات (Expo Router): welcome C-01، phone C-02، otp C-03، profile C-04،
                      vehicle C-05، pass C-11، locations C-07، location/[venueId] C-08،
                      visit/[ticketId] C-12 (+ C-13)، vehicles C-15، delete-account C-20،
-                     subscribe/[venueId] C-09؛ والتبويبات (tabs)/ بشريط سفلي (DEC-582): home C-06،
-                     visits C-16، subscriptions C-14، settings C-19 — المسارات بلا تغيير
+                     subscribe/[venueId] C-09، home C-06 (الخيار أ «زر واحد»، DEC-620)، visits C-16،
+                     subscriptions C-14، settings C-19 — بلا شريط سفلي منذ DEC-626، والمسارات بلا تغيير
 src/api/             العميل المطبوع (client.ts)، النقل (transport.ts)، الخادم الوهمي (fake/، والزيارات fake/visits.ts)
 src/realtime/        الاتصال الفوري: Socket.IO namespace /customer بترويسة Bearer، أو أحداث الخادم الوهمي (V2-015)
 src/push/            الإشعارات (expo-notifications): الإذن، رمز Expo، النقر يفتح C-12 (V2-016)
@@ -167,4 +167,4 @@ maestro test e2e/maestro                     # كل التدفقات (config.yam
 maestro test e2e/maestro/05-visit-request-code.yaml
 ```
 
-يُفحص هناك ما هو أصلي فقط: الجلسة في Keychain/Keystore، اسم التطبيق العربي والأيقونة وشاشة البداية، اتجاه RTL الأصلي وتبدله بعد إعادة الفتح، الخريطة و«فتح في الخرائط»، السطوع وبطاقة الدخول بلا إنترنت، حوارات التأكيد الأصلية، إذن الإشعارات (بمشروع EAS). 3-D Secure وApple Pay على الخادم الحقيقي ومحاكي الدفع (البوابة H3). التدفقات تستخدم معرّفات `testID` (`welcome-start`، `phone-input`، `code-input`، `card-number` …) والنصوص العربية. «اطلب السيارة» مقبض سحب (DEC-583): يُسحب في Maestro بـ`swipe` من `request-car-swipe-knob` إلى اليسار، وفي Playwright بسحب الفأرة (`swipeToRequest` في `e2e/support/app.ts`).
+يُفحص هناك ما هو أصلي فقط: الجلسة في Keychain/Keystore، اسم التطبيق العربي والأيقونة وشاشة البداية، اتجاه RTL الأصلي وتبدله بعد إعادة الفتح، الخريطة و«فتح في الخرائط»، السطوع وبطاقة الدخول بلا إنترنت، حوارات التأكيد الأصلية، إذن الإشعارات (بمشروع EAS). 3-D Secure وApple Pay على الخادم الحقيقي ومحاكي الدفع (البوابة H3). التدفقات تستخدم معرّفات `testID` (`welcome-start`، `phone-input`، `code-input`، `card-number` …) والنصوص العربية. «اطلب السيارة» **ضغطة مطولة 3 ثوانٍ** على الدائرة (`request-car-hold`، DEC-621): في Playwright ضغط الفأرة على الدائرة وانتظار 3.2 ث ثم الإفلات (`holdToRequest` في `e2e/support/app.ts`)، وفي Maestro `swipe` يبدأ وينتهي في النقطة نفسها (وسط الدائرة) مدته 3.6 ث، لأن `longPressOn` يضغط مدة ثابتة نحو 3 ث هي العتبة نفسها (DEC-628).

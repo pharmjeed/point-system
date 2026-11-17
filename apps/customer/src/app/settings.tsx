@@ -7,24 +7,24 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
-import { appConfig } from '../../config';
-import { CommandKey } from '../../features/commandKey';
-import { errorText } from '../../features/errorText';
-import { pushSettingState } from '../../features/push';
-import { settingsView, type LinkItem } from '../../features/settings';
-import { usePush } from '../../push/usePush';
-import { dictionaries, isolate, type AppLocale } from '../../i18n';
-import { useI18n } from '../../i18n/I18nProvider';
-import { newIdempotencyKey } from '../../session/secureStore';
-import { useSession } from '../../session/SessionProvider';
-import { space } from '../../theme/tokens';
-import { AppText } from '../../ui/AppText';
-import { Button } from '../../ui/Button';
-import { Banner, Card, ChoiceChips } from '../../ui/Controls';
-import { DevBanner } from '../../ui/DevBanner';
-import { openLink } from '../../ui/openLinks';
-import { Screen } from '../../ui/Screen';
-import { ScreenHeader } from '../../ui/ScreenHeader';
+import { appConfig } from '../config';
+import { CommandKey } from '../features/commandKey';
+import { errorText } from '../features/errorText';
+import { pushSettingState } from '../features/push';
+import { settingsView, type LinkItem } from '../features/settings';
+import { usePush } from '../push/usePush';
+import { dictionaries, isolate, type AppLocale } from '../i18n';
+import { useI18n } from '../i18n/I18nProvider';
+import { newIdempotencyKey } from '../session/secureStore';
+import { useSession } from '../session/SessionProvider';
+import { space } from '../theme/tokens';
+import { AppText } from '../ui/AppText';
+import { Button } from '../ui/Button';
+import { Banner, Card, ChoiceChips } from '../ui/Controls';
+import { DevBanner } from '../ui/DevBanner';
+import { openLink } from '../ui/openLinks';
+import { Screen } from '../ui/Screen';
+import { ScreenHeader } from '../ui/ScreenHeader';
 
 export default function Settings() {
   const { t, f, locale, setLocale } = useI18n();
@@ -94,8 +94,12 @@ export default function Settings() {
   };
 
   return (
-    <Screen tab>
-      <ScreenHeader title={t.settings.title} />
+    <Screen>
+      <ScreenHeader
+        title={t.settings.title}
+        backLabel={t.settings.back}
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/home'))}
+      />
       <DevBanner />
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
 
@@ -162,14 +166,22 @@ export default function Settings() {
       </Card>
 
       <View style={styles.actions}>
+        {/* option A has no tab bar (DEC-626): the account reaches the visits and subscriptions too */}
         <Button
-          label={t.settings.signOut}
-          icon="log-out"
+          label={t.home.myVisits}
+          icon="history"
           variant="secondary"
           size="md"
-          loading={busy === 'signout'}
-          loadingLabel={t.common.loading}
-          onPress={() => void signOut()}
+          onPress={() => router.push('/visits')}
+          testID="settings-visits"
+        />
+        <Button
+          label={t.home.subscriptions}
+          icon="calendar-check"
+          variant="secondary"
+          size="md"
+          onPress={() => router.push('/subscriptions')}
+          testID="settings-subscriptions"
         />
         <Button
           label={t.settings.paymentMethods}
@@ -186,6 +198,15 @@ export default function Settings() {
           size="md"
           onPress={() => router.push('/invoices')}
           testID="settings-invoices"
+        />
+        <Button
+          label={t.settings.signOut}
+          icon="log-out"
+          variant="secondary"
+          size="md"
+          loading={busy === 'signout'}
+          loadingLabel={t.common.loading}
+          onPress={() => void signOut()}
         />
         <Button
           label={t.settings.deleteAccount}

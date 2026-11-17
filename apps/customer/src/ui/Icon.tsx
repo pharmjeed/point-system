@@ -15,7 +15,6 @@ import CalendarDays from 'lucide-react-native/icons/calendar-days';
 import Car from 'lucide-react-native/icons/car';
 import CarFront from 'lucide-react-native/icons/car-front';
 import Check from 'lucide-react-native/icons/check';
-import ChevronsRight from 'lucide-react-native/icons/chevrons-right';
 import CheckCheck from 'lucide-react-native/icons/check-check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import CircleAlert from 'lucide-react-native/icons/circle-alert';
@@ -30,7 +29,6 @@ import FileText from 'lucide-react-native/icons/file-text';
 import GraduationCap from 'lucide-react-native/icons/graduation-cap';
 import Globe from 'lucide-react-native/icons/globe';
 import History from 'lucide-react-native/icons/history';
-import House from 'lucide-react-native/icons/house';
 import Info from 'lucide-react-native/icons/info';
 import KeyRound from 'lucide-react-native/icons/key-round';
 import ListOrdered from 'lucide-react-native/icons/list-ordered';
@@ -82,7 +80,6 @@ const ICONS = {
   check: Check,
   'check-check': CheckCheck,
   go: ChevronRight,
-  'go-swipe': ChevronsRight,
   'circle-alert': CircleAlert,
   'circle-check': CircleCheck,
   'circle-parking': CircleParking,
@@ -94,7 +91,6 @@ const ICONS = {
   'file-text': FileText,
   globe: Globe,
   history: History,
-  house: House,
   info: Info,
   key: KeyRound,
   'list-ordered': ListOrdered,
@@ -126,11 +122,8 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
-/**
- * Written left to right and mirrored in RTL: «back» points to the start of the line, «go» and the swipe's double
- * chevron (DEC-583) to its end (DEC-85).
- */
-const DIRECTIONAL: ReadonlySet<IconName> = new Set<IconName>(['back', 'go', 'go-swipe']);
+/** Written left to right and mirrored in RTL: «back» points to the start of the line, «go» to its end (DEC-85). */
+const DIRECTIONAL: ReadonlySet<IconName> = new Set<IconName>(['back', 'go']);
 
 export function Icon({
   name,

@@ -12,7 +12,7 @@ tags: [h2, r6]
       PHONE: '512340008'
 - tapOn: 'تخطَّ الآن'
 - tapOn:
-    id: home-settings
+    id: home-account
 - assertVisible: 'الإعدادات'
 - tapOn:
     id: settings-delete-account
@@ -42,7 +42,7 @@ tags: [h2, r6]
       PHONE: '512340009'
 - tapOn: 'تخطَّ الآن'
 - tapOn:
-    id: home-settings
+    id: home-account
 - tapOn: 'English'
 - assertVisible: 'Settings'
 - assertVisible: 'Language changed.*'

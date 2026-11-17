@@ -20,7 +20,6 @@ import {
   heading,
   shown,
   signUp,
-  tab,
   test,
   tpl,
 } from './support/app';
@@ -107,8 +106,9 @@ test('C-09 → apply → approved → pay with the consent → C-14 counted days
 
   // the fake review approves after 5 s: «ادفع الآن» → C-09 with the consent → paid
   await page.clock.fastForward(6000);
-  await tab(page, ar.tabs.home).click();
-  await tab(page, ar.tabs.subscriptions).click();
+  // back to C-06 and «اشتراكاتي» again: C-14 reads the subscription anew (DEC-626)
+  await button(page, ar.common.back).click();
+  await button(page, ar.home.subscriptions).click();
   await expect(shown(page.getByText(tpl(ar.annex.approvedPay)))).toBeVisible();
   await page
     .getByRole('button', { name: ar.subscriptions.pay, exact: true })

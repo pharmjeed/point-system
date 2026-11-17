@@ -14,17 +14,14 @@ export function Screen({
   children,
   footer,
   footerKey,
-  tab = false,
 }: {
   children: ReactNode;
   footer?: ReactNode;
   /** replays the footer's entrance when its action changes (C-12: request → code → pay) */
   footerKey?: string | null;
-  /** a root screen of the tab bar (DEC-582): the bar below keeps the bottom safe area */
-  tab?: boolean;
 }) {
   return (
-    <SafeAreaView style={styles.safe} edges={tab ? ['top'] : ['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <FadeIn style={styles.content}>{children}</FadeIn>

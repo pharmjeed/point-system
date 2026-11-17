@@ -1,10 +1,11 @@
 /**
- * R3/R4 — the visit (docs/v2/01 §1): C-06 «الزيارة الجارية» → C-12 live status → «اطلب السيارة» by swiping (a
- * short drag springs back and asks nothing; the swipe is the confirmation, no dialog: DEC-583, DEC-584) → accepted /
- * on the way / ready as the fake driver moves (the browser clock) → the handover code (6 digits, never before
- * «جاهزة») → delivered → C-13 rating → C-16. The same swipe on C-06's live card (option B, DEC-580 … DEC-582) and
- * its keyboard path (Enter → the confirmation dialog). And the pay-per-visit sheet (C-10 for a visit): a new card
- * saved with consent → «مدفوع في التطبيق», the card in C-18 and the simplified invoice in C-17.
+ * R3/R4 — the visit (docs/v2/01 §1): C-06 «الزيارة الجارية» → C-12 live status → «اطلب السيارة» by **holding** the
+ * compact circle of the sheet 3 seconds (a short hold asks nothing and shows the hint; the hold is the confirmation,
+ * no dialog: DEC-621, DEC-622, DEC-624) → accepted / on the way / ready as the fake driver moves (the browser clock)
+ * → the handover code (6 digits, never before «جاهزة») → delivered → C-13 rating → C-16. The same hold on C-06's big
+ * circle (option A, DEC-620) and its keyboard path (Enter → the confirmation dialog), then the code on the green
+ * circle. And the pay-per-visit sheet (C-10 for a visit): a new card saved with consent → «مدفوع في التطبيق», the
+ * card in C-18 and the simplified invoice in C-17.
  *
  * The fake backend gives `DEMO_VISIT_PHONE` a parked car at a location with a per-visit fee (README).
  */
@@ -18,8 +19,8 @@ import {
   heading,
   shown,
   signUp,
-  swipeToRequest,
-  tab,
+  holdToRequest,
+  openAccount,
   test,
   tpl,
 } from './support/app';
@@ -32,7 +33,7 @@ async function openVisit(page: Page) {
     name: new RegExp(`^${ar.home.currentVisit} ${ar.ticketStatus.parked}`),
   });
   await expect(card).toBeVisible();
-  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
+  await expect(heading(page, ar.home.status.parked)).toBeVisible();
   await card.click();
   await expect(heading(page, ar.visit.title)).toBeVisible();
   await expectRtlPhone(page);
@@ -50,27 +51,29 @@ test('C-12: request the car, follow it to the gate, show the handover code, rate
   // no code before the car is ready
   await expect(button(page, ar.visit.code.show)).toHaveCount(0);
 
-  // «اطلب السيارة» is a swipe (DEC-583): the knob is the one element screen readers meet, named «اطلب السيارة»;
-  // the pill shows the instruction
+  // «اطلب السيارة» is the compact hold circle (DEC-624): one element named «اطلب السيارة» with the hold hint; the
+  // words beside it say how
   const control = page.getByRole('button', { name: ar.visit.request, exact: true });
   await expect(control).toBeVisible();
-  await expect(control).toHaveAttribute('data-testid', 'request-car-swipe-knob');
-  await expect(page.getByTestId('request-car-swipe').filter({ visible: true })).toContainText(ar.visit.swipe);
-  // the swipe is the confirmation (DEC-584): no dialog at any point
+  await expect(control).toHaveAttribute('data-testid', 'request-car-hold');
+  await expect(shown(page.getByText(ar.visit.holdCaption, { exact: true }))).toBeVisible();
+  // the hold is the confirmation (DEC-622): no dialog at any point
   const dialogs: string[] = [];
   page.on('dialog', (d) => {
     dialogs.push(d.message());
     void d.dismiss();
   });
-  // a short drag springs back and requests nothing
-  await swipeToRequest(page, 0.5);
+  // a short hold (1 s) unwinds and requests nothing; the hint says how
+  await holdToRequest(page, 1000);
+  await expect(shown(page.getByText(ar.home.holdHint, { exact: true }))).toBeVisible();
   await page.waitForTimeout(600);
   await expect(page.getByText(ar.visit.requested, { exact: true })).toHaveCount(0);
   await expect(control).toBeVisible();
   await expect(shown(page.getByText(ar.visit.waiting.requested, { exact: true }))).toHaveCount(0);
-  // all the way: requested
-  await swipeToRequest(page);
-  await expect(page.getByText(ar.visit.requested, { exact: true })).toBeVisible();
+  // held 3 s: requested
+  await holdToRequest(page);
+  // the banner (and, for a moment, the words beside the circle with its check and light burst)
+  await expect(shown(page.getByText(ar.visit.requested, { exact: true }))).toBeVisible();
   expect(dialogs).toEqual([]);
   await expect(page.getByText(ar.visit.waiting.requested, { exact: true })).toBeVisible();
   await expect(button(page, ar.visit.request)).toHaveCount(0);
@@ -104,9 +107,9 @@ test('C-12: request the car, follow it to the gate, show the handover code, rate
   await sheet.getByRole('button', { name: ar.rating.submit }).click();
   await expect(page.getByText(ar.rating.thanks, { exact: true })).toBeVisible();
 
-  // C-16 (a tab since DEC-582): the visit is in the history, rated
+  // C-16 from C-06's «زياراتي» shortcut (DEC-626): the visit is in the history, rated
   await button(page, ar.visit.back).click();
-  await tab(page, ar.tabs.visits).click();
+  await button(page, ar.home.myVisits).click();
   await expect(heading(page, ar.visits.title)).toBeVisible();
   // one row: the place, the Riyadh date (Western digits), the duration, and «قيّمتها»
   const row = page.getByRole('button', { name: /\d{1,2}\/\d{1,2}\/\d{4}/ });
@@ -142,7 +145,7 @@ test('C-12 → C-10: pay the visit with a new card saved for later; C-18 and C-1
 
   // C-18: the saved card, last 4 digits only
   await button(page, ar.visit.back).click();
-  await tab(page, ar.tabs.account).click();
+  await openAccount(page);
   await button(page, ar.settings.paymentMethods).click();
   await expect(heading(page, ar.paymentMethods.title)).toBeVisible();
   await expect(page.getByText(/•••• [\u2066-\u2069]?1111/)).toBeVisible();
@@ -162,27 +165,27 @@ test('C-12 → C-10: pay the visit with a new card saved for later; C-18 and C-1
   await expectRtlPhone(page);
 });
 
-test('C-06: the live card — a short drag does nothing, Enter asks first, the swipe requests; ready opens the code', async ({
+test('C-06: the circle — a short hold does nothing, Enter asks first, the 3 s hold requests; ready shows the code', async ({
   app: page,
 }) => {
   test.slow();
   await signUp(page, { phone: DEMO_VISIT_PHONE });
   await button(page, ar.vehicle.skip).click();
-  // parked: the road on its first stop and the swipe on the card (no dialog for the swipe itself)
-  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
-  await expect(
-    page.getByRole('progressbar', {
-      name: tpl(ar.home.road + ': ' + ar.home.stopNow, { stop: ar.home.stops.parked }),
-    }),
-  ).toBeVisible();
+  // parked: «سيارتك متوقفة بأمان» over the blue circle «اطلب سيارتك» (hold 3 s; no dialog for the hold itself)
+  await expect(heading(page, ar.home.status.parked)).toBeVisible();
   const control = page.getByRole('button', { name: ar.visit.request, exact: true });
   await expect(control).toBeVisible();
+  await expect(control).toHaveAttribute('data-testid', 'request-car-hold');
+  await expect(shown(page.getByText(ar.home.hold, { exact: true }))).toBeVisible();
   await expectRtlPhone(page);
 
-  await swipeToRequest(page, 0.4);
+  // a short hold (1 s): nothing is requested, the hint shows under the circle
+  await holdToRequest(page, 1000);
+  await expect(shown(page.getByText(ar.home.holdHint, { exact: true }))).toBeVisible();
   await page.waitForTimeout(600);
-  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
+  await expect(heading(page, ar.home.status.parked)).toBeVisible();
   await expect(control).toBeVisible();
+  await expectRtlPhone(page);
 
   // the keyboard reaches the same command through the confirmation dialog: «ليس الآن» keeps the car parked
   await control.focus();
@@ -192,29 +195,45 @@ test('C-06: the live card — a short drag does nothing, Enter asks first, the s
   });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(600);
-  await expect(heading(page, ar.home.hero.parked.title)).toBeVisible();
+  await expect(heading(page, ar.home.status.parked)).toBeVisible();
 
-  // the swipe all the way: requested, the car moves to «في الطريق», the time since the request ticks
+  // while held: the countdown and «استمر بالضغط…»; released at 3 s: requested, the pill changes, the circle turns
+  // into «منذ طلبك m:ss»
   const dialogs: string[] = [];
   page.on('dialog', (d) => {
     dialogs.push(d.message());
     void d.dismiss();
   });
-  await swipeToRequest(page);
+  const box = await control.boundingBox();
+  if (!box) throw new Error('no circle');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await expect(shown(page.getByText(ar.home.holding, { exact: true }))).toBeVisible();
+  // held on past the end (4.2 s): the server answers while the finger is still down, and letting go then is not a
+  // tap on the circle the request turned into (it would open C-12)
+  await page.waitForTimeout(4200);
+  await page.mouse.up();
   await expect(page.getByText(ar.visit.requested, { exact: true })).toBeVisible();
-  await expect(heading(page, ar.home.hero.requested.title)).toBeVisible();
+  await expect(heading(page, ar.home.status.requested)).toBeVisible();
+  await page.waitForTimeout(600);
+  await expect(heading(page, ar.visit.title)).toHaveCount(0);
   await expect(control).toHaveCount(0);
   await expect(page.getByRole('button', { name: new RegExp(`^${ar.visit.since.requested} `) })).toBeVisible();
   expect(dialogs).toEqual([]);
   await expectRtlPhone(page);
 
   await page.clock.fastForward('00:20');
-  await expect(heading(page, ar.home.hero.coming.title)).toBeVisible({ timeout: 15_000 });
+  await expect(heading(page, ar.home.status.coming)).toBeVisible({ timeout: 15_000 });
   await page.clock.fastForward('01:15');
-  await expect(heading(page, ar.home.hero.ready.title)).toBeVisible({ timeout: 15_000 });
+  await expect(heading(page, ar.home.status.ready)).toBeVisible({ timeout: 15_000 });
   await expectRtlPhone(page);
-  // «اعرض رمز التسليم» opens C-12 with the code already fetched
-  await button(page, ar.home.showCode).click();
-  await expect(heading(page, ar.visit.title)).toBeVisible();
-  await expect(page.getByText(/^[\u2066-\u2069]?\d{6}[\u2066-\u2069]?$/)).toBeVisible();
+  // the green circle: the code masked until tapped (the same endpoint as C-12), hidden again on a second tap
+  const code = page.getByTestId('home-code').filter({ visible: true });
+  await expect(code).toHaveAttribute('aria-label', ar.home.codeHidden);
+  await expect(page.getByText(/^[\u2066-\u2069]?\d{3} \d{3}[\u2066-\u2069]?$/)).toHaveCount(0);
+  await code.click();
+  await expect(shown(page.getByText(/^[\u2066-\u2069]?\d{3} \d{3}[\u2066-\u2069]?$/))).toBeVisible();
+  await expectRtlPhone(page);
+  await code.click();
+  await expect(code).toHaveAttribute('aria-label', ar.home.codeHidden);
 });
