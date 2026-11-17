@@ -288,8 +288,12 @@
 | `job.subscription_renewal_notice` (النهاية − 3 أيام، اشتراك `active` غير ملغى في النهاية) | `subscription_renewal` | يتجدد اشتراكك في {اسم الموقع} يوم {YYYY-MM-DD} — ويُضاف « بالسعر الجديد {X} ريال» حين يعلن الإشعار سعرًا جديدًا (DEC-531) | Your subscription at {venue} renews on {YYYY-MM-DD} (+ " at the new price of SAR {X}") |
 | أول فشل تجديد للفترة (`active` ← `past_due`) | `subscription_payment_failed` | تعذّر تجديد اشتراكك في {اسم الموقع}. حدّث وسيلة الدفع | We could not renew your subscription at {venue}. Update your payment method |
 | انتهاء السماح (`past_due` ← `expired`) | `subscription_expired` | انتهى اشتراكك في {اسم الموقع} | Your subscription at {venue} has ended |
+| قبل نهاية دورة يدوية التجديد بثلاثة أيام، بلا خصم (V2-036، DEC-595) | `subscription_ending` | ينتهي اشتراكك في {اسم الموقع} يوم {YYYY-MM-DD}، وتجدّده بعدها من التطبيق — ويُضاف « (السعر الجديد {X} ريال)» حين أُعلن سعر جديد | Your subscription at {venue} ends on {YYYY-MM-DD}. Renew it in the app afterwards (+ " (new price SAR {X})") |
+| اعتماد طلب الأهلية (DEC-596) | `subscription_eligibility_approved` | تمت الموافقة على اشتراكك في {اسم الموقع}. ادفع لتفعيله | Your subscription at {venue} is approved. Pay to activate it |
+| رفض طلب الأهلية | `subscription_eligibility_rejected` | لم تتم الموافقة على طلب اشتراكك في {اسم الموقع} | Your subscription request at {venue} was not approved |
+| إغلاق أو إجازة معلنة، أو خروج الموقع من الخدمة لباقة `continue` (DEC-599) | `subscription_venue_closure` | أُعلن إغلاق في {اسم الموقع}. التواريخ في التطبيق | Closure announced at {venue}. See the dates in the app |
 
-العنوان اسم علامة العميل، والتاريخ يوم الرياض، و`data` = `{ type: 'subscription', kind, subscription_id }` فقط — بلا لوحة ولا بطاقة ولا جوال، والنقر يفتح `C-14`. يُفحص قبل الإرسال أن الإشعار ما زال صحيحًا (إشعار تجديد لاشتراك أُلغي بعده، أو فشل لاشتراك دُفع، يُتخطى `stale`).
+العنوان اسم علامة العميل، والتاريخ يوم الرياض، والنصوص بمصطلحات التطبيق نفسها (DEC-610، DEC-619)، و`data` = `{ type: 'subscription', kind, subscription_id }` فقط — بلا لوحة ولا بطاقة ولا جوال، والنقر يفتح `C-14`. يُفحص قبل الإرسال أن الإشعار ما زال صحيحًا (إشعار تجديد لاشتراك أُلغي بعده، أو فشل لاشتراك دُفع، يُتخطى `stale`).
 
 ## 6. Web Push
 
