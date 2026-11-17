@@ -43,6 +43,19 @@ async function main() {
       if (!r.passed) process.exit(1);
       break;
     }
+    case 'seed-annex': {
+      // V2-036 (DEC-607): the dev-only demo of the subscriptions annex, after the base seed
+      const { seedAnnexDemo } = await import('./seed/annex-demo.js');
+      const pg = (await import('pg')).default;
+      const pool = new pg.Pool({ connectionString: need(url, 'DATABASE_URL'), max: 1 });
+      try {
+        const r = await seedAnnexDemo(pool);
+        console.log(`seed-annex: ${r.inserted} row(s) inserted`);
+      } finally {
+        await pool.end();
+      }
+      break;
+    }
     case 'seed': {
       // same as `node dist/seed/cli.js` (per-table summary, exit 3 when refused)
       await import('./seed/cli.js');
