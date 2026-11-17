@@ -130,19 +130,32 @@ test('C-09 → apply → approved → pay with the consent → C-14 counted days
   // C-14 active: the period, the counted days left, non-refundable, «تجميد»
   await expect(heading(page, ar.subscriptions.title)).toBeVisible({ timeout: 15_000 });
   await expect(shown(page.getByText(ar.subscriptionStatus.active, { exact: true }))).toBeVisible();
-  await expect(shown(page.getByText(tpl(ar.annex.period)))).toBeVisible();
+  // one compact range (no «يبدأ يوم» line), the days left, «22 يوم خدمة» instead of «شهري» (DEC-612)
+  await expect(shown(page.getByText(/^\d{1,2}\u00a0\S+ – \d{1,2}\u00a0\S+\u00a0\d{4}$/))).toBeVisible();
   await expect(shown(page.getByText(tpl(ar.annex.remaining, { total: 22 })))).toBeVisible();
-  await expect(shown(page.getByText(ar.annex.nonRefundableNote, { exact: true }))).toBeVisible();
+  await expect(shown(page.getByText(/· 22 يوم خدمة$/))).toBeVisible();
+  await expect(
+    page.getByText(new RegExp(`· ${ar.subscribe.monthly}$`)).filter({ visible: true }),
+  ).toHaveCount(0);
+  await expect(
+    shown(page.getByText(`${ar.annex.nonRefundableNote} · ${ar.annex.manualRenewalNote}`, { exact: true })),
+  ).toBeVisible();
   await expect(button(page, ar.subscriptions.cancel)).toHaveCount(0);
   await expectRtlPhone(page);
   await shot(page, '3-active-dates-remaining');
+  // «الشروط» on the card opens C-24 with this plan's values (DEC-612)
+  await page.getByRole('link', { name: ar.annex.terms, exact: true }).filter({ visible: true }).click();
+  await expect(heading(page, ar.terms.title)).toBeVisible();
+  await expect(shown(page.getByText(tpl(ar.terms.planValues)))).toBeVisible();
+  await page.getByRole('button', { name: ar.common.back, exact: true }).filter({ visible: true }).click();
+  await expect(heading(page, ar.subscriptions.title)).toBeVisible();
 
   // the freeze: the second offered start day, back three counted days later
   await page.getByRole('button', { name: ar.annex.freeze, exact: true }).filter({ visible: true }).click();
   await expect(heading(page, ar.annex.freezeTitle)).toBeVisible();
   await chip(page, ar.annex.freezeStart, 1).click();
   await chip(page, ar.annex.freezeReturn, 2).click();
-  await expect(shown(page.getByText(tpl(ar.annex.freezeSummary, { days: 3 })))).toBeVisible();
+  await expect(shown(page.getByText(tpl(ar.annex.freezeSummary, { days: '3 أيام خدمة' })))).toBeVisible();
   await expectRtlPhone(page);
   await shot(page, '4-freeze-request');
   await page.getByTestId('freeze-submit').click();

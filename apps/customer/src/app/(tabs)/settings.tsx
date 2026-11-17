@@ -1,7 +1,8 @@
 /**
  * C-19 الإعدادات (V2-017): language (kept on the device and sent to the account, so WhatsApp and push follow it;
  * the direction follows on the next launch, DEC-509), notifications (V2-016: on/off for this device, or why not), «تواصل معنا» from
- * the configuration, the terms and privacy pages the API names, the app version, sign out and «حذف الحساب» (C-20).
+ * the configuration, «الشروط والأحكام» (C-24) and the privacy page the API names, the app version, sign out and
+ * «حذف الحساب» (C-20).
  */
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -147,7 +148,14 @@ export default function Settings() {
         <AppText variant="cardTitle" accessibilityRole="header">
           {t.settings.documents}
         </AppText>
-        {view.documents.length === 0 ? <AppText tone="muted">{t.settings.documentsNone}</AppText> : null}
+        <Button
+          label={t.settings.terms}
+          icon="scroll-text"
+          variant="ghost"
+          size="md"
+          onPress={() => router.push('/terms')}
+          testID="settings-terms"
+        />
         {view.documents.map((l) => (
           <Button key={l.key} label={l.label} variant="ghost" size="md" onPress={() => void open(l)} />
         ))}

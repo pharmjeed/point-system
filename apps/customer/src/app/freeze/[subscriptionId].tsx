@@ -1,15 +1,25 @@
 /**
  * C-14 «تجميد الاشتراك» (V2-036; docs/v2/01 C-14; docs/v2/04 §7; DEC-594; the subscriptions annex clause 4): the
  * start day and the return day of a freeze asked ahead — service days only (Friday and Saturday are never offered and
- * never counted) — with the counted days it freezes and the term's new last day, previewed by the server's own rule
- * (`freezeRequestCheck`). The server decides; a refusal names its reason. Once per term, never retroactive.
+ * never counted) — with the service days it freezes and the term's new last day, previewed by the server's own rule
+ * (`freezeRequestCheck`). The server decides; a refusal names its reason. Once per term, never retroactive. Copy:
+ * the rule in one line, then one short note (DEC-611); the full clause is section «التجميد» of C-24.
  */
 import type { CustomerSubscription } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { isApiError } from '../../api/errors';
-import { dayText, freezeDayChoices, freezePreview, todayRiyadh } from '../../features/annex';
+import {
+  dateText,
+  dayText,
+  freezeDayChoices,
+  freezePreview,
+  freezeRule,
+  rangeText,
+  serviceDaysText,
+  todayRiyadh,
+} from '../../features/annex';
 import { errorText } from '../../features/errorText';
 import { fmt } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -68,6 +78,7 @@ export default function Freeze() {
     [weekdays, startsOn, today, maxDays],
   );
   const preview = sub ? freezePreview(sub, startsOn, returnsOn, today, t) : null;
+  const rule = sub ? freezeRule(sub.policy, t, t.annex.freezeHint) : null;
 
   const submit = async () => {
     if (!sub || !startsOn || !returnsOn || !preview?.ok) return;
@@ -115,19 +126,20 @@ export default function Freeze() {
             <View style={styles.row}>
               <Icon name="snowflake" size={18} tint={color.primary} />
               <AppText variant="bodyStrong" style={styles.flex}>
-                {sub.venue_name_ar}
+                {locale === 'en' && sub.venue_name_en ? sub.venue_name_en : sub.venue_name_ar}
               </AppText>
             </View>
+            {rule ? <AppText>{rule}</AppText> : null}
             <AppText variant="small" tone="muted">
-              {fmt(t.annex.freezeHint, { days: maxDays })}
+              {t.annex.freezeNote}
             </AppText>
             {sub.service_start_on && sub.service_end_on ? (
-              <AppText variant="small">
-                {fmt(t.annex.period, {
-                  start: dayText(sub.service_start_on, t),
-                  end: dayText(sub.service_end_on, t),
-                })}
-              </AppText>
+              <View style={styles.row}>
+                <Icon name="calendar-days" size={16} tint={color.textMuted} />
+                <AppText variant="small" tone="muted" style={styles.flex}>
+                  {rangeText(sub.service_start_on, sub.service_end_on, t)}
+                </AppText>
+              </View>
             ) : null}
           </Card>
           <ChoiceChips
@@ -149,7 +161,10 @@ export default function Freeze() {
           ) : null}
           {preview?.ok && preview.newEnd ? (
             <Banner tone="info">
-              {fmt(t.annex.freezeSummary, { days: preview.days, end: dayText(preview.newEnd, t) })}
+              {fmt(t.annex.freezeSummary, {
+                days: serviceDaysText(preview.days, t),
+                end: dateText(preview.newEnd, t),
+              })}
             </Banner>
           ) : null}
           {preview?.issue ? <Banner tone="warning">{preview.issue}</Banner> : null}

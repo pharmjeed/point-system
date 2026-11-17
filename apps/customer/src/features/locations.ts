@@ -17,6 +17,7 @@ import {
 } from '@point/shared/customer';
 import { fmt, isolate, type AppLocale, type Dictionary } from '../i18n';
 import { formatMoney } from '../i18n/format';
+import { serviceDaysText } from './annex';
 import { locationRow, type LocationRow } from './home';
 
 /** The chips of C-07: «الكل» plus the three server filters. */
@@ -221,7 +222,18 @@ export function locationDetailView(
     plans.length > 1
       ? fmt(dict.locations.from, { amount: isolate(formatMoney(h, dict)) })
       : isolate(formatMoney(h, dict));
-  if (monthly !== null) prices.push({ label: dict.locations.monthly, value: from(monthly) });
+  // a location selling service-day plans only names them by their days, never «الاشتراك الشهري» (DEC-612)
+  const termDays = new Set(
+    plans
+      .filter((p) => p.monthly_price_halalas !== null)
+      .map((p) => (p.policy.term_kind === 'service_days' ? p.policy.service_days : null)),
+  );
+  const [onlyDays] = [...termDays];
+  const monthlyLabel =
+    termDays.size === 1 && typeof onlyDays === 'number'
+      ? fmt(dict.locations.servicePlan, { days: serviceDaysText(onlyDays, dict) })
+      : dict.locations.monthly;
+  if (monthly !== null) prices.push({ label: monthlyLabel, value: from(monthly) });
   if (yearly !== null) prices.push({ label: dict.locations.yearly, value: from(yearly) });
   const address = [loc.address, loc.city]
     .filter((p): p is string => !!p && p.trim() !== '')

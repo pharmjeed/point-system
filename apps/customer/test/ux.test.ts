@@ -210,9 +210,11 @@ describe('C-06 and C-08 lines (DEC-576, DEC-577)', () => {
   };
 
   it('says when an active subscription renews or ends, else its status', () => {
-    expect(homeSubscriptionLine({ ...sub, status: 'active' }, ar)).toMatch(/^يتجدد يوم .*2026-12-11/);
+    expect(homeSubscriptionLine({ ...sub, status: 'active' }, ar)).toMatch(
+      /^يتجدد في 11\u00a0ديسمبر\u00a02026$/,
+    );
     expect(homeSubscriptionLine({ ...sub, status: 'active', cancel_at_period_end: true }, ar)).toMatch(
-      /^ينتهي يوم/,
+      /^ينتهي في/,
     );
     expect(homeSubscriptionLine({ ...sub, status: 'past_due' }, ar)).toBe(ar.subscriptionStatus.past_due);
   });

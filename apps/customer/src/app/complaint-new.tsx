@@ -37,7 +37,7 @@ export default function ComplaintNew() {
   );
 
   const submit = async () => {
-    const problem = !category ? t.annex.complaintCategory : complaintIssue(body, t);
+    const problem = !category ? t.annex.complaintCategoryNeeded : complaintIssue(body, t);
     setIssue(problem);
     if (problem || !category) return;
     setBusy(true);

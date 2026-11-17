@@ -126,34 +126,35 @@ export function customerSubscriptionPushContent(
     case 'subscription_expired':
       body = input.locale === 'en' ? `Your subscription at ${venue} has ended` : `انتهى اشتراكك في ${venue}`;
       break;
-    // V2-036 (DEC-595): a term renewed by hand ends soon — no charge; the new price when one was announced
+    // V2-036 (DEC-595): a term renewed by hand ends soon — no charge; the new price when one was announced.
+    // Short copy, the app's words (DEC-610, DEC-619)
     case 'subscription_ending':
       body =
         input.locale === 'en'
-          ? `Your subscription at ${venue} ends on ${day ?? ''}. Renew it from the app after it ends` +
+          ? `Your subscription at ${venue} ends on ${day ?? ''}. Renew it in the app afterwards` +
             (input.newPriceHalalas !== null ? ` (new price SAR ${sar(input.newPriceHalalas)})` : '')
-          : `ينتهي اشتراكك في ${venue} يوم ${day ?? ''}. يمكنك تجديده من التطبيق بعد انتهائه` +
+          : `ينتهي اشتراكك في ${venue} يوم ${day ?? ''}، وتجدّده بعدها من التطبيق` +
             (input.newPriceHalalas !== null ? ` (السعر الجديد ${sar(input.newPriceHalalas)} ريال)` : '');
       break;
     // V2-036 (DEC-596): the eligibility decision
     case 'subscription_eligibility_approved':
       body =
         input.locale === 'en'
-          ? `Your eligibility for the subscription at ${venue} is confirmed. Pay to activate it`
-          : `تم التحقق من أهليتك للاشتراك في ${venue}. ادفع لتفعيله`;
+          ? `Your subscription at ${venue} is approved. Pay to activate it`
+          : `تمت الموافقة على اشتراكك في ${venue}. ادفع لتفعيله`;
       break;
     case 'subscription_eligibility_rejected':
       body =
         input.locale === 'en'
-          ? `We could not confirm your eligibility for the subscription at ${venue}`
-          : `تعذّر التحقق من أهليتك للاشتراك في ${venue}`;
+          ? `Your subscription request at ${venue} was not approved`
+          : `لم تتم الموافقة على طلب اشتراكك في ${venue}`;
       break;
     // V2-036 (DEC-599): a holiday or closure announced at the location; the subscription keeps counting
     case 'subscription_venue_closure':
       body =
         input.locale === 'en'
-          ? `A closure was announced at ${venue}. Open the app for the dates`
-          : `أُعلن إغلاق في ${venue}. افتح التطبيق لمعرفة التواريخ`;
+          ? `Closure announced at ${venue}. See the dates in the app`
+          : `أُعلن إغلاق في ${venue}. التواريخ في التطبيق`;
       break;
     default:
       throw new Error(`customer push kind ${input.kind} is not a subscription kind`);

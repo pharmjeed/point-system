@@ -25,6 +25,7 @@ import {
   CustomerLocationDetailSchema,
   CustomerSubscriptionCheckoutSchema,
   CustomerSubscriptionSchema,
+  SUBSCRIPTION_TERMS_VERSION,
   successEnvelopeSchema,
 } from '@point/shared/customer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -49,7 +50,7 @@ import { CSRF, createTestApp, newKey, SEED_IDS, type TestApp } from './harness.j
 const ORG = SEED_IDS.org;
 const RMS = SEED_IDS.venues.RMS;
 const PRICE = 17_250; // 150.00 SAR before VAT + 15% = 172.50
-const TERMS = '2026-11-17';
+const TERMS = SUBSCRIPTION_TERMS_VERSION;
 const PRIVACY = '2026-11-01';
 const ROLES: PlatformRole[] = ['platform_owner', 'platform_admin', 'platform_finance', 'platform_support'];
 const M = SUNDAY_TO_THURSDAY_MASK;

@@ -80,3 +80,34 @@ export function minutesUntil(target: string, now: number): number {
 
 /** Writing direction of a locale (the native layout direction follows the device, DEC-481). */
 export const isRtl = (locale: AppLocale): boolean => locale === 'ar';
+
+/** The number forms of a counted word (DEC-611): Arabic has six, English uses `one` and the rest alike. */
+export interface CountForms {
+  readonly zero: string;
+  readonly one: string;
+  readonly two: string;
+  readonly few: string;
+  readonly many: string;
+  readonly other: string;
+}
+
+/**
+ * `22` with the «يوم خدمة» forms → «22 يوم خدمة»; `18` with «يوم» → «18 يومًا»; `5` → «5 أيام»; `1` → «يوم واحد».
+ * The Arabic category follows the last two digits: 3–10 few, 11–99 many; 0, 1, 2 and round hundreds have their own.
+ */
+export function countText(n: number, forms: CountForms): string {
+  const r = n % 100;
+  const form =
+    n === 0
+      ? forms.zero
+      : n === 1
+        ? forms.one
+        : n === 2
+          ? forms.two
+          : r >= 3 && r <= 10
+            ? forms.few
+            : r >= 11
+              ? forms.many
+              : forms.other;
+  return form.replace('{n}', String(n));
+}

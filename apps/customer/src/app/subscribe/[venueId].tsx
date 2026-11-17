@@ -11,8 +11,9 @@
  * V2-036 (the subscriptions annex, docs/v2/04 §7; DEC-590 … DEC-605): before payment the selected plan shows who it is
  * for, its counted days and the dates if paid now, the price before VAT, the VAT and the total, its policies (one
  * visit a day, the freeze, no automatic renewal, non-refundable, closures), the announced holidays and closures, the
- * valuables notice, and the consent it needs (terms and privacy, the non-refund condition) — recorded with the
- * payment. A plan checked for eligibility asks for the student number and the name first (`…/apply`); once approved,
+ * valuables notice, and the consent it needs (terms and privacy, the non-refund condition: two separate unticked
+ * boxes, «اطّلع على الشروط والأحكام» opens C-24 with this plan's values, DEC-613) — recorded with the payment. A plan
+ * checked for eligibility asks for the student number and the name first (`…/apply`); once approved,
  * C-14 brings the customer back here (`?pay=`) to pay it. «اكتملت المقاعد» marks a plan whose capacity is reached;
  * `?plan=` preselects a plan (the renewal from C-14).
  */
@@ -23,7 +24,7 @@ import type {
 } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { isApiError } from '../../api/errors';
 import { closureLines, applicationIssue, planAnnex } from '../../features/annex';
 import { errorText } from '../../features/errorText';
@@ -348,10 +349,10 @@ export default function Subscribe() {
                 </View>
               ) : null}
               {annex.bullets.map((b) => (
-                <View key={b} style={styles.bullet}>
-                  <AppText tone="muted">•</AppText>
+                <View key={b.text} style={styles.bullet}>
+                  <Icon name={b.icon} size={18} tint={color.textMuted} />
                   <AppText variant="small" style={styles.flex}>
-                    {b}
+                    {b.text}
                   </AppText>
                 </View>
               ))}
@@ -443,6 +444,27 @@ export default function Subscribe() {
                   setAcceptTerms(v);
                   setIssue(null);
                 }}
+                detail={
+                  // under the label, past the box (a spacer: the row follows the direction on every platform)
+                  <View style={styles.consentRow}>
+                    <View style={styles.consentIndent} />
+                    <Pressable
+                      accessibilityRole="link"
+                      hitSlop={12}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/terms',
+                          params: plan ? { venueId, planId: plan.planId } : {},
+                        })
+                      }
+                      testID="subscribe-terms-link"
+                    >
+                      <AppText variant="small" tone="primary">
+                        {t.annex.readTerms}
+                      </AppText>
+                    </Pressable>
+                  </View>
+                }
               />
               {annex.nonRefundable ? (
                 <Checkbox
@@ -541,7 +563,9 @@ const styles = StyleSheet.create({
     backgroundColor: color.dangerSubtle,
   },
   soldOutText: { color: color.dangerText },
-  bullet: { flexDirection: 'row', gap: space[2], alignItems: 'flex-start' },
+  bullet: { flexDirection: 'row', gap: space[2], alignItems: 'center' },
+  consentRow: { flexDirection: 'row' },
+  consentIndent: { width: 24 + space[3] },
   breakdown: { gap: space[1], paddingTop: space[2] },
   line: { flexDirection: 'row', justifyContent: 'space-between' },
   total: {

@@ -1,7 +1,8 @@
 /**
- * C-04 الاسم والموافقات: the name, terms and privacy (required, with their version and a link to the text) and
- * marketing (optional, separate, never pre-ticked). The answers are stored append-only with the version shown
- * (`customer_account_consents`); the server then says whether the profile is complete.
+ * C-04 الاسم والموافقات: the name, terms and privacy (required, with their version and a link to the text — the terms
+ * on C-24 in the app, DEC-614) and marketing (optional, separate, never pre-ticked). The answers are stored
+ * append-only with the version shown (`customer_account_consents`); the server then says whether the profile is
+ * complete.
  */
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -79,16 +80,20 @@ export default function Profile() {
     }
   };
 
-  const link = (state: CustomerConsentState) => (
+  // the terms open in the app (C-24, DEC-614); the other texts are the pages the API names
+  const link = (state: CustomerConsentState, inApp?: '/terms') => (
     <View style={styles.meta}>
       <AppText variant="small" tone="muted">
         {f(t.profile.version, { version: state.current_version })}
       </AppText>
-      {state.document_url ? (
+      {inApp || state.document_url ? (
         <Pressable
           accessibilityRole="link"
           hitSlop={12}
-          onPress={() => void WebBrowser.openBrowserAsync(state.document_url as string)}
+          onPress={() =>
+            inApp ? router.push(inApp) : void WebBrowser.openBrowserAsync(state.document_url as string)
+          }
+          testID={inApp ? 'profile-terms-link' : undefined}
         >
           <AppText variant="small" tone="primary">
             {t.profile.read}
@@ -127,7 +132,7 @@ export default function Profile() {
           label={t.profile.terms}
           checked={form.terms}
           onChange={(terms) => set({ terms })}
-          detail={link(me.consents.terms)}
+          detail={link(me.consents.terms, '/terms')}
         />
         <Checkbox
           label={t.profile.privacy}

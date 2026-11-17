@@ -5,7 +5,8 @@
  */
 import type { CustomerLocationPlan, CustomerSubscription, CustomerVehicle } from '@point/shared/customer';
 import { fmt, isolate, type AppLocale, type Dictionary } from '../i18n';
-import { formatDate, formatMoney, formatTime } from '../i18n/format';
+import { formatMoney, formatTime } from '../i18n/format';
+import { instantText, serviceDaysText } from './annex';
 
 export type Cycle = 'monthly' | 'yearly';
 
@@ -44,9 +45,17 @@ export function planOptions(
         planId: p.plan_id,
         title: p.name_ar,
         price,
-        priceText: fmt(cycle === 'yearly' ? dict.subscribe.perYear : dict.subscribe.perMonth, {
-          amount: isolate(formatMoney(price, dict)),
-        }),
+        // a service-day plan is priced per term, not «شهريًا» (DEC-612)
+        priceText: fmt(
+          p.policy.term_kind === 'service_days'
+            ? dict.subscribe.perTerm
+            : cycle === 'yearly'
+              ? dict.subscribe.perYear
+              : dict.subscribe.perMonth,
+          {
+            amount: isolate(formatMoney(price, dict)),
+          },
+        ),
         vehicles: fmt(dict.subscribe.vehiclesIncluded, { n: p.vehicles_included }),
         saving: pct === null ? null : fmt(dict.subscribe.saving, { pct }),
       },
@@ -109,7 +118,8 @@ export function subscriptionCard(
   dict: Dictionary,
   locale: AppLocale,
 ): SubscriptionCard {
-  const day = (iso: string | null) => (iso ? isolate(formatDate(iso)) : '');
+  // «7 ديسمبر 2026»: the dates of every card read alike (DEC-611)
+  const day = (iso: string | null) => (iso ? instantText(iso, dict) : '');
   let line: string | null = null;
   if (s.status === 'pending_payment' && s.pending_expires_at)
     line = fmt(dict.subscriptions.pendingUntil, { time: isolate(formatTime(s.pending_expires_at)) });
@@ -129,7 +139,13 @@ export function subscriptionCard(
     tone: TONE[s.status],
     price: fmt(dict.subscriptions.price, {
       amount: isolate(formatMoney(s.price_halalas, dict)),
-      cycle: s.billing_cycle === 'yearly' ? dict.subscribe.yearly : dict.subscribe.monthly,
+      // a service-day term is named by its days, never «شهري» (DEC-612)
+      cycle:
+        s.policy.term_kind === 'service_days' && s.policy.service_days
+          ? serviceDaysText(s.policy.service_days, dict)
+          : s.billing_cycle === 'yearly'
+            ? dict.subscribe.yearly
+            : dict.subscribe.monthly,
     }),
     line,
     vehicles: plates.length ? fmt(dict.subscriptions.vehicles, { plates: plates.join('، ') }) : null,

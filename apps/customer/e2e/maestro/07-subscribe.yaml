@@ -28,11 +28,11 @@ tags: [h2, r2]
     visible: 'اشتراكاتي'
     timeout: 20000
 - assertVisible: 'نشط'
-- assertVisible: 'يتجدد يوم.*'
-- tapOn: 'إلغاء التجديد'
-- assertVisible: 'يبقى الاشتراك فعّالًا.*'
+- assertVisible: 'يتجدد في.*'
+- tapOn: 'إيقاف التجديد'
+- assertVisible: 'يبقى اشتراكك فعّالًا.*'
 - tapOn:
-    text: 'إلغاء التجديد'
+    text: 'إيقاف التجديد'
     index: 1
 - assertVisible: 'لن يتجدد اشتراكك.'
 - tapOn: 'استئناف التجديد'

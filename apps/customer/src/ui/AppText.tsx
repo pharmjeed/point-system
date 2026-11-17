@@ -45,6 +45,7 @@ export interface AppTextProps {
   style?: StyleProp<TextStyle>;
   accessibilityRole?: 'header' | 'text' | 'alert';
   numberOfLines?: number;
+  testID?: string;
 }
 
 const tones = {

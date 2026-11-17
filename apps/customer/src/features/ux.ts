@@ -10,8 +10,9 @@ import type {
   CustomerVisitDetail,
   CustomerVisitStep,
 } from '@point/shared/customer';
-import { fmt, isolate, type Dictionary } from '../i18n';
-import { formatDate, formatTime } from '../i18n/format';
+import { fmt, type Dictionary } from '../i18n';
+import { formatTime } from '../i18n/format';
+import { instantText } from './annex';
 import { yearlySavingPct } from './subscriptions';
 
 /** The six stages of the C-12 tracker (01 R3: received → parked → requested → on the way → ready → delivered). */
@@ -156,7 +157,7 @@ export function plateParts(display: string): { digits: string; letters: string }
 
 /** The one line of a subscription card on C-06: the renewal or end date, else the status. */
 export function homeSubscriptionLine(s: CustomerHomeSubscription, dict: Dictionary): string {
-  const day = (iso: string) => isolate(formatDate(iso));
+  const day = (iso: string) => instantText(iso, dict); // «11 ديسمبر 2026», as on C-14 (DEC-611)
   if (s.status === 'active' && s.current_period_end)
     return fmt(s.cancel_at_period_end ? dict.subscriptions.endsOn : dict.subscriptions.renewsOn, {
       date: day(s.current_period_end),

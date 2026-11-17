@@ -2,10 +2,17 @@
  * Sample listed locations for the fake backend (development and tests only). Fictional venues and operators in
  * Riyadh; prices in halalas, VAT included. Opening hours in the venue's local time (Asia/Riyadh).
  */
-import type { CustomerLocationDetail, CustomerLocationPlan } from '@point/shared/customer';
+import {
+  SUBSCRIPTION_TERMS_VERSION,
+  type CustomerLocationDetail,
+  type CustomerLocationPlan,
+} from '@point/shared/customer';
 
-/** V2-036: the subscription terms version the purchase consent names (server: CUSTOMER_SUBSCRIPTION_TERMS_VERSION). */
-export const FAKE_SUBSCRIPTION_TERMS_VERSION = '2026-11-17';
+/**
+ * V2-036: the subscription terms version the purchase consent names — the server's default
+ * `CUSTOMER_SUBSCRIPTION_TERMS_VERSION`, the version of the terms the app shows (C-24, DEC-616).
+ */
+export const FAKE_SUBSCRIPTION_TERMS_VERSION = SUBSCRIPTION_TERMS_VERSION;
 
 /** A VAT-inclusive price's net, VAT and total (the server's `vatOfInclusive`, 15%). */
 export function fakeBreakdown(total: number | null) {

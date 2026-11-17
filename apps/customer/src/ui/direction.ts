@@ -11,3 +11,6 @@ export const isRTL = (): boolean => I18nManager.isRTL;
  * road). iOS and Android resolve `start` from the layout direction themselves.
  */
 export const fromStart = (value: number): ViewStyle => ({ start: value });
+
+/** An absolute offset from the end edge of the line (C-24 «أعلى الصفحة»). */
+export const fromEnd = (value: number): ViewStyle => ({ end: value });

@@ -121,7 +121,7 @@ describe('C-14 cards (pure)', () => {
       status: ar.subscriptionStatus.active,
       tone: 'success',
     });
-    expect(active.line).toContain('يتجدد يوم');
+    expect(active.line).toContain('يتجدد في');
     expect(active.price).toContain(ar.subscribe.monthly);
     expect(active.vehicles).toContain('4821 ب ح د');
     expect(active.vehicles).not.toContain('1 ا ا ا'); // a removed car is not covered any more

@@ -5,10 +5,12 @@
  * a reference — on the in-app fake backend that follows the server's rules. The clock starts on Saturday 2026-11-07
  * 12:00 Riyadh.
  */
+import { SUBSCRIPTION_TERMS_VERSION } from '@point/shared/customer';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/errors';
 import { FAKE_LOCATIONS, FAKE_STUDENT_PLAN_ID, FAKE_UNIVERSITY_ID } from '../src/api/fake/seed';
 import { fakeTokenize } from '../src/api/fake/tokens';
+import { checkoutSubscription } from '../src/features/pay/payFlow';
 import {
   applicationIssue,
   closureLines,
@@ -29,7 +31,7 @@ const studentPlan = () =>
     (p) => p.plan_id === FAKE_STUDENT_PLAN_ID,
   )!;
 const consent = {
-  terms_version: '2026-11-17',
+  terms_version: SUBSCRIPTION_TERMS_VERSION,
   privacy_version: '2026-11-01',
   non_refundable: true,
   valuables_notice: true,
@@ -58,14 +60,14 @@ describe('C-09 plan details (pure)', () => {
     expect(a.breakdown?.net).toContain('150.00');
     expect(a.breakdown?.vat).toContain('22.50');
     expect(a.breakdown?.total).toContain('172.50');
-    expect(a.preview?.replace(/\u2011/g, '-')).toContain('2026-12-07');
+    expect(a.preview).toBe('إن دفعت اليوم: 8\u00a0نوفمبر – 7\u00a0ديسمبر\u00a02026');
     expect(a).toMatchObject({
       needsEligibility: true,
       needsConsent: true,
       nonRefundable: true,
       manualRenewal: true,
     });
-    expect(a.bullets).toEqual(
+    expect(a.bullets.map((b) => b.text)).toEqual(
       expect.arrayContaining([ar.annex.policy.daily, ar.annex.policy.nonRefundable, ar.annex.policy.manual]),
     );
     // a V4 plan keeps its V4 terms: no consent required, no counted days
@@ -153,7 +155,7 @@ describe('the annex on the fake backend', () => {
       can_pay: false,
       eligibility: { status: 'pending', student_number_masked: '••••••567' },
     });
-    expect(subscriptionAnnex(applied, ar, '2026-11-07').lines[0]).toContain('567');
+    expect(subscriptionAnnex(applied, ar).lines[0]).toContain('567');
     ctx.clock.advance(6000);
     const approved = await ctx.api.subscription(applied.subscription_id);
     expect(approved).toMatchObject({ status: 'pending_payment', can_pay: true });
@@ -163,6 +165,21 @@ describe('the annex on the fake backend', () => {
       }),
     );
     expect(noConsent.code).toBe('CUSTOMER_CONSENT_REQUIRED');
+    // DEC-619: terms changed since C-09 was read → the sheet says so (not the saved-card consent)
+    const stale = await checkoutSubscription(
+      { api: ctx.api, openAuthSession: async () => undefined, sleep: async () => undefined, now: () => 0 },
+      {
+        start: (body, key) =>
+          ctx.api.paySubscription(
+            approved.subscription_id,
+            { ...body, purchase_consent: { ...consent, terms_version: '2020-01-01' } },
+            key,
+          ),
+        source: { type: 'token', token: fakeTokenize(card) },
+        idempotencyKey: 'stale-terms',
+      },
+    );
+    expect(stale).toEqual({ kind: 'terms_stale' });
     // a plan renewed by hand: a card that is not kept pays it
     const paid = await ctx.api.paySubscription(approved.subscription_id, {
       source: { type: 'token', token: fakeTokenize(card) },
@@ -179,8 +196,15 @@ describe('the annex on the fake backend', () => {
       can_cancel: false,
       can_freeze: true,
     });
-    const lines = subscriptionAnnex(active, ar, '2026-11-07');
-    expect(lines.lines.join(' ').replace(/\u2011/g, '-')).toContain('2026-12-07');
+    // one compact range, the days left with their Arabic form, the policy note (DEC-612)
+    expect(subscriptionAnnex(active, ar)).toMatchObject({
+      lines: [],
+      period: '8\u00a0نوفمبر – 7\u00a0ديسمبر\u00a02026',
+      remaining: 'متبقٍ 22 يومًا من 22',
+      progress: 0,
+      freezeLines: [],
+      policyNote: 'غير قابل للاسترداد · التجديد بطلبك',
+    });
     // the freeze: Monday → Monday, 5 counted days, the end moves a week
     const frozen = await ctx.api.freezeSubscription(active.subscription_id, {
       starts_on: '2026-11-09',
@@ -218,6 +242,6 @@ describe('the annex on the fake backend', () => {
     ctx.clock.advance(6000);
     const s = await ctx.api.subscription(applied.subscription_id);
     expect(s).toMatchObject({ status: 'canceled', ended_reason: 'eligibility_rejected' });
-    expect(subscriptionAnnex(s, ar, '2026-11-07').lines.join(' ')).toContain('الرقم غير مسجل');
+    expect(subscriptionAnnex(s, ar).lines.join(' ')).toContain('الرقم غير مسجل');
   });
 });

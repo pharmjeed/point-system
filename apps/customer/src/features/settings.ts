@@ -1,15 +1,15 @@
 /**
  * C-19 الإعدادات (V2-017, docs/v2/01 R6): language (Arabic / English, kept on the device and sent to the account so
  * WhatsApp and push follow it), notifications (V2-016, ./push.ts), «تواصل معنا» from the
- * configuration, the terms and privacy pages the API names (`consents.*.document_url`), the app version, sign out
- * and «حذف الحساب» (C-20). Pure.
+ * configuration, «الشروط والأحكام» (C-24, in the app) and the privacy page the API names
+ * (`consents.privacy.document_url`), the app version, sign out and «حذف الحساب» (C-20). Pure.
  */
 import type { CustomerMe } from '@point/shared/customer';
 import type { AppConfig } from '../configModel';
 import type { AppLocale, Dictionary } from '../i18n';
 
 export interface LinkItem {
-  key: 'whatsapp' | 'email' | 'terms' | 'privacy';
+  key: 'whatsapp' | 'email' | 'privacy';
   label: string;
   url: string;
 }
@@ -39,10 +39,9 @@ export function settingsView(
       label: dict.settings.supportEmail,
       url: `mailto:${config.support.email}`,
     });
+  // the terms are read in the app (C-24, DEC-614); the privacy policy stays the page the API names
   const documents: LinkItem[] = [];
-  const terms = me?.consents.terms.document_url;
   const privacy = me?.consents.privacy.document_url;
-  if (terms) documents.push({ key: 'terms', label: dict.settings.terms, url: terms });
   if (privacy) documents.push({ key: 'privacy', label: dict.settings.privacy, url: privacy });
   return {
     // each language is named in itself, so it can be found whatever the current language is

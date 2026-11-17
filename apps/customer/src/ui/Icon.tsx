@@ -5,6 +5,7 @@
  * readers. Directional icons (back, «go» chevrons) are mirrored in RTL (03 §2.6, DEC-85); the others never are.
  */
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import ArrowUp from 'lucide-react-native/icons/arrow-up';
 import BadgePercent from 'lucide-react-native/icons/badge-percent';
 import BellRing from 'lucide-react-native/icons/bell-ring';
 import Bookmark from 'lucide-react-native/icons/bookmark';
@@ -32,6 +33,7 @@ import History from 'lucide-react-native/icons/history';
 import House from 'lucide-react-native/icons/house';
 import Info from 'lucide-react-native/icons/info';
 import KeyRound from 'lucide-react-native/icons/key-round';
+import ListOrdered from 'lucide-react-native/icons/list-ordered';
 import LogOut from 'lucide-react-native/icons/log-out';
 import MapIcon from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
@@ -43,6 +45,7 @@ import QrCode from 'lucide-react-native/icons/qr-code';
 import Receipt from 'lucide-react-native/icons/receipt';
 import RefreshCw from 'lucide-react-native/icons/refresh-cw';
 import RotateCcw from 'lucide-react-native/icons/rotate-ccw';
+import ScrollText from 'lucide-react-native/icons/scroll-text';
 import Search from 'lucide-react-native/icons/search';
 import Settings from 'lucide-react-native/icons/settings';
 import ShieldCheck from 'lucide-react-native/icons/shield-check';
@@ -63,6 +66,7 @@ import { isRTL } from './direction';
 
 const ICONS = {
   back: ArrowLeft,
+  'arrow-up': ArrowUp,
   'badge-percent': BadgePercent,
   'bell-ring': BellRing,
   bookmark: Bookmark,
@@ -93,6 +97,7 @@ const ICONS = {
   house: House,
   info: Info,
   key: KeyRound,
+  'list-ordered': ListOrdered,
   'log-out': LogOut,
   map: MapIcon,
   'map-pin': MapPin,
@@ -103,6 +108,7 @@ const ICONS = {
   receipt: Receipt,
   refresh: RefreshCw,
   'rotate-ccw': RotateCcw,
+  'scroll-text': ScrollText,
   search: Search,
   settings: Settings,
   'shield-check': ShieldCheck,

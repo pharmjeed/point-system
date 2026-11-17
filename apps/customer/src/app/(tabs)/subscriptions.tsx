@@ -1,23 +1,24 @@
 /**
  * C-14 اشتراكاتي (V2-032; docs/v2/01 R2; docs/v2/04 §1; DEC-532, DEC-534): each subscription with its venue, state,
  * price and cycle, the one line that matters now (renews on / ends on / waiting for payment / past due / frozen), the
- * covered car(s), and the commands the server allows (`can_*`): «إلغاء التجديد» (effective at the end of the period,
+ * covered car(s), and the commands the server allows (`can_*`): «إيقاف التجديد» (effective at the end of the period,
  * undone by «استئناف التجديد»), «ادفع الآن» (a subscription waiting for its payment or in its grace — C-10), «تغيير
  * السيارة» (once per period). Read again on focus and on every `subscription.updated`.
  *
  * V2-036 (the subscriptions annex; DEC-594 … DEC-605): an application waiting for its eligibility (withdraw), an
- * approved one paid from C-09 with its consent, a counted-day term's first and last days and the counted days left (a
- * progress bar), the non-refund notice, the freeze (C-14 «تجميد» → the freeze screen; cancel a scheduled one,
- * reactivate early), the renewal of an ended term on request, the exceptional refund's due day, and «الشكاوى».
+ * approved one paid from C-09 with its consent, a service-day term as one date range and the days left (a progress
+ * bar), the non-refund notice with «الشروط» (C-24 with the plan's values, DEC-612), the freeze (C-14 «تجميد» → the
+ * freeze screen; cancel a scheduled one, reactivate early), the renewal of an ended term on request, the exceptional
+ * refund's due day, and «الشكاوى».
  */
 import type { CustomerSubscription, CustomerVehicle } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { isApiError } from '../../api/errors';
 import { errorText } from '../../features/errorText';
 import { PaySheet } from '../../features/pay';
-import { subscriptionAnnex, todayRiyadh } from '../../features/annex';
+import { subscriptionAnnex } from '../../features/annex';
 import { coverableVehicles, subscriptionCard, toggleVehicle } from '../../features/subscriptions';
 import { useI18n } from '../../i18n/I18nProvider';
 import { newIdempotencyKey } from '../../session/secureStore';
@@ -27,6 +28,7 @@ import { AppText } from '../../ui/AppText';
 import { Button } from '../../ui/Button';
 import { Banner, Card, Checkbox } from '../../ui/Controls';
 import { DevBanner } from '../../ui/DevBanner';
+import { Icon } from '../../ui/Icon';
 import { Screen } from '../../ui/Screen';
 import { SkeletonList } from '../../ui/Skeleton';
 import { EmptyState } from '../../ui/EmptyState';
@@ -117,7 +119,6 @@ export default function Subscriptions() {
   };
 
   const cars = coverableVehicles(vehicles);
-  const today = todayRiyadh();
 
   /** C-14 «إلغاء التجميد» / «أعد التفعيل الآن» (DEC-594): a running freeze asks first */
   const unfreeze = (s: CustomerSubscription) => {
@@ -158,10 +159,10 @@ export default function Subscriptions() {
       ) : null}
       {items?.map((s) => {
         const card = subscriptionCard(s, t, locale);
-        const annex = subscriptionAnnex(s, t, today);
+        const annex = subscriptionAnnex(s, t);
         const id = s.subscription_id;
         const edit = editing?.id === id ? editing : null;
-        // a counted-day term says its own period: the calendar line («يتجدد/ينتهي يوم») is not shown for it
+        // a service-day term says its own period: the calendar line («يتجدد/ينتهي في») is not shown for it
         const counted = s.policy.term_kind === 'service_days';
         return (
           <Card key={id} accent={s.status === 'active'}>
@@ -176,6 +177,15 @@ export default function Subscriptions() {
                 {line}
               </AppText>
             ))}
+            {annex.period ? (
+              <View style={styles.iconLine}>
+                <Icon name="calendar-days" size={18} tint={color.textMuted} />
+                <AppText style={styles.flex} testID={`period-${id}`}>
+                  {annex.period}
+                </AppText>
+              </View>
+            ) : null}
+            {annex.remaining ? <AppText variant="bodyStrong">{annex.remaining}</AppText> : null}
             {annex.progress !== null ? (
               <View
                 style={styles.track}
@@ -185,15 +195,34 @@ export default function Subscriptions() {
                 <View style={[styles.fill, { width: `${Math.round(annex.progress * 100)}%` }]} />
               </View>
             ) : null}
-            {annex.freezeLine ? (
-              <AppText variant="small" tone="primary">
-                {annex.freezeLine}
-              </AppText>
+            {annex.freezeLines.length > 0 ? (
+              <View style={styles.iconLine}>
+                <Icon name="snowflake" size={18} tint={color.primary} />
+                <View style={styles.flex}>
+                  {annex.freezeLines.map((line) => (
+                    <AppText key={line} variant="small" tone="primary">
+                      {line}
+                    </AppText>
+                  ))}
+                </View>
+              </View>
             ) : null}
-            {annex.nonRefundable && s.status !== 'pending_eligibility' ? (
-              <AppText variant="small" tone="muted">
-                {t.annex.nonRefundableNote}
-              </AppText>
+            {annex.policyNote || counted ? (
+              <View style={styles.iconLine}>
+                <AppText variant="small" tone="muted" style={styles.flex}>
+                  {annex.policyNote ?? ''}
+                </AppText>
+                <Pressable
+                  accessibilityRole="link"
+                  hitSlop={12}
+                  onPress={() => router.push({ pathname: '/terms', params: { subscriptionId: id } })}
+                  testID={`terms-${id}`}
+                >
+                  <AppText variant="smallStrong" tone="primary">
+                    {t.annex.terms}
+                  </AppText>
+                </Pressable>
+              </View>
             ) : null}
             {card.vehicles ? <AppText variant="small">{card.vehicles}</AppText> : null}
             {card.nextPrice ? (
@@ -365,7 +394,9 @@ export default function Subscriptions() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   edit: { gap: space[2] },
+  iconLine: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   track: { height: 8, borderRadius: radius.full, backgroundColor: color.surface2, overflow: 'hidden' },
   fill: { height: 8, borderRadius: radius.full, backgroundColor: color.primary },
 });

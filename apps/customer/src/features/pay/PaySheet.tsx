@@ -276,6 +276,10 @@ export function PaySheet({
         key.reset();
         setMessage({ tone: 'warning', text: t.pay.cardRequired });
         return;
+      case 'terms_stale':
+        key.reset();
+        setMessage({ tone: 'warning', text: t.annex.termsUpdated });
+        return;
       case 'exists':
         key.reset();
         setMessage({ tone: 'warning', text: t.subscribe.exists });

@@ -28,6 +28,14 @@ const iso = z.iso.datetime({ offset: true });
 const isoDate = z.string().refine(isIsoDate, { message: 'a YYYY-MM-DD date' });
 
 /**
+ * The version of the subscription terms the purchase consent records (DEC-601, DEC-616): the «الشروط والأحكام»
+ * document of the customer app (C-24, `apps/customer/src/legal`) carries it, the server's
+ * `CUSTOMER_SUBSCRIPTION_TERMS_VERSION` defaults to it, and `docs/v2/store/TERMS_AR.md` / `TERMS_EN.md` print it. A new
+ * text of the terms bumps it here, once; tests keep the app, the server and the docs on the same value.
+ */
+export const SUBSCRIPTION_TERMS_VERSION = '2026-11-17.2';
+
+/**
  * The purchase consent recorded with the payment that starts a term (04 §7, DEC-601; annex clauses 3, 5, 6): the
  * subscription terms and the privacy policy at their versions in force, the price shown (net, VAT, total), the
  * non-refund condition when the plan is `non_refundable`, and the notice to take valuables out of the car. Required

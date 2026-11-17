@@ -31,6 +31,8 @@ export type PayOutcome =
   | { kind: 'already_paid' }
   | { kind: 'in_progress'; retryAfterS: number | null }
   | { kind: 'consent'; currentVersion: string | null }
+  /** V2-036 (DEC-619): the subscription terms changed since C-09 was read — back to C-09 to accept the new text */
+  | { kind: 'terms_stale' }
   | { kind: 'not_payable'; reason: string | null }
   | { kind: 'error'; error: unknown };
 
@@ -137,6 +139,7 @@ function outcomeOfError(e: unknown): PayOutcome {
       };
     case 'CUSTOMER_CONSENT_REQUIRED':
     case 'CUSTOMER_CONSENT_VERSION_STALE':
+      if (d.kind === 'subscription_terms') return { kind: 'terms_stale' };
       return {
         kind: 'consent',
         currentVersion: typeof d.current_version === 'string' ? d.current_version : null,

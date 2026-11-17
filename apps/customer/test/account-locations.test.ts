@@ -331,7 +331,7 @@ describe('V2-017 — C-19 settings', () => {
     });
   });
 
-  it('support links from the config, terms and privacy from the account, each language named in itself', async () => {
+  it('support links from the config, the privacy page from the account, each language named in itself', async () => {
     const ctx = setup();
     const me = await onboard(ctx);
     const withDocs: CustomerMe = {
@@ -347,10 +347,8 @@ describe('V2-017 — C-19 settings', () => {
       { key: 'whatsapp', label: ar.settings.supportWhatsapp, url: 'https://wa.me/966500000000' },
       { key: 'email', label: ar.settings.supportEmail, url: 'mailto:help@example.com' },
     ]);
-    expect(v.documents.map((d) => d.url)).toEqual([
-      'https://example.com/terms',
-      'https://example.com/privacy',
-    ]);
+    // the terms are C-24 in the app (DEC-614): only the privacy page is a link
+    expect(v.documents.map((d) => d.url)).toEqual(['https://example.com/privacy']);
     expect(v.languages).toEqual([
       { value: 'ar', label: 'العربية' },
       { value: 'en', label: 'English' },

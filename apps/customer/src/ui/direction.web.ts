@@ -12,3 +12,6 @@ export const isRTL = (): boolean =>
  * from its own (left-to-right) context, not from `<html dir>`.
  */
 export const fromStart = (value: number): ViewStyle => (isRTL() ? { right: value } : { left: value });
+
+/** An absolute offset from the end edge of the line, physical on the web export (as `fromStart`). */
+export const fromEnd = (value: number): ViewStyle => (isRTL() ? { left: value } : { right: value });
