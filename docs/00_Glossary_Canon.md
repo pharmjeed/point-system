@@ -335,6 +335,8 @@
 
 > الإصدار الثاني (V2-031، DEC-532، DEC-533): مؤقتات الاشتراك (docs/v2/04 §1) بساعة الخادم المحقونة: `job.subscription_renew` التجديد عند نهاية الفترة ومحاولات السماح في اليوم 1 و3 بعدها (خارجي: يخصم البطاقة الافتراضية المحفوظة بـ`given_id` لكل فترة ومحاولة)؛ `job.subscription_grace_expire` شبكة أمان بعد انتهاء السماح بساعة؛ `job.subscription_renewal_notice` إشعار التجديد قبل النهاية بثلاثة أيام (ويعلن السعر الجديد إن تغيّرت الباقة، DEC-531)؛ `job.pending_payment_expire` يلغي اشتراكًا لم يُدفع خلال 30 دقيقة. كل منها يقارن الفترة والمحاولة المسجلتين فيه بالاشتراك عند التنفيذ، والمختلف ينتهي بلا أثر.
 
+> الإصدار الثاني (V2-036، DEC-593، DEC-594): `job.subscription_freeze_start` يبدأ تجميد العميل المجدول عند منتصف ليل يوم البداية بتوقيت الرياض و`job.subscription_freeze_end` ينهيه عند منتصف ليل يوم العودة (يحملان `freeze_id`؛ تجميد سُحب أو أُنهي مبكرًا يُنهي المؤقت بلا أثر). حالة الاشتراك `pending_eligibility` وسبب التجميد `customer_freeze`، والجداول `subscription_eligibility`، `subscription_eligible_students`، `subscription_freezes`، `subscription_purchase_consents`، `venue_closures`، `customer_complaints` (docs/v2/03 §4).
+
 > الإصدار الثاني (V2-040 … V2-042، DEC-543، DEC-544): `job.einvoice_submit` يرسل فاتورة أو إشعارًا دائنًا لمزود الفوترة الإلكترونية بعد COMMIT (الإبلاغ للمبسطة والاعتماد للضريبية، بترتيب سلسلة كل نوع)؛ `job.invoice_pdf_render` يولّد ملف PDF الفاتورة بعد قبولها ويحفظه في المخزن الخاص؛ `job.settlement_monthly` يُعد مسودات كشوف التسوية لكل مشغل في الأول من الشهر (توقيت الرياض) للشهر السابق (`SETTLEMENT_MONTHLY_CRON_UTC`).
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.

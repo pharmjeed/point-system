@@ -483,6 +483,10 @@
 | `SUBSCRIPTION_PLAN_UNAVAILABLE` | 409 | لا | هذه الباقة لم تعد متاحة. اختر باقة أخرى. | This plan is not available any more. Choose another one. | باقة مقاعدة أو لا تبيع الدورة أو موقع لا يبيع الاشتراك؛ `reason`: `retired` / `cycle` / `not_sold` (DEC-531) |
 | `SUBSCRIPTION_VEHICLES_LOCKED` | 409 | لا | غيّرت السيارة المشمولة في هذه الفترة. يمكنك التغيير في الفترة القادمة. | You already changed the covered vehicle this period. | `PUT …/subscriptions/{id}/vehicles` مرة ثانية في الفترة (01 R6)؛ `available_at` (DEC-534) |
 | `SUBSCRIPTION_CARD_REQUIRED` | 422 | لا | ادفع ببطاقة تُحفظ للتجديد التلقائي. | Pay with a card kept for the automatic renewal. | دفع اشتراك بـApple Pay أو ببطاقة لا تُحفظ (`save_card` غائب)؛ `source_type` (DEC-534) |
+| `SUBSCRIPTION_ELIGIBILITY_REQUIRED` | 422 | لا | هذه الباقة تتطلب التحقق من الأهلية أولًا. أرسل طلبك. | This plan needs an eligibility check first. Send your application. | `POST /v1/customer/subscriptions` لباقة `student_id_review`: الطلب بـ`…/apply` ثم الدفع بعد الاعتماد؛ `plan_id`، `eligibility` (V2-036، DEC-596) |
+| `SUBSCRIPTION_CAPACITY_REACHED` | 409 | لا | اكتملت المقاعد في هذه الباقة. | All places of this plan are taken. | الطلب أو الاشتراك أو الدفع الأول وقد بلغت مقاعد الباقة `capacity`؛ `plan_id`، `capacity` (DEC-598) |
+| `SUBSCRIPTION_FREEZE_UNAVAILABLE` | 409 | لا | التجميد غير متاح لهذا الاشتراك الآن. | A freeze is not available for this subscription now. | `…/freeze` أو `…/unfreeze`؛ `reason`: `not_offered` / `used` / `live` / `status` (DEC-594) |
+| `SUBSCRIPTION_FREEZE_INVALID` | 422 | لا | اختر بداية بعد اليوم وعودة في يوم خدمة، ضمن الأيام المسموح بها. | Choose a start after today and a return on a service day, within the allowed days. | `…/freeze` بتاريخين لا يجتازان `freezeRequestCheck`؛ `issue`، `max_days` (DEC-594) |
 
 | الحالة | الرمز | `details` | الواجهة (تطبيق العميل) | السجل | ملاحظة |
 |---|---|---|---|---|---|

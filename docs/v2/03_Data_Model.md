@@ -351,6 +351,17 @@ CREATE TABLE gateway_webhook_events (           -- خام وموقّع، معا�
 );
 ```
 
+### سياسات الباقة وملحق الاشتراكات (V2-036 / V2-037، الترحيل `0019`، DEC-590 … DEC-609)
+
+- `subscription_plans` + `term_kind`، `service_days`، `service_weekdays_mask`، `renewal_mode`، `daily_visit_limit`، `refund_policy`، `closure_policy`، `freeze_max_times`، `freeze_max_days`، `eligibility`، `capacity`، `audience_ar`، `vehicle_change` (الافتراضي سلوك V4؛ القيم في `docs/v2/04` §7.1).
+- `subscriptions` + `service_start_on`، `service_end_on`، `frozen_remaining_days`، `refund_due_at`؛ الحالة `pending_eligibility`، سبب التجميد `customer_freeze`، أسباب الانتهاء `eligibility_rejected`/`term_completed`/`exceptional_refund`؛ `uq_subscriptions_live_eligibility` (اشتراك حي واحد لكل حساب وموقع بما فيه الطلب المنتظر).
+- `subscription_eligibility` (طلب الأهلية لكل اشتراك: الرقم الجامعي والاسم، `pending|approved|rejected`، المصدر `review|list|reuse`، القرار والسبب والقائم به).
+- `subscription_eligible_students` (قائمة الموقع: الرقم، `removed_at` بدل الحذف).
+- `subscription_freezes` (التجميد: البداية والعودة والأيام، `scheduled|active|completed|withdrawn|canceled`، `used_days`؛ واحد حي لكل اشتراك).
+- `subscription_purchase_consents` (إلحاقي: نسختا الشروط والخصوصية، السعر وصافيه وضريبته، عدم الاسترداد، تنبيه المقتنيات، الدفعة).
+- `venue_closures` (إجازة أو إغلاق معلن من–إلى بتقويم الرياض، سبب للعميل، السحب بسبب).
+- `customer_complaints` (الرقم المرجعي من `customer_complaint_ref_seq`، الفئة، النص، الحالة، ملاحظة المعالجة، الزيارة أو الاشتراك).
+
 ## 5. الفواتير والتسوية
 
 > **نُفذ في `packages/db/migrations/0017_invoices_settlement.sql` (V2-040 … V2-042، DEC-540 … DEC-549).** الفروق عن المسودة أدناه: **`invoice_series`** (سلسلة لكل وحدة فوترة: `simplified` بالبادئة `PS` و`standard` بـ`PB`، آخر عداد وآخر بصمة؛ لا تتحرك إلا +1)؛ **`invoices`** بـ`series` و`type_code` (388/381) و`icv` و`zatca_uuid` و`previous_hash`/`invoice_hash` وفحص السلسلة في مشغّل الإدراج `trg_invoices_chain`، ويوم التوريد وفترة الاشتراك، و`refund_id`/`settlement_statement_id`/`credit_reason`، ونسبة الضريبة، ولقطات `seller`/`buyer`/`lines` (jsonb)، وQR الوسوم 1–5، وردود المزود (`zatca_status` + `provider_reference`/`provider_hash`/`provider_qr`/`provider_codes`/`submitted_at`/`status_at`) ومفتاح PDF — وكل ما عداها لا يتغير (`trg_invoices_guard`)، وفاتورة مبسطة واحدة لكل دفعة وإشعار واحد لكل استرداد وفاتورة اشتراك واحدة لكل كشف؛ `org_id` للمشتري المشغل وحده (فواتير العملاء بلا `org_id`)؛ **`invoice_provider_events`** إلحاقي لردود المزود؛ **`settlement_statements`** بأعمدة تفصيلية (`app_payment_count`، `app_refund_halalas`، `app_refund_commission_halalas`، `saas_vat_halalas`، `adjustments_halalas`) وأوقات الإصدار والاعتراض والحل والدفع والإلغاء وفاعليها، و`saas_invoice_id`، و`version`، وكشف حي واحد لكل مشغل وشهر (`uq_settlement_statements_period` يستثني الملغى)، وانتقالات ومبالغ مجمدة بعد الإصدار (`trg_settlement_statements_guard`)، والرأس يساوي بنوده عند COMMIT (`trg_settlement_totals` مؤجَّل)؛ **`settlement_lines`** بمعرّف و`org_id` و`line_key` فريد ما دام البند فعالًا (`uq_settlement_lines_key`، و`uq_settlement_ticket` كما في المسودة) وأنواع أدق (`app_payment`، `app_commission`، `app_refund`، `app_refund_commission`، `saas_fee`، `saas_vat`) ومبلغ موقّع بأثره على الصافي، و`released_at` بدل الحذف (إعادة حساب المسودة والإلغاء). كل الجداول بلا DELETE لدور التطبيق، والقيود مسطحة (تمرين الاستعادة)، وتنبيها المنصة `einvoice_rejected` و`einvoice_submit_failed`.
