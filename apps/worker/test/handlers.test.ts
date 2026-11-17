@@ -17,8 +17,8 @@ describe('worker handlers', () => {
     expect(JOB_TYPES.filter((t) => !types.has(t))).toEqual([]);
     // + job.customer_otp_send (V2-010), the 3 payment jobs (V2-021), the 2 customer push jobs (V2-016), the
     // saved-card token deletion (V2-023), the 4 subscription timers (V2-031), the e-invoice submission and PDF
-    // (V2-040) and the monthly settlement (V2-041)
-    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 2 + 1 + 4 + 3);
+    // (V2-040), the monthly settlement (V2-041) and the customer freeze's start and end (V2-036)
+    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 2 + 1 + 4 + 3 + 2);
   });
 
   it('the network jobs run outside a transaction (mode external, 04 §6.4)', () => {

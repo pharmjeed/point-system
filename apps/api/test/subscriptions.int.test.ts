@@ -412,16 +412,31 @@ describe('V2-030 — P-05 plans (platform.plan_manage)', () => {
     const r = await t.http().get(`/v1/customer/locations/${RMS}`).set(bearer(a));
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     const l = successEnvelopeSchema(CustomerLocationDetailSchema).parse(r.body).data;
-    expect(l.plans).toEqual([
+    expect(l.plans).toMatchObject([
       {
         plan_id: planId,
         name_ar: 'سيارة واحدة',
         vehicles_included: 1,
         monthly_price_halalas: MONTHLY,
         yearly_price_halalas: YEARLY,
+        // V2-036 (DEC-590): a V4 plan keeps the V4 policies; the price's net and VAT shown before payment
+        policy: {
+          term_kind: 'calendar',
+          renewal_mode: 'auto',
+          refund_policy: 'prorated_on_termination',
+          closure_policy: 'freeze',
+          eligibility: 'none',
+          freeze_max_times: 0,
+          daily_visit_limit: null,
+          vehicle_change: 'once_per_period',
+        },
+        monthly_breakdown: { net_halalas: 26_087, vat_halalas: 3_913, total_halalas: MONTHLY },
+        sold_out: false,
+        term_preview: null,
       },
     ]);
     expect(l.monthly_from_halalas).toBe(MONTHLY);
+    expect(l.closures).toEqual([]);
   });
 });
 

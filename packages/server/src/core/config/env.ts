@@ -157,6 +157,9 @@ export const envSchema = z.object({
   // how long an earlier payment of a visit that waits for 3-D Secure blocks a new one (PAYMENT_IN_PROGRESS)
   CUSTOMER_PAY_CALLBACK_URL: z.string().min(1).default('sa.point.app://pay/return'),
   CUSTOMER_CARD_ON_FILE_VERSION: z.string().min(1).max(40).default('2026-11-01'),
+  // V2-036 (DEC-601): the version of the subscription terms (non-refund, counted days, freeze, valuables) consented
+  // with the payment that starts a term; the app reads it from the plan (C-09) and sends it back
+  CUSTOMER_SUBSCRIPTION_TERMS_VERSION: z.string().min(1).max(40).default('2026-11-17'),
   VISIT_PAYMENT_PENDING_S: int(900),
   // Express `trust proxy` (05 §14.2): hops in front of the api (1 = the reverse proxy), or a subnet list
   TRUST_PROXY: z.string().default('1'),

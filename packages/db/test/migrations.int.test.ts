@@ -62,6 +62,16 @@ const INVOICING_TABLES = [
   'invoice_provider_events',
 ];
 
+/** The subscriptions-annex tables of 0019_subscription_policies.sql (V2-036 / V2-037, docs/v2/04 §7, DEC-590 …). */
+const SUBSCRIPTION_POLICY_TABLES = [
+  'subscription_eligibility',
+  'subscription_eligible_students',
+  'subscription_freezes',
+  'subscription_purchase_consents',
+  'venue_closures',
+  'customer_complaints',
+];
+
 /**
  * Corrections made to docs/06_schema.sql after v1.1 (0001 keeps the delivered file; migrations are append-only and
  * checksummed). Each pair is (text in 0001, text in docs/06_schema.sql); the migration applying it is named in the DEC.
@@ -96,7 +106,7 @@ describe('migrations', () => {
     await ref.drop();
   });
 
-  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016), the 6 online-payment tables of 0012 (V2-020), the 4 subscription tables of 0016 (V2-030 / V2-031) and the 5 invoicing tables of 0017 (V2-040)', async () => {
+  it('creates the 47 base tables of 06_schema.sql, the 6 platform tables of 0008 (V2-001), the 10 customer tables of 0009 (V2-010), 0010 (V2-013) and 0013 (V2-015/V2-016), the 6 online-payment tables of 0012 (V2-020), the 4 subscription tables of 0016 (V2-030 / V2-031), the 5 invoicing tables of 0017 (V2-040) and the 6 subscriptions-annex tables of 0019 (V2-036 / V2-037)', async () => {
     const r = await client.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
     );
@@ -106,7 +116,8 @@ describe('migrations', () => {
         CUSTOMER_TABLES.length +
         ONLINE_PAYMENT_TABLES.length +
         SUBSCRIPTION_TABLES.length +
-        INVOICING_TABLES.length,
+        INVOICING_TABLES.length +
+        SUBSCRIPTION_POLICY_TABLES.length,
     );
     const ref = await refClient.query(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename <> 'schema_migrations'`,
@@ -181,6 +192,7 @@ describe('migrations', () => {
       '0016_online_payments_subscription_index.sql',
       '0016_tickets_subscription_index.sql',
       '0018_customer_otp_wamid_index.sql',
+      '0019_subscriptions_live_index.sql',
     ]);
     for (const m of later) {
       const statements = m.sql
@@ -208,6 +220,7 @@ describe('migrations', () => {
           'uq_customer_sessions_push_token',
           'uq_customers_org_account',
           'uq_refunds_system',
+          'uq_subscriptions_live_eligibility',
         ],
       ],
     );
@@ -223,6 +236,7 @@ describe('migrations', () => {
       { name: 'uq_customer_sessions_push_token', valid: true },
       { name: 'uq_customers_org_account', valid: true },
       { name: 'uq_refunds_system', valid: true },
+      { name: 'uq_subscriptions_live_eligibility', valid: true },
     ]);
   });
 
@@ -295,7 +309,8 @@ describe('migrations', () => {
         CUSTOMER_TABLES.length +
         ONLINE_PAYMENT_TABLES.length +
         SUBSCRIPTION_TABLES.length +
-        INVOICING_TABLES.length,
+        INVOICING_TABLES.length +
+        SUBSCRIPTION_POLICY_TABLES.length,
     );
   });
 

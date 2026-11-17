@@ -11,9 +11,14 @@ import {
   CustomerSubscriptionsController,
   SubscriptionCheckoutPreparer,
 } from './http/customer-subscriptions.controller.js';
+import { VenueClosuresService } from './application/closures.js';
+import { PlatformEligibilityService } from './application/eligibility.js';
+import { ExceptionalRefunds } from './application/exceptional-refund.js';
 import {
+  PlatformEligibleStudentsController,
   PlatformPlansController,
   PlatformSubscriptionsController,
+  PlatformVenueClosuresController,
 } from './http/platform-subscriptions.controller.js';
 
 /**
@@ -22,7 +27,13 @@ import {
  */
 @Module({
   imports: [PaymentsOnlineHttpModule],
-  controllers: [CustomerSubscriptionsController, PlatformPlansController, PlatformSubscriptionsController],
+  controllers: [
+    CustomerSubscriptionsController,
+    PlatformPlansController,
+    PlatformSubscriptionsController,
+    PlatformEligibleStudentsController,
+    PlatformVenueClosuresController,
+  ],
   providers: [
     {
       provide: SubscriptionCheckout,
@@ -44,6 +55,17 @@ import {
       inject: [DATABASE],
       useFactory: (db: Database) => new PlatformSubscriptionsService(db),
     },
+    {
+      provide: PlatformEligibilityService,
+      inject: [DATABASE],
+      useFactory: (db: Database) => new PlatformEligibilityService(db),
+    },
+    {
+      provide: VenueClosuresService,
+      inject: [DATABASE],
+      useFactory: (db: Database) => new VenueClosuresService(db),
+    },
+    { provide: ExceptionalRefunds, useFactory: () => new ExceptionalRefunds() },
     SubscriptionCheckoutPreparer,
   ],
 })

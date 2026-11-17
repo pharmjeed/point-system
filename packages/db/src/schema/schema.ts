@@ -18,6 +18,7 @@ import {
   primaryKey,
   numeric,
   pgView,
+  bigserial,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -2588,6 +2589,295 @@ export const customer_audit_log = pgTable(
   ],
 );
 
+export const subscription_eligibility = pgTable(
+  'subscription_eligibility',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    plan_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    kind: text().notNull(),
+    student_number: text().notNull(),
+    student_name: text().notNull(),
+    status: text().default('pending').notNull(),
+    source: text(),
+    decided_by: uuid(),
+    decided_at: timestamp({ withTimezone: true, mode: 'string' }),
+    decision_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_eligibility_number')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.student_number.asc().nullsLast().op('uuid_ops'),
+        table.decided_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(status = 'approved'::text)`),
+    index('ix_subscription_eligibility_pending')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(status = 'pending'::text)`),
+
+    unique('uq_subscription_eligibility_subscription').on(table.subscription_id),
+    check('ck_subscription_eligibility_decided', sql`(status = 'pending'::text) = (decided_at IS NULL)`),
+    check('ck_subscription_eligibility_kind', sql`kind = 'student_id_review'::text`),
+    check(
+      'ck_subscription_eligibility_name',
+      sql`(char_length(student_name) >= 2) AND (char_length(student_name) <= 80)`,
+    ),
+    check(
+      'ck_subscription_eligibility_no_pan',
+      sql`(student_number !~ '[0-9]{13,}'::text) AND (student_name !~ '[0-9]{13,}'::text) AND (decision_reason !~ '[0-9]{13,}'::text)`,
+    ),
+    check('ck_subscription_eligibility_number', sql`student_number ~ '^[A-Z0-9-]{3,32}$'::text`),
+    check(
+      'ck_subscription_eligibility_rejected',
+      sql`(status <> 'rejected'::text) OR (decision_reason IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscription_eligibility_review_by',
+      sql`(source <> 'review'::text) OR (decided_by IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscription_eligibility_source',
+      sql`source = ANY (ARRAY['review'::text, 'list'::text, 'reuse'::text])`,
+    ),
+    check('ck_subscription_eligibility_source_set', sql`(status = 'pending'::text) = (source IS NULL)`),
+    check(
+      'ck_subscription_eligibility_status',
+      sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`,
+    ),
+  ],
+);
+
+export const subscription_eligible_students = pgTable(
+  'subscription_eligible_students',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    student_number: text().notNull(),
+    added_by: uuid().notNull(),
+    added_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    removed_by: uuid(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    uniqueIndex('uq_subscription_eligible_students_live')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.student_number.asc().nullsLast().op('text_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+
+    check('ck_subscription_eligible_students_no_pan', sql`student_number !~ '[0-9]{13,}'::text`),
+    check('ck_subscription_eligible_students_number', sql`student_number ~ '^[A-Z0-9-]{3,32}$'::text`),
+    check('ck_subscription_eligible_students_order', sql`(removed_at IS NULL) OR (removed_at >= added_at)`),
+    check('ck_subscription_eligible_students_removed', sql`(removed_at IS NULL) = (removed_by IS NULL)`),
+  ],
+);
+
+export const subscription_freezes = pgTable(
+  'subscription_freezes',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    period_seq: integer().notNull(),
+    starts_on: date().notNull(),
+    returns_on: date().notNull(),
+    days: integer().notNull(),
+    status: text().default('scheduled').notNull(),
+    used_days: integer(),
+    ended_on: date(),
+    end_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_freezes_subscription').using(
+      'btree',
+      table.subscription_id.asc().nullsLast().op('int4_ops'),
+      table.period_seq.asc().nullsLast().op('int4_ops'),
+    ),
+    uniqueIndex('uq_subscription_freezes_live')
+      .using('btree', table.subscription_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(status = ANY (ARRAY['scheduled'::text, 'active'::text]))`),
+
+    check('ck_subscription_freezes_days', sql`(days >= 1) AND (days <= 30)`),
+    check(
+      'ck_subscription_freezes_end_reason',
+      sql`end_reason = ANY (ARRAY['returned'::text, 'early_reactivation'::text, 'withdrawn'::text, 'not_active'::text, 'subscription_ended'::text])`,
+    ),
+    check(
+      'ck_subscription_freezes_ended',
+      sql`(status = ANY (ARRAY['scheduled'::text, 'active'::text])) OR (ended_on IS NOT NULL)`,
+    ),
+    check('ck_subscription_freezes_order', sql`returns_on > starts_on`),
+    check('ck_subscription_freezes_seq', sql`period_seq >= 1`),
+    check(
+      'ck_subscription_freezes_status',
+      sql`status = ANY (ARRAY['scheduled'::text, 'active'::text, 'completed'::text, 'withdrawn'::text, 'canceled'::text])`,
+    ),
+    check('ck_subscription_freezes_used', sql`used_days >= 0`),
+    check('ck_subscription_freezes_used_set', sql`(status <> 'completed'::text) OR (used_days IS NOT NULL)`),
+  ],
+);
+
+export const venue_closures = pgTable(
+  'venue_closures',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    kind: text().notNull(),
+    starts_on: date().notNull(),
+    ends_on: date().notNull(),
+    reason_ar: text().notNull(),
+    created_by: uuid().notNull(),
+    canceled_at: timestamp({ withTimezone: true, mode: 'string' }),
+    canceled_by: uuid(),
+    cancel_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_venue_closures_venue')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('date_ops'),
+        table.ends_on.asc().nullsLast().op('date_ops'),
+      )
+      .where(sql`(canceled_at IS NULL)`),
+
+    check('ck_venue_closures_cancel_reason', sql`(canceled_at IS NULL) OR (cancel_reason IS NOT NULL)`),
+    check('ck_venue_closures_canceled', sql`(canceled_at IS NULL) = (canceled_by IS NULL)`),
+    check('ck_venue_closures_kind', sql`kind = ANY (ARRAY['holiday'::text, 'closure'::text])`),
+    check(
+      'ck_venue_closures_no_pan',
+      sql`(reason_ar !~ '[0-9]{13,}'::text) AND (cancel_reason !~ '[0-9]{13,}'::text)`,
+    ),
+    check('ck_venue_closures_order', sql`ends_on >= starts_on`),
+    check('ck_venue_closures_reason', sql`(char_length(reason_ar) >= 3) AND (char_length(reason_ar) <= 200)`),
+  ],
+);
+
+export const customer_complaints = pgTable(
+  'customer_complaints',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    ref_seq: bigserial({ mode: 'bigint' }).notNull(),
+    account_id: uuid().notNull(),
+    category: text().notNull(),
+    body: text().notNull(),
+    ticket_id: uuid(),
+    subscription_id: uuid(),
+    org_id: uuid(),
+    venue_id: uuid(),
+    status: text().default('open').notNull(),
+    resolution_note: text(),
+    handled_by: uuid(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_complaints_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_customer_complaints_status').using(
+      'btree',
+      table.status.asc().nullsLast().op('text_ops'),
+      table.created_at.asc().nullsLast().op('text_ops'),
+    ),
+
+    unique('uq_customer_complaints_ref').on(table.ref_seq),
+    check('ck_customer_complaints_body', sql`(char_length(body) >= 10) AND (char_length(body) <= 2000)`),
+    check(
+      'ck_customer_complaints_category',
+      sql`category = ANY (ARRAY['service'::text, 'delay'::text, 'vehicle_damage'::text, 'lost_item'::text, 'payment'::text, 'subscription'::text, 'staff'::text, 'other'::text])`,
+    ),
+    check('ck_customer_complaints_handled', sql`(status = 'open'::text) OR (handled_by IS NOT NULL)`),
+    check(
+      'ck_customer_complaints_no_pan',
+      sql`(body !~ '[0-9]{13,}'::text) AND (resolution_note !~ '[0-9]{13,}'::text)`,
+    ),
+    check(
+      'ck_customer_complaints_note',
+      sql`(char_length(resolution_note) >= 3) AND (char_length(resolution_note) <= 1000)`,
+    ),
+    check('ck_customer_complaints_ref', sql`ref_seq >= 1`),
+    check(
+      'ck_customer_complaints_status',
+      sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'closed'::text])`,
+    ),
+    check('ck_customer_complaints_subscription_org', sql`(subscription_id IS NULL) OR (org_id IS NOT NULL)`),
+    check('ck_customer_complaints_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
+  ],
+);
+
+export const subscription_purchase_consents = pgTable(
+  'subscription_purchase_consents',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    plan_id: uuid().notNull(),
+    period_seq: integer().notNull(),
+    online_payment_id: uuid().notNull(),
+    terms_version: text().notNull(),
+    privacy_version: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    price_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    net_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    vat_halalas: bigint({ mode: 'number' }).notNull(),
+    non_refundable: boolean().notNull(),
+    valuables_notice: boolean().notNull(),
+    request_id: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_purchase_consents_subscription').using(
+      'btree',
+      table.subscription_id.asc().nullsLast().op('uuid_ops'),
+    ),
+
+    unique('uq_subscription_purchase_consents_payment').on(table.online_payment_id),
+    check('ck_subscription_purchase_consents_price', sql`price_halalas >= 100`),
+    check(
+      'ck_subscription_purchase_consents_privacy',
+      sql`(char_length(privacy_version) >= 1) AND (char_length(privacy_version) <= 40)`,
+    ),
+    check('ck_subscription_purchase_consents_seq', sql`period_seq >= 1`),
+    check('ck_subscription_purchase_consents_sum', sql`price_halalas = (net_halalas + vat_halalas)`),
+    check(
+      'ck_subscription_purchase_consents_terms',
+      sql`(char_length(terms_version) >= 1) AND (char_length(terms_version) <= 40)`,
+    ),
+    check('ck_subscription_purchase_consents_vat', sql`vat_halalas >= 0`),
+  ],
+);
+
 export const v_driver_state = pgView('v_driver_state', {
   duty_session_id: uuid(),
   user_id: uuid(),
@@ -3060,30 +3350,30 @@ export const customer_push_messages = pgTable(
       ),
 
     unique('uq_customer_push_dedupe').on(table.dedupe_key),
-    check('ck_customer_push_attempts', sql`attempts >= 0`),
-    check(
-      'ck_customer_push_kind',
-      sql`kind = ANY (ARRAY['car_received'::text, 'request_accepted'::text, 'car_ready'::text, 'pickup_reminder'::text, 'subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text])`,
-    ),
-    check('ck_customer_push_provider', sql`provider = ANY (ARRAY['expo'::text, 'simulator'::text])`),
-    check('ck_customer_push_receipt_status', sql`receipt_status = ANY (ARRAY['ok'::text, 'error'::text])`),
-    check('ck_customer_push_sent_provider', sql`(sent_at IS NULL) OR (provider IS NOT NULL)`),
-    check('ck_customer_push_skipped', sql`(status = 'skipped'::text) = (skipped_reason IS NOT NULL)`),
-    check(
-      'ck_customer_push_skipped_reason',
-      sql`skipped_reason = ANY (ARRAY['no_token'::text, 'session_revoked'::text, 'account_unavailable'::text, 'stale'::text, 'token_moved'::text])`,
-    ),
     check(
       'ck_customer_push_status',
       sql`status = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'skipped'::text])`,
     ),
+    check(
+      'ck_customer_push_skipped_reason',
+      sql`skipped_reason = ANY (ARRAY['no_token'::text, 'session_revoked'::text, 'account_unavailable'::text, 'stale'::text, 'token_moved'::text])`,
+    ),
+    check('ck_customer_push_skipped', sql`(status = 'skipped'::text) = (skipped_reason IS NOT NULL)`),
+    check('ck_customer_push_provider', sql`provider = ANY (ARRAY['expo'::text, 'simulator'::text])`),
+    check('ck_customer_push_sent_provider', sql`(sent_at IS NULL) OR (provider IS NOT NULL)`),
+    check('ck_customer_push_receipt_status', sql`receipt_status = ANY (ARRAY['ok'::text, 'error'::text])`),
+    check('ck_customer_push_attempts', sql`attempts >= 0`),
+    check('ck_customer_push_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
+    check('ck_customer_push_subscription_org', sql`(subscription_id IS NULL) OR (org_id IS NOT NULL)`),
     check('ck_customer_push_subscription_alone', sql`(subscription_id IS NULL) OR (ticket_id IS NULL)`),
     check(
-      'ck_customer_push_subscription_kind',
-      sql`(subscription_id IS NULL) OR (kind = ANY (ARRAY['subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text]))`,
+      'ck_customer_push_kind',
+      sql`kind = ANY (ARRAY['car_received'::text, 'request_accepted'::text, 'car_ready'::text, 'pickup_reminder'::text, 'subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text, 'subscription_ending'::text, 'subscription_eligibility_approved'::text, 'subscription_eligibility_rejected'::text, 'subscription_venue_closure'::text])`,
     ),
-    check('ck_customer_push_subscription_org', sql`(subscription_id IS NULL) OR (org_id IS NOT NULL)`),
-    check('ck_customer_push_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
+    check(
+      'ck_customer_push_subscription_kind',
+      sql`(subscription_id IS NULL) OR (kind = ANY (ARRAY['subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text, 'subscription_ending'::text, 'subscription_eligibility_approved'::text, 'subscription_eligibility_rejected'::text, 'subscription_venue_closure'::text]))`,
+    ),
   ],
 );
 
@@ -3110,6 +3400,19 @@ export const subscription_plans = pgTable(
     version: integer().default(1).notNull(),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    term_kind: text().default('calendar').notNull(),
+    service_days: integer(),
+    service_weekdays_mask: integer(),
+    renewal_mode: text().default('auto').notNull(),
+    daily_visit_limit: integer(),
+    refund_policy: text().default('prorated_on_termination').notNull(),
+    closure_policy: text().default('freeze').notNull(),
+    freeze_max_times: integer().default(0).notNull(),
+    freeze_max_days: integer(),
+    eligibility: text().default('none').notNull(),
+    capacity: integer(),
+    audience_ar: text(),
+    vehicle_change: text().default('once_per_period').notNull(),
   },
   (table) => [
     index('ix_subscription_plans_active')
@@ -3122,24 +3425,83 @@ export const subscription_plans = pgTable(
       table.created_at.asc().nullsLast().op('uuid_ops'),
     ),
 
+    check('ck_subscription_plans_vehicles_max', sql`vehicles_included <= 5`),
+    check('ck_subscription_plans_status', sql`status = ANY (ARRAY['active'::text, 'retired'::text])`),
+    check('ck_subscription_plans_vehicles_min', sql`vehicles_included >= 1`),
     check(
       'ck_subscription_plans_has_price',
       sql`(monthly_price_halalas IS NOT NULL) OR (yearly_price_halalas IS NOT NULL)`,
     ),
     check('ck_subscription_plans_monthly', sql`monthly_price_halalas >= 100`),
+    check('ck_subscription_plans_yearly', sql`yearly_price_halalas >= 100`),
     check('ck_subscription_plans_name', sql`(char_length(name_ar) >= 2) AND (char_length(name_ar) <= 60)`),
-    check('ck_subscription_plans_no_pan', sql`retire_reason !~ '[0-9]{13,}'::text`),
+    check('ck_subscription_plans_retired', sql`(status = 'retired'::text) = (retired_at IS NOT NULL)`),
+    check('ck_subscription_plans_retired_by', sql`(retired_at IS NULL) OR (retired_by IS NOT NULL)`),
+    check('ck_subscription_plans_replaced', sql`(replaced_by_plan_id IS NULL) OR (status = 'retired'::text)`),
     check(
       'ck_subscription_plans_not_self',
       sql`(replaced_by_plan_id IS NULL) OR (replaced_by_plan_id <> id)`,
     ),
-    check('ck_subscription_plans_replaced', sql`(replaced_by_plan_id IS NULL) OR (status = 'retired'::text)`),
-    check('ck_subscription_plans_retired', sql`(status = 'retired'::text) = (retired_at IS NOT NULL)`),
-    check('ck_subscription_plans_retired_by', sql`(retired_at IS NULL) OR (retired_by IS NOT NULL)`),
-    check('ck_subscription_plans_status', sql`status = ANY (ARRAY['active'::text, 'retired'::text])`),
-    check('ck_subscription_plans_vehicles_max', sql`vehicles_included <= 5`),
-    check('ck_subscription_plans_vehicles_min', sql`vehicles_included >= 1`),
-    check('ck_subscription_plans_yearly', sql`yearly_price_halalas >= 100`),
+    check('ck_subscription_plans_no_pan', sql`retire_reason !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_subscription_plans_term_kind',
+      sql`term_kind = ANY (ARRAY['calendar'::text, 'service_days'::text])`,
+    ),
+    check(
+      'ck_subscription_plans_service_days_set',
+      sql`(term_kind = 'service_days'::text) = (service_days IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscription_plans_weekdays_set',
+      sql`(term_kind = 'service_days'::text) = (service_weekdays_mask IS NOT NULL)`,
+    ),
+    check('ck_subscription_plans_service_days', sql`(service_days >= 1) AND (service_days <= 60)`),
+    check(
+      'ck_subscription_plans_weekdays',
+      sql`(service_weekdays_mask >= 1) AND (service_weekdays_mask <= 127)`,
+    ),
+    check(
+      'ck_subscription_plans_service_monthly',
+      sql`(term_kind <> 'service_days'::text) OR (yearly_price_halalas IS NULL)`,
+    ),
+    check(
+      'ck_subscription_plans_renewal_mode',
+      sql`renewal_mode = ANY (ARRAY['auto'::text, 'manual'::text])`,
+    ),
+    check(
+      'ck_subscription_plans_service_manual',
+      sql`(term_kind <> 'service_days'::text) OR (renewal_mode = 'manual'::text)`,
+    ),
+    check('ck_subscription_plans_daily_limit', sql`(daily_visit_limit >= 1) AND (daily_visit_limit <= 10)`),
+    check(
+      'ck_subscription_plans_refund_policy',
+      sql`refund_policy = ANY (ARRAY['prorated_on_termination'::text, 'non_refundable'::text])`,
+    ),
+    check(
+      'ck_subscription_plans_closure_policy',
+      sql`closure_policy = ANY (ARRAY['freeze'::text, 'continue'::text])`,
+    ),
+    check('ck_subscription_plans_freeze_times', sql`(freeze_max_times >= 0) AND (freeze_max_times <= 3)`),
+    check('ck_subscription_plans_freeze_days_set', sql`(freeze_max_times = 0) = (freeze_max_days IS NULL)`),
+    check('ck_subscription_plans_freeze_days', sql`(freeze_max_days >= 1) AND (freeze_max_days <= 30)`),
+    check(
+      'ck_subscription_plans_freeze_term',
+      sql`(freeze_max_times = 0) OR (term_kind = 'service_days'::text)`,
+    ),
+    check(
+      'ck_subscription_plans_eligibility',
+      sql`eligibility = ANY (ARRAY['none'::text, 'student_id_review'::text])`,
+    ),
+    check('ck_subscription_plans_capacity', sql`(capacity >= 1) AND (capacity <= 100000)`),
+    check(
+      'ck_subscription_plans_audience',
+      sql`(char_length(audience_ar) >= 2) AND (char_length(audience_ar) <= 120)`,
+    ),
+    check('ck_subscription_plans_audience_no_pan', sql`audience_ar !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_subscription_plans_vehicle_change',
+      sql`vehicle_change = ANY (ARRAY['once_per_period'::text, 'any_time'::text])`,
+    ),
   ],
 );
 
@@ -3181,6 +3543,10 @@ export const subscriptions = pgTable(
     version: integer().default(1).notNull(),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    service_start_on: date(),
+    service_end_on: date(),
+    frozen_remaining_days: integer(),
+    refund_due_at: timestamp({ withTimezone: true, mode: 'string' }),
   },
   (table) => [
     index('ix_subscriptions_account').using(
@@ -3190,8 +3556,8 @@ export const subscriptions = pgTable(
     ),
     index('ix_subscriptions_org').using(
       'btree',
-      table.org_id.asc().nullsLast().op('text_ops'),
-      table.status.asc().nullsLast().op('text_ops'),
+      table.org_id.asc().nullsLast().op('uuid_ops'),
+      table.status.asc().nullsLast().op('uuid_ops'),
     ),
     index('ix_subscriptions_period_end')
       .using('btree', table.current_period_end.asc().nullsLast().op('timestamptz_ops'))
@@ -3201,7 +3567,7 @@ export const subscriptions = pgTable(
       .using(
         'btree',
         table.venue_id.asc().nullsLast().op('text_ops'),
-        table.status.asc().nullsLast().op('uuid_ops'),
+        table.status.asc().nullsLast().op('text_ops'),
       )
       .where(
         sql`(status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
@@ -3215,58 +3581,83 @@ export const subscriptions = pgTable(
       .where(
         sql`(status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
       ),
+    uniqueIndex('uq_subscriptions_live_eligibility')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(
+        sql`(status = ANY (ARRAY['pending_eligibility'::text, 'pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
+      ),
 
-    check('ck_subscriptions_activated', sql`(periods_paid = 0) OR (activated_at IS NOT NULL)`),
-    check('ck_subscriptions_anchor', sql`(cycle_anchor_at IS NULL) = (current_period_end IS NULL)`),
-    check('ck_subscriptions_attempts', sql`renewal_attempts >= 0`),
-    check(
-      'ck_subscriptions_cancel_flag',
-      sql`(cancel_at_period_end = false) OR (cancel_requested_at IS NOT NULL)`,
-    ),
     check('ck_subscriptions_cycle', sql`billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
-    check(
-      'ck_subscriptions_ended',
-      sql`(status = ANY (ARRAY['canceled'::text, 'expired'::text])) = (ended_at IS NOT NULL)`,
-    ),
-    check(
-      'ck_subscriptions_ended_reason',
-      sql`ended_reason = ANY (ARRAY['pending_expired'::text, 'abandoned'::text, 'period_end'::text, 'grace_expired'::text, 'past_due_canceled'::text, 'account_deleted'::text, 'operator_terminated'::text, 'refunded'::text])`,
-    ),
-    check('ck_subscriptions_ended_reason_set', sql`(ended_at IS NULL) = (ended_reason IS NULL)`),
-    check(
-      'ck_subscriptions_expired_reason',
-      sql`(status <> 'expired'::text) OR (ended_reason = 'grace_expired'::text)`,
-    ),
-    check('ck_subscriptions_frozen', sql`(status = 'frozen'::text) = (frozen_at IS NOT NULL)`),
-    check(
-      'ck_subscriptions_frozen_reason',
-      sql`frozen_reason = ANY (ARRAY['operator_suspended'::text, 'venue_inactive'::text])`,
-    ),
-    check('ck_subscriptions_frozen_reason_set', sql`(frozen_at IS NULL) = (frozen_reason IS NULL)`),
-    check('ck_subscriptions_frozen_total', sql`frozen_seconds_total >= 0`),
-    check('ck_subscriptions_grace', sql`(status = 'past_due'::text) = (grace_ends_at IS NOT NULL)`),
+    check('ck_subscriptions_price', sql`price_halalas >= 100`),
+    check('ck_subscriptions_next_price', sql`next_price_halalas >= 100`),
+    check('ck_subscriptions_next_plan', sql`(next_plan_id IS NULL) = (next_price_halalas IS NULL)`),
+    check('ck_subscriptions_vehicles_min', sql`vehicles_included >= 1`),
+    check('ck_subscriptions_vehicles_max', sql`vehicles_included <= 5`),
+    check('ck_subscriptions_periods', sql`periods_paid >= 0`),
+    check('ck_subscriptions_period_pair', sql`(current_period_start IS NULL) = (current_period_end IS NULL)`),
+    check('ck_subscriptions_period_order', sql`current_period_end > current_period_start`),
+    check('ck_subscriptions_anchor', sql`(cycle_anchor_at IS NULL) = (current_period_end IS NULL)`),
+    check('ck_subscriptions_paid_period', sql`(periods_paid = 0) = (current_period_end IS NULL)`),
     check(
       'ck_subscriptions_live_period',
       sql`(status <> ALL (ARRAY['active'::text, 'past_due'::text, 'frozen'::text])) OR (current_period_end IS NOT NULL)`,
     ),
-    check('ck_subscriptions_next_plan', sql`(next_plan_id IS NULL) = (next_price_halalas IS NULL)`),
-    check('ck_subscriptions_next_price', sql`next_price_halalas >= 100`),
-    check('ck_subscriptions_paid_period', sql`(periods_paid = 0) = (current_period_end IS NULL)`),
     check(
       'ck_subscriptions_pending',
       sql`(status <> 'pending_payment'::text) OR (pending_expires_at IS NOT NULL)`,
     ),
     check('ck_subscriptions_pending_unpaid', sql`(status <> 'pending_payment'::text) OR (periods_paid = 0)`),
-    check('ck_subscriptions_period_order', sql`current_period_end > current_period_start`),
-    check('ck_subscriptions_period_pair', sql`(current_period_start IS NULL) = (current_period_end IS NULL)`),
-    check('ck_subscriptions_periods', sql`periods_paid >= 0`),
-    check('ck_subscriptions_price', sql`price_halalas >= 100`),
+    check('ck_subscriptions_grace', sql`(status = 'past_due'::text) = (grace_ends_at IS NOT NULL)`),
+    check('ck_subscriptions_attempts', sql`renewal_attempts >= 0`),
+    check('ck_subscriptions_frozen', sql`(status = 'frozen'::text) = (frozen_at IS NOT NULL)`),
+    check('ck_subscriptions_frozen_reason_set', sql`(frozen_at IS NULL) = (frozen_reason IS NULL)`),
+    check('ck_subscriptions_frozen_total', sql`frozen_seconds_total >= 0`),
+    check(
+      'ck_subscriptions_ended',
+      sql`(status = ANY (ARRAY['canceled'::text, 'expired'::text])) = (ended_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_ended_reason_set', sql`(ended_at IS NULL) = (ended_reason IS NULL)`),
+    check(
+      'ck_subscriptions_cancel_flag',
+      sql`(cancel_at_period_end = false) OR (cancel_requested_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_activated', sql`(periods_paid = 0) OR (activated_at IS NOT NULL)`),
+    check('ck_subscriptions_frozen_remaining', sql`frozen_remaining_days >= 0`),
+    check('ck_subscriptions_service_pair', sql`(service_start_on IS NULL) = (service_end_on IS NULL)`),
+    check('ck_subscriptions_service_order', sql`service_end_on >= service_start_on`),
+    check('ck_subscriptions_service_paid', sql`(service_start_on IS NULL) OR (periods_paid > 0)`),
+    check(
+      'ck_subscriptions_frozen_remaining_set',
+      sql`(frozen_remaining_days IS NULL) OR (frozen_at IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscriptions_refund_due',
+      sql`(refund_due_at IS NULL) OR (ended_reason = 'exceptional_refund'::text)`,
+    ),
     check(
       'ck_subscriptions_status',
-      sql`status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'canceled'::text, 'expired'::text, 'frozen'::text])`,
+      sql`status = ANY (ARRAY['pending_eligibility'::text, 'pending_payment'::text, 'active'::text, 'past_due'::text, 'canceled'::text, 'expired'::text, 'frozen'::text])`,
     ),
-    check('ck_subscriptions_vehicles_max', sql`vehicles_included <= 5`),
-    check('ck_subscriptions_vehicles_min', sql`vehicles_included >= 1`),
+    check(
+      'ck_subscriptions_frozen_reason',
+      sql`frozen_reason = ANY (ARRAY['operator_suspended'::text, 'venue_inactive'::text, 'customer_freeze'::text])`,
+    ),
+    check(
+      'ck_subscriptions_ended_reason',
+      sql`ended_reason = ANY (ARRAY['pending_expired'::text, 'abandoned'::text, 'period_end'::text, 'grace_expired'::text, 'past_due_canceled'::text, 'account_deleted'::text, 'operator_terminated'::text, 'refunded'::text, 'eligibility_rejected'::text, 'term_completed'::text, 'exceptional_refund'::text])`,
+    ),
+    check(
+      'ck_subscriptions_expired_reason',
+      sql`(status <> 'expired'::text) OR (ended_reason = ANY (ARRAY['grace_expired'::text, 'term_completed'::text]))`,
+    ),
+    check(
+      'ck_subscriptions_eligibility_unpaid',
+      sql`(status <> 'pending_eligibility'::text) OR (periods_paid = 0)`,
+    ),
   ],
 );
 

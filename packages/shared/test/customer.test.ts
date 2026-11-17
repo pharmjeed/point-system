@@ -58,6 +58,11 @@ describe('docs/v2/05 §1: every customer route of the contracts is documented', 
       'subscriptionCancel',
       'subscriptionResume',
       'subscriptionVehicles',
+      // V2-036 / V2-037 (DEC-594, DEC-596, DEC-603)
+      'subscriptionApply',
+      'subscriptionFreeze',
+      'subscriptionUnfreeze',
+      'complaintCreate',
     ]);
     // signed-in auth calls: logout, and the re-verification of C-20 (V2-017, DEC-507)
     const signedIn = ['/v1/customer/auth/logout', '/v1/customer/auth/reauth/verify'];

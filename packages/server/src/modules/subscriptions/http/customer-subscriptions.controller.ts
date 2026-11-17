@@ -177,6 +177,45 @@ export class CustomerSubscriptionsController {
     return this.commands.resume(tx, actor, id, client);
   }
 
+  // --- V2-036 (DEC-594, DEC-596): the application of a plan checked for eligibility, the customer's freeze ---
+  @Post('apply')
+  @RequireCustomer()
+  @Command('POST /v1/customer/subscriptions/apply')
+  async apply(
+    @CurrentTx() tx: Tx,
+    @CurrentCustomer() actor: CustomerActorContext,
+    @Body(zodBody(R.subscriptionApply.body)) body: Out<typeof R.subscriptionApply.body>,
+    @Client() client: ClientInfo,
+  ) {
+    return created(await this.commands.apply(tx, actor, body, client));
+  }
+
+  @Post(':subscriptionId/freeze')
+  @RequireCustomer()
+  @Command('POST /v1/customer/subscriptions/{subscriptionId}/freeze')
+  freeze(
+    @CurrentTx() tx: Tx,
+    @CurrentCustomer() actor: CustomerActorContext,
+    @Param('subscriptionId') id: string,
+    @Body(zodBody(R.subscriptionFreeze.body)) body: Out<typeof R.subscriptionFreeze.body>,
+    @Client() client: ClientInfo,
+  ) {
+    return this.commands.freeze(tx, actor, id, body, client);
+  }
+
+  @Post(':subscriptionId/unfreeze')
+  @RequireCustomer()
+  @Command('POST /v1/customer/subscriptions/{subscriptionId}/unfreeze')
+  unfreeze(
+    @CurrentTx() tx: Tx,
+    @CurrentCustomer() actor: CustomerActorContext,
+    @Param('subscriptionId') id: string,
+    @Body(zodBody(R.subscriptionUnfreeze.body)) _body: Out<typeof R.subscriptionUnfreeze.body>,
+    @Client() client: ClientInfo,
+  ) {
+    return this.commands.unfreeze(tx, actor, id, client);
+  }
+
   @Put(':subscriptionId/vehicles')
   @RequireCustomer()
   @Command('PUT /v1/customer/subscriptions/{subscriptionId}/vehicles')

@@ -17,8 +17,16 @@ import {
   SUBSCRIPTION_RENEW_JOB,
   SUBSCRIPTION_RENEWAL_NOTICE_JOB,
 } from '../domain/jobs.js';
-import { endPatch, expire, recordRenewalFailure, sendRenewalNotice, transition } from './machine.js';
-import { subscriptionById, type SubscriptionRow } from './rows.js';
+import { freezeEndJob, freezeStartJob } from './freezes.js';
+import {
+  completeTerm,
+  endPatch,
+  expire,
+  recordRenewalFailure,
+  sendRenewalNotice,
+  transition,
+} from './machine.js';
+import { policyOf, subscriptionById, type SubscriptionRow } from './rows.js';
 
 const str = (v: unknown) => (typeof v === 'string' ? v : null);
 const num = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) ? v : null);
@@ -154,6 +162,11 @@ async function prepare(tx: Tx, rt: PaymentsRuntime, ctx: JobContext): Promise<Pr
   if (!sub || (sub.status !== 'active' && sub.status !== 'past_due')) return { kind: 'done', stale: true };
   if (!samePeriod(sub, payload) || attempt !== sub.renewal_attempts) return { kind: 'done', stale: true };
   if (tx.now < sub.current_period_end!) return { kind: 'done', stale: true };
+  // DEC-595 (annex clause 3): a term renewed by hand ends here — nothing is charged without a new explicit request
+  if (sub.status === 'active' && (await policyOf(tx, sub)).renewal_mode === 'manual') {
+    await completeTerm(tx, sub, system);
+    return { kind: 'done', stale: false };
+  }
   if (sub.status === 'active' && sub.cancel_at_period_end) {
     await transition(tx, sub, 'period_end_canceled', endPatch(tx, sub, 'period_end'), system, {
       period_end: sub.current_period_end!.toISOString(),
@@ -215,5 +228,12 @@ async function prepare(tx: Tx, rt: PaymentsRuntime, ctx: JobContext): Promise<Pr
 
 /** The worker's subscription jobs (canon §7.2 V2 rows). */
 export function subscriptionJobs(runtime: () => PaymentsRuntime): JobHandler[] {
-  return [subscriptionRenewJob(runtime), graceExpireJob, renewalNoticeJob, pendingPaymentExpireJob];
+  return [
+    subscriptionRenewJob(runtime),
+    graceExpireJob,
+    renewalNoticeJob,
+    pendingPaymentExpireJob,
+    freezeStartJob,
+    freezeEndJob,
+  ];
 }

@@ -46,6 +46,7 @@
 | `platform.customer_read` | P-06 | ✓ | — | ✓ | ✓ |
 | `platform.customer_manage` | P-06 (تعليق الحساب) | ✓ | — | ✓ | ✓ |
 | `platform.subscription_read` | P-07 | ✓ | — | ✓ | — |
+| `platform.subscription_manage` | P-07 (قرار الأهلية وقائمة المؤهلين، DEC-596، DEC-597) | ✓ | — | ✓ | — |
 | `platform.payment_read` | P-08 | ✓ | — | ✓ | — |
 | `platform.refund_issue` | P-06، P-08 (الاسترداد بسبب) | ✓ | — | ✓ | — |
 | `platform.settlement_manage` | P-09 | ✓ | — | ✓ | — |
@@ -53,6 +54,7 @@
 | `platform.settings_manage` | P-11 | ✓ | — | — | — |
 | `platform.audit_read` | P-12 | ✓ | — | — | — |
 | `platform.user_manage` | حسابات موظفي المنصة | ✓ | — | — | — |
+| `platform.complaint_manage` | P-13 الشكاوى (DEC-604) | ✓ | ✓ | ✓ | ✓ |
 
 ## 3. تعديلات نظام التشغيل للمشغل (`O-##`)
 

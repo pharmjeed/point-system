@@ -118,7 +118,15 @@ export class CustomerController {
 
   /** V2-004's public read model needs the photo signer and the request's clock (DEC-499). */
   private locationDeps(): LocationDeps {
-    return { storage: this.storage, now: this.clock.now(), ttlS: this.env.MEDIA_READ_URL_TTL_S };
+    return {
+      storage: this.storage,
+      now: this.clock.now(),
+      ttlS: this.env.MEDIA_READ_URL_TTL_S,
+      versions: {
+        terms: this.env.CUSTOMER_SUBSCRIPTION_TERMS_VERSION,
+        privacy: this.env.CUSTOMER_PRIVACY_VERSION,
+      },
+    };
   }
 
   @Post('auth/otp')

@@ -47,6 +47,11 @@ export const CUSTOMER_PUSH_KINDS = [
   'subscription_renewal',
   'subscription_payment_failed',
   'subscription_expired',
+  // V2-036 (DEC-595, DEC-596, DEC-599): a term renewed by hand ends soon, the eligibility decision, a closure
+  'subscription_ending',
+  'subscription_eligibility_approved',
+  'subscription_eligibility_rejected',
+  'subscription_venue_closure',
 ] as const;
 export type CustomerPushKind = (typeof CUSTOMER_PUSH_KINDS)[number];
 
@@ -55,6 +60,10 @@ export const CUSTOMER_SUBSCRIPTION_PUSH_KINDS = [
   'subscription_renewal',
   'subscription_payment_failed',
   'subscription_expired',
+  'subscription_ending',
+  'subscription_eligibility_approved',
+  'subscription_eligibility_rejected',
+  'subscription_venue_closure',
 ] as const satisfies readonly CustomerPushKind[];
 export type CustomerSubscriptionPushKind = (typeof CUSTOMER_SUBSCRIPTION_PUSH_KINDS)[number];
 const VISIT_PUSH_KINDS = [

@@ -116,6 +116,7 @@ export const PLATFORM_PERMISSIONS = [
   'platform.customer_read',
   'platform.customer_manage',
   'platform.subscription_read',
+  'platform.subscription_manage',
   'platform.payment_read',
   'platform.refund_issue',
   'platform.settlement_manage',
@@ -123,6 +124,7 @@ export const PLATFORM_PERMISSIONS = [
   'platform.settings_manage',
   'platform.audit_read',
   'platform.user_manage',
+  'platform.complaint_manage',
 ] as const;
 export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
 export const PlatformPermissionSchema = z.enum(PLATFORM_PERMISSIONS);
@@ -159,6 +161,8 @@ export const PLATFORM_PERMISSION_MATRIX = {
   'platform.customer_manage': prow(Y, N, Y, Y),
   // P-07 الاشتراكات
   'platform.subscription_read': prow(Y, N, Y, N),
+  // P-07 قرارات الأهلية وقائمة المؤهلين (04 §7، DEC-596، DEC-597) — من يقرأ P-07 هو من يقرر
+  'platform.subscription_manage': prow(Y, N, Y, N),
   // P-08 المدفوعات والمطابقة
   'platform.payment_read': prow(Y, N, Y, N),
   // P-06 / P-08 الاسترداد بسبب (مال يخرج: المالية والمالك فقط، DEC-465)
@@ -173,6 +177,8 @@ export const PLATFORM_PERMISSION_MATRIX = {
   'platform.audit_read': prow(Y, N, N, N),
   // حسابات موظفي المنصة (إضافة وتعطيل)
   'platform.user_manage': prow(Y, N, N, N),
+  // P-13 الشكاوى برقم مرجعي (DEC-603، DEC-604): كل أدوار المنصة تتابعها
+  'platform.complaint_manage': prow(Y, Y, Y, Y),
 } as const satisfies Record<PlatformPermission, Record<PlatformRole, boolean>>;
 
 /** Grants per platform role, in permission order. */
@@ -360,6 +366,64 @@ const PLATFORM_ROWS: readonly PRow[] = [
     'read',
     'V2-035',
   ],
+  // --- V2-036 the subscriptions annex: per-plan policies (04 §7, DEC-590 … DEC-602) ---
+  // P-07 the eligibility decision of an application, the exceptional prorated refund of the remaining counted days
+  [
+    'POST',
+    '/v1/platform/subscriptions/{subscriptionId}/eligibility',
+    'platform.subscription_manage',
+    'required',
+    'command',
+    'V2-036',
+  ],
+  [
+    'POST',
+    '/v1/platform/subscriptions/{subscriptionId}/exceptional-refund',
+    'platform.refund_issue',
+    'required',
+    'command',
+    'V2-036',
+  ],
+  // P-07 the venue's list of eligible student numbers (counts only on read; an import approves the pending matches)
+  [
+    'GET',
+    '/v1/platform/venues/{venueId}/eligible-students',
+    'platform.subscription_manage',
+    'none',
+    'read',
+    'V2-036',
+  ],
+  [
+    'POST',
+    '/v1/platform/venues/{venueId}/eligible-students',
+    'platform.subscription_manage',
+    'required',
+    'command',
+    'V2-036',
+  ],
+  // P-05 the venue's announced holidays and closures, shown to the customer before payment (DEC-599)
+  ['GET', '/v1/platform/venue-closures', 'platform.plan_manage', 'none', 'read', 'V2-036'],
+  ['POST', '/v1/platform/venue-closures', 'platform.plan_manage', 'required', 'command', 'V2-036'],
+  [
+    'POST',
+    '/v1/platform/venue-closures/{closureId}/cancel',
+    'platform.plan_manage',
+    'required',
+    'command',
+    'V2-036',
+  ],
+  // P-13 complaints with a reference number (V2-037, DEC-603, DEC-604)
+  ['GET', '/v1/platform/complaints', 'platform.complaint_manage', 'none', 'read', 'V2-037'],
+  ['GET', '/v1/platform/complaints/{complaintId}', 'platform.complaint_manage', 'none', 'read', 'V2-037'],
+  [
+    'POST',
+    '/v1/platform/complaints/{complaintId}/status',
+    'platform.complaint_manage',
+    'required',
+    'command',
+    'V2-037',
+  ],
+  // --- end V2-036 / V2-037 ---
   // --- V5 invoices and settlement (V2-040 … V2-042, DEC-540 … DEC-549) ---
   // P-09 settlement statements: list, generate (or recompute) drafts, adjust, issue, record the payment, disputes, void
   ['GET', '/v1/platform/settlements', 'platform.settlement_manage', 'none', 'read', 'V2-041'],

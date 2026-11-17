@@ -1,8 +1,15 @@
-import { planPrice, SUBSCRIPTION_RULES, type OnlinePaymentStatus } from '@point/shared';
+import {
+  planPrice,
+  purchaseConsentRequired,
+  SUBSCRIPTION_RULES,
+  vatOfInclusive,
+  type OnlinePaymentStatus,
+} from '@point/shared';
 import {
   CustomerSubscribeBodySchema,
   CustomerSubscriptionPayBodySchema,
   type CustomerPaymentSource,
+  type CustomerPurchaseConsent,
   type CustomerSubscribeBody,
   type CustomerSubscriptionCheckout,
 } from '@point/shared/customer';
@@ -23,7 +30,17 @@ import {
 } from '../../payments-online/index.js';
 import { checkoutGivenId } from '../domain/jobs.js';
 import { auditTransition, publishSubscriptionUpdated, schedulePendingExpiry } from './machine.js';
-import { planById, subscriptionById, UUID, type Q, type SubscriptionRow } from './rows.js';
+import {
+  planById,
+  policyOf,
+  seatsTakenSql,
+  subscriptionById,
+  UUID,
+  type PlanPolicyRow,
+  type PlanRow,
+  type Q,
+  type SubscriptionRow,
+} from './rows.js';
 import { customerSubscriptions, subscriptionPaymentRow, subscriptionPaymentView } from './views.js';
 
 /** What the network phase of a checkout left for the command transaction (DEC-96 pattern, as V2-022's pay). */
@@ -73,19 +90,24 @@ const monthOf = (m: number | null) => (m !== null && m >= 1 && m <= 12 ? m : nul
 const yearOf = (y: number | null) => (y !== null && y >= 2000 && y <= 2100 ? y : null);
 
 /**
- * The renewals charge a saved card (DEC-534): a saved card of C-18, or a card tokenized on the device kept with
- * `save_card` (and its consent); an Apple Pay token or a card not kept cannot be charged again.
+ * The automatic renewals charge a saved card (DEC-534): a saved card of C-18, or a card tokenized on the device kept
+ * with `save_card` (and its consent); an Apple Pay token or a card not kept cannot be charged again. A plan renewed by
+ * hand is never charged again (DEC-595): any source pays it, Apple Pay and a card not kept included.
  */
 async function sourceOf(
   q: Q,
   accountId: string,
   source: CustomerPaymentSource,
   saveCard: boolean | undefined,
+  manualRenewal = false,
 ): Promise<Source> {
-  if (source.type === 'applepay')
+  if (source.type === 'applepay') {
+    if (manualRenewal) return source;
     throw new AppError('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'applepay' });
+  }
   if (source.type === 'token') {
-    if (!saveCard) throw new AppError('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'token' });
+    if (!saveCard && !manualRenewal)
+      throw new AppError('SUBSCRIPTION_CARD_REQUIRED', { source_type: 'token' });
     return source;
   }
   const r = await q.query<{ id: string; gateway_token: string }>(
@@ -162,8 +184,9 @@ export class SubscriptionCheckout {
       ).rows[0];
       if (prior) {
         if (prior.status === 'initiated' && !prior.gateway_payment_id) {
+          const manual = (await manualRenewalOf(this.db, prior.subscription_id)) ?? false;
           const url = await this.send(prior.subscription_id, prior.id, {
-            source: await sourceOf(this.db, accountId, body.source, body.save_card),
+            source: await sourceOf(this.db, accountId, body.source, body.save_card, manual),
             amountHalalas: prior.amount_halalas,
           });
           return payment(prior.subscription_id, prior.id, url);
@@ -231,6 +254,7 @@ export class SubscriptionCheckout {
       vehicle_ids: string[];
       source: CustomerPaymentSource;
       save_card?: boolean | undefined;
+      purchase_consent?: CustomerPurchaseConsent | undefined;
     },
     w: { givenId: string; paymentId: string; card: GatewayToken | null; requestId: string | null },
   ): Promise<
@@ -263,6 +287,13 @@ export class SubscriptionCheckout {
       throw new AppError('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'retired' });
     const price = planPrice(sale, body.billing_cycle);
     if (price === null) throw new AppError('SUBSCRIPTION_PLAN_UNAVAILABLE', { reason: 'cycle' });
+    // 04 §7 (DEC-596): a plan checked for eligibility is applied for first and paid once approved
+    if (plan.eligibility !== 'none')
+      throw new AppError('SUBSCRIPTION_ELIGIBILITY_REQUIRED', {
+        plan_id: plan.id,
+        eligibility: plan.eligibility,
+      });
+    const consent = assertPurchaseConsent(this.env, plan, body.purchase_consent);
     if (body.vehicle_ids.length > sale.vehicles_included)
       throw new AppError('VALIDATION_FAILED', {
         fields: [{ field: 'vehicle_ids', issue: 'too_many', max: sale.vehicles_included }],
@@ -271,12 +302,13 @@ export class SubscriptionCheckout {
     const live = await tx.maybeOne<{ id: string; status: string }>(
       `SELECT id, status FROM subscriptions
         WHERE account_id = $1 AND venue_id = $2 AND org_id = $3
-          AND status IN ('pending_payment','active','past_due','frozen')`,
+          AND status IN ('pending_eligibility','pending_payment','active','past_due','frozen')`,
       [accountId, sale.venue_id, sale.org_id],
     );
     if (live)
       throw new AppError('SUBSCRIPTION_ALREADY_EXISTS', { subscription_id: live.id, status: live.status });
-    const source = await sourceOf(tx, accountId, body.source, body.save_card);
+    await assertCapacity(tx, plan, null);
+    const source = await sourceOf(tx, accountId, body.source, body.save_card, plan.renewal_mode === 'manual');
     const subId = newId();
     const sub = await tx.one<SubscriptionRow>(
       `INSERT INTO subscriptions (id, account_id, plan_id, org_id, venue_id, billing_cycle, status, price_halalas,
@@ -309,6 +341,7 @@ export class SubscriptionCheckout {
       amount: price,
       seq: 1,
       saveCard: body.save_card,
+      consent: consent ? { ...consent, planId: plan.id } : null,
     });
     await auditTransition(
       tx,
@@ -334,7 +367,11 @@ export class SubscriptionCheckout {
     tx: Tx,
     accountId: string,
     subscriptionId: string,
-    body: { source: CustomerPaymentSource; save_card?: boolean | undefined },
+    body: {
+      source: CustomerPaymentSource;
+      save_card?: boolean | undefined;
+      purchase_consent?: CustomerPurchaseConsent | undefined;
+    },
     w: { givenId: string; paymentId: string; card: GatewayToken | null; requestId: string | null },
   ): Promise<
     { twin: string; subscriptionId: string } | { source: Source; amount: number; subscriptionId: string }
@@ -374,9 +411,25 @@ export class SubscriptionCheckout {
           ),
         ),
       });
-    const source = await sourceOf(tx, accountId, body.source, body.save_card);
+    // the first term (an approved application, or a declined first card): the plan's consent and capacity (DEC-598,
+    // DEC-601); a renewal paid in the grace is the auto-renewing V4 path, unchanged
+    const plan = await policyOf(tx, sub);
+    let consent: (ReturnType<typeof assertPurchaseConsent> & { planId: string }) | null = null;
+    if (sub.status === 'pending_payment') {
+      const c = assertPurchaseConsent(this.env, plan, body.purchase_consent);
+      consent = c ? { ...c, planId: sub.plan_id } : null;
+      await assertCapacity(tx, { id: sub.plan_id, venue_id: sub.venue_id, capacity: plan.capacity }, sub.id);
+    }
+    const source = await sourceOf(tx, accountId, body.source, body.save_card, plan.renewal_mode === 'manual');
     const amount = sub.next_price_halalas ?? sub.price_halalas;
-    await this.beginPayment(tx, accountId, sub, { ...w, source, amount, seq, saveCard: body.save_card });
+    await this.beginPayment(tx, accountId, sub, {
+      ...w,
+      source,
+      amount,
+      seq,
+      saveCard: body.save_card,
+      consent,
+    });
     return { source, amount, subscriptionId };
   }
 
@@ -394,6 +447,7 @@ export class SubscriptionCheckout {
       amount: number;
       seq: number;
       saveCard: boolean | undefined;
+      consent?: (CustomerPurchaseConsent & { planId: string }) | null;
     },
   ): Promise<void> {
     await this.payments.begin(tx, {
@@ -410,6 +464,35 @@ export class SubscriptionCheckout {
       callbackUrl: this.env.CUSTOMER_PAY_CALLBACK_URL,
       requestId: w.requestId,
     });
+    if (w.consent) {
+      // DEC-601 (annex clauses 3, 5, 6): what was shown and accepted, with the payment it starts (append-only)
+      const vat = vatOfInclusive(w.amount);
+      await tx.query(
+        `INSERT INTO subscription_purchase_consents (subscription_id, account_id, org_id, venue_id, plan_id, period_seq,
+                                                     online_payment_id, terms_version, privacy_version, price_halalas,
+                                                     net_halalas, vat_halalas, non_refundable, valuables_notice,
+                                                     request_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        [
+          sub.id,
+          accountId,
+          sub.org_id,
+          sub.venue_id,
+          w.consent.planId,
+          w.seq,
+          w.paymentId,
+          w.consent.terms_version,
+          w.consent.privacy_version,
+          w.amount,
+          w.amount - vat,
+          vat,
+          w.consent.non_refundable,
+          w.consent.valuables_notice,
+          w.requestId,
+          tx.now,
+        ],
+      );
+    }
     if (w.card && w.source.type === 'token' && w.saveCard) {
       await tx.query(
         `INSERT INTO customer_account_consents (account_id, kind, version, granted, request_id, created_at)
@@ -474,6 +557,71 @@ const payment = (subscriptionId: string, paymentId: string, transactionUrl: stri
   paymentId,
   transactionUrl,
 });
+
+/** Whether a subscription's plan is renewed by hand (null: no such subscription). */
+async function manualRenewalOf(q: Q, subscriptionId: string): Promise<boolean | null> {
+  const r = await q.query<{ renewal_mode: string }>(
+    `SELECT p.renewal_mode FROM subscriptions s JOIN subscription_plans p ON p.id = s.plan_id AND p.org_id = s.org_id
+      WHERE s.id = $1`,
+    [subscriptionId],
+  );
+  return r.rows[0] ? r.rows[0].renewal_mode === 'manual' : null;
+}
+
+/**
+ * The purchase consent of a plan whose terms differ from V4's (DEC-601; `purchaseConsentRequired`): the terms and
+ * privacy versions in force, and the non-refund condition accepted when the plan is non-refundable. Returned to be
+ * recorded with the payment; a plan that does not require it records it when the app sends it.
+ */
+export function assertPurchaseConsent(
+  env: Env,
+  plan: Pick<PlanPolicyRow, 'refund_policy' | 'renewal_mode' | 'eligibility'>,
+  consent: CustomerPurchaseConsent | undefined,
+): CustomerPurchaseConsent | null {
+  const required = purchaseConsentRequired(plan);
+  const current = env.CUSTOMER_SUBSCRIPTION_TERMS_VERSION;
+  if (!consent) {
+    if (required)
+      throw new AppError('CUSTOMER_CONSENT_REQUIRED', {
+        kind: 'subscription_terms',
+        current_version: current,
+      });
+    return null;
+  }
+  if (consent.terms_version !== current || consent.privacy_version !== env.CUSTOMER_PRIVACY_VERSION)
+    throw new AppError('CUSTOMER_CONSENT_VERSION_STALE', {
+      kind: 'subscription_terms',
+      current_version: current,
+      privacy_version: env.CUSTOMER_PRIVACY_VERSION,
+    });
+  if (plan.refund_policy === 'non_refundable' && !consent.non_refundable)
+    throw new AppError('CUSTOMER_CONSENT_REQUIRED', { kind: 'subscription_terms', current_version: current });
+  return consent;
+}
+
+/**
+ * The approved capacity (DEC-598; annex clause 3 «يوقف بيع اشتراكات جديدة عند بلوغ الطاقة المعتمدة»): the seats
+ * held on the plan's family, counted under a transaction-scoped advisory lock of the venue's capacity — taken after
+ * the account and subscription rows — so that two checkouts never both take the last seat.
+ */
+export async function assertCapacity(
+  tx: Tx,
+  plan: Pick<PlanRow, 'id' | 'venue_id' | 'capacity'>,
+  except: string | null,
+): Promise<void> {
+  if (plan.capacity === null) return;
+  await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended('subscription_capacity:' || $1::text, 0))`, [
+    plan.venue_id,
+  ]);
+  const r = await tx.one<{ n: number; mine: number }>(
+    `SELECT ${seatsTakenSql('$1::uuid')} AS n,
+            (SELECT count(*)::int FROM subscriptions s3
+              WHERE s3.id = $2::uuid AND s3.status IN ('pending_payment','active','past_due','frozen')) AS mine`,
+    [plan.id, except],
+  );
+  if (r.n - r.mine >= plan.capacity)
+    throw new AppError('SUBSCRIPTION_CAPACITY_REACHED', { plan_id: plan.id, capacity: plan.capacity });
+}
 
 /** The covered vehicles are the account's own, not removed (else RESOURCE_NOT_FOUND customer_vehicle). */
 export async function assertOwnVehicles(tx: Tx, accountId: string, ids: readonly string[]): Promise<void> {

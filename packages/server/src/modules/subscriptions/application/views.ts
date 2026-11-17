@@ -1,13 +1,23 @@
-import { VAT_RATE_BASIS_POINTS } from '@point/shared';
+import { planPolicyView, VAT_RATE_BASIS_POINTS, type PlanPolicyColumns } from '@point/shared';
 import {
   saudiPlateDisplay,
   type CustomerSubscription,
   type CustomerSubscriptionPayment,
 } from '@point/shared/customer';
 import type { Env } from '../../../core/config/env.js';
-import { iso, SUBSCRIPTION_COLUMNS, type Q, type SubscriptionRow } from './rows.js';
+import { maskStudentNumber } from './eligibility.js';
+import { FREEZE_COLUMNS, freezeOffer, projectedEnd, type FreezeRow } from './freezes.js';
+import {
+  iso,
+  POLICY_COLUMNS,
+  SUBSCRIPTION_COLUMNS,
+  type PlanPolicyRow,
+  type Q,
+  type SubscriptionRow,
+} from './rows.js';
+import { remainingDaysNow } from './terms.js';
 
-interface ViewRow extends SubscriptionRow {
+interface ViewRow extends SubscriptionRow, PlanPolicyRow {
   venue_name_ar: string;
   venue_name_en: string | null;
   operator_name_ar: string;
@@ -17,7 +27,8 @@ interface ViewRow extends SubscriptionRow {
 }
 
 const VIEW_SELECT = `SELECT ${SUBSCRIPTION_COLUMNS}, v.name_ar AS venue_name_ar, v.name_en AS venue_name_en,
-       o.name_ar AS operator_name_ar, o.name_en AS operator_name_en, p.name_ar AS plan_name_ar, p.name_en AS plan_name_en
+       o.name_ar AS operator_name_ar, o.name_en AS operator_name_en, p.name_ar AS plan_name_ar, p.name_en AS plan_name_en,
+       ${POLICY_COLUMNS('p')}
   FROM subscriptions s
   JOIN venues v ON v.id = s.venue_id AND v.org_id = s.org_id
   JOIN organizations o ON o.id = s.org_id
@@ -123,7 +134,7 @@ export async function customerSubscriptions(
   const rows = (
     await q.query<ViewRow>(
       `${VIEW_SELECT} WHERE s.account_id = $1 ${opts.id ? 'AND s.id = $2' : ''}
-        ${opts.liveOnly ? `AND s.status IN ('pending_payment','active','past_due','frozen')` : ''}
+        ${opts.liveOnly ? `AND s.status IN ('pending_eligibility','pending_payment','active','past_due','frozen')` : ''}
         ORDER BY s.created_at DESC, s.id LIMIT 100`,
       opts.id ? [accountId, opts.id] : [accountId],
     )
@@ -154,14 +165,51 @@ export async function customerSubscriptions(
       [ids, accountId],
     )
   ).rows;
+  // 04 §7 (V2-036): the eligibility application, the current term's freezes, the plan to renew on
+  const eligibility = (
+    await q.query<{
+      subscription_id: string;
+      status: 'pending' | 'approved' | 'rejected';
+      source: 'review' | 'list' | 'reuse' | null;
+      student_number: string;
+      decided_at: Date | null;
+      decision_reason: string | null;
+    }>(
+      `SELECT subscription_id, status, source, student_number, decided_at, decision_reason
+         FROM subscription_eligibility WHERE subscription_id = ANY($1) AND account_id = $2`,
+      [ids, accountId],
+    )
+  ).rows;
+  const freezes = (
+    await q.query<FreezeRow>(
+      `SELECT ${FREEZE_COLUMNS} FROM subscription_freezes f
+        WHERE f.subscription_id = ANY($1) AND f.account_id = $2 ORDER BY f.created_at DESC, f.id DESC`,
+      [ids, accountId],
+    )
+  ).rows;
+  const liveVenues = new Set(rows.filter((r) => LIVE.includes(r.status)).map((r) => r.venue_id));
+  const renewable = new Map<string, string | null>();
+  for (const r of rows) {
+    if (r.renewal_mode !== 'manual' || LIVE.includes(r.status) || r.periods_paid === 0) continue;
+    if (liveVenues.has(r.venue_id) || [...renewable.keys()].some((k) => k.startsWith(`${r.venue_id}:`)))
+      continue;
+    renewable.set(`${r.venue_id}:${r.id}`, await renewalPlan(q, r));
+  }
   return rows.map((s) => {
     const latest = payments.find((p) => p.subscription_id === s.id) ?? null;
-    const live = ['pending_payment', 'active', 'past_due', 'frozen'].includes(s.status);
+    const live = LIVE.includes(s.status);
+    const manual = s.renewal_mode === 'manual';
     const changeOpen =
       ['active', 'past_due', 'frozen'].includes(s.status) &&
-      (!s.vehicles_changed_at ||
+      (s.vehicle_change === 'any_time' ||
+        !s.vehicles_changed_at ||
         !s.current_period_start ||
         s.vehicles_changed_at.getTime() < s.current_period_start.getTime());
+    const termFreezes = freezes.filter((f) => f.subscription_id === s.id && f.period_seq === s.periods_paid);
+    const offer = freezeOffer(s, s, termFreezes);
+    const shown = live ? (offer.live ?? termFreezes.find((f) => f.status === 'completed') ?? null) : null;
+    const e = eligibility.find((x) => x.subscription_id === s.id) ?? null;
+    const mask = s.service_weekdays_mask;
     return {
       subscription_id: s.id,
       venue_id: s.venue_id,
@@ -193,13 +241,69 @@ export async function customerSubscriptions(
       frozen_at: iso(s.frozen_at),
       frozen_reason: s.frozen_reason,
       can_change_vehicles: changeOpen,
-      can_cancel: live && !s.cancel_at_period_end,
-      can_resume: (s.status === 'active' || s.status === 'frozen') && s.cancel_at_period_end,
+      // a term renewed by hand has no renewal to cancel (DEC-595); an application is withdrawn (DEC-596)
+      can_cancel:
+        live && !s.cancel_at_period_end && !(manual && (s.status === 'active' || s.status === 'frozen')),
+      can_resume: !manual && (s.status === 'active' || s.status === 'frozen') && s.cancel_at_period_end,
       can_pay: s.status === 'pending_payment' || s.status === 'past_due',
       latest_payment: latest ? subscriptionPaymentView(env, latest) : null,
       ended_at: iso(s.ended_at),
       ended_reason: s.ended_reason,
       created_at: iso(s.created_at)!,
+      policy: planPolicyView(s as PlanPolicyColumns),
+      service_start_on: s.service_start_on,
+      service_end_on: s.service_end_on,
+      remaining_days: mask === null ? null : remainingDaysNow(opts.now, s, mask),
+      eligibility: e
+        ? {
+            status: e.status,
+            source: e.source,
+            student_number_masked: maskStudentNumber(e.student_number),
+            decided_at: iso(e.decided_at),
+            reason: e.status === 'rejected' ? e.decision_reason : null,
+          }
+        : null,
+      freeze: shown
+        ? {
+            freeze_id: shown.id,
+            status: shown.status,
+            starts_on: shown.starts_on,
+            returns_on: shown.returns_on,
+            days: shown.days,
+            used_days: shown.used_days,
+            ended_on: shown.ended_on,
+            projected_end_on: mask === null ? null : projectedEnd(s, shown, mask),
+          }
+        : null,
+      freezes_left: live ? offer.left : 0,
+      can_freeze: offer.canFreeze,
+      can_unfreeze:
+        !!offer.live &&
+        (offer.live.status === 'scheduled' ||
+          (s.status === 'frozen' && s.frozen_reason === 'customer_freeze')),
+      renew_plan_id: [...renewable.entries()].find(([k]) => k.endsWith(`:${s.id}`))?.[1] ?? null,
+      refund_due_at: iso(s.refund_due_at),
     };
   });
+}
+
+const LIVE: readonly string[] = ['pending_eligibility', 'pending_payment', 'active', 'past_due', 'frozen'];
+
+/**
+ * The plan a term renewed by hand is renewed on (DEC-595): its own plan while it is sold, else the active plan that
+ * replaced it (a price change, announced before the renewal: annex clause 3); null when nothing replaces it.
+ */
+async function renewalPlan(q: Q, sub: Pick<SubscriptionRow, 'plan_id' | 'org_id'>): Promise<string | null> {
+  let id: string | null = sub.plan_id;
+  for (let hop = 0; id && hop < 10; hop++) {
+    const r: { rows: { id: string; status: string; replaced_by_plan_id: string | null }[] } = await q.query(
+      `SELECT id, status, replaced_by_plan_id FROM subscription_plans WHERE id = $1 AND org_id = $2`,
+      [id, sub.org_id],
+    );
+    const p = r.rows[0];
+    if (!p) return null;
+    if (p.status === 'active') return p.id;
+    id = p.replaced_by_plan_id;
+  }
+  return null;
 }

@@ -1,7 +1,18 @@
+import {
+  addDays,
+  planPolicyView,
+  riyadhDate,
+  serviceTerm,
+  VAT_RATE_BASIS_POINTS,
+  vatOfInclusive,
+  type PlanPolicyColumns,
+} from '@point/shared';
 import type {
   CustomerLocationDetail,
   CustomerLocationFilter,
   CustomerLocationSummary,
+  CustomerPriceBreakdown,
+  CustomerVenueClosure,
 } from '@point/shared/customer';
 import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
@@ -50,15 +61,20 @@ export interface LocationDeps {
   now: Date;
   /** MEDIA_READ_URL_TTL_S (V2-004 caps the photo links at 300 s) */
   ttlS: number;
+  /** V2-036 (DEC-601): the versions the purchase consent of C-09 names */
+  versions?: { terms: string; privacy: string };
 }
 
-interface PlanPrice {
+interface PlanPrice extends PlanPolicyColumns {
   plan_id: string;
   venue_id: string;
   name_ar: string;
   vehicles_included: number;
   monthly_price_halalas: number | null;
   yearly_price_halalas: number | null;
+  audience_ar: string | null;
+  capacity: number | null;
+  seats_taken: number;
 }
 
 /**
@@ -71,7 +87,19 @@ async function sellablePlans(q: Q, venueIds: readonly string[]): Promise<PlanPri
     await q.query<PlanPrice>(
       `SELECT p.id AS plan_id, p.venue_id, p.name_ar, p.vehicles_included,
               p.monthly_price_halalas::float8 AS monthly_price_halalas,
-              p.yearly_price_halalas::float8 AS yearly_price_halalas
+              p.yearly_price_halalas::float8 AS yearly_price_halalas,
+              p.term_kind, p.service_days, p.service_weekdays_mask, p.renewal_mode, p.daily_visit_limit,
+              p.refund_policy, p.closure_policy, p.freeze_max_times, p.freeze_max_days, p.eligibility,
+              p.vehicle_change, p.audience_ar, p.capacity,
+              -- DEC-598: the seats held on the plan's replacement family (as the subscriptions module counts them)
+              (WITH RECURSIVE fam(id) AS (
+                 SELECT p.id
+                 UNION
+                 SELECT p2.id FROM subscription_plans p2 JOIN fam ON p2.replaces_plan_id = fam.id
+                                                                OR p2.replaced_by_plan_id = fam.id)
+               SELECT count(*)::int FROM subscriptions s2
+                WHERE s2.plan_id IN (SELECT id FROM fam)
+                  AND s2.status IN ('pending_payment','active','past_due','frozen')) AS seats_taken
          FROM subscription_plans p
          JOIN venue_public_profiles vp ON vp.venue_id = p.venue_id AND vp.org_id = p.org_id
         WHERE p.venue_id = ANY($1) AND p.status = 'active' AND vp.subscriptions_enabled
@@ -89,6 +117,32 @@ async function subscribedVenues(q: Q, accountId: string): Promise<Set<string>> {
     [accountId],
   );
   return new Set(r.rows.map((x) => x.venue_id));
+}
+
+/** The net, the VAT and the total of a VAT-inclusive price (04 §4, annex clause 1: shown before payment). */
+function breakdown(total: number | null): CustomerPriceBreakdown | null {
+  if (total === null) return null;
+  const vat = vatOfInclusive(total);
+  return {
+    net_halalas: total - vat,
+    vat_halalas: vat,
+    total_halalas: total,
+    vat_rate_bp: VAT_RATE_BASIS_POINTS,
+  };
+}
+
+/** The upcoming announced holidays and closures of a venue (DEC-599): those not over yet, within 180 days. */
+async function upcomingClosures(q: Q, venueId: string, now: Date): Promise<CustomerVenueClosure[]> {
+  const today = riyadhDate(now);
+  return (
+    await q.query<CustomerVenueClosure>(
+      `SELECT id AS closure_id, kind, starts_on::text AS starts_on, ends_on::text AS ends_on, reason_ar
+         FROM venue_closures
+        WHERE venue_id = $1 AND canceled_at IS NULL AND ends_on >= $2::date AND starts_on <= $3::date
+        ORDER BY starts_on, id LIMIT 20`,
+      [venueId, today, addDays(today, 180)],
+    )
+  ).rows;
 }
 
 const cheapestMonthly = (plans: readonly PlanPrice[]): number | null => {
@@ -234,13 +288,28 @@ export async function getLocation(
     timezone: l.timezone,
     opening_hours: l.opening_hours,
     photo_urls: l.photos.slice(0, 10).map((p) => p.url),
-    // V2-032 (C-08 → C-09): the plans sold here, VAT included
+    // V2-032 (C-08 → C-09): the plans sold here, VAT included; V2-036: their policies, the price's net and VAT, the
+    // capacity, the consent's versions and a counted-day term's dates if paid now
     plans: plans.map((p) => ({
       plan_id: p.plan_id,
       name_ar: p.name_ar,
       vehicles_included: p.vehicles_included,
       monthly_price_halalas: p.monthly_price_halalas,
       yearly_price_halalas: p.yearly_price_halalas,
+      policy: planPolicyView(p),
+      audience_ar: p.audience_ar,
+      monthly_breakdown: breakdown(p.monthly_price_halalas),
+      yearly_breakdown: breakdown(p.yearly_price_halalas),
+      sold_out: p.capacity !== null && p.seats_taken >= p.capacity,
+      terms_version: deps.versions?.terms ?? '',
+      privacy_version: deps.versions?.privacy ?? '',
+      term_preview:
+        p.term_kind === 'service_days' && p.service_days && p.service_weekdays_mask
+          ? (({ startOn, endOn }) => ({ starts_on: startOn, ends_on: endOn }))(
+              serviceTerm(deps.now, p.service_days, p.service_weekdays_mask),
+            )
+          : null,
     })),
+    closures: await upcomingClosures(q, l.venue_id, deps.now),
   };
 }

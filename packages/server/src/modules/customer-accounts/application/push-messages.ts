@@ -1,4 +1,8 @@
-import type { CustomerPushData, CustomerPushKind } from '@point/shared/customer';
+import type {
+  CustomerPushData,
+  CustomerPushKind,
+  CustomerSubscriptionPushKind,
+} from '@point/shared/customer';
 
 /**
  * The text of a customer push (docs/v2/01 §3, V2-016, DEC-520). What reaches the lock screen is generic by design
@@ -122,6 +126,35 @@ export function customerSubscriptionPushContent(
     case 'subscription_expired':
       body = input.locale === 'en' ? `Your subscription at ${venue} has ended` : `انتهى اشتراكك في ${venue}`;
       break;
+    // V2-036 (DEC-595): a term renewed by hand ends soon — no charge; the new price when one was announced
+    case 'subscription_ending':
+      body =
+        input.locale === 'en'
+          ? `Your subscription at ${venue} ends on ${day ?? ''}. Renew it from the app after it ends` +
+            (input.newPriceHalalas !== null ? ` (new price SAR ${sar(input.newPriceHalalas)})` : '')
+          : `ينتهي اشتراكك في ${venue} يوم ${day ?? ''}. يمكنك تجديده من التطبيق بعد انتهائه` +
+            (input.newPriceHalalas !== null ? ` (السعر الجديد ${sar(input.newPriceHalalas)} ريال)` : '');
+      break;
+    // V2-036 (DEC-596): the eligibility decision
+    case 'subscription_eligibility_approved':
+      body =
+        input.locale === 'en'
+          ? `Your eligibility for the subscription at ${venue} is confirmed. Pay to activate it`
+          : `تم التحقق من أهليتك للاشتراك في ${venue}. ادفع لتفعيله`;
+      break;
+    case 'subscription_eligibility_rejected':
+      body =
+        input.locale === 'en'
+          ? `We could not confirm your eligibility for the subscription at ${venue}`
+          : `تعذّر التحقق من أهليتك للاشتراك في ${venue}`;
+      break;
+    // V2-036 (DEC-599): a holiday or closure announced at the location; the subscription keeps counting
+    case 'subscription_venue_closure':
+      body =
+        input.locale === 'en'
+          ? `A closure was announced at ${venue}. Open the app for the dates`
+          : `أُعلن إغلاق في ${venue}. افتح التطبيق لمعرفة التواريخ`;
+      break;
     default:
       throw new Error(`customer push kind ${input.kind} is not a subscription kind`);
   }
@@ -130,7 +163,7 @@ export function customerSubscriptionPushContent(
     body,
     data: {
       type: 'subscription',
-      kind: input.kind as 'subscription_renewal' | 'subscription_payment_failed' | 'subscription_expired',
+      kind: input.kind as CustomerSubscriptionPushKind,
       subscription_id: input.subscriptionId,
     },
   };

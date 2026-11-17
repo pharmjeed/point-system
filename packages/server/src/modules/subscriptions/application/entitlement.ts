@@ -1,4 +1,4 @@
-import { OPEN_TICKET_STATUSES } from '@point/shared';
+import { isServiceDay, OPEN_TICKET_STATUSES, riyadhDate, riyadhMidnight } from '@point/shared';
 import type { Tx } from '../../../core/db/tx.js';
 
 /** The ticket fields the entitlement reads (a locked `tickets` row of the intake command). */
@@ -27,7 +27,18 @@ export interface SubscriptionCoverage {
 
 export type CoverageResult =
   | { covered: true; coverage: SubscriptionCoverage }
-  | { covered: false; reason: 'no_account' | 'no_subscription' | 'vehicle_not_covered' | 'open_ticket' };
+  | {
+      covered: false;
+      reason:
+        | 'no_account'
+        | 'no_subscription'
+        | 'vehicle_not_covered'
+        | 'open_ticket'
+        // V2-036 (DEC-592): a counted-day term not begun, a day that does not serve, the day's visit already covered
+        | 'not_started'
+        | 'not_service_day'
+        | 'daily_limit';
+    };
 
 /**
  * Rule 1 of docs/v2/04 §2 (V2-033, DEC-535): the account's `active` subscription at this venue covering this vehicle,
@@ -45,13 +56,39 @@ export async function subscriptionCoverage(tx: Tx, t: EntitlementTicket): Promis
     [t.customer_id, t.org_id],
   );
   if (!account?.account_id) return { covered: false, reason: 'no_account' };
-  const sub = await tx.maybeOne<{ id: string }>(
-    `SELECT s.id FROM subscriptions s
+  const sub = await tx.maybeOne<{
+    id: string;
+    current_period_start: Date | null;
+    term_kind: string;
+    service_weekdays_mask: number | null;
+    daily_visit_limit: number | null;
+  }>(
+    `SELECT s.id, s.current_period_start, p.term_kind, p.service_weekdays_mask, p.daily_visit_limit
+       FROM subscriptions s JOIN subscription_plans p ON p.id = s.plan_id AND p.org_id = s.org_id
       WHERE s.account_id = $1 AND s.venue_id = $2 AND s.org_id = $3 AND s.status = 'active'
-      FOR SHARE`,
+      FOR SHARE OF s`,
     [account.account_id, t.venue_id, t.org_id],
   );
   if (!sub) return { covered: false, reason: 'no_subscription' };
+  // 04 §7 (DEC-592; annex clauses 1, 2): a counted-day term covers from its first counted day, on its service
+  // weekdays only, and one visit cycle per Riyadh day — a second one that day is a normal visit of the venue
+  const today = riyadhDate(tx.now);
+  if (sub.current_period_start && sub.current_period_start > tx.now)
+    return { covered: false, reason: 'not_started' };
+  if (
+    sub.term_kind === 'service_days' &&
+    sub.service_weekdays_mask !== null &&
+    !isServiceDay(today, sub.service_weekdays_mask)
+  )
+    return { covered: false, reason: 'not_service_day' };
+  if (sub.daily_visit_limit !== null) {
+    const used = await tx.one<{ n: number }>(
+      `SELECT count(*)::int AS n FROM tickets
+        WHERE org_id = $1 AND subscription_id = $2 AND id <> $3 AND status <> 'voided' AND created_at >= $4`,
+      [t.org_id, sub.id, t.id, riyadhMidnight(today)],
+    );
+    if (used.n >= sub.daily_visit_limit) return { covered: false, reason: 'daily_limit' };
+  }
   const vehicle = await tx.maybeOne<{
     id: string;
     plate_digits: string | null;

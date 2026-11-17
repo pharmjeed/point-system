@@ -1,4 +1,9 @@
-import type { CustomerSubscription } from '@point/shared/customer';
+import { OPEN_TICKET_STATUSES } from '@point/shared';
+import type {
+  CustomerSubscription,
+  CustomerSubscriptionApplyBody,
+  CustomerSubscriptionFreezeBody,
+} from '@point/shared/customer';
 import type { CustomerActorContext } from '../../../core/actor-context/customer-actor.js';
 import type { Env } from '../../../core/config/env.js';
 import type { Tx } from '../../../core/db/tx.js';
@@ -12,7 +17,9 @@ import {
   transition,
   type SubActor,
 } from './machine.js';
-import { subscriptionById, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from './rows.js';
+import { applyForSubscription, withdrawApplication } from './eligibility.js';
+import { endFreezeEarly, requestFreeze } from './freezes.js';
+import { policyOf, subscriptionById, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from './rows.js';
 import { customerSubscriptions } from './views.js';
 
 const actorOf = (actor: CustomerActorContext, client: ClientInfo): SubActor => ({
@@ -54,6 +61,16 @@ export class SubscriptionCommands {
   async cancel(tx: Tx, actor: CustomerActorContext, id: string, client: ClientInfo) {
     const sub = await ownLocked(tx, actor, id);
     const who = actorOf(actor, client);
+    // DEC-596: an application not decided yet is withdrawn; DEC-595: a term renewed by hand has no renewal to cancel
+    if (sub.status === 'pending_eligibility') {
+      await withdrawApplication(tx, sub, who);
+      return view(tx, this.env, actor.accountId, sub.id);
+    }
+    if (
+      (sub.status === 'active' || sub.status === 'frozen') &&
+      (await policyOf(tx, sub)).renewal_mode === 'manual'
+    )
+      throw notActive(sub, 'subscription.cancel');
     if (sub.status === 'pending_payment')
       await transition(tx, sub, 'abandon', endPatch(tx, sub, 'abandoned'), who);
     else if (sub.status === 'past_due')
@@ -83,6 +100,7 @@ export class SubscriptionCommands {
     const sub = await ownLocked(tx, actor, id);
     const who = actorOf(actor, client);
     if (sub.status !== 'active' && sub.status !== 'frozen') throw notActive(sub, 'subscription.resume');
+    if ((await policyOf(tx, sub)).renewal_mode === 'manual') throw notActive(sub, 'subscription.resume');
     if (sub.cancel_at_period_end) {
       const updated = await tx.one<SubscriptionRow>(
         `UPDATE subscriptions s SET cancel_at_period_end = false, cancel_requested_at = NULL, version = s.version + 1
@@ -119,8 +137,22 @@ export class SubscriptionCommands {
       await auditTransition(tx, sub, 'subscription.vehicles', who, { noop: true });
       return view(tx, this.env, actor.accountId, sub.id);
     }
+    const policy = await policyOf(tx, sub);
+    if (policy.vehicle_change === 'any_time') {
+      // DEC-602 (annex clause 1 «يمكن تحديث المركبة المسجلة قبل الاستلام»): any time no visit of it is open
+      const open = await tx.maybeOne<{ id: string }>(
+        `SELECT id FROM tickets WHERE subscription_id = $1 AND org_id = $2 AND status = ANY($3) LIMIT 1`,
+        [sub.id, sub.org_id, OPEN_TICKET_STATUSES],
+      );
+      if (open)
+        throw new AppError('SUBSCRIPTION_VEHICLES_LOCKED', {
+          subscription_id: sub.id,
+          available_at: null,
+          reason: 'open_visit',
+        });
+    }
     // once per period (01 R6: «تغيير السيارة المشمولة مرة كل دورة»)
-    if (
+    else if (
       sub.vehicles_changed_at &&
       sub.current_period_start &&
       sub.vehicles_changed_at >= sub.current_period_start
@@ -151,6 +183,32 @@ export class SubscriptionCommands {
       removed: removed.length,
     });
     await publishSubscriptionUpdated(tx, updated);
+    return view(tx, this.env, actor.accountId, sub.id);
+  }
+
+  /** C-09 «أرسل الطلب» for a plan checked for eligibility (DEC-596): `POST /v1/customer/subscriptions/apply`. */
+  async apply(tx: Tx, actor: CustomerActorContext, body: CustomerSubscriptionApplyBody, client: ClientInfo) {
+    const id = await applyForSubscription(tx, actor.accountId, body, actorOf(actor, client));
+    return view(tx, this.env, actor.accountId, id);
+  }
+
+  /** C-14 «تجميد» (DEC-594): a freeze asked ahead, under the account and the subscription rows. */
+  async freeze(
+    tx: Tx,
+    actor: CustomerActorContext,
+    id: string,
+    body: CustomerSubscriptionFreezeBody,
+    client: ClientInfo,
+  ) {
+    const sub = await ownLocked(tx, actor, id);
+    await requestFreeze(tx, sub, body, actorOf(actor, client));
+    return view(tx, this.env, actor.accountId, sub.id);
+  }
+
+  /** C-14 «إلغاء التجميد» / «أعد التفعيل الآن» (DEC-594). */
+  async unfreeze(tx: Tx, actor: CustomerActorContext, id: string, client: ClientInfo) {
+    const sub = await ownLocked(tx, actor, id);
+    await endFreezeEarly(tx, sub, actorOf(actor, client));
     return view(tx, this.env, actor.accountId, sub.id);
   }
 }

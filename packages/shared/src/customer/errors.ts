@@ -37,6 +37,11 @@ export const CUSTOMER_ERROR_CODES = [
   'SUBSCRIPTION_PLAN_UNAVAILABLE',
   'SUBSCRIPTION_VEHICLES_LOCKED',
   'SUBSCRIPTION_CARD_REQUIRED',
+  // V2-036 (DEC-594, DEC-596, DEC-598): the subscriptions annex — eligibility, capacity, the customer's freeze
+  'SUBSCRIPTION_ELIGIBILITY_REQUIRED',
+  'SUBSCRIPTION_CAPACITY_REACHED',
+  'SUBSCRIPTION_FREEZE_UNAVAILABLE',
+  'SUBSCRIPTION_FREEZE_INVALID',
 ] as const;
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[number];
 export const CustomerErrorCodeSchema = z.enum(CUSTOMER_ERROR_CODES);
@@ -84,7 +89,10 @@ export type CustomerApiErrorCode = CustomerErrorCode | CustomerReusedErrorCode;
  * 'card_on_file', current_version }` (V2-022 / V2-023); `SUBSCRIPTION_ALREADY_EXISTS` → `{ subscription_id, status }`;
  * `SUBSCRIPTION_NOT_ACTIVE` → `{ subscription_id, current_status, command }`; `SUBSCRIPTION_PLAN_UNAVAILABLE` →
  * `{ reason: 'retired' | 'cycle' | 'not_sold' }`; `SUBSCRIPTION_VEHICLES_LOCKED` → `{ available_at }`;
- * `SUBSCRIPTION_CARD_REQUIRED` → `{ source_type }` (V2-032).
+ * `SUBSCRIPTION_CARD_REQUIRED` → `{ source_type }` (V2-032); `SUBSCRIPTION_ELIGIBILITY_REQUIRED` → `{ plan_id,
+ * eligibility }`; `SUBSCRIPTION_CAPACITY_REACHED` → `{ plan_id, capacity }`; `SUBSCRIPTION_FREEZE_UNAVAILABLE` →
+ * `{ reason: 'not_offered' | 'used' | 'live' | 'status' }`; `SUBSCRIPTION_FREEZE_INVALID` → `{ issue, max_days }`;
+ * `CUSTOMER_CONSENT_REQUIRED` / `CUSTOMER_CONSENT_VERSION_STALE` also name `kind: 'subscription_terms'` (V2-036).
  */
 export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<ErrorDef, 'alert'>>> = {
   CUSTOMER_OTP_INVALID: {
@@ -251,6 +259,38 @@ export const CUSTOMER_ERROR_CATALOG: Readonly<Record<CustomerErrorCode, Omit<Err
     log: 'info',
     message: 'Pay with a card kept for the automatic renewal.',
     message_ar: 'ادفع ببطاقة تُحفظ للتجديد التلقائي.',
+  },
+  // V2-036 (DEC-596): the plan is sold after an eligibility check — apply first (…/apply), pay once approved
+  SUBSCRIPTION_ELIGIBILITY_REQUIRED: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'This plan needs an eligibility check first. Send your application.',
+    message_ar: 'هذه الباقة تتطلب التحقق من الأهلية أولًا. أرسل طلبك.',
+  },
+  // V2-036 (DEC-598; annex clause 3): the approved capacity is reached, no new subscription is sold
+  SUBSCRIPTION_CAPACITY_REACHED: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'All places of this plan are taken.',
+    message_ar: 'اكتملت المقاعد في هذه الباقة.',
+  },
+  // V2-036 (DEC-594): the plan offers no freeze, this term's freeze is used, one is already set, or the status
+  SUBSCRIPTION_FREEZE_UNAVAILABLE: {
+    http: 409,
+    retryable: false,
+    log: 'info',
+    message: 'A freeze is not available for this subscription now.',
+    message_ar: 'التجميد غير متاح لهذا الاشتراك الآن.',
+  },
+  // V2-036 (DEC-594; annex clause 4): in advance, on service days, within the plan's counted days
+  SUBSCRIPTION_FREEZE_INVALID: {
+    http: 422,
+    retryable: false,
+    log: 'info',
+    message: 'Choose a start after today and a return on a service day, within the allowed days.',
+    message_ar: 'اختر بداية بعد اليوم وعودة في يوم خدمة، ضمن الأيام المسموح بها.',
   },
 };
 

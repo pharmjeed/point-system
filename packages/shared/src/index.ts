@@ -10,6 +10,8 @@ export * from './canon/routes.js';
 export * from './canon/platform.js';
 export * from './canon/payments-online.js';
 export * from './canon/subscriptions.js';
+export * from './canon/service-days.js';
+export * from './canon/complaints.js';
 export * from './canon/invoicing.js';
 export * from './canon/wa-templates.js';
 export * from './canon/sounds.js';

@@ -5,6 +5,9 @@ export const SUBSCRIPTION_RENEW_JOB = 'job.subscription_renew';
 export const SUBSCRIPTION_GRACE_EXPIRE_JOB = 'job.subscription_grace_expire';
 export const SUBSCRIPTION_RENEWAL_NOTICE_JOB = 'job.subscription_renewal_notice';
 export const PENDING_PAYMENT_EXPIRE_JOB = 'job.pending_payment_expire';
+/** V2-036 (DEC-594): the customer's freeze of a counted-day term starts and ends at Riyadh midnight. */
+export const SUBSCRIPTION_FREEZE_START_JOB = 'job.subscription_freeze_start';
+export const SUBSCRIPTION_FREEZE_END_JOB = 'job.subscription_freeze_end';
 
 /** An RFC 4122 v4-shaped uuid made of a sha256 digest (the gateway's given_id, DEC-521's shape). */
 export function uuidOfDigest(input: string): string {

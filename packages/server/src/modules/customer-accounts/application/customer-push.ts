@@ -214,6 +214,11 @@ const SUBSCRIPTION_STILL_TRUE: Partial<Record<CustomerPushKind, ReadonlySet<stri
   subscription_renewal: new Set(['active']),
   subscription_payment_failed: new Set(['past_due']),
   subscription_expired: new Set(['expired']),
+  // V2-036 (DEC-595, DEC-596, DEC-599)
+  subscription_ending: new Set(['active']),
+  subscription_eligibility_approved: new Set(['pending_payment']),
+  subscription_eligibility_rejected: new Set(['canceled']),
+  subscription_venue_closure: new Set(['active', 'frozen', 'pending_payment']),
 };
 
 async function settle(

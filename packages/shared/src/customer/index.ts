@@ -23,6 +23,31 @@ export * from './payments.js';
 export * from './subscriptions.js';
 // V2-040: C-17 invoices and credit notes
 export * from './invoices.js';
+// V2-037: C-21 / C-22 complaints with a reference number
+export * from './complaints.js';
+export {
+  COMPLAINT_CATEGORIES,
+  COMPLAINT_LIMITS,
+  COMPLAINT_STATUSES,
+  complaintReference,
+  type ComplaintCategory,
+  type ComplaintStatus,
+} from '../canon/complaints.js';
+// V2-036: the counted-day arithmetic the freeze sheet previews (the server decides)
+export {
+  addDays,
+  countServiceDays,
+  daysBetween,
+  freezeRequestCheck,
+  isServiceDay,
+  maskOfWeekdays,
+  nextServiceDayOnOrAfter,
+  riyadhDate,
+  SERVICE_DAY_RULES,
+  weekdayOf,
+  type FreezeRequestIssue,
+  type IsoDate,
+} from '../canon/service-days.js';
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,

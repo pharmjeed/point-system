@@ -5,6 +5,8 @@
  * (DEC-482).
  */
 import { z } from 'zod';
+import { VenueClosureKindSchema } from '../canon/subscriptions.js';
+import { CustomerPlanPolicySchema } from './subscriptions.js';
 
 /** `venue_public_profiles.category` (03 §2). */
 export const VENUE_PUBLIC_CATEGORIES = [
@@ -85,15 +87,47 @@ export type CustomerLocationListQuery = Partial<z.output<typeof CustomerLocation
 export const CustomerLocationListSchema = z.object({ items: z.array(CustomerLocationSummarySchema) });
 export type CustomerLocationList = z.infer<typeof CustomerLocationListSchema>;
 
-/** A plan as sold on C-08/C-09 (`subscription_plans`, 03 §4). */
+/** The net price, its VAT and the total of one term, as shown before payment (04 §4, annex clause 1). */
+export const CustomerPriceBreakdownSchema = z.object({
+  net_halalas: z.int().min(0),
+  vat_halalas: z.int().min(0),
+  total_halalas: halalas,
+  vat_rate_bp: z.int(),
+});
+export type CustomerPriceBreakdown = z.infer<typeof CustomerPriceBreakdownSchema>;
+
+/** A plan as sold on C-08/C-09 (`subscription_plans`, 03 §4; its policies since V2-036, 04 §7). */
 export const CustomerLocationPlanSchema = z.object({
   plan_id: z.uuid(),
   name_ar: z.string(),
   vehicles_included: z.int().min(1).max(5),
   monthly_price_halalas: halalas.nullable(),
   yearly_price_halalas: halalas.nullable(),
+  // --- V2-036 (DEC-590 … DEC-602) ---
+  policy: CustomerPlanPolicySchema,
+  /** who the plan is for («طلاب وطالبات …»), null for everyone */
+  audience_ar: z.string().nullable(),
+  monthly_breakdown: CustomerPriceBreakdownSchema.nullable(),
+  yearly_breakdown: CustomerPriceBreakdownSchema.nullable(),
+  /** the capacity is reached: no new subscription is sold («اكتملت المقاعد», DEC-598) */
+  sold_out: z.boolean(),
+  /** the versions the purchase consent names (DEC-601) */
+  terms_version: z.string(),
+  privacy_version: z.string(),
+  /** a counted-day term paid now: its first and last counted days (DEC-591) */
+  term_preview: z.object({ starts_on: z.string(), ends_on: z.string() }).nullable(),
 });
 export type CustomerLocationPlan = z.infer<typeof CustomerLocationPlanSchema>;
+
+/** An announced holiday or closure of the location (DEC-599), shown on C-08 / C-09 before payment. */
+export const CustomerVenueClosureSchema = z.object({
+  closure_id: z.uuid(),
+  kind: VenueClosureKindSchema,
+  starts_on: z.string(),
+  ends_on: z.string(),
+  reason_ar: z.string(),
+});
+export type CustomerVenueClosure = z.infer<typeof CustomerVenueClosureSchema>;
 
 /** `GET /v1/customer/locations/{venueId}` → `data` (C-08). An unlisted venue → `VENUE_NOT_LISTED` (05 §5). */
 export const CustomerLocationDetailSchema = CustomerLocationSummarySchema.extend({
@@ -102,5 +136,7 @@ export const CustomerLocationDetailSchema = CustomerLocationSummarySchema.extend
   opening_hours: OpeningHoursSchema,
   photo_urls: z.array(z.url()).max(10),
   plans: z.array(CustomerLocationPlanSchema),
+  /** the upcoming announced holidays and closures (the next 180 days) */
+  closures: z.array(CustomerVenueClosureSchema),
 });
 export type CustomerLocationDetail = z.infer<typeof CustomerLocationDetailSchema>;

@@ -1,41 +1,57 @@
-import type { PlatformSubscriptionsQuery, PlatformSubscriptionsReportQuery } from '@point/shared';
+import {
+  planPolicyView,
+  type PlanPolicyColumns,
+  type PlatformSubscriptionsQuery,
+  type PlatformSubscriptionsReportQuery,
+} from '@point/shared';
 import type { Database } from '../../../core/db/database.js';
+import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { maskPhone } from '../../../core/logging/redact.js';
+import { maskStudentNumber } from './eligibility.js';
+import { FREEZE_COLUMNS, type FreezeRow } from './freezes.js';
 import {
   iso,
   PERIOD_COLUMNS,
+  POLICY_COLUMNS,
   SUBSCRIPTION_COLUMNS,
   UUID,
   type PeriodRow,
+  type PlanPolicyRow,
+  type Q,
   type SubscriptionRow,
 } from './rows.js';
+import { remainingDaysNow } from './terms.js';
 
 const DAY_MS = 86_400_000;
 
-interface ListRow extends SubscriptionRow {
+interface ListRow extends SubscriptionRow, PlanPolicyRow {
   venue_name_ar: string;
   operator_name_ar: string;
   plan_name_ar: string;
   phone_e164: string | null;
   account_status: string;
   visits: number;
+  eligibility_status: string | null;
+  student_number: string | null;
 }
 
 const LIST_SELECT = `SELECT ${SUBSCRIPTION_COLUMNS}, v.name_ar AS venue_name_ar, o.name_ar AS operator_name_ar,
        p.name_ar AS plan_name_ar, a.phone_e164, a.status AS account_status,
-       (SELECT count(*)::int FROM tickets t WHERE t.subscription_id = s.id AND t.org_id = s.org_id) AS visits
+       (SELECT count(*)::int FROM tickets t WHERE t.subscription_id = s.id AND t.org_id = s.org_id) AS visits,
+       ${POLICY_COLUMNS('p')}, e.status AS eligibility_status, e.student_number
   FROM subscriptions s
   JOIN venues v ON v.id = s.venue_id AND v.org_id = s.org_id
   JOIN organizations o ON o.id = s.org_id
   JOIN subscription_plans p ON p.id = s.plan_id AND p.org_id = s.org_id
-  JOIN customer_accounts a ON a.id = s.account_id`;
+  JOIN customer_accounts a ON a.id = s.account_id
+  LEFT JOIN subscription_eligibility e ON e.subscription_id = s.id AND e.org_id = s.org_id`;
 
 /** The monthly-equivalent price of a subscription (MRR: a yearly price counts a twelfth a month). */
 const monthly = (s: Pick<SubscriptionRow, 'billing_cycle' | 'price_halalas'>) =>
   s.billing_cycle === 'yearly' ? Math.round(s.price_halalas / 12) : s.price_halalas;
 
-function listView(r: ListRow) {
+function listView(r: ListRow, now: Date = new Date()) {
   return {
     subscription_id: r.id,
     account_id: r.account_id,
@@ -67,6 +83,15 @@ function listView(r: ListRow) {
     ended_at: iso(r.ended_at),
     ended_reason: r.ended_reason,
     created_at: iso(r.created_at)!,
+    // 04 §7 (V2-036): the plan's policies, a counted-day term, the application's state (the number masked in lists)
+    policy: planPolicyView(r as PlanPolicyColumns),
+    service_start_on: r.service_start_on,
+    service_end_on: r.service_end_on,
+    remaining_days:
+      r.service_weekdays_mask === null ? null : remainingDaysNow(now, r, r.service_weekdays_mask),
+    eligibility_status: r.eligibility_status,
+    student_number_masked: r.student_number ? maskStudentNumber(r.student_number) : null,
+    refund_due_at: iso(r.refund_due_at),
   };
 }
 
@@ -90,7 +115,7 @@ function decodeCursor(cursor: string | undefined): number {
 export class PlatformSubscriptionsService {
   constructor(private readonly db: Database) {}
 
-  async list(q: PlatformSubscriptionsQuery) {
+  async list(q: PlatformSubscriptionsQuery, now: Date = new Date()) {
     const offset = decodeCursor(q.cursor);
     const params: unknown[] = [];
     const where: string[] = [];
@@ -116,25 +141,89 @@ export class PlatformSubscriptionsService {
       )
     ).rows;
     return {
-      data: rows.slice(0, q.limit).map(listView),
+      data: rows.slice(0, q.limit).map((x) => listView(x, now)),
       next_cursor: rows.length > q.limit ? encodeCursor(offset + q.limit) : null,
     };
   }
 
-  async detail(id: string) {
-    const r = UUID.test(id)
-      ? (await this.db.query<ListRow>(`${LIST_SELECT} WHERE s.id = $1`, [id])).rows[0]
-      : null;
+  /** The detail inside a command's transaction (the state it just wrote). */
+  detailIn(tx: Tx, id: string) {
+    return this.detail(id, tx.now, tx);
+  }
+
+  async detail(id: string, now: Date = new Date(), q: Q = this.db) {
+    const r = UUID.test(id) ? (await q.query<ListRow>(`${LIST_SELECT} WHERE s.id = $1`, [id])).rows[0] : null;
     if (!r) throw new AppError('RESOURCE_NOT_FOUND', { resource: 'subscription' });
+    // V2-036: the application in full for the reviewer (P-07 is POINT's, never the operator's: V2-D12), the term's
+    // freezes, the purchase consents, the refunds
+    const eligibility = (
+      await q.query<{
+        status: string;
+        source: string | null;
+        student_number: string;
+        student_name: string;
+        decided_at: Date | null;
+        decision_reason: string | null;
+        created_at: Date;
+      }>(
+        `SELECT status, source, student_number, student_name, decided_at, decision_reason, created_at
+           FROM subscription_eligibility WHERE subscription_id = $1 AND org_id = $2`,
+        [id, r.org_id],
+      )
+    ).rows[0];
+    const freezes = (
+      await q.query<FreezeRow>(
+        `SELECT ${FREEZE_COLUMNS} FROM subscription_freezes f WHERE f.subscription_id = $1 AND f.org_id = $2
+          ORDER BY f.created_at, f.id`,
+        [id, r.org_id],
+      )
+    ).rows;
+    const consents = (
+      await q.query<{
+        period_seq: number;
+        terms_version: string;
+        privacy_version: string;
+        price_halalas: number;
+        net_halalas: number;
+        vat_halalas: number;
+        non_refundable: boolean;
+        valuables_notice: boolean;
+        online_payment_id: string;
+        created_at: Date;
+      }>(
+        `SELECT period_seq, terms_version, privacy_version, price_halalas::float8 AS price_halalas,
+                net_halalas::float8 AS net_halalas, vat_halalas::float8 AS vat_halalas, non_refundable,
+                valuables_notice, online_payment_id, created_at
+           FROM subscription_purchase_consents WHERE subscription_id = $1 AND org_id = $2 ORDER BY created_at, id`,
+        [id, r.org_id],
+      )
+    ).rows;
+    const refunds = (
+      await q.query<{
+        id: string;
+        online_payment_id: string;
+        amount_halalas: number;
+        status: string;
+        kind: string;
+        created_at: Date;
+        completed_at: Date | null;
+      }>(
+        `SELECT rf.id, rf.online_payment_id, rf.amount_halalas::float8 AS amount_halalas, rf.status, rf.kind,
+                rf.created_at, rf.completed_at
+           FROM refunds rf JOIN online_payments op ON op.id = rf.online_payment_id
+          WHERE op.subscription_id = $1 AND op.org_id = $2 ORDER BY rf.created_at, rf.id`,
+        [id, r.org_id],
+      )
+    ).rows;
     const periods = (
-      await this.db.query<PeriodRow>(
+      await q.query<PeriodRow>(
         `SELECT ${PERIOD_COLUMNS} FROM subscription_periods sp WHERE sp.subscription_id = $1 AND sp.org_id = $2
           ORDER BY sp.seq`,
         [id, r.org_id],
       )
     ).rows;
     const payments = (
-      await this.db.query<{
+      await q.query<{
         id: string;
         status: string;
         amount_halalas: number;
@@ -153,7 +242,7 @@ export class PlatformSubscriptionsService {
       )
     ).rows;
     const timeline = (
-      await this.db.query<{
+      await q.query<{
         action: string;
         occurred_at: Date;
         actor_type: string;
@@ -164,13 +253,45 @@ export class PlatformSubscriptionsService {
         [id],
       )
     ).rows;
-    const vehicles = await this.db.query<{ n: number }>(
+    const vehicles = await q.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM subscription_vehicles WHERE subscription_id = $1 AND removed_at IS NULL`,
       [id],
     );
     return {
-      ...listView(r),
+      ...listView(r, now),
       covered_vehicles: vehicles.rows[0]?.n ?? 0,
+      eligibility: eligibility
+        ? {
+            status: eligibility.status,
+            source: eligibility.source,
+            student_number: eligibility.student_number,
+            student_name: eligibility.student_name,
+            decided_at: iso(eligibility.decided_at),
+            decision_reason: eligibility.decision_reason,
+            created_at: iso(eligibility.created_at)!,
+          }
+        : null,
+      freezes: freezes.map((f) => ({
+        freeze_id: f.id,
+        period_seq: f.period_seq,
+        status: f.status,
+        starts_on: f.starts_on,
+        returns_on: f.returns_on,
+        days: f.days,
+        used_days: f.used_days,
+        ended_on: f.ended_on,
+        end_reason: f.end_reason,
+      })),
+      purchase_consents: consents.map((c) => ({ ...c, created_at: iso(c.created_at)! })),
+      refunds: refunds.map((x) => ({
+        refund_id: x.id,
+        online_payment_id: x.online_payment_id,
+        amount_halalas: x.amount_halalas,
+        status: x.status,
+        kind: x.kind,
+        created_at: iso(x.created_at)!,
+        completed_at: iso(x.completed_at),
+      })),
       periods: periods.map((p) => ({
         seq: p.seq,
         starts_at: iso(p.starts_at)!,

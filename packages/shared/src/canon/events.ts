@@ -166,6 +166,9 @@ export const JOB_TYPES = [
   'job.subscription_grace_expire',
   'job.subscription_renewal_notice',
   'job.pending_payment_expire',
+  // V2 (V2-036, DEC-594): the customer's freeze of a counted-day term starts and ends at Riyadh midnight
+  'job.subscription_freeze_start',
+  'job.subscription_freeze_end',
   // V2 (V2-040 … V2-042, DEC-543, DEC-546): an invoice submitted to the e-invoicing provider and its PDF rendered
   // after COMMIT, and the monthly settlement statements of the operators (the 1st of the Riyadh month)
   'job.einvoice_submit',

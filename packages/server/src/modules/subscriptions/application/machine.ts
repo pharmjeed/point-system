@@ -1,9 +1,18 @@
 import {
   addBillingPeriods,
+  addDays,
   canTransitionSubscription,
   OPERATOR_BLOCKED_STATUSES,
   proratedRefundHalalas,
+  remainingServiceDays,
+  resumedTermEnd,
+  riyadhDate,
+  riyadhMidnight,
+  serviceDaysRefundHalalas,
+  serviceTerm,
+  serviceTermInstants,
   SUBSCRIPTION_RULES,
+  type IsoDate,
   type SubscriptionEndedReason,
   type SubscriptionFrozenReason,
   type SubscriptionStatus,
@@ -25,7 +34,15 @@ import {
   SUBSCRIPTION_RENEW_JOB,
   SUBSCRIPTION_RENEWAL_NOTICE_JOB,
 } from '../domain/jobs.js';
-import { PERIOD_COLUMNS, SUBSCRIPTION_COLUMNS, type PeriodRow, type SubscriptionRow } from './rows.js';
+import {
+  PERIOD_COLUMNS,
+  policyOf,
+  SUBSCRIPTION_COLUMNS,
+  type PeriodRow,
+  type PlanPolicyRow,
+  type SubscriptionRow,
+} from './rows.js';
+import { firstUnconsumedAt, isServiceDaysPlan, refundableDays, resumeDay, termOf } from './terms.js';
 
 const DAY_MS = 86_400_000;
 const { grace_days, retry_offsets_days, renewal_notice_days, grace_expire_margin_minutes } =
@@ -123,7 +140,12 @@ export async function publishSubscriptionUpdated(
   });
 }
 
-async function push(tx: Tx, sub: SubscriptionRow, kind: CustomerSubscriptionPushKind, ref: string) {
+export async function push(
+  tx: Tx,
+  sub: Pick<SubscriptionRow, 'id' | 'account_id' | 'org_id' | 'venue_id'>,
+  kind: CustomerSubscriptionPushKind,
+  ref: string,
+) {
   await planCustomerPush(tx, {
     accountId: sub.account_id,
     orgId: sub.org_id,
@@ -195,7 +217,7 @@ export async function schedulePendingExpiry(tx: Tx, sub: SubscriptionRow): Promi
 
 // ------------------------------------------------------------------------------------------------ payments
 
-async function periodOf(tx: Tx, subscriptionId: string, seq: number): Promise<PeriodRow | null> {
+export async function periodOf(tx: Tx, subscriptionId: string, seq: number): Promise<PeriodRow | null> {
   return tx.maybeOne<PeriodRow>(
     `SELECT ${PERIOD_COLUMNS} FROM subscription_periods sp WHERE sp.subscription_id = $1 AND sp.seq = $2`,
     [subscriptionId, seq],
@@ -203,7 +225,7 @@ async function periodOf(tx: Tx, subscriptionId: string, seq: number): Promise<Pe
 }
 
 /** Whether the venue's operator or the venue itself keeps the subscription from running (V2-034). */
-async function freezeReasonNow(
+export async function freezeReasonNow(
   tx: Tx,
   sub: Pick<SubscriptionRow, 'org_id' | 'venue_id'>,
 ): Promise<SubscriptionFrozenReason | 'terminated' | null> {
@@ -257,9 +279,16 @@ export async function onSubscriptionPaid(tx: Tx, p: OnlinePaymentRow): Promise<v
   const now = tx.now;
   const first = sub.status === 'pending_payment';
   const anchor = first ? now : sub.cycle_anchor_at!;
-  const start = first ? now : sub.current_period_end!;
-  const end = addBillingPeriods(anchor, sub.billing_cycle, seq);
   const planId = first ? sub.plan_id : (sub.next_plan_id ?? sub.plan_id);
+  const plan = await policyOf(tx, { plan_id: planId, org_id: sub.org_id });
+  let start = first ? now : sub.current_period_end!;
+  let end = addBillingPeriods(anchor, sub.billing_cycle, seq);
+  // 04 §7 (DEC-591): a counted-day term runs from its first counted day to the midnight after its N-th
+  let term: { startOn: IsoDate; endOn: IsoDate } | null = null;
+  if (isServiceDaysPlan(plan)) {
+    term = serviceTerm(now, plan.service_days!, plan.service_weekdays_mask!);
+    ({ start, end } = serviceTermInstants(term));
+  }
   await tx.query(
     `INSERT INTO subscription_periods (subscription_id, org_id, venue_id, seq, plan_id, billing_cycle, starts_at, ends_at,
                                        price_halalas, online_payment_id, created_at)
@@ -283,6 +312,8 @@ export async function onSubscriptionPaid(tx: Tx, p: OnlinePaymentRow): Promise<v
     payment_method_id: p.payment_method_id ?? sub.payment_method_id,
     ...(first ? { activated_at: now } : {}),
     ...(frozen ? { frozen_at: now, frozen_reason: frozen } : {}),
+    ...(term ? { service_start_on: term.startOn, service_end_on: term.endOn } : {}),
+    ...(term && frozen ? { frozen_remaining_days: plan.service_days } : {}),
   };
   const event: SubscriptionTransition = first
     ? 'first_payment_paid'
@@ -296,6 +327,7 @@ export async function onSubscriptionPaid(tx: Tx, p: OnlinePaymentRow): Promise<v
     period_end: end.toISOString(),
     price_halalas: p.amount_halalas,
     ...(frozen ? { frozen_reason: frozen } : {}),
+    ...(term ? { service_start_on: term.startOn, service_end_on: term.endOn } : {}),
   });
   if (frozen) {
     // the freeze is part of the activation: its own audit row, no timers until the unfreeze
@@ -398,6 +430,7 @@ export function endPatch(tx: Tx, sub: SubscriptionRow, reason: SubscriptionEnded
     grace_ends_at: null,
     frozen_at: null,
     frozen_reason: null,
+    frozen_remaining_days: null,
     next_plan_id: null,
     next_price_halalas: null,
     ...(sub.status === 'frozen' && sub.frozen_at
@@ -423,7 +456,12 @@ interface PlanHop {
   yearly: number | null;
 }
 
-export async function sendRenewalNotice(tx: Tx, sub: SubscriptionRow): Promise<SubscriptionRow> {
+export async function sendRenewalNotice(
+  tx: Tx,
+  sub: SubscriptionRow,
+  policy?: Pick<PlanPolicyRow, 'renewal_mode'>,
+): Promise<SubscriptionRow> {
+  const manual = (policy ?? (await policyOf(tx, sub))).renewal_mode === 'manual';
   let nextPlan: { id: string; price: number } | null = null;
   let planId: string | null = sub.plan_id;
   for (let hop = 0; planId && hop < 10; hop++) {
@@ -458,7 +496,37 @@ export async function sendRenewalNotice(tx: Tx, sub: SubscriptionRow): Promise<S
       ...(nextPlan ? { next_plan_id: nextPlan.id, next_price_halalas: nextPlan.price } : {}),
     },
   );
-  await push(tx, updated, 'subscription_renewal', `${end.getTime()}`);
+  // DEC-595: a term renewed by hand is never charged — the notice says it ends and how to renew it
+  await push(tx, updated, manual ? 'subscription_ending' : 'subscription_renewal', `${end.getTime()}`);
+  return updated;
+}
+
+/**
+ * The end of a term renewed by hand (`renewal_mode = manual`; DEC-595; annex clause 3 «لا يخصم مبلغ التجديد
+ * تلقائيًا»): active → expired (`term_completed`) at the period end, nothing charged; the «الانتهاء» push. The
+ * customer renews from C-14 with a new paid subscription.
+ */
+export async function completeTerm(
+  tx: Tx,
+  sub: SubscriptionRow,
+  actor: SubActor,
+  metadata: Record<string, unknown> = {},
+): Promise<SubscriptionRow> {
+  const updated = await transition(
+    tx,
+    sub,
+    'term_completed',
+    {
+      status: 'expired',
+      ended_at: tx.now,
+      ended_reason: 'term_completed',
+      cancel_at_period_end: false,
+      cancel_requested_at: null,
+    },
+    actor,
+    { period_end: sub.current_period_end?.toISOString() ?? null, ...metadata },
+  );
+  await push(tx, updated, 'subscription_expired', `${updated.periods_paid}:term`);
   return updated;
 }
 
@@ -470,24 +538,38 @@ export async function freeze(
   sub: SubscriptionRow,
   reason: SubscriptionFrozenReason,
   actor: SubActor,
+  opts: { at?: Date; metadata?: Record<string, unknown> } = {},
 ): Promise<SubscriptionRow> {
-  return transition(
-    tx,
-    sub,
-    'freeze',
-    { status: 'frozen', frozen_at: tx.now, frozen_reason: reason },
-    actor,
-    {
-      reason,
-    },
-  );
+  const at = opts.at ?? tx.now;
+  const patch: Record<string, unknown> = { status: 'frozen', frozen_at: at, frozen_reason: reason };
+  const term = termOf(sub);
+  if (term) {
+    // DEC-593: the counted days not consumed when it froze resume when it is lifted
+    const plan = await policyOf(tx, sub);
+    patch.frozen_remaining_days = remainingServiceDays(
+      firstUnconsumedAt(at),
+      term,
+      plan.service_weekdays_mask!,
+    );
+  }
+  return transition(tx, sub, 'freeze', patch, actor, {
+    reason,
+    ...(term ? { remaining_days: patch.frozen_remaining_days } : {}),
+    ...opts.metadata,
+  });
 }
 
 /**
  * frozen → active with «تمديد مساوٍ» (04 §1, DEC-536): the period end and the cycle anchor move by the frozen time,
  * the paid period's row records it (extended_seconds), and the renewal timers are scheduled for the new end.
  */
-export async function unfreeze(tx: Tx, sub: SubscriptionRow, actor: SubActor): Promise<SubscriptionRow> {
+export async function unfreeze(
+  tx: Tx,
+  sub: SubscriptionRow,
+  actor: SubActor,
+  opts: { resumeOn?: IsoDate; metadata?: Record<string, unknown> } = {},
+): Promise<SubscriptionRow> {
+  if (termOf(sub)) return unfreezeServiceDays(tx, sub, actor, opts);
   const ms = Math.max(0, tx.now.getTime() - sub.frozen_at!.getTime());
   const seconds = Math.floor(ms / 1000);
   const end = new Date(sub.current_period_end!.getTime() + seconds * 1000);
@@ -522,6 +604,79 @@ export async function unfreeze(tx: Tx, sub: SubscriptionRow, actor: SubActor): P
 }
 
 /**
+ * frozen → active for a counted-day term (DEC-593; annex clause 4 «تستكمل الأيام المتبقية … وتحدّث نهاية الاشتراك
+ * وفق الأيام المجمدة فعليًا»): the counted days left when it froze resume on the resume day (the freeze's return day,
+ * or today on an early reactivation or when a system freeze is lifted) and the last day is the N-th service day from
+ * it; Friday and Saturday are skipped again, nothing else is given back. The paid period's end follows.
+ */
+async function unfreezeServiceDays(
+  tx: Tx,
+  sub: SubscriptionRow,
+  actor: SubActor,
+  opts: { resumeOn?: IsoDate; metadata?: Record<string, unknown> },
+): Promise<SubscriptionRow> {
+  const plan = await policyOf(tx, sub);
+  const resume = resumeDay(tx.now, sub, opts.resumeOn);
+  const remaining = sub.frozen_remaining_days ?? 0;
+  const lastDay =
+    remaining > 0 ? resumedTermEnd(resume, remaining, plan.service_weekdays_mask!) : sub.service_end_on!;
+  const end = riyadhMidnight(addDays(lastDay, 1));
+  const moved = Math.max(0, Math.floor((end.getTime() - sub.current_period_end!.getTime()) / 1000));
+  const frozenSecondsNow = Math.max(0, Math.floor((tx.now.getTime() - sub.frozen_at!.getTime()) / 1000));
+  await tx.query(
+    `UPDATE subscription_periods SET ends_at = $3, extended_seconds = extended_seconds + $4
+      WHERE subscription_id = $1 AND seq = $2`,
+    [sub.id, sub.periods_paid, end, moved],
+  );
+  const updated = await transition(
+    tx,
+    sub,
+    'unfreeze',
+    {
+      status: 'active',
+      frozen_at: null,
+      frozen_reason: null,
+      frozen_remaining_days: null,
+      frozen_seconds_total: sub.frozen_seconds_total + frozenSecondsNow,
+      current_period_end: end,
+      service_end_on: lastDay,
+    },
+    actor,
+    {
+      frozen_reason: sub.frozen_reason,
+      remaining_days: remaining,
+      resume_on: resume,
+      service_end_before: sub.service_end_on,
+      service_end_after: lastDay,
+      ...opts.metadata,
+    },
+  );
+  await scheduleCycleTimers(tx, updated);
+  return updated;
+}
+
+/**
+ * The refund of the unused part of a paid term (DEC-536, DEC-600): a calendar term by time (from the freeze, or now,
+ * to the end), a counted-day term by its counted days left out of all of them (annex clause 5).
+ */
+export async function unusedShareHalalas(tx: Tx, sub: SubscriptionRow, period: PeriodRow): Promise<number> {
+  const plan = await policyOf(tx, sub);
+  if (termOf(sub) && plan.service_days) {
+    const days = refundableDays(tx.now, sub, plan.service_weekdays_mask!);
+    return serviceDaysRefundHalalas(period.price_halalas, days, plan.service_days);
+  }
+  return proratedRefundHalalas(
+    period.price_halalas,
+    period.starts_at,
+    sub.current_period_end!,
+    sub.frozen_at ?? tx.now,
+  );
+}
+
+/** Today in Riyadh, by the transaction's clock. */
+export const todayOf = (tx: Tx) => riyadhDate(tx.now);
+
+/**
  * The operator is terminated (V2-034, DEC-536): every live subscription of its venues ends (`operator_terminated`).
  * A paid period not used to its end is refunded pro rata by the platform (the unused share from the freeze — or from
  * now — to the end, `subscription_prorated`, DEC-523's system refund without the double-payment alert); a pending or
@@ -532,12 +687,7 @@ export async function terminate(tx: Tx, sub: SubscriptionRow, actor: SubActor): 
   if ((sub.status === 'active' || sub.status === 'frozen') && sub.periods_paid > 0) {
     const period = await periodOf(tx, sub.id, sub.periods_paid);
     if (period) {
-      const amount = proratedRefundHalalas(
-        period.price_halalas,
-        period.starts_at,
-        sub.current_period_end!,
-        sub.frozen_at ?? tx.now,
-      );
+      const amount = await unusedShareHalalas(tx, sub, period);
       const payment = await paymentById(tx, period.online_payment_id);
       if (payment && amount > 0)
         refund = {

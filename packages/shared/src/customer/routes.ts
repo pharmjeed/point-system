@@ -58,8 +58,15 @@ import {
   CustomerSubscriptionPayBodySchema,
   CustomerSubscriptionSchema,
   CustomerSubscriptionVehiclesBodySchema,
+  CustomerSubscriptionApplyBodySchema,
+  CustomerSubscriptionFreezeBodySchema,
 } from './subscriptions.js';
 import { CustomerInvoiceDetailSchema, CustomerInvoiceListSchema } from './invoices.js';
+import {
+  CustomerComplaintCreateBodySchema,
+  CustomerComplaintListSchema,
+  CustomerComplaintSchema,
+} from './complaints.js';
 
 export interface CustomerRouteDef {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -387,6 +394,62 @@ export const CUSTOMER_ROUTES = {
     data: CustomerSubscriptionSchema,
   },
   // --- end V2-032 ---
+  // --- V2-036 (DEC-594, DEC-596): the subscriptions annex — eligibility application, the customer's freeze ---
+  subscriptionApply: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions/apply',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionApplyBodySchema,
+    data: CustomerSubscriptionSchema,
+  },
+  subscriptionFreeze: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions/{subscriptionId}/freeze',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionFreezeBodySchema,
+    data: CustomerSubscriptionSchema,
+  },
+  subscriptionUnfreeze: {
+    method: 'POST',
+    path: '/v1/customer/subscriptions/{subscriptionId}/unfreeze',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerSubscriptionCommandBodySchema,
+    data: CustomerSubscriptionSchema,
+  },
+  // --- end V2-036 ---
+  // --- V2-037 (DEC-603, DEC-604): complaints with a reference number (C-21, C-22) ---
+  complaints: {
+    method: 'GET',
+    path: '/v1/customer/complaints',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerComplaintListSchema,
+  },
+  complaintCreate: {
+    method: 'POST',
+    path: '/v1/customer/complaints',
+    auth: 'customer',
+    idempotency: 'required',
+    rateLimitClass: 'write',
+    body: CustomerComplaintCreateBodySchema,
+    data: CustomerComplaintSchema,
+  },
+  complaint: {
+    method: 'GET',
+    path: '/v1/customer/complaints/{complaintId}',
+    auth: 'customer',
+    idempotency: 'none',
+    rateLimitClass: 'read',
+    data: CustomerComplaintSchema,
+  },
+  // --- end V2-037 ---
   // --- V2-040: C-17 the customer's invoices and credit notes (DEC-548) ---
   invoices: {
     method: 'GET',

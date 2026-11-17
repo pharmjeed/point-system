@@ -1,4 +1,6 @@
 import {
+  maskOfWeekdays,
+  planPolicyView,
   PLATFORM_REASON_MIN,
   type PlatformPlan,
   type PlatformPlanCreateBody,
@@ -12,11 +14,11 @@ import type { Database } from '../../../core/db/database.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import type { ClientInfo } from '../../identity-access/application/auth-service.js';
-import { iso, PLAN_COLUMNS, planById, type PlanRow, type Q } from './rows.js';
+import { iso, PLAN_COLUMNS, planById, seatsTakenSql, type PlanRow, type Q } from './rows.js';
 
 const RECURRING = new Set(['office', 'mall', 'hospital', 'residential', 'hotel', 'club', 'other']);
 
-function planView(p: PlanRow & { live_subscriptions?: number }): PlatformPlan {
+function planView(p: PlanRow & { live_subscriptions?: number; seats_taken?: number }): PlatformPlan {
   return {
     plan_id: p.id,
     venue_id: p.venue_id,
@@ -31,13 +33,18 @@ function planView(p: PlanRow & { live_subscriptions?: number }): PlatformPlan {
     live_subscriptions: p.live_subscriptions ?? 0,
     created_at: iso(p.created_at)!,
     retired_at: iso(p.retired_at),
+    ...planPolicyView(p),
+    capacity: p.capacity,
+    seats_taken: p.seats_taken ?? 0,
+    audience_ar: p.audience_ar,
   };
 }
 
 const PLAN_WITH_COUNT = `SELECT ${PLAN_COLUMNS},
        (SELECT count(*)::int FROM subscriptions s
          WHERE s.plan_id = p.id AND s.org_id = p.org_id
-           AND s.status IN ('pending_payment','active','past_due','frozen')) AS live_subscriptions
+           AND s.status IN ('pending_eligibility','pending_payment','active','past_due','frozen')) AS live_subscriptions,
+       ${seatsTakenSql('p.id')} AS seats_taken
   FROM subscription_plans p`;
 
 interface VenueRow {
@@ -156,10 +163,17 @@ export class PlatformPlansService {
         throw new AppError('REASON_REQUIRED', { field: 'reason', min_length: PLATFORM_REASON_MIN });
     }
     const id = newId();
+    // 04 §7 (DEC-590): the policies, the V4 behaviour when absent (the body's refinements checked their coherence)
+    const counted = body.term_kind === 'service_days';
+    const freezes = body.freeze_max_times ?? 0;
     const plan = await tx.one<PlanRow>(
       `INSERT INTO subscription_plans AS p (id, org_id, venue_id, name_ar, name_en, vehicles_included, monthly_price_halalas,
-                                         yearly_price_halalas, replaces_plan_id, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11) RETURNING ${PLAN_COLUMNS}`,
+                                         yearly_price_halalas, replaces_plan_id, created_by, created_at, updated_at,
+                                         term_kind, service_days, service_weekdays_mask, renewal_mode, daily_visit_limit,
+                                         refund_policy, closure_policy, freeze_max_times, freeze_max_days, eligibility,
+                                         capacity, audience_ar, vehicle_change)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+               $23, $24) RETURNING ${PLAN_COLUMNS}`,
       [
         id,
         venue.org_id,
@@ -172,6 +186,19 @@ export class PlatformPlansService {
         replaced?.id ?? null,
         actor.userId,
         tx.now,
+        counted ? 'service_days' : 'calendar',
+        counted ? body.service_days : null,
+        counted ? maskOfWeekdays(body.service_weekdays!) : null,
+        body.renewal_mode ?? (counted ? 'manual' : 'auto'),
+        body.daily_visit_limit ?? null,
+        body.refund_policy ?? 'prorated_on_termination',
+        body.closure_policy ?? 'freeze',
+        freezes,
+        freezes > 0 ? body.freeze_max_days : null,
+        body.eligibility ?? 'none',
+        body.capacity ?? null,
+        body.audience_ar ?? null,
+        body.vehicle_change ?? 'once_per_period',
       ],
     );
     if (replaced) await this.retireRow(tx, actor, replaced, (body.reason ?? '').trim(), plan.id, client);
@@ -191,9 +218,11 @@ export class PlatformPlansService {
         monthly_price_halalas: plan.monthly_price_halalas,
         yearly_price_halalas: plan.yearly_price_halalas,
         replaces_plan_id: replaced?.id ?? null,
+        ...planPolicyView(plan),
+        capacity: plan.capacity,
       },
     });
-    return planView({ ...plan, live_subscriptions: 0 });
+    return this.view(tx, plan.id);
   }
 
   async retire(

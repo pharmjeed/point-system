@@ -10,6 +10,7 @@ import {
   successEnvelopeSchema,
   type CustomerPass,
 } from '@point/shared/customer';
+import { riyadhMidnight } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCustomerApp, freshDriver, type CustomerApp } from './customer-harness.js';
 import {
@@ -353,5 +354,105 @@ describe('V2-033 — the entitlement `subscription` at intake (docs/v2/04 §2)',
       expect(r.customer.subscription, status).toBeNull();
       expect(await ticket(d.ticketId)).toMatchObject({ entitlement: 'none', payment_status: 'due' });
     }
+  });
+});
+
+/**
+ * V2-036 (docs/v2/04 §7; DEC-592; the subscriptions annex clauses 1 and 2): a counted-day term at intake — from its
+ * first counted day, on its service weekdays (Sunday … Thursday), one covered visit a Riyadh day; any other visit is
+ * a normal one of the venue (its fee from the event), never a refused intake.
+ */
+describe('V2-036 — a counted-day term at intake (DEC-592)', () => {
+  let studentPlan: string;
+
+  async function countedSubscription(a: Account, vehicles: string[], startOn: string, endOn: string) {
+    const r = await w.db.query<{ id: string }>(
+      `INSERT INTO subscriptions (account_id, plan_id, org_id, venue_id, billing_cycle, status, price_halalas,
+              vehicles_included, cycle_anchor_at, periods_paid, current_period_start, current_period_end, activated_at,
+              service_start_on, service_end_on)
+       VALUES ($1, $2, $3, $4, 'monthly', 'active', 17250, 2, $5, 1, $6, $7, $5, $8, $9) RETURNING id`,
+      [
+        a.id,
+        studentPlan,
+        ORG,
+        RMS,
+        w.clock.now(),
+        riyadhMidnight(startOn),
+        riyadhMidnight(endOn),
+        startOn,
+        endOn,
+      ],
+    );
+    for (const v of vehicles)
+      await w.db.query(
+        `INSERT INTO subscription_vehicles (subscription_id, account_id, customer_vehicle_id) VALUES ($1, $2, $3)`,
+        [r.rows[0]!.id, a.id, v],
+      );
+    return r.rows[0]!.id;
+  }
+
+  beforeAll(async () => {
+    const owner = (await w.db.query<{ id: string }>(`SELECT id FROM platform_users LIMIT 1`)).rows[0]!.id;
+    studentPlan = (
+      await w.db.query<{ id: string }>(
+        `INSERT INTO subscription_plans (org_id, venue_id, name_ar, vehicles_included, monthly_price_halalas, created_by,
+                                         term_kind, service_days, service_weekdays_mask, renewal_mode,
+                                         daily_visit_limit, refund_policy, closure_policy, freeze_max_times,
+                                         freeze_max_days, eligibility)
+         VALUES ($1, $2, 'باقة الطالب', 2, 17250, $3, 'service_days', 22, 31, 'manual', 1, 'non_refundable',
+                 'continue', 1, 5, 'student_id_review') RETURNING id`,
+        [ORG, RMS, owner],
+      )
+    ).rows[0]!.id;
+    w.clock.set('2026-11-01T06:00:00.000Z'); // Sunday 09:00 Asia/Riyadh
+  });
+
+  /** a pass scan by a fresh driver on a new draft of EVT-R2: the customer badge and the ticket's entitlement */
+  async function scanNow(a: Account, vehicleId: string) {
+    const driver = await freshDriver(w);
+    const d = await newDraft(w, driver, EVT_R2);
+    const r = ok(await scan(driver, d, await passOf(a), vehicleId));
+    return { badge: r.customer.subscription, ticket: await ticket(d.ticketId) };
+  }
+
+  it('one covered visit a day: a second car the same day is a paid visit; the next day is covered again', async () => {
+    const a = await account();
+    const v1 = await vehicle(a);
+    const v2 = await vehicle(a);
+    const sub = await countedSubscription(a, [v1.id, v2.id], '2026-11-01', '2026-11-30');
+    const first = await scanNow(a, v1.id);
+    expect(first.badge).toBe('covered');
+    expect(first.ticket).toMatchObject({ entitlement: 'subscription', subscription_id: sub, fee: 0 });
+    // the same day, the other covered car: the day's visit is used (daily_visit_limit = 1), the event's fee
+    const second = await scanNow(a, v2.id);
+    expect(second.badge).toBeNull();
+    expect(second.ticket).toMatchObject({ entitlement: 'none', payment_status: 'due', fee: FEE });
+    // the next day is a new counted day (a third covered car: the two others still have their open visits)
+    const v3 = await vehicle(a);
+    await w.db.query(
+      `INSERT INTO subscription_vehicles (subscription_id, account_id, customer_vehicle_id) VALUES ($1, $2, $3)`,
+      [sub, a.id, v3.id],
+    );
+    w.clock.set('2026-11-02T05:00:00.000Z');
+    const nextDay = await scanNow(a, v3.id);
+    expect(nextDay.ticket).toMatchObject({ entitlement: 'subscription', subscription_id: sub });
+  });
+
+  it('Friday and Saturday serve nothing of the term; a term not begun covers nothing yet', async () => {
+    w.clock.set('2026-11-06T06:00:00.000Z'); // Friday
+    const a = await account();
+    const v = await vehicle(a);
+    await countedSubscription(a, [v.id], '2026-11-01', '2026-11-30');
+    const friday = await scanNow(a, v.id);
+    expect(friday.badge).toBeNull();
+    expect(friday.ticket).toMatchObject({ entitlement: 'none', payment_status: 'due' });
+    w.clock.set('2026-11-08T05:00:00.000Z'); // Sunday 08:00
+    const b = await account();
+    const vb = await vehicle(b);
+    const vb2 = await vehicle(b);
+    await countedSubscription(b, [vb.id, vb2.id], '2026-11-09', '2026-12-08'); // its first counted day is Monday
+    expect((await scanNow(b, vb.id)).ticket).toMatchObject({ entitlement: 'none' });
+    w.clock.set('2026-11-09T04:30:00.000Z');
+    expect((await scanNow(b, vb2.id)).ticket).toMatchObject({ entitlement: 'subscription' });
   });
 });

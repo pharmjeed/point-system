@@ -1,5 +1,17 @@
 import { Body, Controller, Get, Header, Inject, Param, Post, Query } from '@nestjs/common';
 import {
+  PlatformEligibilityDecisionBodySchema,
+  PlatformEligibleStudentsBodySchema,
+  PlatformExceptionalRefundBodySchema,
+  PlatformVenueClosureCancelBodySchema,
+  PlatformVenueClosureCreateBodySchema,
+  PlatformVenueClosuresQuerySchema,
+  type PlatformEligibilityDecisionBody,
+  type PlatformEligibleStudentsBody,
+  type PlatformExceptionalRefundBody,
+  type PlatformVenueClosureCancelBody,
+  type PlatformVenueClosureCreateBody,
+  type PlatformVenueClosuresQuery,
   PlatformPlanCreateBodySchema,
   PlatformPlanRetireBodySchema,
   PlatformPlansQuerySchema,
@@ -25,6 +37,9 @@ import { CLOCK } from '../../../http/tokens.js';
 import { zodBody } from '../../../http/zod-pipe.js';
 import type { ClientInfo } from '../../identity-access/application/auth-service.js';
 import { Client } from '../../identity-access/http/client-info.js';
+import { VenueClosuresService } from '../application/closures.js';
+import { PlatformEligibilityService } from '../application/eligibility.js';
+import { ExceptionalRefunds } from '../application/exceptional-refund.js';
 import { PlatformPlansService } from '../application/plans.js';
 import { PlatformSubscriptionsService } from '../application/reports.js';
 
@@ -78,6 +93,8 @@ export class PlatformPlansController {
 export class PlatformSubscriptionsController {
   constructor(
     private readonly subs: PlatformSubscriptionsService,
+    private readonly eligibility: PlatformEligibilityService,
+    private readonly exceptional: ExceptionalRefunds,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -85,7 +102,7 @@ export class PlatformSubscriptionsController {
   @RequirePlatformPermission('platform.subscription_read')
   @Header('Cache-Control', 'private, no-store')
   list(@Query(zodBody(PlatformSubscriptionsQuerySchema)) q: PlatformSubscriptionsQuery) {
-    return this.subs.list(q);
+    return this.subs.list(q, this.clock.now());
   }
 
   @Get('report')
@@ -99,6 +116,103 @@ export class PlatformSubscriptionsController {
   @RequirePlatformPermission('platform.subscription_read')
   @Header('Cache-Control', 'private, no-store')
   detail(@CurrentPlatformActor() _actor: PlatformActorContext, @Param('subscriptionId') id: string) {
-    return this.subs.detail(id);
+    return this.subs.detail(id, this.clock.now());
+  }
+
+  /** V2-036 (DEC-596): approve or reject an application waiting for its eligibility decision. */
+  @Post(':subscriptionId/eligibility')
+  @RequirePlatformPermission('platform.subscription_manage')
+  @Command('POST /v1/platform/subscriptions/{subscriptionId}/eligibility')
+  async decide(
+    @CurrentTx() tx: Tx,
+    @CurrentPlatformActor() actor: PlatformActorContext,
+    @Param('subscriptionId') id: string,
+    @Body(zodBody(PlatformEligibilityDecisionBodySchema)) body: PlatformEligibilityDecisionBody,
+    @Client() client: ClientInfo,
+  ) {
+    await this.eligibility.decide(tx, actor, id, body, client);
+    return this.subs.detailIn(tx, id);
+  }
+
+  /** V2-036 (DEC-600): the exceptional prorated refund of the remaining counted days. */
+  @Post(':subscriptionId/exceptional-refund')
+  @RequirePlatformPermission('platform.refund_issue')
+  @Command('POST /v1/platform/subscriptions/{subscriptionId}/exceptional-refund')
+  async exceptionalRefund(
+    @CurrentTx() tx: Tx,
+    @CurrentPlatformActor() actor: PlatformActorContext,
+    @Param('subscriptionId') id: string,
+    @Body(zodBody(PlatformExceptionalRefundBodySchema)) body: PlatformExceptionalRefundBody,
+    @Client() client: ClientInfo,
+  ) {
+    const r = await this.exceptional.issue(tx, actor, id, body, client);
+    return created({ ...r, subscription: await this.subs.detailIn(tx, id) });
+  }
+}
+
+/** V2-036 (DEC-597): the venue's list of eligible student numbers (counts only on read). */
+@Controller('v1/platform/venues')
+export class PlatformEligibleStudentsController {
+  constructor(private readonly eligibility: PlatformEligibilityService) {}
+
+  @Get(':venueId/eligible-students')
+  @RequirePlatformPermission('platform.subscription_manage')
+  @Header('Cache-Control', 'private, no-store')
+  summary(@Param('venueId') venueId: string) {
+    return this.eligibility.listSummary(venueId);
+  }
+
+  @Post(':venueId/eligible-students')
+  @RequirePlatformPermission('platform.subscription_manage')
+  @Command('POST /v1/platform/venues/{venueId}/eligible-students')
+  importList(
+    @CurrentTx() tx: Tx,
+    @CurrentPlatformActor() actor: PlatformActorContext,
+    @Param('venueId') venueId: string,
+    @Body(zodBody(PlatformEligibleStudentsBodySchema)) body: PlatformEligibleStudentsBody,
+    @Client() client: ClientInfo,
+  ) {
+    return this.eligibility.importList(tx, actor, venueId, body, client);
+  }
+}
+
+/** V2-036 (DEC-599): P-05's announced holidays and closures of a venue. */
+@Controller('v1/platform/venue-closures')
+export class PlatformVenueClosuresController {
+  constructor(
+    private readonly closures: VenueClosuresService,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
+
+  @Get()
+  @RequirePlatformPermission('platform.plan_manage')
+  @Header('Cache-Control', 'private, no-store')
+  list(@Query(zodBody(PlatformVenueClosuresQuerySchema)) q: PlatformVenueClosuresQuery) {
+    return this.closures.list(q, this.clock.now());
+  }
+
+  @Post()
+  @RequirePlatformPermission('platform.plan_manage')
+  @Command('POST /v1/platform/venue-closures')
+  async create(
+    @CurrentTx() tx: Tx,
+    @CurrentPlatformActor() actor: PlatformActorContext,
+    @Body(zodBody(PlatformVenueClosureCreateBodySchema)) body: PlatformVenueClosureCreateBody,
+    @Client() client: ClientInfo,
+  ) {
+    return created(await this.closures.create(tx, actor, body, client));
+  }
+
+  @Post(':closureId/cancel')
+  @RequirePlatformPermission('platform.plan_manage')
+  @Command('POST /v1/platform/venue-closures/{closureId}/cancel')
+  cancel(
+    @CurrentTx() tx: Tx,
+    @CurrentPlatformActor() actor: PlatformActorContext,
+    @Param('closureId') id: string,
+    @Body(zodBody(PlatformVenueClosureCancelBodySchema)) body: PlatformVenueClosureCancelBody,
+    @Client() client: ClientInfo,
+  ) {
+    return this.closures.cancel(tx, actor, id, body, client);
   }
 }

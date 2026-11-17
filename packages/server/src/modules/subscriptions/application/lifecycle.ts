@@ -4,8 +4,8 @@ import {
   type SubscriptionLifecycleHook,
 } from '../../../core/hooks/subscription-lifecycle.js';
 import type { Tx } from '../../../core/db/tx.js';
-import { endPatch, freeze, terminate, transition, unfreeze, type SubActor } from './machine.js';
-import { SUBSCRIPTION_COLUMNS, type SubscriptionRow } from './rows.js';
+import { endPatch, freeze, push, terminate, transition, unfreeze, type SubActor } from './machine.js';
+import { policyOf, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from './rows.js';
 
 const blocked = (status: string) => (OPERATOR_BLOCKED_STATUSES as readonly string[]).includes(status);
 
@@ -87,7 +87,13 @@ export const subscriptionLifecycleEffects: SubscriptionLifecycleHook = {
   async onOperatorStatusChanged(tx, { orgId, from, to, requestId }) {
     const actor: SubActor = { type: 'system', name: `operator.${to}`, requestId };
     if (to === 'terminated') {
-      for (const sub of await lockLive(tx, { orgId }, ['pending_payment', 'active', 'past_due', 'frozen']))
+      for (const sub of await lockLive(tx, { orgId }, [
+        'pending_eligibility',
+        'pending_payment',
+        'active',
+        'past_due',
+        'frozen',
+      ]))
         await terminate(tx, sub, actor);
       return;
     }
@@ -107,8 +113,15 @@ export const subscriptionLifecycleEffects: SubscriptionLifecycleHook = {
   async onVenueStatusChanged(tx, { orgId, venueId, from, to, requestId }) {
     const actor: SubActor = { type: 'system', name: `venue.${to}`, requestId };
     if (to !== 'active' && from === 'active') {
-      for (const sub of await lockLive(tx, { orgId, venueId }, ['active']))
+      for (const sub of await lockLive(tx, { orgId, venueId }, ['active'])) {
+        // 04 §7 (DEC-599; annex clause 5): a plan whose closure policy is `continue` keeps counting through a closure
+        // outside POINT's control — no freeze, no extension, the subscriber told; the freeze right stays theirs
+        if ((await policyOf(tx, sub)).closure_policy === 'continue') {
+          await push(tx, sub, 'subscription_venue_closure', `venue_inactive:${tx.now.getTime()}`);
+          continue;
+        }
         await freeze(tx, sub, 'venue_inactive', actor);
+      }
       return;
     }
     if (to === 'active' && from !== 'active') {
@@ -122,6 +135,7 @@ export const subscriptionLifecycleEffects: SubscriptionLifecycleHook = {
 
   async onAccountDeleted(tx, { accountId, requestId }) {
     const subs = await lockLive(tx, { orgId: '', accountId }, [
+      'pending_eligibility',
       'pending_payment',
       'active',
       'past_due',

@@ -14,6 +14,8 @@ export {
   SUBSCRIPTION_GRACE_EXPIRE_JOB,
   SUBSCRIPTION_RENEW_JOB,
   SUBSCRIPTION_RENEWAL_NOTICE_JOB,
+  SUBSCRIPTION_FREEZE_START_JOB,
+  SUBSCRIPTION_FREEZE_END_JOB,
   renewalGivenId,
   checkoutGivenId,
 } from './domain/jobs.js';
@@ -30,6 +32,9 @@ export { SubscriptionCheckout, type CheckoutPlan } from './application/checkout.
 export { SubscriptionCommands } from './application/commands.js';
 export { PlatformPlansService } from './application/plans.js';
 export { PlatformSubscriptionsService } from './application/reports.js';
+export { PlatformEligibilityService } from './application/eligibility.js';
+export { VenueClosuresService } from './application/closures.js';
+export { ExceptionalRefunds } from './application/exceptional-refund.js';
 export { customerSubscriptions } from './application/views.js';
 export { subscriptionById, type SubscriptionRow } from './application/rows.js';
 
