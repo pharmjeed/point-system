@@ -5,7 +5,10 @@
 # with WA_MODE=simulator and WA_GRAPH_BASE_URL=http://wa-simulator:4010 in .env.
 services:
   wa-simulator:
-    build: ../../tools/wa-simulator
+    build:
+      context: ../../tools/wa-simulator
+      labels:
+        sa.point.stack: point
     restart: unless-stopped
     environment:
       PORT: '4010'

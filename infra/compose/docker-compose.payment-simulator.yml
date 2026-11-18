@@ -1,0 +1,39 @@
+# Optional, STAGING ONLY: the payment simulator (tools/payment-simulator) in place of Moyasar's API (V2-020, DEC-510,
+# DEC-630). No card is ever charged: the simulator refuses to start in production and refuses any live key, the api
+# refuses MOYASAR_MODE=simulator with APP_ENV=production. Add after the production file:
+#   docker compose --env-file .env -f infra/compose/docker-compose.prod.yml -f infra/compose/docker-compose.payment-simulator.yml up -d
+# with, in .env (infra/deploy/install.sh writes them, the two secrets generated with openssl on the server):
+#   MOYASAR_MODE=simulator  MOYASAR_BASE_URL=http://payment-simulator:4020
+#   MOYASAR_SECRET_KEY=sk_test_…  MOYASAR_WEBHOOK_SECRET=…
+# The api and the worker call it by its service name on the internal network; it sends the gateway's events back to
+# the api's /webhooks/payments/moyasar on the same network, with MOYASAR_WEBHOOK_SECRET as `secret_token`.
+# It publishes NO port: its /_sim/* controls have no authentication. Reach it from the server only:
+#   bash infra/deploy/pc.sh exec -T payment-simulator wget -qO- http://127.0.0.1:4020/_sim/payments
+services:
+  payment-simulator:
+    image: ${POINT_PAYMENT_SIMULATOR_IMAGE:-point-payment-simulator:latest}
+    build:
+      context: ../../tools/payment-simulator
+      labels:
+        sa.point.stack: point
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      PORT: '4020'
+      WEBHOOK_URL: http://api:${API_PORT:-3000}/webhooks/payments/moyasar
+      SECRET_KEY: ${MOYASAR_SECRET_KEY:?MOYASAR_SECRET_KEY (sk_test_…, the simulator's only key) is required}
+      WEBHOOK_SECRET: ${MOYASAR_WEBHOOK_SECRET:?MOYASAR_WEBHOOK_SECRET is required}
+      # Moyasar retries a refused event; the api may be restarting during an update
+      WEBHOOK_RETRIES: '3'
+    networks:
+      - point
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
