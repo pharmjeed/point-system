@@ -525,7 +525,7 @@ git clone https://github.com/pharmjeed/point-system.git /opt/point && cd /opt/po
 bash infra/deploy/install.sh          # يسأل: اسم المضيف، البريد، جوال المالك واسمه
 ```
 
-- **الأسرار** كلها يولدها السكربت بـ`openssl` على الخادم نفسه في `.env` (صلاحية `600`)، ومعها مفاتيح VAPID (P-256). لا يطبع إلا كلمة مرور المالك المؤقتة (مرة واحدة) وكلمة مرور صفحة المحاكي.
+- **الأسرار** كلها يولدها السكربت بـ`openssl` على الخادم نفسه في `.env` (صلاحية `600`)، ومعها مفاتيح VAPID (P-256). لا يطبع إلا كلمتي المرور المؤقتتين للمالك ولمالك المنصة (مرة واحدة، DEC-633) وكلمة مرور صفحة المحاكي؛ ومنذ الإصدار الثاني يكتبها `infra/deploy/env.sh` (§14.1).
 - **الوضع يُختار تلقائيًا:**
   - **`gateway`:** على الخادم حاوية Caddy مشتركة (`POINT_GATEWAY_CONTAINER`، الافتراضي `vm-caddy-1`) تملك 80/443 وتستورد `/data/conf.d/*.caddyfile`. يعمل Caddy بوينت بـHTTP فقط على عنوان جسر Docker للبوابة (`POINT_HTTP_BIND`، المنفذ الافتراضي 8095)، ويكتب السكربت `point.caddyfile` في مجلد البوابة، ثم `caddy validate` (رفضٌ = استعادة الملف السابق ولا إعادة تحميل)، ثم `caddy reload` الذري: المواقع الأخرى لا تنقطع، والبوابة تصدر شهادة `DOMAIN`.
   - **`direct`:** المنفذان 80/443 حران، فيملكهما Caddy بوينت ويصدر الشهادة بنفسه (§2).
@@ -537,3 +537,34 @@ bash infra/deploy/install.sh          # يسأل: اسم المضيف، البر
 
 **خادم المالك الحالي (DEC-457):** Oracle Ampere A1 (arm64) في جدة، تعمل عليه مشاريع أخرى خلف البوابة `vm-caddy-1`. بوينت هناك بالوضع `gateway` على `app.pointsa.net` و`sim.pointsa.net`، بمشروع compose مستقل اسمه `point` (حاوياته وأحجامه وشبكته منفصلة، فلا يلمس المشاريع الأخرى). يختبر سير `.github/workflows/deploy-smoke.yml` الوضعين على Docker حقيقي (ومعهما إعادة التشغيل كتحديث)، وبناء صورة الخلفية لـ`linux/arm64` وتحميل وحداتها الأصلية (argon2 وsharp).
 
+
+### 14.1 الإصدار الثاني على الخادم (DEC-630 … DEC-635)
+
+المثبّت نفسه يثبّت فرع الإصدار الثاني ويرقّي تثبيت الإصدار الأول في مكانه. دليل المالك المختصر بالعربية: [`runbooks/server-install-v2.md`](runbooks/server-install-v2.md).
+
+```bash
+# تثبيت جديد من فرع الإصدار الثاني
+sudo mkdir -p /opt/point && sudo chown "$USER" /opt/point
+git clone -b claude/v2-platform-operators https://github.com/pharmjeed/point-system.git /opt/point && cd /opt/point
+bash infra/deploy/install.sh
+# تحديث (أو ترقية تثبيت الإصدار الأول إلى الثاني)
+cd /opt/point && git fetch origin && git checkout claude/v2-platform-operators && git pull --ff-only && bash infra/deploy/install.sh
+```
+
+**ما تحتويه حزمة staging الآن:** `postgres` (16) و`minio` و`migrate` ثم `api` و`worker` و`web` (Caddy)، ومحاكيان على الشبكة الداخلية: `wa-simulator` (واتساب، صفحته `sim.<النطاق>` في وضع البوابة) و`payment-simulator` (Moyasar، **بلا أي منفذ منشور** لأن أوامر التحكم `/_sim/*` فيه بلا مصادقة). الفوترة الإلكترونية (`EINVOICE_MODE=simulator`) وإشعارات تطبيق العميل (`CUSTOMER_PUSH_MODE=simulator`) محاكيان داخل العملية بلا شبكة: لا بطاقة تُخصم، ولا مستند يصل إلى الهيئة، ولا جهاز يتلقى إشعارًا.
+
+**المفاتيح التي يكتبها المثبّت للإصدار الثاني (DEC-630):** `PLATFORM_SESSION_COOKIE_NAME=__Host-point_psid`، `WA_TEMPLATE_SET=v1`، `CUSTOMER_APP_LINK=` (فارغ: لا سطر للتطبيق في ردود واتساب حتى تُنشر صفحة التطبيق)، `CUSTOMER_TERMS_URL`/`_PRIVACY_URL`/`_MARKETING_URL` فارغة، `MOYASAR_MODE=simulator`، `MOYASAR_BASE_URL=http://payment-simulator:4020`، مرجعا `MOYASAR_*_REF`، `MOYASAR_SECRET_KEY=sk_test_<عشوائي>` و`MOYASAR_WEBHOOK_SECRET` (يولدهما `openssl` على الخادم؛ المحاكي يأخذهما من `.env` نفسه)، `EINVOICE_MODE=simulator` ومرجعه و`EINVOICE_WEBHOOK_SECRET` (عشوائي)، `INVOICE_SELLER_*` فارغة (= بيانات بائع تجريبية ظاهرة «بيانات تجريبية» على كل فاتورة؛ إلزامية بقيمها الحقيقية في production)، `CUSTOMER_PUSH_MODE=simulator` ومرجعه و`EXPO_ACCESS_TOKEN=` فارغًا. **لا يكتب** إصدارات النصوص (`CUSTOMER_*_VERSION`) ولا مواعيد المهام: تتبع الكود والتطبيق الذي يحمل نصوصها (DEC-631).
+
+**الترقية من تثبيت الإصدار الأول (DEC-631):** إعادة تشغيل المثبّت تحفظ `.env` كما هو وتُلحق في آخره كل مفتاح ناقص فقط (لا تغيّر مفتاحًا موجودًا ولو كان فارغًا)، وتطبع **أسماء** المفاتيح المضافة دون قيمها، وتبقى صلاحية الملف `600`. ثم تضيف `docker-compose.payment-simulator.yml` إلى `POINT_COMPOSE_FILES` ما دام `MOYASAR_MODE=simulator` (وضع `test` لتجربة H3 لا يحتاجه)، وتنشئ مالك المنصة مرة واحدة (DEC-633، أدناه).
+
+**مالك المنصة (DEC-633):** يسأل المثبّت عن جوال مالك لوحة المنصة `/platform` واسمه (الافتراضي: المالك نفسه) وينشئه مرة واحدة بـ`create-platform-owner` (كلمة مرور مؤقتة تُطبع مرة واحدة)، ويحفظ `POINT_PLATFORM_OWNER_CREATED` في `.env`. بلا جوال في الوضع غير التفاعلي يتخطاه وينبه: `PLATFORM_OWNER_PHONE=05XXXXXXXX PLATFORM_OWNER_NAME='…' bash infra/deploy/install.sh`.
+
+**المسارات (DEC-562، DEC-634):** البوابة المشتركة تمرر النطاق كله إلى Caddy بوينت (`reverse_proxy` واحد في `point.caddyfile`)، وهو يوجّه ويحدّ الأجسام: `/v1/*` (الموظفون و`/v1/customer/*` للتطبيق و`/v1/platform/*` للوحة) و`/ws` (مساحتا الموظفين و`/customer` على المسار نفسه) حتى 2 MB، `/webhooks/whatsapp` حتى 4 MB، `/webhooks/payments/moyasar` و`/webhooks/einvoicing` حتى 1 MB، الحاويات الخاصة حتى 12 MB، وصفحات `/platform` من تطبيق الويب. لا تغيير في `Caddyfile` كان لازمًا للإصدار الثاني بعد DEC-562.
+
+**محاكي الدفع:** يصله الـapi والعامل باسم الخدمة، ويرسل أحداثه إلى `http://api:3000/webhooks/payments/moyasar` على الشبكة الداخلية بسر `MOYASAR_WEBHOOK_SECRET` في `secret_token`. فحص الذهاب والإياب: `bash infra/deploy/smoke-payments.sh`؛ قراءة ما فيه: `bash infra/deploy/pc.sh exec -T payment-simulator wget -qO- http://127.0.0.1:4020/_sim/payments`. **حدّه:** هاتف حقيقي لا يصل إلى المحاكي الداخلي، فترميز البطاقة على الجهاز وصفحة 3-D Secure لا تعمل من تطبيق العميل على الخادم؛ تجربة الدفع من الجهاز تكون بوضع `test` وبوابة Moyasar الاختبارية (§8.1، H3).
+
+**تسجيل دخول العميل:** يتطلب صف قناة واتساب (§14 أعلاه، S-13) ومزامنة القوالب في المحاكي؛ قبلها يجيب `POST /v1/customer/auth/otp` بـ`WA_CHANNEL_UNAVAILABLE` (`no_channel`).
+
+**نظافة القرص (DEC-632):** قبل البناء يطبع المثبّت الذاكرة الحرة والمساحة الحرة على قرص Docker وحجم ذاكرة البناء والمنافذ التي سيحجزها (8095 و8495 و8097 في وضع البوابة، أو 80/443) ويتوقف بوضوح إن كان منفذ لبرنامج آخر. يرفض البناء إن قلّت المساحة الحرة عن `POINT_MIN_FREE_GB` (8) بعد تنظيف آمن أولي، ولا يوقف شيئًا. بعد البناء يحذف صور بوينت المعلّقة فقط (الوسم `sa.point.stack=point` ووسم compose للمشروع `point`) وذاكرة البناء غير المستعملة منذ `POINT_BUILD_CACHE_UNTIL` (24 ساعة؛ `off` يبقيها)، ويطبع المساحة قبل وبعد. ذاكرة BuildKit مشتركة بين كل البناءات على الخادم ولا مالك لمدخلاتها: حذف مدخل قديم لمشروع آخر يبطئ بناءه التالي فقط، ولا يمس صورة ولا حاوية ولا حجمًا ولا شبكة. لا `docker system prune` أبدًا.
+
+**ما يختبره `deploy-smoke.yml` (DEC-635):** يعمل على كل طلب دمج أيًّا كان فرعه الأساس (طلب الإصدار الثاني #3 أساسه فرع الإصدار الأول) متى تغيرت `infra/**` أو `apps/**` (عدا `apps/customer`) أو `packages/db/**` أو إعدادات البيئة أو المحاكيان. بعد التثبيت بالوضعين: `/health/ready`، مسار العميل `/v1/customer/auth/otp` و`/v1/customer/me`، ترقية WebSocket على `/ws` بتوكن عميل، صفحة `/platform/login` ودخول مالك المنصة الأول (جلسة مقيدة وكوكي `__Host-point_psid`)، رفض الـapi لـWebhook غير موقّع على المسارين الجديدين، ذهاب وإياب محاكي الدفع، حارس المساحة، إعادة التشغيل كتحديث، وترقية تثبيت بشكل الإصدار الأول في مكانه. وظيفة بناء صورة الخلفية لـarm64 كما هي.
