@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
 import QRCode from 'qrcode';
 import { generatePassToken, passStep } from '../../../packages/shared/src/customer/pass';
@@ -21,46 +22,106 @@ fakeOnly();
 const FIRST = 'سارة';
 const PHONE = '+966551234123';
 
-/** The camera of the page: a 640×640 canvas stream showing `__e2eShowQr(modules)`, or a refused permission. */
+/** The side of the fake camera's square frame, in pixels. */
+const FRAME = 640;
+
+/** A QR symbol as the fake camera paints it: `size`×`size` modules of `cell` px, the first at (`off`, `off`). */
+type QrFrame = { size: number; cell: number; off: number; data: number[] };
+
+function qrFrame(text: string, maskPattern?: number): QrFrame {
+  const { modules } = QRCode.create(text, {
+    errorCorrectionLevel: 'L',
+    ...(maskPattern === undefined ? {} : { maskPattern: maskPattern as QRCode.QRCodeMaskPattern }),
+  });
+  const cell = Math.floor(560 / modules.size);
+  return {
+    size: modules.size,
+    cell,
+    off: Math.floor((FRAME - cell * modules.size) / 2),
+    data: Array.from(modules.data),
+  };
+}
+
+// the scanner's decoder (`@zxing/browser` wraps this library: HybridBinarizer + QRCodeReader, no hints); a CommonJS
+// package whose named exports Node's ESM loader cannot see
+const zxing = createRequire(import.meta.url)('@zxing/library') as typeof import('@zxing/library');
+
+/** Whether the scanner's decoder reads `text` from the exact frame the fake camera paints for `f`. */
+function decoderReads(f: QrFrame, text: string): boolean {
+  const lum = new Uint8ClampedArray(FRAME * FRAME).fill(255);
+  for (let y = 0; y < f.size; y++)
+    for (let x = 0; x < f.size; x++)
+      if (f.data[y * f.size + x])
+        for (let row = f.off + y * f.cell; row < f.off + (y + 1) * f.cell; row++)
+          lum.fill(0, row * FRAME + f.off + x * f.cell, row * FRAME + f.off + (x + 1) * f.cell);
+  const bitmap = new zxing.BinaryBitmap(
+    new zxing.HybridBinarizer(new zxing.RGBLuminanceSource(lum, FRAME, FRAME)),
+  );
+  try {
+    return new zxing.QRCodeReader().decode(bitmap).getText() === text;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The symbol to show for `text`: the encoder's own choice, or else the first of the 8 masks (all valid encodings of
+ * the same text) the decoder reads. Needed because the frame is pixel-perfect, axis-aligned and identical every time:
+ * for 4–6 % of symbols, a finder-like 1:1:3:1:1 run in the data area is taken by zxing's finder-pattern search for a
+ * corner and the symbol is never located — in every frame alike, so a random secret made the scan specs flaky (the
+ * encoder's mask choice only penalises such runs). A held phone never shows the same frame twice (a tilt of 2° alone
+ * reads almost all of those symbols), so this is the harness's limit, not the driver's; the scanner and its real
+ * decoder still read, in the browser, every symbol shown here.
+ */
+function readableQr(text: string): QrFrame {
+  for (const mask of [undefined, 0, 1, 2, 3, 4, 5, 6, 7]) {
+    const f = qrFrame(text, mask);
+    if (decoderReads(f, text)) return f;
+  }
+  throw new Error(`no mask of the QR for ${text.slice(0, 12)}… is readable by @zxing/library`);
+}
+
+/** The camera of the page: a 640×640 canvas stream showing `__e2eShowQr(frame)`, or a refused permission. */
 async function fakeCamera(page: Page, mode: 'ok' | 'denied' = 'ok'): Promise<void> {
-  await page.addInitScript((m) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 640;
-    const ctx = canvas.getContext('2d')!;
-    let modules: { size: number; data: number[] } | null = null;
-    const draw = () => {
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, 640, 640);
-      if (!modules) return;
-      const cell = Math.floor(560 / modules.size);
-      const off = Math.floor((640 - cell * modules.size) / 2);
-      ctx.fillStyle = '#000';
-      for (let y = 0; y < modules.size; y++)
-        for (let x = 0; x < modules.size; x++)
-          if (modules.data[y * modules.size + x]) ctx.fillRect(off + x * cell, off + y * cell, cell, cell);
-    };
-    setInterval(draw, 100);
-    (window as unknown as { __e2eShowQr: (q: typeof modules) => void }).__e2eShowQr = (q) => {
-      modules = q;
-      draw();
-    };
-    const media = navigator.mediaDevices ?? ({} as MediaDevices);
-    media.getUserMedia = async () => {
-      if (m === 'denied') throw new DOMException('Permission denied', 'NotAllowedError');
-      draw();
-      return canvas.captureStream(15);
-    };
-    if (!navigator.mediaDevices) Object.defineProperty(navigator, 'mediaDevices', { value: media });
-  }, mode);
+  await page.addInitScript(
+    ({ m, side }) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = side;
+      canvas.height = side;
+      const ctx = canvas.getContext('2d')!;
+      let qr: QrFrame | null = null;
+      const draw = () => {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, side, side);
+        if (!qr) return;
+        ctx.fillStyle = '#000';
+        for (let y = 0; y < qr.size; y++)
+          for (let x = 0; x < qr.size; x++)
+            if (qr.data[y * qr.size + x])
+              ctx.fillRect(qr.off + x * qr.cell, qr.off + y * qr.cell, qr.cell, qr.cell);
+      };
+      setInterval(draw, 100);
+      (window as unknown as { __e2eShowQr: (q: QrFrame) => void }).__e2eShowQr = (q) => {
+        qr = q;
+        draw();
+      };
+      const media = navigator.mediaDevices ?? ({} as MediaDevices);
+      media.getUserMedia = async () => {
+        if (m === 'denied') throw new DOMException('Permission denied', 'NotAllowedError');
+        draw();
+        return canvas.captureStream(15);
+      };
+      if (!navigator.mediaDevices) Object.defineProperty(navigator, 'mediaDevices', { value: media });
+    },
+    { m: mode, side: FRAME },
+  );
 }
 
 async function showQr(page: Page, text: string): Promise<void> {
-  const q = QRCode.create(text, { errorCorrectionLevel: 'L' });
-  await page.evaluate((m) => (window as unknown as { __e2eShowQr: (q: unknown) => void }).__e2eShowQr(m), {
-    size: q.modules.size,
-    data: Array.from(q.modules.data),
-  });
+  await page.evaluate(
+    (q) => (window as unknown as { __e2eShowQr: (q: QrFrame) => void }).__e2eShowQr(q),
+    readableQr(text),
+  );
 }
 
 function account(fake: FakeServer, vehicles: FPassAccount['vehicles'] = []): FPassAccount {
