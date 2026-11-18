@@ -1,0 +1,42 @@
+# R2 on a device (mirrors e2e/subscriptions.spec.ts): C-08 «اشترك» → C-09 yearly, plan, the car → C-10 a new card
+# kept for the renewal → C-14 active; cancel the renewal through the native Alert, then resume it.
+appId: sa.point.app
+name: C-09/C-10/C-14 — subscribe and manage
+tags: [h2, r2]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340007'
+- runFlow: subflows/add-vehicle.yaml
+# C-06's «اشتراكاتي» shortcut → the empty C-14 → «تصفح المواقع» opens C-07 on «يقبل الاشتراك» (option A, DEC-626)
+- tapOn:
+    id: home-subscriptions
+- tapOn:
+    id: subscriptions-browse
+- tapOn: 'برج الأعمال — العليا.*'
+- tapOn:
+    id: location-subscribe
+- tapOn: 'سنوي'
+- tapOn: 'اشتراك سيارة واحدة.*'
+- assertVisible: '.*وفّر.*'
+- tapOn:
+    id: subscribe-pay
+- assertVisible: 'حفظ البطاقة للتجديد التلقائي'
+- runFlow: subflows/card.yaml
+- tapOn:
+    id: pay-sheet-submit
+- extendedWaitUntil:
+    visible: 'اشتراكاتي'
+    timeout: 20000
+- assertVisible: 'نشط'
+- assertVisible: 'يتجدد في.*'
+- tapOn: 'إيقاف التجديد'
+- assertVisible: 'يبقى اشتراكك فعّالًا.*'
+- tapOn:
+    text: 'إيقاف التجديد'
+    index: 1
+- assertVisible: 'لن يتجدد اشتراكك.'
+- tapOn: 'استئناف التجديد'
+- assertVisible: 'سيتجدد اشتراكك.'
+- takeScreenshot: c14-subscriptions

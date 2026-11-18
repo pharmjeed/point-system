@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
-import { DRIVE_PERMISSIONS, ROLE_PERMISSIONS, findRoute, type Permission, type Role } from '@point/shared';
-import { collectRoutes } from '@point/server';
+import {
+  DRIVE_PERMISSIONS,
+  PLATFORM_ROUTES,
+  ROUTES,
+  ROLE_PERMISSIONS,
+  findRoute,
+  type Permission,
+  type Role,
+} from '@point/shared';
+import { CUSTOMER_ROUTES } from '@point/shared/customer';
+import { collectRoutes, newCustomerToken, sha256Hex } from '@point/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   documentedCodes,
@@ -24,6 +33,9 @@ const holds = (a: (typeof ACTORS)[number], p: string) =>
     (DRIVE_PERMISSIONS as readonly string[]).includes(p as Permission));
 
 const DUMMY = '00000000-0000-4000-8000-0000deadbeef';
+// V2-010: the customer API (CUSTOMER_ROUTES)
+const CUSTOMER = Object.values(CUSTOMER_ROUTES);
+const CUSTOMER_WRITES = CUSTOMER.filter((r) => r.method !== 'GET').length;
 
 /**
  * Server sweep (07): every route answers only the errors its docs/07_openapi.yaml operation documents, under the
@@ -37,6 +49,9 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
   let ops: Map<string, OpenApiOperation>;
 
   beforeAll(async () => {
+    // V2-021: a configured payment webhook secret (env://MOYASAR_WEBHOOK_SECRET), so that a forged delivery is the
+    // documented 401 and not the 503 of a deployment without one
+    process.env.MOYASAR_WEBHOOK_SECRET ??= 'openapi-sweep-payment-webhook-secret';
     t = await createTestApp();
     // every served route: /v1, /webhooks/whatsapp and /health (/metrics is the internal metrics server)
     routes = collectRoutes(t.app.get(DiscoveryService), t.app.get(MetadataScanner), t.app.get(Reflector));
@@ -45,14 +60,54 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
   });
   afterAll(async () => t.close());
 
+  // V2-002: a platform owner session (MFA passed) for the /v1/platform/* routes; staff actors hold none of them
+  let platformCookie = '';
+  const platformSession = async () => {
+    if (platformCookie) return platformCookie;
+    const u = await t.db.query<{ id: string }>(
+      `INSERT INTO platform_users (phone_e164, full_name, role, secret_hash, must_change_secret, mfa_enabled, mfa_secret_enc)
+       VALUES ('+966551119101', 'مالك المنصة', 'platform_owner', 'x', false, true, 'x') RETURNING id`,
+    );
+    const token = 'openapi-sweep-platform-session-token-0001';
+    await t.db.query(
+      `INSERT INTO platform_sessions (platform_user_id, token_hash, mfa_verified, created_at, last_seen_at, expires_at)
+       VALUES ($1, $2, true, $3, $3, $3::timestamptz + interval '48 hours')`,
+      [u.rows[0]!.id, sha256Hex(token), t.clock.now()],
+    );
+    platformCookie = `${t.env.PLATFORM_SESSION_COOKIE_NAME}=${token}`;
+    return platformCookie;
+  };
+
+  // V2-010: a customer account signed in on a device (Bearer tokens), for the /v1/customer/* routes
+  let customerAccess = '';
+  const customerSession = async () => {
+    if (customerAccess) return customerAccess;
+    const a = await t.db.query<{ id: string }>(
+      `INSERT INTO customer_accounts (phone_e164) VALUES ('+966551119301') RETURNING id`,
+    );
+    const id = '00000000-0000-4000-8000-00000000c501';
+    const access = newCustomerToken('access', id);
+    await t.db.query(
+      `INSERT INTO customer_account_sessions (id, account_id, device_id, platform, refresh_hash, access_hash,
+              access_expires_at, refresh_expires_at, created_at)
+       VALUES ($1, $2, 'openapi-sweep-device', 'ios', $3, $4, $5::timestamptz + interval '15 minutes',
+               $5::timestamptz + interval '60 days', $5)`,
+      [id, a.rows[0]!.id, sha256Hex(newCustomerToken('refresh', id)), sha256Hex(access), t.clock.now()],
+    );
+    customerAccess = access;
+    return customerAccess;
+  };
+
   const call = async (
     r: (typeof routes)[number],
-    o: { as?: SeedUserKey; key?: boolean } = {},
+    o: { as?: SeedUserKey | 'PLATFORM' | 'CUSTOMER'; key?: boolean } = {},
   ): Promise<{ status: number; code: string | undefined }> => {
     const path = r.path.replace(/\{[A-Za-z]+\}/g, DUMMY);
     const m = r.method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete';
     let req = t.http()[m](path);
-    if (o.as) req = req.set('Cookie', await t.sessionFor(o.as));
+    if (o.as === 'PLATFORM') req = req.set('Cookie', await platformSession());
+    else if (o.as === 'CUSTOMER') req = req.set('Authorization', `Bearer ${await customerSession()}`);
+    else if (o.as) req = req.set('Cookie', await t.sessionFor(o.as));
     if (m !== 'get') {
       req = req.set(CSRF);
       if (o.key ?? true) req = req.set('Idempotency-Key', newKey());
@@ -87,11 +142,32 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       }
       for (const a of ACTORS.filter((x) => r.public || holds(x, r.permission ?? '')))
         check(r, a.key, await call(r, { as: a.key }));
+      if (r.platformPermission) {
+        // V2 (DEC-462): a staff session on a platform route, then the platform owner
+        check(r, 'OWN1 (staff) on a platform route', await call(r, { as: 'OWN1' }));
+        check(r, 'platform owner', await call(r, { as: 'PLATFORM' }));
+      }
+      if (r.customer) {
+        // V2-010 (DEC-497): a staff session on a customer route, then the customer (with and without a key)
+        check(r, 'OWN1 (staff) on a customer route', await call(r, { as: 'OWN1' }));
+        check(r, 'customer', await call(r, { as: 'CUSTOMER' }));
+        if (r.command?.idempotent)
+          check(r, 'customer without a key', await call(r, { as: 'CUSTOMER', key: false }));
+      }
     }
-    expect(routes).toHaveLength(130); // the 131 operations of 07 but the internal GET /metrics
+    // the 131 operations of 07 but the internal GET /metrics, the platform operations (V2-002, V2-003…) and the
+    // customer operations (V2-010)
+    // every route of ROUTES but the internal GET /metrics (V2-004, intake-pass V2-013, the payment webhook V2-021)
+    expect(routes).toHaveLength(ROUTES.length - 1 + PLATFORM_ROUTES.length + CUSTOMER.length);
+    expect(seen).toContain('GET /v1/customer/me AUTH_UNAUTHENTICATED');
+    expect(seen).toContain('GET /v1/customer/locations/{venueId} VENUE_NOT_LISTED');
+    expect(seen).toContain('PATCH /v1/customer/me IDEMPOTENCY_KEY_REQUIRED');
+    expect(seen).toContain('GET /v1/platform/me PLATFORM_AUTH_REQUIRED');
     expect(seen.size).toBeGreaterThan(200);
     expect(seen).toContain('GET /webhooks/whatsapp WA_WEBHOOK_VERIFY_FAILED');
     expect(seen).toContain('POST /webhooks/whatsapp WA_WEBHOOK_SIGNATURE_INVALID');
+    expect(seen).toContain('POST /webhooks/payments/moyasar PAYMENT_WEBHOOK_SIGNATURE_INVALID');
+    expect(seen).toContain('POST /webhooks/einvoicing EINVOICE_WEBHOOK_SIGNATURE_INVALID');
     expect(problems).toEqual([]);
   });
 
@@ -117,7 +193,13 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(413)?.includes('PAYLOAD_TOO_LARGE'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(90); // the 81 operations with a requestBody and the 9 without one
+    // the 93 staff writes (82 with a requestBody, 11 without; V2-004 adds 3), the platform commands and the 7 customer
+    // writes (V2-010)
+    expect(checked).toBe(
+      97 + // + intake-pass (V2-013), the payment webhook (V2-021), the settlement dispute and the e-invoicing webhook (V5)
+        PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length +
+        CUSTOMER_WRITES,
+    );
     expect(problems).toEqual([]);
   });
 
@@ -127,7 +209,7 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
     for (const r of routes) {
       const op = ops.get(`${r.method} ${r.path}`);
       // the webhook reads its raw body (signature first, 12 §4.1): no JSON parser runs before it
-      if (r.method === 'GET' || !op || r.path === '/webhooks/whatsapp') continue;
+      if (r.method === 'GET' || !op || r.path.startsWith('/webhooks/')) continue;
       const send = t.http()[r.method.toLowerCase() as 'post' | 'put' | 'patch' | 'delete'];
       const res = await send(r.path.replace(/\{[A-Za-z]+\}/g, DUMMY))
         .set(CSRF)
@@ -145,7 +227,8 @@ describe('served errors ↔ docs/07_openapi.yaml', () => {
       else if (!op.responses.get(422)?.includes('VALIDATION_FAILED'))
         problems.push(`${where} — not documented`);
     }
-    expect(checked).toBe(89);
+    // + the platform commands and the customer writes (+ the settlement dispute, V5; the e-invoicing webhook is raw)
+    expect(checked).toBe(94 + PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length + CUSTOMER_WRITES);
     expect(problems).toEqual([]);
   });
 });

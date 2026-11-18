@@ -78,6 +78,9 @@ export const PAYMENT_EVENT_TYPES = [
   'payment.reversed',
   'payment.waived',
   'cash.handover_recorded',
+  // V2-022 (DEC-522): an online visit payment made the ticket collected (app_paid), and its full refund undid it
+  'payment.online_paid',
+  'payment.online_refunded',
 ] as const;
 
 export const ALERT_INCIDENT_EVENT_TYPES = [
@@ -146,6 +149,31 @@ export const JOB_TYPES = [
   'job.heartbeat_sweep',
   'job.retention_purge',
   'job.export_generate',
+  // V2 (V2-010, DEC-496): the customer app's sign-in code over WhatsApp, sent after COMMIT
+  'job.customer_otp_send',
+  // V2 (V2-021, DEC-512 … DEC-514): online payments — a gateway webhook processed once, a refund sent after COMMIT,
+  // the daily reconciliation with the gateway
+  'job.payment_webhook_process',
+  'job.payment_refund_send',
+  'job.payments_reconcile',
+  // V2 (V2-016, DEC-519): the customer app's pushes sent after COMMIT, and the provider's delivery receipts
+  'job.customer_push_send',
+  'job.customer_push_receipts',
+  'job.payment_method_token_delete',
+  // V2 (V2-031, DEC-532, DEC-533): the subscription timers — the renewal (and its grace retries), the end of the
+  // grace, the renewal notice 3 days before the end, and the end of a checkout left unpaid (docs/v2/04 §1)
+  'job.subscription_renew',
+  'job.subscription_grace_expire',
+  'job.subscription_renewal_notice',
+  'job.pending_payment_expire',
+  // V2 (V2-036, DEC-594): the customer's freeze of a counted-day term starts and ends at Riyadh midnight
+  'job.subscription_freeze_start',
+  'job.subscription_freeze_end',
+  // V2 (V2-040 … V2-042, DEC-543, DEC-546): an invoice submitted to the e-invoicing provider and its PDF rendered
+  // after COMMIT, and the monthly settlement statements of the operators (the 1st of the Riyadh month)
+  'job.einvoice_submit',
+  'job.invoice_pdf_render',
+  'job.settlement_monthly',
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JobTypeSchema = z.enum(JOB_TYPES);

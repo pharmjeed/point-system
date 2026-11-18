@@ -1,3 +1,4 @@
+import { brand, defaultTemplates } from '../src/catalog.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startSimulator, type RunningSimulator } from '../src/index.js';
 import { graphSend, SECRET, sessionText, TOKEN, w01, w05 } from './helpers.js';
@@ -36,7 +37,7 @@ describe('POST /{version}/{phone_number_id}/messages', () => {
       plannedFailure: null,
     });
     expect(stored.renderedText).toBe(
-      'مصاف — قاعة ريماس — تذكرة 125\nتم استلام مركبتك: تويوتا كامري بيضاء — لوحة 4821.\nعند رغبتك بالخروج اضغط «طلب السيارة».',
+      `${brand().customerNameAr} — قاعة ريماس — تذكرة 125\nتم استلام مركبتك: تويوتا كامري بيضاء — لوحة 4821.\nعند رغبتك بالخروج اضغط «طلب السيارة».`,
     );
     expect(stored.userId).toMatch(/^SA\.\d{20}$/);
     expect((await sim.client.lastMessage('966551234567'))?.wamid).toBe(stored.wamid);
@@ -207,7 +208,11 @@ describe('other Graph routes', () => {
     let res = await get();
     expect(res.status).toBe(200);
     const plain = (await res.json()) as Record<string, unknown>;
-    expect(plain).toMatchObject({ id: '123456789012345', verified_name: 'مصاف', quality_rating: 'GREEN' });
+    expect(plain).toMatchObject({
+      id: '123456789012345',
+      verified_name: brand().customerNameAr,
+      quality_rating: 'GREEN',
+    });
     // as on the Graph API, the messaging limit and the health status come only when `fields` names them
     expect(plain).not.toHaveProperty('health_status');
     expect(plain).not.toHaveProperty('whatsapp_business_manager_messaging_limit');
@@ -244,6 +249,18 @@ describe('other Graph routes', () => {
       'masaf_vehicle_delivered_v1',
       'masaf_request_canceled_v1',
       'masaf_returned_to_parking_v1',
+      // the v2 set (V2-050, DEC-555): the simulator answers whichever set the server sends
+      'point_ticket_issued_v2',
+      'point_request_received_v2',
+      'point_request_reserved_v2',
+      'point_retrieval_started_v2',
+      'point_vehicle_ready_v2',
+      'point_vehicle_delivered_v2',
+      'point_request_canceled_v2',
+      'point_returned_to_parking_v2',
+      // the customer app's sign-in template, Arabic and English (V2-010, DEC-496)
+      'point_customer_otp_v1',
+      'point_customer_otp_v1',
     ]);
     expect(list.data[0]).toMatchObject({
       status: 'APPROVED',
@@ -254,7 +271,19 @@ describe('other Graph routes', () => {
         { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'طلب السيارة' }] },
       ],
     });
-    for (const t of list.data.slice(1)) expect(t.components).toHaveLength(1);
+    for (const t of list.data.slice(1, 8)) expect(t.components).toHaveLength(1);
+    // the v2 W-01 keeps the single «طلب السيارة» button; the other v2 templates have none
+    expect(list.data[8].components[1]).toEqual({
+      type: 'BUTTONS',
+      buttons: [{ type: 'QUICK_REPLY', text: 'طلب السيارة' }],
+    });
+    for (const t of list.data.slice(9, 16)) expect(t.components).toHaveLength(1);
+    for (const t of list.data.slice(16))
+      expect(t).toMatchObject({
+        status: 'APPROVED',
+        category: 'AUTHENTICATION',
+        components: [{ type: 'BODY' }, { type: 'BUTTONS', buttons: [{ type: 'OTP' }] }],
+      });
 
     const create = (name: string) =>
       fetch(`${sim.url}/v26.0/200000000000001/message_templates`, {
@@ -284,5 +313,17 @@ describe('other Graph routes', () => {
     });
     expect(res.status).toBe(200);
     expect((await sim.client.getMessage(res.json.messages[0].id)).purpose).toBe('W-05');
+  });
+});
+
+describe('customer brand from configuration (canon §1, DEC-470)', () => {
+  it('fills {brand} of the fixtures with BRAND_CUSTOMER_NAME_AR, else the brand.json default', () => {
+    expect(brand({ BRAND_CUSTOMER_NAME_AR: 'BRAND_X' })).toMatchObject({
+      customerNameAr: 'BRAND_X',
+      linkCodePrefix: 'ربط تذكرة BRAND_X',
+    });
+    const w01 = defaultTemplates().find((t) => t.purpose === 'W-01')!;
+    expect(w01.body.startsWith(`${brand().customerNameAr} — {{1}}`)).toBe(true);
+    expect(defaultTemplates().some((t) => t.body.includes('{brand}'))).toBe(false);
   });
 });

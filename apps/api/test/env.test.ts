@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { EnvError, loadEnv } from '@point/server';
+import { SUBSCRIPTION_TERMS_VERSION } from '@point/shared/customer';
 import { describe, expect, it } from 'vitest';
 import { testEnv } from './test-env.js';
 
@@ -38,5 +40,17 @@ describe('environment validation', () => {
 
   it('refuses live WhatsApp outside staging/production', () => {
     expect(() => testEnv({ WA_MODE: 'live' })).toThrow(/WA_MODE/);
+  });
+
+  // DEC-616: the purchase consent names the version of the terms text the customer app ships (C-24)
+  it('defaults the subscription terms version to the one the app ships, as .env.example does', () => {
+    expect(testEnv().CUSTOMER_SUBSCRIPTION_TERMS_VERSION).toBe(SUBSCRIPTION_TERMS_VERSION);
+    const example = readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8');
+    expect(example).toMatch(
+      new RegExp(
+        `^CUSTOMER_SUBSCRIPTION_TERMS_VERSION=${SUBSCRIPTION_TERMS_VERSION.replace(/\./g, '\\.')}\\s`,
+        'm',
+      ),
+    );
   });
 });

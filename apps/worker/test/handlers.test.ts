@@ -15,12 +15,29 @@ describe('worker handlers', () => {
   it('no canon job is left without a handler (server sweep: canon §7.2)', () => {
     const types = new Set(allHandlers().map((h) => h.type));
     expect(JOB_TYPES.filter((t) => !types.has(t))).toEqual([]);
-    expect(JOB_TYPES).toHaveLength(18);
+    // + job.customer_otp_send (V2-010), the 3 payment jobs (V2-021), the 2 customer push jobs (V2-016), the
+    // saved-card token deletion (V2-023), the 4 subscription timers (V2-031), the e-invoice submission and PDF
+    // (V2-040), the monthly settlement (V2-041) and the customer freeze's start and end (V2-036)
+    expect(JOB_TYPES).toHaveLength(18 + 1 + 3 + 2 + 1 + 4 + 3 + 2);
   });
 
   it('the network jobs run outside a transaction (mode external, 04 §6.4)', () => {
     const mode = new Map(allHandlers().map((h) => [h.type, h.mode]));
-    for (const t of ['job.wa_send', 'job.wa_process_inbound', 'job.push_send', 'job.export_generate'])
+    for (const t of [
+      'job.wa_send',
+      'job.wa_process_inbound',
+      'job.push_send',
+      'job.export_generate',
+      'job.customer_otp_send',
+      'job.payment_webhook_process',
+      'job.payment_refund_send',
+      'job.payments_reconcile',
+      'job.payment_method_token_delete',
+      'job.subscription_renew',
+      'job.einvoice_submit',
+      'job.invoice_pdf_render',
+      'job.settlement_monthly',
+    ])
       expect(mode.get(t as (typeof JOB_TYPES)[number]), t).toBe('external');
   });
 });

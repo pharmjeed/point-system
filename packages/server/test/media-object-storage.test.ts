@@ -174,7 +174,16 @@ describe('object storage selection from the environment', () => {
     expect(selectObjectStorageDriver(env({ S3_ACCESS_KEY_ID: 'a' }))).toBe('memory');
     expect(selectObjectStorageDriver(env({ APP_ENV: 'staging' }))).toBe('s3');
     expect(
-      selectObjectStorageDriver(env({ APP_ENV: 'production', NODE_ENV: 'production', WA_MODE: 'live' })),
+      selectObjectStorageDriver(
+        env({
+          APP_ENV: 'production',
+          NODE_ENV: 'production',
+          WA_MODE: 'live',
+          MOYASAR_MODE: 'live',
+          CUSTOMER_PUSH_MODE: 'live',
+          EINVOICE_MODE: 'live',
+        }),
+      ),
     ).toBe('s3');
   });
 

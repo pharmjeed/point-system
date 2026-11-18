@@ -113,6 +113,149 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: '/s', element: <Navigate to={paths.ops} replace /> },
+      // V2 platform console (docs/v2/02 §2): its own session, one lazy chunk
+      {
+        path: paths.platformLogin,
+        lazy: async () => ({
+          Component: (await import('@/features/platform/PlatformLoginPage')).PlatformLoginPage,
+        }),
+      },
+      {
+        path: paths.platform,
+        lazy: async () => ({
+          Component: (await import('@/features/platform/PlatformLayout')).PlatformLayout,
+        }),
+        children: [
+          {
+            index: true,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOverviewPage')).PlatformOverviewPage,
+            }),
+          },
+          {
+            path: paths.platformOperators,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOperatorsPage')).PlatformOperatorsPage,
+            }),
+          },
+          {
+            path: `${paths.platformOperators}/:orgId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformOperatorPage')).PlatformOperatorPage,
+            }),
+          },
+          // P-04 (V2-004)
+          {
+            path: paths.platformVenues,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuesPage,
+            }),
+          },
+          {
+            path: `${paths.platformVenues}/:venueId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformVenuesPage')).PlatformVenuePage,
+            }),
+          },
+          // P-06 and P-08 (V2-024)
+          {
+            path: paths.platformCustomers,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformCustomersPage')).PlatformCustomersPage,
+            }),
+          },
+          {
+            path: `${paths.platformCustomers}/:accountId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformCustomersPage')).PlatformCustomerPage,
+            }),
+          },
+          {
+            path: paths.platformPayments,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformPaymentsPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/reconciliation`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage'))
+                .PlatformReconciliationPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/reconciliation/:runId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage'))
+                .PlatformReconciliationRunPage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/alerts`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformAlertsPage,
+            }),
+          },
+          {
+            path: paths.platformSettlements,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformSettlementsPage,
+            }),
+          },
+          {
+            path: `${paths.platformSettlements}/:statementId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformSettlementPage,
+            }),
+          },
+          {
+            path: paths.platformInvoices,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformInvoicesPage,
+            }),
+          },
+          {
+            path: `${paths.platformInvoices}/:invoiceId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformBillingPages')).PlatformInvoicePage,
+            }),
+          },
+          {
+            path: `${paths.platformPayments}/:paymentId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPaymentsPage')).PlatformPaymentPage,
+            }),
+          },
+          // P-05 and P-07 (V2-030, V2-035)
+          {
+            path: paths.platformPlans,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformPlansPage')).PlatformPlansPage,
+            }),
+          },
+          {
+            path: paths.platformSubscriptions,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformSubscriptionsPage'))
+                .PlatformSubscriptionsPage,
+            }),
+          },
+          {
+            path: `${paths.platformSubscriptions}/:subscriptionId`,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformSubscriptionsPage'))
+                .PlatformSubscriptionPage,
+            }),
+          },
+          // P-13 (V2-037)
+          {
+            path: paths.platformComplaints,
+            lazy: async () => ({
+              Component: (await import('@/features/platform/PlatformComplaintsPage')).PlatformComplaintsPage,
+            }),
+          },
+        ],
+      },
       ...galleryRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],

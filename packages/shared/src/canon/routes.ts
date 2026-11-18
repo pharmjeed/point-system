@@ -16,7 +16,8 @@ export type HttpMethod = (typeof HTTP_METHODS)[number];
 
 /**
  * `public`: no session (login, MFA verify with an `mfa_token`, health).
- * `webhook`: WhatsApp webhook — `hub.verify_token` (GET) or `X-Hub-Signature-256` over the raw body (POST).
+ * `webhook`: WhatsApp webhook — `hub.verify_token` (GET) or `X-Hub-Signature-256` over the raw body (POST); the
+ * payment gateway's webhook — its shared secret inside the raw body (V2-021, DEC-511).
  * `internal`: internal network only (`/metrics`).
  */
 export const NON_PERMISSION_GUARDS = ['public', 'webhook', 'internal'] as const;
@@ -80,6 +81,7 @@ const ROWS: readonly Row[] = [
 
   // §9.2 Intake and tickets
   ['POST', '/v1/tickets', 'ticket.intake', 'required', '9.2'],
+  ['POST', '/v1/tickets/intake-pass', 'ticket.intake', 'required', '9.2'], // V2-013 (O-01, DEC-500)
   ['PATCH', '/v1/tickets/{ticketId}/intake', 'ticket.intake', 'required', '9.2'],
   ['POST', '/v1/tickets/{ticketId}/media', 'ticket.intake', 'required', '9.2'],
   ['POST', '/v1/media/{mediaId}/complete', 'ticket.intake', 'required', '9.2'],
@@ -127,6 +129,11 @@ const ROWS: readonly Row[] = [
   ['PATCH', '/v1/venues/{venueId}', 'venue.manage', 'required', '9.5'],
   ['GET', '/v1/venues/{venueId}/settings', 'venue.read', 'none', '9.5'],
   ['PUT', '/v1/venues/{venueId}/settings', 'venue.manage', 'required', '9.5'],
+  // V2-004 (O-04, DEC-490): the venue's public profile, reviewed by the platform before the map lists it
+  ['GET', '/v1/venues/{venueId}/public-profile', 'venue.manage', 'none', '9.5'],
+  ['PUT', '/v1/venues/{venueId}/public-profile', 'venue.manage', 'required', '9.5'],
+  ['POST', '/v1/venues/{venueId}/public-profile/photos', 'venue.manage', 'required', '9.5'],
+  ['POST', '/v1/venues/{venueId}/public-profile/submit', 'venue.manage', 'required', '9.5'],
   ['GET', '/v1/venues/{venueId}/dispatch-pools', 'venue.read', 'none', '9.5'],
   ['POST', '/v1/venues/{venueId}/dispatch-pools', 'venue.manage', 'required', '9.5'],
   ['PATCH', '/v1/dispatch-pools/{poolId}', 'venue.manage', 'required', '9.5'],
@@ -200,10 +207,20 @@ const ROWS: readonly Row[] = [
   ['GET', '/v1/admin/org-settings', 'org.settings_manage', 'none', '9.7'],
   ['PUT', '/v1/admin/org-settings', 'org.settings_manage', 'required', '9.7'],
   ['POST', '/v1/telemetry', 'telemetry.write', 'none', '9.7'],
+  // V2-041 / V2-042 (DEC-547): the operator's settlement statements (O-05) and system subscription (O-06)
+  ['GET', '/v1/settlement-statements', 'settlement.read', 'none', '9.7'],
+  ['GET', '/v1/settlement-statements/{statementId}', 'settlement.read', 'none', '9.7'],
+  ['POST', '/v1/settlement-statements/{statementId}/dispute', 'settlement.dispute', 'required', '9.7'],
+  ['GET', '/v1/system-subscription', 'settlement.read', 'none', '9.7'],
+  ['GET', '/v1/system-subscription/invoices/{invoiceId}', 'settlement.read', 'none', '9.7'],
 
   // §9.8 Webhooks and health (outside /v1)
   ['GET', '/webhooks/whatsapp', 'webhook', 'none', '9.8'], // hub.verify_token
   ['POST', '/webhooks/whatsapp', 'webhook', 'none', '9.8'], // X-Hub-Signature-256 over the raw body
+  // V2-021 (DEC-511, DEC-512): the payment gateway's webhook — the shared secret inside the raw body
+  ['POST', '/webhooks/payments/moyasar', 'webhook', 'none', '9.8'],
+  // V2-040 (DEC-543): the e-invoicing provider's status callback, HMAC over the raw body
+  ['POST', '/webhooks/einvoicing', 'webhook', 'none', '9.8'],
   ['GET', '/health/live', 'public', 'none', '9.8'], // no data
   ['GET', '/health/ready', 'public', 'none', '9.8'], // no data
   ['GET', '/metrics', 'internal', 'none', '9.8'], // internal network only
@@ -228,6 +245,8 @@ const RATE_LIMIT_CLASS_OF: Readonly<Record<string, RateLimitClass>> = {
   'POST /v1/exports': 'export',
   'GET /webhooks/whatsapp': 'webhook',
   'POST /webhooks/whatsapp': 'webhook',
+  'POST /webhooks/payments/moyasar': 'webhook',
+  'POST /webhooks/einvoicing': 'webhook',
   'GET /health/live': 'health',
   'GET /health/ready': 'health',
   'GET /metrics': 'health',

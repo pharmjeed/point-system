@@ -3,7 +3,7 @@ import type { Env } from '../../../core/config/env.js';
 import type { Tx } from '../../../core/db/tx.js';
 import type { Database } from '../../../core/db/database.js';
 import { maskPhone } from '../../../core/logging/redact.js';
-import { parseOrgSettings, type Role } from '@point/shared';
+import { parseOrgSettings, type OperatorStatus, type Role } from '@point/shared';
 
 type Q = Pick<Tx, 'query'> | Pick<Database, 'query'>;
 const iso = (d: Date | string | null | undefined) => (d == null ? null : new Date(d).toISOString());
@@ -130,13 +130,20 @@ export async function buildMe(q: Q, env: Env, sessionId: string, userId: string)
       WHERE d.user_id = $1 AND d.status <> 'ended'`,
     [userId],
   );
-  const orgRes = await q.query<{ settings: unknown }>(
-    `SELECT o.settings FROM organizations o JOIN users u ON u.org_id = o.id WHERE u.id = $1`,
+  const orgRes = await q.query<{
+    settings: unknown;
+    id: string;
+    name_ar: string;
+    operator_status: OperatorStatus;
+  }>(
+    `SELECT o.settings, o.id, o.name_ar, o.operator_status FROM organizations o JOIN users u ON u.org_id = o.id
+      WHERE u.id = $1`,
     [userId],
   );
   const u = userRes.rows[0]!;
+  const org = orgRes.rows[0]!; // users.org_id is a foreign key
   const session = sessionRes.rows[0];
-  const settings = parseOrgSettings(orgRes.rows[0]?.settings ?? {});
+  const settings = parseOrgSettings(org.settings ?? {});
   const mfaRequired =
     u.role === 'owner' ||
     u.role === 'admin' ||
@@ -189,6 +196,9 @@ export async function buildMe(q: Q, env: Env, sessionId: string, userId: string)
       staff_name_en: env.BRAND_STAFF_NAME_EN,
       customer_name_ar: env.BRAND_CUSTOMER_NAME_AR,
     },
+    // V2-005 (DEC-486): the operator's platform status; `suspended` / `terminated` → the staff banner, and the
+    // server refuses new events, shifts, duties and intakes (OPERATOR_SUSPENDED) whatever the app shows
+    organization: { id: org.id, name_ar: org.name_ar, operator_status: org.operator_status },
     heartbeat: {
       interval_s: settings.heartbeat.interval_s,
       uncertain_after_s: settings.heartbeat.uncertain_after_s,

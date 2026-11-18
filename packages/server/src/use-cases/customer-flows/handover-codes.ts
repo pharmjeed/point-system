@@ -68,7 +68,7 @@ const RESEND_OP = 'POST /v1/tickets/{ticketId}/handover-code/resend';
 
 /**
  * `POST /v1/tickets/{ticketId}/handover-code/resend` (PNT-047; 11 §5.1 rule 4; 09: the assignee or a
- * supervisor; the ticket `ready` and linked). L5 ticket → L6 cycle → L9 codes; no pool lock (the queue is
+ * supervisor; the ticket `ready` and linked — or an app ticket, whose new code C-12 shows, V2-015 DEC-517). L5 ticket → L6 cycle → L9 codes; no pool lock (the queue is
  * untouched). The checks follow 08 §2: scope → assignee → state (HANDOVER_NOT_READY, WA_*) → code
  * (HANDOVER_CODE_LOCKED for the assignee on a locked code, RESEND_LIMIT_REACHED).
  */
@@ -103,12 +103,15 @@ export class ResendHandoverCodeUseCase {
           [t.customer_id],
         )
       : null;
-    if (t.channel === 'whatsapp' && (t.wa_link_status === 'opted_out' || customer?.wa_opted_out_at))
-      throw new AppError('WA_CUSTOMER_OPTED_OUT');
-    if (t.channel !== 'whatsapp' || t.wa_link_status !== 'linked' || !t.customer_id)
-      throw new AppError('WA_NOT_LINKED', { wa_link_status: t.wa_link_status });
-    await assertChannelAvailable(tx, t.org_id);
-    await assertCodeMessageSendable(tx, t.org_id, t.customer_id);
+    // V2-015 (DEC-517): an app ticket's new code is shown on C-12 (no WhatsApp message, no channel to check)
+    if (t.channel !== 'app') {
+      if (t.channel === 'whatsapp' && (t.wa_link_status === 'opted_out' || customer?.wa_opted_out_at))
+        throw new AppError('WA_CUSTOMER_OPTED_OUT');
+      if (t.channel !== 'whatsapp' || t.wa_link_status !== 'linked' || !t.customer_id)
+        throw new AppError('WA_NOT_LINKED', { wa_link_status: t.wa_link_status });
+      await assertChannelAvailable(tx, t.org_id);
+      await assertCodeMessageSendable(tx, t.org_id, t.customer_id);
+    }
 
     const { issued, replaced } = await resendClaimCode(tx, t, cycle, {
       secrets: this.secrets,

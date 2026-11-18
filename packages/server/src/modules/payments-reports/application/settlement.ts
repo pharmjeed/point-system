@@ -90,6 +90,9 @@ export async function integrityViolations(
     `SELECT 'collected_without_payment' AS check_id, t.id AS entity_id FROM tickets t
       WHERE t.event_id = $1 AND t.payment_status = 'collected'
         AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.ticket_id = t.id AND p.status = 'recorded')
+        AND NOT (t.entitlement = 'app_paid' AND EXISTS (
+              SELECT 1 FROM online_payments op WHERE op.ticket_id = t.id AND op.purpose = 'visit'
+                 AND op.status IN ('paid','partially_refunded','refunded') AND op.paid_at IS NOT NULL))
      UNION ALL
      SELECT 'payment_without_collected', p.id FROM payments p JOIN tickets t ON t.id = p.ticket_id
       WHERE p.event_id = $1 AND p.status = 'recorded' AND t.payment_status <> 'collected'

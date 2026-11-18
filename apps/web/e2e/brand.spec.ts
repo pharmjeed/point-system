@@ -2,12 +2,14 @@ import { expect, test } from '@playwright/test';
 import { driverMe, MockApi, staffMe } from './support/api';
 
 /**
- * PNT-021 acceptance 4 (canon §1): the customer brand «مصاف» never appears in the staff UI. The allowed
- * surfaces (D-07 QR panel, S-03 message preview, S-13 channel settings) do not exist yet, so it must be
- * absent from every rendered page — markup, attributes and title — even though `/v1/me` carries it.
- * The staff brand is taken from the environment/manifest (title) and org settings, never hard-coded.
+ * PNT-021 acceptance 4 (canon §1): a customer brand distinct from the staff brand never appears in the staff
+ * UI outside its allowed surfaces (D-07 QR panel, S-03 message preview, S-13 channel settings), none of which
+ * these pages show — markup, attributes and title — even though `/v1/me` carries it. Since V2-D01 the default
+ * customer brand is the staff brand itself (DEC-470); the check keeps a distinct configured value (here the
+ * V1 one) for a deployment that sets its own `BRAND_CUSTOMER_NAME_AR`. The staff brand is taken from the
+ * environment/manifest (title) and org settings, never hard-coded.
  */
-const CUSTOMER = 'مصاف';
+const CUSTOMER = 'مصاف'; // a distinct configured customer brand (not the default since DEC-470)
 const STAFF = 'بوينت';
 
 const withBrand = <T extends { brand: unknown }>(me: T) => ({ ...me, brand: { customer_name_ar: CUSTOMER } });

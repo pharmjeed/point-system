@@ -1,0 +1,23 @@
+{
+  "//": "Standalone build config for the Docker image (build context = tools/payment-simulator, so ../../tsconfig.base.json is not available). Keep the compiler options in sync with tsconfig.base.json.",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "**/*.int.test.ts"]
+}

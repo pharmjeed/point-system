@@ -2,13 +2,16 @@
 # WhatsApp simulator (dev/test only — refuses to start with APP_ENV/NODE_ENV=production).
 # Build context: tools/wa-simulator (infra/compose: `build: ../../tools/wa-simulator`).
 # The base image is overridable for registry mirrors: --build-arg NODE_IMAGE=mirror.gcr.io/library/node:24-alpine
+# Behind a TLS-inspecting proxy: --secret id=build_ca,src=<ca.pem> (never stored in a layer).
 ARG NODE_IMAGE=node:24-alpine
 
 # ---- build: compile TypeScript ----
 FROM ${NODE_IMAGE} AS build
 WORKDIR /build
 # Same compiler as the monorepo (root devDependency typescript7 → typescript@7.0.2) and the root @types/node.
-RUN npm install --no-save --no-audit --no-fund --loglevel=error typescript@7.0.2 @types/node@26.6.5
+RUN --mount=type=secret,id=build_ca,required=false \
+    if [ -s /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \
+    npm install --no-save --no-audit --no-fund --loglevel=error typescript@7.0.2 @types/node@26.6.5
 # package.json carries "type": "module" (ESM output under module nodenext).
 COPY package.json tsconfig.docker.json ./
 COPY src ./src

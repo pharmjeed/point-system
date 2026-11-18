@@ -41,11 +41,13 @@
 	header -Server
 
 	# access log on stdout without secrets: cookies and authorization are redacted by default; the webhook
-	# verify token and presigned-URL signatures are removed from query strings (09 §6.3: no signed URL in logs)
+	# verify token and presigned-URL signatures are removed from query strings (09 §6.3: no signed URL in logs);
+	# V2-051 (DEC-562): so is a phone number (P-06's search `/v1/platform/customers?phone=…`, canon rule 8)
 	log {
 		output stdout
 		format filter {
 			request>uri query {
+				delete phone
 				delete hub.verify_token
 				delete X-Amz-Signature
 				delete X-Amz-Credential
@@ -73,6 +75,23 @@
 		import api_headers
 		request_body {
 			max_size 4MB
+		}
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	# --- V2 webhooks (canon §9.8 V2 rows): the payment gateway and the e-invoicing provider, raw bodies up to
+	# 1 MB verified by the api (bootstrap.ts). V2-051 (DEC-562): without these two the PWA's catch-all answered them
+	handle /webhooks/payments/moyasar {
+		import api_headers
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+	handle /webhooks/einvoicing {
+		import api_headers
+		request_body {
+			max_size 1MB
 		}
 		reverse_proxy {$API_UPSTREAM:api:3000}
 	}

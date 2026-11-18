@@ -48,6 +48,9 @@ const OTHER_TICKET_CAUSES: ReadonlySet<string> = new Set([
   'payment.recorded',
   'payment.reversed',
   'payment.waived',
+  // V2-022 (DEC-522): the visit paid in the app (D-10/D-11/S-03 «مدفوع في التطبيق»), and its full refund
+  'payment.online_paid',
+  'payment.online_refunded',
 ]);
 
 const INCIDENT_EVENTS: ReadonlySet<string> = new Set([

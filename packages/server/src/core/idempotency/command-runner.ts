@@ -6,7 +6,13 @@ import { errorEnvelope, successEnvelope } from '../errors/envelope.js';
 import { dbUnavailableError, isPgError, mapPgError, type PgMapContext } from '../errors/pg-constraint-map.js';
 
 export interface CommandContext {
+  /** users.id, platform_users.id when `keyScope` is 'platform', customer_accounts.id when 'customer' */
   userId: string;
+  /**
+   * Where the key is kept: `idempotency_keys` (staff, the default) or `platform_idempotency_keys` (a V2 platform
+   * command; its owner is a platform account, which idempotency_keys.user_id cannot reference, DEC-462).
+   */
+  keyScope?: 'staff' | 'platform' | 'customer';
   idempotencyKey: string;
   /** method + route template, e.g. 'POST /v1/task-offers/{offerId}/accept' */
   operation: string;
@@ -18,6 +24,11 @@ export interface CommandSuccess<T> {
   data: T;
   /** HTTP status of the success response (default 200; 201 for creations). */
   status?: number;
+  /**
+   * What is kept with the key and replayed instead of `data` (V2-003, DEC-485): a response that carries a one-time
+   * secret (a temporary password) is answered once and stored without it, so the secret is never at rest.
+   */
+  stored?: unknown;
 }
 
 export interface CommandResponse {
@@ -67,6 +78,7 @@ export async function runCommand<T>(
 
       await tx.savepoint('cmd');
       let response: CommandResponse;
+      let storedBody: unknown;
       try {
         const ok = await fn(tx);
         const status = ok.status ?? 200;
@@ -76,6 +88,7 @@ export async function runCommand<T>(
           );
         }
         response = { status, body: successEnvelope(ok.data, ctx.requestId, tx.now), replayed: false };
+        if (ok.stored !== undefined) storedBody = successEnvelope(ok.stored, ctx.requestId, tx.now);
       } catch (e) {
         // deadlock / serialization failure: let Database.transaction retry the whole transaction
         if (isPgError(e) && (e.code === '40001' || e.code === '40P01')) throw e;
@@ -94,10 +107,17 @@ export async function runCommand<T>(
           error: appErr,
         };
       }
+      const k = keyTable(ctx);
       await tx.query(
-        `UPDATE idempotency_keys SET status = 'completed', response_status = $3, response_body = $4, completed_at = $5
-         WHERE user_id = $1 AND key = $2`,
-        [ctx.userId, ctx.idempotencyKey, response.status, JSON.stringify(response.body), tx.now],
+        `UPDATE ${k.table} SET status = 'completed', response_status = $3, response_body = $4, completed_at = $5
+         WHERE ${k.owner} = $1 AND key = $2`,
+        [
+          ctx.userId,
+          ctx.idempotencyKey,
+          response.status,
+          JSON.stringify(storedBody ?? response.body),
+          tx.now,
+        ],
       );
       return response;
     });
@@ -162,13 +182,23 @@ export async function runInTransaction<T>(
 
 type Claim = { kind: 'claimed' } | { kind: 'replay'; response: CommandResponse };
 
+/** The key table of the caller (fixed identifiers only: never built from input). */
+function keyTable(ctx: CommandContext) {
+  if (ctx.keyScope === 'customer')
+    return { table: 'customer_idempotency_keys', owner: 'account_id' } as const; // V2-010
+  return ctx.keyScope === 'platform'
+    ? ({ table: 'platform_idempotency_keys', owner: 'platform_user_id' } as const)
+    : ({ table: 'idempotency_keys', owner: 'user_id' } as const);
+}
+
 async function claimKey(tx: Tx, ctx: CommandContext): Promise<Claim> {
+  const k = keyTable(ctx);
   let inserted;
   try {
     inserted = await tx.query(
-      `INSERT INTO idempotency_keys (user_id, key, operation, request_hash, created_at, expires_at)
+      `INSERT INTO ${k.table} (${k.owner}, key, operation, request_hash, created_at, expires_at)
        VALUES ($1, $2, $3, $4, $5, $5::timestamptz + interval '24 hours')
-       ON CONFLICT (user_id, key) DO NOTHING RETURNING key`,
+       ON CONFLICT (${k.owner}, key) DO NOTHING RETURNING key`,
       [ctx.userId, ctx.idempotencyKey, ctx.operation, ctx.requestHash, tx.now],
     );
   } catch (e) {
@@ -186,12 +216,12 @@ async function claimKey(tx: Tx, ctx: CommandContext): Promise<Claim> {
     response_body: Record<string, any> | null;
     expires_at: Date;
   }>(
-    `SELECT operation, request_hash, status, response_status, response_body, expires_at FROM idempotency_keys WHERE user_id = $1 AND key = $2`,
+    `SELECT operation, request_hash, status, response_status, response_body, expires_at FROM ${k.table} WHERE ${k.owner} = $1 AND key = $2`,
     [ctx.userId, ctx.idempotencyKey],
   );
   if (prev.expires_at.getTime() <= tx.now.getTime()) {
     // An expired key not yet purged by job.retention_purge counts as unknown.
-    await tx.query(`DELETE FROM idempotency_keys WHERE user_id = $1 AND key = $2`, [
+    await tx.query(`DELETE FROM ${k.table} WHERE ${k.owner} = $1 AND key = $2`, [
       ctx.userId,
       ctx.idempotencyKey,
     ]);

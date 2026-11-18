@@ -268,7 +268,14 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
   const digits = phoneTail(ticket.customer?.phone_masked);
 
   let body: ReactNode;
-  if (view === 'paper') {
+  if (view === 'app') {
+    // V2-013 (DEC-503): the entry pass linked the visit to the customer's account; nothing to send or hand over
+    body = (
+      <p className="m-0 text-lg" data-link-app>
+        {d07.appText}
+      </p>
+    );
+  } else if (view === 'paper') {
     body = (
       <>
         <p className="m-0 text-lg">
@@ -351,7 +358,12 @@ function LinkStep({ ticket }: { ticket: TicketDetail }) {
       data-link-view={view}
       data-link-status={status}
     >
-      <Header title={withTicket(mode === 'paper' ? d07.paperTitle : d07.title, ticket.display_number)} />
+      <Header
+        title={withTicket(
+          mode === 'paper' ? d07.paperTitle : mode === 'app' ? d07.appTitle : d07.title,
+          ticket.display_number,
+        )}
+      />
       {body}
       {commandError ? (
         <FieldError id="link-error" role="alert">

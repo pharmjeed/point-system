@@ -5,74 +5,189 @@
 
 ## 1. المنصة
 
+> **نُفذ في `packages/db/migrations/0008_platform.sql` (V2-001، DEC-461)** — النص أدناه هو الترحيل المطبَّق (مع حذف الصلاحيات والمشغّلات). الفروق عن المسودة: حقول الدخول في `platform_users` كحقول `users` (تغيير السر الإلزامي، TOTP مشفّر بـ`encrypt()` في `mfa_secret_enc text` بدل `bytea`، خطوة TOTP الأخيرة، عدّاد الإخفاق والقفل)؛ جدولا `platform_sessions` و`platform_idempotency_keys`؛ في `platform_audit_log` نوع الفاعل ودوره و`request_id` والعنوان، و`occurred_at` بدل `created_at`؛ أسماء صريحة لكل قيد (06 ERD §9.2 القاعدة 4)؛ فحص صيغة السجل التجاري والرقم الضريبي؛ وقاعدة «عقد واحد في أي يوم» في الأمر تحت قفل صف المؤسسة لغياب `btree_gist` (DEC-463).
+
 ```sql
 CREATE TABLE platform_users (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  phone_e164    text NOT NULL UNIQUE,
-  full_name     text NOT NULL,
-  role          text NOT NULL CHECK (role IN ('platform_owner','platform_admin','platform_finance','platform_support')),
-  secret_hash   text NOT NULL,                  -- argon2id + pepper (09 §9.1)
-  mfa_secret_ciphertext bytea,                  -- MFA إلزامي
-  status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now()
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_e164          text NOT NULL,
+  full_name           text NOT NULL,
+  role                text NOT NULL,
+  status              text NOT NULL DEFAULT 'active',
+  secret_hash         text NOT NULL,                                 -- argon2id + AUTH_SECRET_PEPPER (09 §9.1, DEC-58)
+  must_change_secret  boolean NOT NULL DEFAULT true,
+  mfa_enabled         boolean NOT NULL DEFAULT false,                -- MFA is mandatory: false only until the first set-up
+  mfa_secret_enc      text,                                          -- TOTP secret, encrypted with DATA_ENCRYPTION_KEY
+  mfa_last_step       bigint,                                        -- last accepted TOTP time-step (replay protection)
+  failed_login_count  int  NOT NULL DEFAULT 0,
+  locked_until        timestamptz,
+  last_login_at       timestamptz,
+  disabled_at         timestamptz,
+  disabled_by         uuid REFERENCES platform_users(id),
+  disabled_reason     text,
+  created_by          uuid REFERENCES platform_users(id),              -- NULL: the bootstrap command (create-platform-owner)
+  version             int  NOT NULL DEFAULT 1,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_platform_users_phone UNIQUE (phone_e164),
+  CONSTRAINT ck_platform_users_phone CHECK (phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+  CONSTRAINT ck_platform_users_role CHECK (role IN ('platform_owner','platform_admin','platform_finance','platform_support')),
+  CONSTRAINT ck_platform_users_status CHECK (status IN ('active','disabled')),
+  CONSTRAINT ck_platform_users_disabled_at CHECK (status <> 'disabled' OR disabled_at IS NOT NULL),
+  CONSTRAINT ck_platform_users_mfa_secret CHECK (NOT mfa_enabled OR mfa_secret_enc IS NOT NULL),
+  CONSTRAINT ck_platform_users_failed_count CHECK (failed_login_count >= 0)
 );
 
-CREATE TABLE platform_audit_log (               -- إلحاقي (REVOKE UPDATE/DELETE)
-  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  actor_id      uuid REFERENCES platform_users(id),
-  action        text NOT NULL,                  -- e.g. operator.suspend, plan.price_change, refund.issue
-  entity_type   text NOT NULL,
-  entity_id     uuid,
-  org_id        uuid REFERENCES organizations(id),
-  reason        text,
-  metadata      jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at    timestamptz NOT NULL DEFAULT now()
+-- Server-side sessions of the platform (DEC-09 pattern): an opaque 256-bit token in the platform cookie
+-- (PLATFORM_SESSION_COOKIE_NAME), only its sha256 stored. kind = 'mfa_challenge' is the 5-minute single-use step
+-- between the password and the TOTP code; it never authorizes a request.
+CREATE TABLE platform_sessions (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform_user_id  uuid NOT NULL REFERENCES platform_users(id),
+  kind              text NOT NULL DEFAULT 'session',
+  token_hash        text NOT NULL,
+  mfa_verified      boolean NOT NULL DEFAULT false,
+  ip                inet,
+  user_agent        text,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  last_seen_at      timestamptz NOT NULL DEFAULT now(),
+  expires_at        timestamptz NOT NULL,
+  revoked_at        timestamptz,
+  revoked_reason    text,
+  CONSTRAINT uq_platform_sessions_token UNIQUE (token_hash),
+  CONSTRAINT ck_platform_sessions_kind CHECK (kind IN ('session','mfa_challenge')),
+  CONSTRAINT ck_platform_sessions_revoked_reason
+    CHECK (revoked_reason IN ('logout','disabled','secret_reset','admin','expired_cleanup','consumed')),
+  CONSTRAINT ck_platform_sessions_revoked CHECK (revoked_reason IS NULL OR revoked_at IS NOT NULL),
+  CONSTRAINT ck_platform_sessions_challenge CHECK (kind <> 'mfa_challenge' OR mfa_verified = false),
+  CONSTRAINT ck_platform_sessions_expiry CHECK (expires_at > created_at)
 );
+CREATE INDEX ix_platform_sessions_user_active ON platform_sessions(platform_user_id) WHERE revoked_at IS NULL;
 
--- المشغل = المؤسسة الحالية، بحقول المنصة
+-- Idempotency keys of platform commands (07 §1.4 protocol, scoped per platform account): same columns and rules
+-- as idempotency_keys, whose user_id references users(id) and so cannot hold a platform account.
+CREATE TABLE platform_idempotency_keys (
+  platform_user_id uuid NOT NULL REFERENCES platform_users(id),
+  key              text NOT NULL,
+  operation        text NOT NULL,
+  request_hash     text NOT NULL,
+  status           text NOT NULL DEFAULT 'in_progress',
+  response_status  int,
+  response_body    jsonb,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  completed_at     timestamptz,
+  expires_at       timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+  CONSTRAINT pk_platform_idempotency_keys PRIMARY KEY (platform_user_id, key),
+  CONSTRAINT ck_platform_idempotency_keys_key CHECK (length(key) BETWEEN 8 AND 128),
+  CONSTRAINT ck_platform_idempotency_keys_status CHECK (status IN ('in_progress','completed'))
+);
+CREATE INDEX ix_platform_idempotency_expiry ON platform_idempotency_keys(expires_at);
+
+-- Every platform action (02 §1: «كل فعل منصة يُدوَّن في platform_audit_log وفي audit_log للمؤسسة المعنية إن مسّها»).
+-- Append-only: the app role gets INSERT/SELECT only (below), like audit_log (PNT-009).
+CREATE TABLE platform_audit_log (
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  occurred_at  timestamptz NOT NULL DEFAULT now(),
+  actor_type   text NOT NULL,
+  actor_id     uuid REFERENCES platform_users(id),
+  actor_role   text,
+  action       text NOT NULL,                 -- e.g. platform.auth.login, operator.suspend, plan.price_change
+  entity_type  text NOT NULL,
+  entity_id    uuid,
+  org_id       uuid REFERENCES organizations(id),
+  request_id   text,
+  ip           inet,
+  user_agent   text,
+  reason       text,
+  metadata     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT ck_platform_audit_actor CHECK (
+    (actor_type = 'platform_user' AND actor_id IS NOT NULL) OR (actor_type = 'system' AND actor_id IS NULL))
+);
+CREATE INDEX ix_platform_audit_occurred ON platform_audit_log(occurred_at);
+CREATE INDEX ix_platform_audit_org ON platform_audit_log(org_id, occurred_at) WHERE org_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------
+-- 2. Operators = the existing organizations, with platform fields
+-- ---------------------------------------------------------------------
 ALTER TABLE organizations
-  ADD COLUMN operator_status text NOT NULL DEFAULT 'active'
+  ADD COLUMN operator_status text NOT NULL DEFAULT 'active',
+  ADD COLUMN is_platform_operated boolean NOT NULL DEFAULT false,   -- venues POINT runs itself
+  ADD COLUMN legal_name text,
+  ADD COLUMN cr_number text,                                        -- commercial registration, 10 digits
+  ADD COLUMN vat_number text,                                       -- VAT registration, 15 digits 3…3
+  ADD CONSTRAINT ck_organizations_operator_status
     CHECK (operator_status IN ('invited','trial','active','suspended','terminated')),
-  ADD COLUMN is_platform_operated boolean NOT NULL DEFAULT false,   -- مواقع تديرها بوينت نفسها
-  ADD COLUMN legal_name text, ADD COLUMN cr_number text, ADD COLUMN vat_number text;
+  ADD CONSTRAINT ck_organizations_cr_number CHECK (cr_number IS NULL OR cr_number ~ '^[0-9]{10}$'),
+  ADD CONSTRAINT ck_organizations_vat_number CHECK (vat_number IS NULL OR vat_number ~ '^3[0-9]{13}3$');
 
+-- The operator's commercial terms with POINT (V2-D04, V2-D05). At most one contract per operator on any day:
+-- enforced by the creating command under a row lock on the organization (assertNoContractOverlap, DEC-463),
+-- because no migration enables btree_gist for an EXCLUDE constraint.
 CREATE TABLE operator_contracts (
-  id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id                      uuid NOT NULL REFERENCES organizations(id),
-  saas_fee_halalas_per_venue  bigint NOT NULL CHECK (saas_fee_halalas_per_venue >= 0),
-  saas_cycle                  text NOT NULL CHECK (saas_cycle IN ('monthly','yearly')),
-  subscriber_visit_payout_halalas bigint NOT NULL CHECK (subscriber_visit_payout_halalas >= 0),   -- V2-D04
-  app_payment_commission_bp   int NOT NULL CHECK (app_payment_commission_bp BETWEEN 0 AND 10000),  -- نقاط أساس
-  starts_on                   date NOT NULL,
-  ends_on                     date,
-  created_by                  uuid NOT NULL REFERENCES platform_users(id),
-  created_at                  timestamptz NOT NULL DEFAULT now(),
+  id                              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id                          uuid NOT NULL REFERENCES organizations(id),
+  saas_fee_halalas_per_venue      bigint NOT NULL,
+  saas_cycle                      text NOT NULL,
+  subscriber_visit_payout_halalas bigint NOT NULL,
+  app_payment_commission_bp       int NOT NULL,                     -- basis points of the in-app payment
+  starts_on                       date NOT NULL,
+  ends_on                         date,                             -- NULL: open-ended; exclusive end day
+  created_by                      uuid NOT NULL REFERENCES platform_users(id),
+  created_at                      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT ck_operator_contracts_saas_fee CHECK (saas_fee_halalas_per_venue >= 0),
+  CONSTRAINT ck_operator_contracts_saas_cycle CHECK (saas_cycle IN ('monthly','yearly')),
+  CONSTRAINT ck_operator_contracts_payout CHECK (subscriber_visit_payout_halalas >= 0),
+  CONSTRAINT ck_operator_contracts_commission CHECK (app_payment_commission_bp BETWEEN 0 AND 10000),
   CONSTRAINT ck_operator_contracts_period CHECK (ends_on IS NULL OR ends_on > starts_on)
 );
--- عقد سارٍ واحد لكل مشغل في أي يوم (استبعاد التداخل)
--- EXCLUDE USING gist (org_id WITH =, daterange(starts_on, ends_on) WITH &&)
+CREATE INDEX ix_operator_contracts_org ON operator_contracts(org_id, starts_on);
 ```
 
 ## 2. الموقع العام
 
+> نُفذ في `0008_platform.sql` مع `org_id` (عزل المشغل، 09) و`version` و`created_at`، وفحوص: الموقع إحداثيان معًا أو لا شيء، والمعتمد له معتمِد ووقت (DEC-461).
+
 ```sql
 CREATE TABLE venue_public_profiles (
   venue_id               uuid PRIMARY KEY REFERENCES venues(id),
-  status                 text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','hidden')),
-  category               text NOT NULL CHECK (category IN ('hall','office','mall','hospital','residential','hotel','club','other')),
-  lat                    numeric(9,6), lng numeric(9,6),
+  org_id                 uuid NOT NULL REFERENCES organizations(id),   -- = venues.org_id (operator isolation, 09)
+  status                 text NOT NULL DEFAULT 'draft',
+  category               text NOT NULL,
+  lat                    numeric(9,6),
+  lng                    numeric(9,6),
   opening_hours          jsonb NOT NULL DEFAULT '{}'::jsonb,
   photo_asset_ids        uuid[] NOT NULL DEFAULT '{}',
-  subscriptions_enabled  boolean NOT NULL DEFAULT false,          -- V2-D07
-  pay_per_visit_halalas  bigint CHECK (pay_per_visit_halalas > 0), -- لغير المشتركين (يحدده بوينت، V2-D05)
+  subscriptions_enabled  boolean NOT NULL DEFAULT false,
+  pay_per_visit_halalas  bigint,                                       -- non-subscribers (set by POINT, V2-D05)
   approved_by            uuid REFERENCES platform_users(id),
   approved_at            timestamptz,
-  updated_at             timestamptz NOT NULL DEFAULT now()
+  version                int NOT NULL DEFAULT 1,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT ck_venue_public_profiles_status CHECK (status IN ('draft','submitted','approved','hidden')),
+  CONSTRAINT ck_venue_public_profiles_category
+    CHECK (category IN ('hall','office','mall','hospital','residential','hotel','club','other')),
+  CONSTRAINT ck_venue_public_profiles_location CHECK (
+    (lat IS NULL) = (lng IS NULL) AND (lat IS NULL OR (lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180))),
+  CONSTRAINT ck_venue_public_profiles_pay_per_visit CHECK (pay_per_visit_halalas IS NULL OR pay_per_visit_halalas > 0),
+  CONSTRAINT ck_venue_public_profiles_approved CHECK (
+    status <> 'approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL))
 );
+CREATE INDEX ix_venue_public_profiles_org ON venue_public_profiles(org_id);
+CREATE INDEX ix_venue_public_profiles_listed ON venue_public_profiles(category) WHERE status = 'approved';
 ```
 
 ## 3. العميل على مستوى المنصة
+
+> **نُفذ في `packages/db/migrations/0009_customer_accounts.sql` و`0009_customers_account_index.sql` (V2-010، DEC-496…DEC-498).** الفروق عن المسودة أدناه: أسماء صريحة لكل قيد وفهرس، وفحص اللغة وطول الاسم والجهاز؛ في `customer_account_sessions` أعمدة `access_hash` و`access_expires_at` و`refresh_expires_at` و`rotation_count` و`refreshed_at` و`revoked_reason` وجلسة حية واحدة لكل حساب وجهاز؛ جداول جديدة `customer_otp_challenges` (رموز الدخول: HMAC ونسخة مشفرة مؤقتة) و`customer_idempotency_keys` و`customer_audit_log` (إلحاقي)؛ `customer_account_consents.request_id` وقيد يمنع «رفض» الشروط والخصوصية؛ وفهرس `uq_customers_org_account` في ملف مستقل يُبنى `CONCURRENTLY`. أما `tickets.customer_vehicle_id` و`entitlement` و`customer_passes` فليست في هذا الترحيل (V2-013 وما بعدها).
+>
+> **الزيارة الحية والإشعارات في `0013_customer_visits_push.sql` و`0013_customer_visits_push_token_index.sql` (V2-015، V2-016؛ DEC-516 … DEC-519):** `retrieval_cycles.request_source` و`tickets.pending_retrieval_source` يقبلان `app` (قيدان مسميان يحلان محل قيدي 06)، و`ck_cycles_app_requester`؛ `customer_visit_ratings` (تقييم واحد لكل تذكرة، 1–5، ملاحظة ≤ 500، بلا حذف)؛ أعمدة `push_provider` و`push_registered_at` على `customer_account_sessions` مع `push_token` القائم (رمز لجلسة حية واحدة بفهرس فريد `CONCURRENTLY`، والجلسة الملغاة بلا رمز)؛ و`customer_push_messages` (صف لكل إشعار وجلسة بالمعرّفات والحالة وإيصال المزود، بلا نص ولا رمز).
+
+> **بطاقة الدخول وتذكرة التطبيق في `0010_customer_pass_and_app_intake.sql` (V2-013، V2-014؛ DEC-500 … DEC-502):** `customer_passes` بالسر مشفرًا نصًا (`encrypt()`، لا `bytea`) ومعه `previous_secret_ciphertext`/`previous_valid_until` للتدوير و`key_version` و`last_used_step`/`last_used_at` لرفض الخطوة المعادة؛ وقيد القناة أُعيد باسم `ck_tickets_channel` بالقيمة `app`؛ و`tickets.customer_vehicle_id` (`fk_tickets_customer_vehicle`) و`tickets.entitlement` (`ck_tickets_entitlement`) وقيود `ck_tickets_app_customer` و`ck_tickets_app_no_whatsapp` و`ck_tickets_customer_vehicle_app`، وفهرس `ix_tickets_customer_vehicle_open` في ملف مستقل `CONCURRENTLY`. ~~**`tickets.subscription_id` لم يُضف:** يأتي مع `subscriptions` في المرحلة V4 مع قيده.~~ **أُضيف في `0016_subscriptions.sql` (V2-033، DEC-535):** `fk_tickets_subscription` و`ck_tickets_subscription` و`ck_tickets_subscription_entitlement` (لا `subscription_id` إلا بأهلية `subscription` والعكس) و`ck_tickets_subscription_not_due` (`payment_status = not_required`)، وفهرس `ix_tickets_subscription` في ملف مستقل `CONCURRENTLY`.
+>
+> **حذف الحساب في `0011_customer_account_deletion.sql` (V2-017، DEC-507، DEC-508):** `customer_accounts.phone_hash` (بصمة HMAC لا تُعكس)، و`phone_e164` يقبل `NULL` للمحذوف وحده (`ck_customer_accounts_phone_present`)، والمحذوف بلا رقم ولا اسم وببصمة (`ck_customer_accounts_deleted_phone` / `_deleted_name` / `_deleted_hash`، و`_phone_hash` sha256 hex) — فيسجّل الرقم نفسه حسابًا جديدًا؛ و`customer_account_sessions.reauth_hash` / `reauth_expires_at` لدليل إعادة التحقق قبل الحذف (`ck_customer_sessions_reauth`). صفوف `customers` لدى المشغلين لا تُمس.
+>
+> **إنهاء جلسات العميل من المنصة في `0015_platform_customer_ops.sql` (V2-024، DEC-527):** `ck_customer_sessions_revoked_reason` يُعاد بالقيم كلها ومعها `platform_revoked` (توسيع لا تضييق)، بلا عمود ولا جدول جديد؛ تعليق الحساب يستعمل `customer_accounts.status = 'suspended'` القائم.
 
 ```sql
 CREATE TABLE customer_accounts (
@@ -134,6 +249,17 @@ CREATE TABLE customer_passes (                 -- بطاقة الدخول الم
 ```
 
 ## 4. الاشتراكات والدفع
+
+> **الدفع نُفذ في `packages/db/migrations/0012_online_payments.sql` (V2-020 / V2-021، DEC-510 … DEC-514)** — `customer_payment_methods` و`online_payments` و`refunds` و`gateway_webhook_events`، ومعها `payment_reconciliation_runs` و`platform_alerts`. الفروق عن المسودة أدناه: أسماء صريحة لكل قيد؛ `online_payments` بـ`given_id` (مفتاح تكرار الإنشاء لدى البوابة) و`refunded_halalas` التراكمي و`payment_method_id` و`source_type` وعلامة البطاقة وآخر 4 أرقام وأوقات كل حالة و`gateway_updated_at` و`version`، و`gateway_payment_id` فارغ حتى أول رد من البوابة وفريد مع `gateway`؛ القيود مسطحة بلا `BETWEEN` ولا مجموعات `AND` متداخلة (تمرين الاستعادة)؛ `subscription_id` بلا مفتاح أجنبي حتى `subscriptions` (V2-031)؛ الدفعة الناجحة الواحدة للتذكرة تشمل `partially_refunded`؛ `refunds` بـ`failure_code` و`request_id` و`sent_at` و`completed_at` ومشغّل يمنع تعديل غير نتيجة البوابة، ولا حذف لأي صف مالي (REVOKE DELETE). جداول الاشتراك والباقات أدناه للمرحلة V4.
+
+> **الاشتراكات نُفذت في `packages/db/migrations/0016_subscriptions.sql` (V2-030 … V2-035، DEC-531 … DEC-539)** مع ملفي فهرسين `CONCURRENTLY` (`0016_online_payments_subscription_index.sql` ← `ix_online_payments_subscription`، و`0016_tickets_subscription_index.sql` ← `ix_tickets_subscription`). الفروق عن المسودة أدناه:
+> - **`subscription_plans`:** `org_id` و`venue_id` (المفتاح المركب مع `venues`)، `name_ar`/`name_en`، `vehicles_included` 1…5، `monthly_price_halalas`/`yearly_price_halalas` (≥ 100، واحد على الأقل)، `status` `active`/`retired`، `replaces_plan_id`/`replaced_by_plan_id` لتغيير السعر (DEC-531)، `created_by`، `retired_at`/`retired_by`/`retire_reason`، `version`.
+> - **`subscriptions`:** `org_id` للعزل، `billing_cycle`، السعر والسيارات منسوخة (`price_halalas`، `vehicles_included`)، `cycle_anchor_at` و`periods_paid` (الفترات من المرساة، DEC-533)، `current_period_start/end`، `cancel_at_period_end`/`cancel_requested_at`، `payment_method_id` (بطاقة التجديد)، `pending_expires_at`، `grace_ends_at`، `renewal_attempts`، `next_plan_id`/`next_price_halalas`/`renewal_notice_for` (الإشعار)، `vehicles_changed_at` (مرة كل فترة)، `frozen_at`/`frozen_reason`/`frozen_seconds_total` (DEC-536)، `activated_at`، `ended_at`/`ended_reason`، `version`؛ وكل قاعدة قيد مسطح مسمى (`ck_subscriptions_*`: الفترة مع الحالات المدفوعة، السماح مع `past_due` وحدها، التجميد مع `frozen` وحدها، سبب الإنهاء مع الحالتين النهائيتين…)، و`uq_subscriptions_live` الجزئي على الحالات الحية الأربع.
+> - **`subscription_vehicles`:** `id` و`account_id` و`customer_vehicle_id` و`added_at`/`removed_at` (تُزال ولا تُحذف)، وفريد جزئي للمشمولة الحية.
+> - **`subscription_periods` (جديد):** فترة مدفوعة لكل صف: `seq` (فريد مع الاشتراك)، `plan_id`، الدورة، البداية والنهاية، السعر، `online_payment_id` (فريد)، `extended_seconds` (تمديد التجميد) — يقرؤه مسار الفواتير والتسوية (DEC-538).
+> - **`online_payments`:** `fk_online_payments_subscription` و`subscription_period_seq` (للاشتراك وحده، ≥ 1، إلزامي له) ودفعة الاشتراك تحمل `venue_id`.
+> - **`customer_push_messages`:** `subscription_id` لإشعارات الاشتراك (`ck_customer_push_subscription_kind`/`_org`/`_alone`).
+> - لا حذف (REVOKE DELETE) لأي جدول اشتراك، وكل التدقيق في `platform_audit_log` و`customer_audit_log`.
 
 ```sql
 CREATE TABLE subscription_plans (
@@ -202,6 +328,11 @@ CREATE TABLE online_payments (                  -- مدفوعات البوابة
 );
 -- دفعة ناجحة واحدة لكل تذكرة
 CREATE UNIQUE INDEX uq_online_payments_ticket_paid ON online_payments(ticket_id) WHERE purpose = 'visit' AND status = 'paid';
+-- V2-022 / V2-023 (0014, DEC-522 … DEC-524): refunds.kind manual|system (a system refund has no issued_by,
+-- uq_refunds_system), the deferred guard ticket_single_payment_guard (uq_ticket_single_payment: an online visit
+-- payment that counts and a payments.recorded never coexist for one ticket, unless the online one has a system
+-- refund), ix_online_payments_ticket_live, platform_alerts.type + payment_double, customer_payment_methods
+-- .pending_payment_id (a card saved with a payment, shown once it is paid) and .gateway_deleted_at.
 
 CREATE TABLE refunds (                          -- بسبب ومُصدِر، إلحاقي
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -220,7 +351,20 @@ CREATE TABLE gateway_webhook_events (           -- خام وموقّع، معا�
 );
 ```
 
+### سياسات الباقة وملحق الاشتراكات (V2-036 / V2-037، الترحيل `0019`، DEC-590 … DEC-609)
+
+- `subscription_plans` + `term_kind`، `service_days`، `service_weekdays_mask`، `renewal_mode`، `daily_visit_limit`، `refund_policy`، `closure_policy`، `freeze_max_times`، `freeze_max_days`، `eligibility`، `capacity`، `audience_ar`، `vehicle_change` (الافتراضي سلوك V4؛ القيم في `docs/v2/04` §7.1).
+- `subscriptions` + `service_start_on`، `service_end_on`، `frozen_remaining_days`، `refund_due_at`؛ الحالة `pending_eligibility`، سبب التجميد `customer_freeze`، أسباب الانتهاء `eligibility_rejected`/`term_completed`/`exceptional_refund`؛ `uq_subscriptions_live_eligibility` (اشتراك حي واحد لكل حساب وموقع بما فيه الطلب المنتظر).
+- `subscription_eligibility` (طلب الأهلية لكل اشتراك: الرقم الجامعي والاسم، `pending|approved|rejected`، المصدر `review|list|reuse`، القرار والسبب والقائم به).
+- `subscription_eligible_students` (قائمة الموقع: الرقم، `removed_at` بدل الحذف).
+- `subscription_freezes` (التجميد: البداية والعودة والأيام، `scheduled|active|completed|withdrawn|canceled`، `used_days`؛ واحد حي لكل اشتراك).
+- `subscription_purchase_consents` (إلحاقي: نسختا الشروط والخصوصية، السعر وصافيه وضريبته، عدم الاسترداد، تنبيه المقتنيات، الدفعة).
+- `venue_closures` (إجازة أو إغلاق معلن من–إلى بتقويم الرياض، سبب للعميل، السحب بسبب).
+- `customer_complaints` (الرقم المرجعي من `customer_complaint_ref_seq`، الفئة، النص، الحالة، ملاحظة المعالجة، الزيارة أو الاشتراك).
+
 ## 5. الفواتير والتسوية
+
+> **نُفذ في `packages/db/migrations/0017_invoices_settlement.sql` (V2-040 … V2-042، DEC-540 … DEC-549).** الفروق عن المسودة أدناه: **`invoice_series`** (سلسلة لكل وحدة فوترة: `simplified` بالبادئة `PS` و`standard` بـ`PB`، آخر عداد وآخر بصمة؛ لا تتحرك إلا +1)؛ **`invoices`** بـ`series` و`type_code` (388/381) و`icv` و`zatca_uuid` و`previous_hash`/`invoice_hash` وفحص السلسلة في مشغّل الإدراج `trg_invoices_chain`، ويوم التوريد وفترة الاشتراك، و`refund_id`/`settlement_statement_id`/`credit_reason`، ونسبة الضريبة، ولقطات `seller`/`buyer`/`lines` (jsonb)، وQR الوسوم 1–5، وردود المزود (`zatca_status` + `provider_reference`/`provider_hash`/`provider_qr`/`provider_codes`/`submitted_at`/`status_at`) ومفتاح PDF — وكل ما عداها لا يتغير (`trg_invoices_guard`)، وفاتورة مبسطة واحدة لكل دفعة وإشعار واحد لكل استرداد وفاتورة اشتراك واحدة لكل كشف؛ `org_id` للمشتري المشغل وحده (فواتير العملاء بلا `org_id`)؛ **`invoice_provider_events`** إلحاقي لردود المزود؛ **`settlement_statements`** بأعمدة تفصيلية (`app_payment_count`، `app_refund_halalas`، `app_refund_commission_halalas`، `saas_vat_halalas`، `adjustments_halalas`) وأوقات الإصدار والاعتراض والحل والدفع والإلغاء وفاعليها، و`saas_invoice_id`، و`version`، وكشف حي واحد لكل مشغل وشهر (`uq_settlement_statements_period` يستثني الملغى)، وانتقالات ومبالغ مجمدة بعد الإصدار (`trg_settlement_statements_guard`)، والرأس يساوي بنوده عند COMMIT (`trg_settlement_totals` مؤجَّل)؛ **`settlement_lines`** بمعرّف و`org_id` و`line_key` فريد ما دام البند فعالًا (`uq_settlement_lines_key`، و`uq_settlement_ticket` كما في المسودة) وأنواع أدق (`app_payment`، `app_commission`، `app_refund`، `app_refund_commission`، `saas_fee`، `saas_vat`) ومبلغ موقّع بأثره على الصافي، و`released_at` بدل الحذف (إعادة حساب المسودة والإلغاء). كل الجداول بلا DELETE لدور التطبيق، والقيود مسطحة (تمرين الاستعادة)، وتنبيها المنصة `einvoice_rejected` و`einvoice_submit_failed`.
 
 ```sql
 CREATE TABLE invoices (                         -- ZATCA؛ الفاتورة لا تُعدَّل، التصحيح بإشعار دائن
@@ -267,6 +411,6 @@ CREATE UNIQUE INDEX uq_settlement_ticket ON settlement_lines(ticket_id) WHERE ti
 
 - اشتراك حي واحد لكل حساب وموقع (`uq_subscriptions_live`).
 - دفعة إلكترونية ناجحة واحدة لكل تذكرة، ولا تجتمع مع `payments.recorded` لنفس التذكرة (قيد أو مشغّل).
-- `tickets.entitlement = 'subscription'` يستلزم `subscription_id` لاشتراك `active` لحظة الإنشاء (يُفحص في الأمر، ويُوثَّق في `ticket_events`).
+- `tickets.entitlement = 'subscription'` يستلزم `subscription_id` لاشتراك `active` لحظة الإنشاء (يُفحص في الأمر، ويُوثَّق في `ticket_events`). **مبني (V2-030 … V2-035):** كتلة V2-030…035 في `docs/06_schema_invariants_test.sql` تفحص الاشتراك الحي الواحد، والفترة والسماح والتجميد مع حالاتها، وحدود الأسعار والسيارات، وقيود التذكرة والدفعة والإشعار أعلاه.
 - الزيارة الواحدة لا تدخل كشف تسوية مرتين (`uq_settlement_ticket`).
 - لا عمود فيه رقم بطاقة كامل (فحص كما في `ck_payments_no_pan`).

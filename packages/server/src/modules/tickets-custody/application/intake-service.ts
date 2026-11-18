@@ -15,6 +15,7 @@ import { loadTicketDetail } from './views.js';
 
 export interface IntakePatch {
   expected_version: number;
+  /** `app` is never written here: it comes from the entry pass (POST /v1/tickets/intake-pass, DEC-501) */
   channel?: 'whatsapp' | 'paper';
   plate?: PlateInput;
   vehicle?: {
@@ -104,6 +105,9 @@ export class IntakeService {
         );
       if (ticket.channel === 'paper')
         throw invalidTransition('ticket', ticket, OPERATION, ['received'], 'already_paper');
+      // V2-013 (DEC-501): an app ticket is the customer's account, nothing to convert after the intake
+      if (ticket.channel === 'app')
+        throw invalidTransition('ticket', ticket, OPERATION, ['received'], 'app_channel');
       if (ticket.wa_link_status === 'linked')
         throw invalidTransition('ticket', ticket, OPERATION, ['received'], 'ticket_linked');
     } else if (ticket.status !== 'received') {
@@ -116,6 +120,23 @@ export class IntakeService {
     const sets: Record<string, unknown> = {};
     const changed: string[] = [];
 
+    // V2-013 (DEC-501): an app ticket (the customer's entry pass, O-01) keeps its customer unless the draft leaves the
+    // app channel for WhatsApp or paper in `received`, which unlinks the account (its customers row and vehicle)
+    const leavingApp = ticket.channel === 'app' && body.channel !== undefined;
+    if (ticket.channel === 'app' && !leavingApp) {
+      const app = (['customer_phone', 'consent', 'paper_serial'] as const).filter(
+        (f) => body[f] !== undefined,
+      );
+      if (app.length)
+        throw new AppError('VALIDATION_FAILED', {
+          fields: app.map((field) => ({ field, issue: 'app_channel' })),
+        });
+    }
+    if (leavingApp) {
+      sets.customer_id = null;
+      sets.customer_vehicle_id = null;
+    }
+
     if (body.plate !== undefined) {
       const p = normalizePlate(body.plate);
       Object.assign(sets, {
@@ -125,6 +146,15 @@ export class IntakeService {
         plate_letters_en: p.letters_en,
         plate_raw: p.raw,
       });
+      // a different plate is not the account's vehicle any more (DEC-501): the link to it goes, the account stays
+      if (
+        ticket.customer_vehicle_id &&
+        (p.country !== ticket.plate_country ||
+          p.digits !== ticket.plate_digits ||
+          p.letters_ar !== ticket.plate_letters_ar ||
+          p.raw !== ticket.plate_raw)
+      )
+        sets.customer_vehicle_id = null;
       changed.push('plate');
     }
     if (body.vehicle !== undefined) {
@@ -141,7 +171,7 @@ export class IntakeService {
       changed.push('notes');
     }
 
-    let customerId = ticket.customer_id;
+    let customerId = leavingApp ? null : ticket.customer_id;
     if (body.customer_phone !== undefined) {
       if (body.customer_phone == null || body.customer_phone.trim() === '') {
         customerId = null;

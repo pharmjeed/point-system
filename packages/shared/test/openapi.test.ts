@@ -5,7 +5,15 @@
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import * as shared from '../src/index.js';
-import { ERROR_CATALOG, type ErrorCode } from '../src/index.js';
+import {
+  CUSTOMER_ERROR_CODES,
+  CUSTOMER_REUSED_ERROR_CODES,
+  CUSTOMER_ROUTES,
+  customerErrorDef,
+  findCustomerRoute,
+  type CustomerApiErrorCode,
+} from '../src/customer/index.js';
+import { ERROR_CATALOG, PLATFORM_ROUTES, ROUTES, type ErrorCode } from '../src/index.js';
 import { readDoc } from './docs.js';
 import { openApiOperations } from './openapi-doc.js';
 
@@ -57,15 +65,26 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
   const ops = openApiOperations(readDoc('07_openapi.yaml'));
 
   it('reads every operation with its responses', () => {
-    expect(ops).toHaveLength(131);
-    expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(120);
-    expect(ops.filter((o) => o.requestBody)).toHaveLength(81);
+    const CUSTOMER = Object.values(CUSTOMER_ROUTES);
+    // canon §9 (+4 V2-004, +1 V2-013, +1 V2-021) + the V2 platform routes + the customer routes (V2-010, V2-013)
+    expect(ops).toHaveLength(ROUTES.length + PLATFORM_ROUTES.length + CUSTOMER.length);
+    expect(ops.filter((o) => o.responses.size > 0).length).toBeGreaterThanOrEqual(127);
+    const v1 = ops.filter((o) => !o.path.startsWith('/v1/platform/') && !o.path.startsWith('/v1/customer/'));
+    expect(v1.filter((o) => o.requestBody)).toHaveLength(88); // + PUT public-profile, …/photos, …/submit (V2-004), intake-pass (V2-013), the payment webhook (V2-021), the O-05 dispute and the e-invoicing webhook (V2-040 / V2-041)
+    // every customer write with a body in CUSTOMER_ROUTES documents it (V2-010; DELETE …/vehicles/{id} has none, V2-012)
+    expect(ops.filter((o) => o.path.startsWith('/v1/customer/') && o.requestBody)).toHaveLength(
+      CUSTOMER.filter((r) => 'body' in r).length,
+    );
   });
 
   it('every operation but a GET documents 413 PAYLOAD_TOO_LARGE and 422 VALIDATION_FAILED (08 §4.15, DEC-130)', () => {
     // the body parsers run before any route: one without a requestBody still reads a body sent to it
     const writes = ops.filter((o) => o.method !== 'GET');
-    expect(writes).toHaveLength(90);
+    expect(writes).toHaveLength(
+      97 + // + intake-pass (V2-013), the payment webhook (V2-021), the O-05 dispute and the e-invoicing webhook (V2-041 / V2-040)
+        PLATFORM_ROUTES.filter((r) => r.method !== 'GET').length +
+        Object.values(CUSTOMER_ROUTES).filter((r) => r.method !== 'GET').length,
+    );
     const missing = writes
       .filter(
         (o) =>
@@ -79,6 +98,7 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
   it('every documented code is a canon code listed under its own HTTP status', () => {
     const problems: string[] = [];
     for (const op of ops) {
+      if (findCustomerRoute(op.method, op.path)) continue; // V2-010: the customer catalog, below
       for (const [status, codes] of op.responses)
         for (const code of codes) {
           const def = ERROR_CATALOG[code as ErrorCode];
@@ -92,6 +112,34 @@ describe('OpenAPI error codes ↔ the canon catalog', () => {
         else if (!op.responses.get(def.http)?.includes(code))
           problems.push(`${op.method} ${op.path}: x-error-codes ${code} has no ${def.http} response`);
       }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('V2-010: a customer operation documents customer API codes only (05 §5), each under its own status', () => {
+    const allowed = new Set<string>([
+      ...CUSTOMER_ERROR_CODES,
+      ...CUSTOMER_REUSED_ERROR_CODES,
+      'PAYLOAD_TOO_LARGE',
+    ]);
+    const http = (c: string) =>
+      c === 'PAYLOAD_TOO_LARGE' ? 413 : customerErrorDef(c as CustomerApiErrorCode).http;
+    const problems: string[] = [];
+    const customerOps = ops.filter((o) => findCustomerRoute(o.method, o.path));
+    expect(customerOps).toHaveLength(Object.keys(CUSTOMER_ROUTES).length);
+    for (const op of customerOps) {
+      for (const [status, codes] of op.responses)
+        for (const code of codes) {
+          if (!allowed.has(code))
+            problems.push(`${op.method} ${op.path}: ${code} is not a customer API code`);
+          else if (http(code) !== status)
+            problems.push(`${op.method} ${op.path}: ${code} under ${status}, catalog ${http(code)}`);
+        }
+      for (const code of op.xErrorCodes)
+        if (!allowed.has(code) || !op.responses.get(http(code))?.includes(code))
+          problems.push(
+            `${op.method} ${op.path}: x-error-codes ${code} has no ${allowed.has(code) ? http(code) : '?'} response`,
+          );
     }
     expect(problems).toEqual([]);
   });

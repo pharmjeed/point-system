@@ -1,0 +1,20 @@
+# Expo: generated state, native projects (continuous native generation, `expo prebuild`) and exports
+.expo/
+expo-env.d.ts
+ios/
+android/
+dist/
+web-build/
+# V2-018 (DEC-550): the e2e web export and Playwright output
+dist-web/
+test-results/
+playwright-report/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+# store screenshots (V2-052, scripts/store-screenshots.mjs): reviewed by the owner, uploaded by hand, never committed
+store-screenshots/
+# before set of the V2-UX redesign (DEC-570): kept locally for the owner, never committed
+store-screenshots-before/

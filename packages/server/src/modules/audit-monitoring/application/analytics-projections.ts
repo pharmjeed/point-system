@@ -140,7 +140,7 @@ async function acceptedRound(tx: Tx, taskId: string | null) {
 // enums used by the projections (the shared catalog validates the result)
 // ---------------------------------------------------------------------------------------------
 
-const CHANNELS = ['whatsapp', 'paper'] as const;
+const CHANNELS = ['whatsapp', 'paper', 'app'] as const;
 const PRICING = ['included', 'per_vehicle'] as const;
 const OFFER_MODES = ['single', 'broadcast'] as const;
 const TASK_TYPES = ['park', 'retrieve', 'repark'] as const;
@@ -236,7 +236,7 @@ export const PROJECTIONS = {
     return {
       ...ticketBase(ctx),
       properties: {
-        request_source: pick(ctx.p.request_source ?? c?.request_source, ['whatsapp', 'staff']),
+        request_source: pick(ctx.p.request_source ?? c?.request_source, ['whatsapp', 'staff', 'app']),
         cycle_no: int(ctx.p.cycle_no) ?? int(c?.cycle_no),
         requested_early: bool(ctx.p.requested_early) ?? bool(c?.requested_early),
         queue_depth:
@@ -259,7 +259,7 @@ export const PROJECTIONS = {
     return {
       ...ticketBase(ctx),
       properties: {
-        request_source: pick(ctx.p.request_source ?? 'whatsapp', ['whatsapp']),
+        request_source: pick(ctx.p.request_source ?? 'whatsapp', ['whatsapp', 'app']),
         status_at_request: pick(ctx.p.status_at_request ?? t?.status, ['received', 'parking', 'reparking']),
       },
     };
@@ -888,6 +888,15 @@ export const PROJECTIONS = {
       },
     };
   },
+  // V2-022 (DEC-522): the visit paid in the app (POINT's money, no method of the operator's), and its full refund
+  'payment.online_paid': async (ctx) => ({
+    ...ticketBase(ctx),
+    properties: { amount_halalas: int(ctx.p.amount_halalas) },
+  }),
+  'payment.online_refunded': async (ctx) => ({
+    ...ticketBase(ctx),
+    properties: { amount_halalas: int(ctx.p.amount_halalas) },
+  }),
   'payment.waived': async (ctx) => {
     const t = int(ctx.p.amount_halalas) === null ? await ticket(ctx.tx, ticketIdOf(ctx)) : null;
     return {

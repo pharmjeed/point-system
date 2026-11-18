@@ -475,7 +475,30 @@ export const d05 = {
   paperHint: 'انسخ الرقم المطبوع على الكعب كما هو.',
   /** «تذكرة العميل» (SegmentedControl) and «طريقة الربط» (Radio) — 02 D-05 «قناة العميل». */
   channel: 'تذكرة العميل',
-  channels: { whatsapp: 'واتساب', paper: 'تذكرة ورقية' },
+  channels: { whatsapp: 'واتساب', paper: 'تذكرة ورقية', app: 'تطبيق العميل' },
+  /**
+   * O-01 (V2-013, DEC-500): «مسح بطاقة العميل» — the entry pass the customer shows in the app (C-11). Not in 02 as
+   * V1 copy: added with the D-05 V2 note (02 D-05). No brand name in the staff sentences (canon §1 rule 2).
+   */
+  pass: {
+    scan: 'مسح بطاقة العميل',
+    scanHint: 'إن كانت لدى العميل بطاقة دخول في التطبيق، امسحها لتعبئة السيارة وربط الزيارة بحسابه.',
+    sheetTitle: 'مسح بطاقة العميل',
+    aim: 'وجّه الكاميرا إلى رمز بطاقة الدخول في جوال العميل.',
+    starting: 'جارٍ تشغيل الكاميرا…',
+    checking: 'جارٍ التحقق من البطاقة…',
+    notPass: 'هذا الرمز ليس بطاقة دخول. اطلب من العميل فتح «بطاقة الدخول» في التطبيق.',
+    cameraDenied: 'لا إذن باستخدام الكاميرا. اسمح بها من إعدادات المتصفح ثم حاول مجددًا.',
+    cameraUnavailable: 'تعذّر تشغيل الكاميرا على هذا الجهاز.',
+    retry: 'امسح مجددًا',
+    linkedTitle: 'بطاقة العميل',
+    customer: 'العميل: {name}',
+    customerUnnamed: 'عميل التطبيق',
+    vehicleFilled: 'عُبّئت السيارة من حساب العميل. راجعها قبل المتابعة.',
+    vehicleManual: 'السيارة المختارة ليست في حساب العميل. أكمل بياناتها يدويًا.',
+    noWhatsapp: 'يتابع العميل زيارته في التطبيق، ولا تُرسل له رسالة واتساب.',
+    useOther: 'استخدم واتساب أو تذكرة ورقية بدلًا من ذلك',
+  },
   linkMethod: 'طريقة الربط',
   methods: { direct: 'رقم جوال العميل', qr: 'رمز QR يمسحه العميل' },
   phone: 'جوال العميل',
@@ -516,8 +539,28 @@ export const d06 = {
   needsConnection: 'يلزم الاتصال لإتمام التسجيل',
 } as const;
 
+/**
+ * O-02 (V2-014, DEC-502): the entitlement badge of the ticket on D-05, D-10, D-11 and S-03 — «مشمول» when nothing is
+ * collected at the handover, «يدفع X» when the fee is due (docs/v2/02 §3, 04 §2).
+ */
+export const entitlementBadge = {
+  label: 'الأهلية',
+  included: 'مشمول',
+  /** V2-033 (O-02, DEC-535): the brand filled with `fmt` + `useBrand()` (canon §1: never a literal) */
+  subscription: 'مشترك {brand}',
+  /** V2-033 (01 §4): the scanned customer subscribes here, for another vehicle */
+  subscriptionNotCovered: 'مشترك — هذه السيارة غير مشمولة',
+  appPaid: 'مدفوع في التطبيق',
+  pays: 'يدفع {amount}',
+  /** the intake driver does not see the fee (09 §5.1): the due state only */
+  paysAtHandover: 'يدفع عند التسليم',
+} as const;
+
 /** D-07 — ربط واتساب (أ الإرسال المباشر، ب لوحة العميل، ج التذكرة الورقية) */
 export const d07 = {
+  /** V2-013 (DEC-503): an app ticket (the entry pass) has no WhatsApp link to make */
+  appTitle: 'تذكرة التطبيق · #{n}',
+  appText: 'العميل يتابع زيارته في التطبيق، ولا تُرسل لهذه التذكرة رسائل واتساب.',
   paperTitle: 'تذكرة ورقية · #{n}',
   paperText: 'سلّم العميل الكعب رقم {serial}، وعلّق الجزء الآخر على المفتاح.',
   stubGiven: 'سلّمت الكعب للعميل',
@@ -775,6 +818,16 @@ export const d15 = {
   whatsappDown:
     'رسائل واتساب للعملاء متوقفة مؤقتًا. استقبل الطلبات من العملاء مباشرة واستخدم التذكرة الورقية.',
   serviceUnavailable: 'النظام غير متاح مؤقتًا. اتبع الإجراء الورقي حتى عودة الخدمة.',
+} as const;
+
+/**
+ * The operator banner over every staff and driver screen (V2-005, DEC-486): the organization is suspended or
+ * terminated by the platform (`/v1/me` → `organization.operator_status`). The server refuses the new work itself.
+ */
+export const operatorBanner = {
+  suspended:
+    'حساب المشغّل معلّق من المنصة: لا يُفتح حفل ولا وردية ولا مناوبة ولا استلام جديد، وتكتمل التذاكر الجارية.',
+  terminated: 'أُنهي حساب المشغّل في المنصة: لا يُفتح شيء جديد، وتبقى السجلات للاطلاع.',
 } as const;
 
 /** Setup-item status (venues, pools, zones, spots, boards, slots). */

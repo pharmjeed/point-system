@@ -3,6 +3,7 @@ import type { ActorContext } from '../../../core/actor-context/actor-context.js'
 import { newId } from '../../../core/crypto/ids.js';
 import type { Database } from '../../../core/db/database.js';
 import { lockEvents } from '../../../core/db/locks.js';
+import { assertOperatorOperating } from '../../../core/operator-status.js';
 import type { Tx } from '../../../core/db/tx.js';
 import { AppError } from '../../../core/errors/app-error.js';
 import { emitEvent } from '../../../core/outbox/outbox-writer.js';
@@ -218,9 +219,11 @@ export class EventsService {
 
   /**
    * POST /v1/events/{eventId}/open — draft → open, or closing → open (reopen, canon §5 note), with an active
-   * dispatch pool (11 §6.4). Emits `event.opened` (`reopened: true` for a reopen).
+   * dispatch pool (11 §6.4). Emits `event.opened` (`reopened: true` for a reopen). A suspended or terminated
+   * operator opens nothing (OPERATOR_SUSPENDED, V2-005).
    */
   async open(tx: Tx, actor: ActorContext, meta: CommandMeta, eventId: string, body: VersionOnlyBody) {
+    await assertOperatorOperating(tx, actor.orgId);
     const ev = await this.lockEvent(tx, actor, eventId);
     assertVersion('event', ev, body.expected_version);
     const { reopened } = openTransition(ev, meta.operation);

@@ -31,6 +31,7 @@ import {
   PRICING_MODES,
   PUSH_NOTIFICATION_TYPES,
   REQUEST_SOURCES,
+  PENDING_RETRIEVAL_SOURCES,
   TASK_STATUSES,
   TASK_TYPES,
   TICKET_CHANNELS,
@@ -182,7 +183,7 @@ export const SERVER_ANALYTICS_PROPERTIES = {
     ingest_latency_ms: p.int(),
   },
   'ticket.retrieval_requested_early': {
-    request_source: p.one(['whatsapp']),
+    request_source: p.one(PENDING_RETRIEVAL_SOURCES),
     status_at_request: p.one(['received', 'parking', 'reparking']),
   },
   'ticket.assigned': { wait_s: p.int(), offer_mode: p.one(OFFER_MODES), offer_round_no: p.int() },
@@ -327,6 +328,9 @@ export const SERVER_ANALYTICS_PROPERTIES = {
     difference_halalas: p.signed(),
     linked_payments_count: p.int(),
   },
+  // V2-022 (DEC-522): the visit paid in the app, and its full refund before the handover
+  'payment.online_paid': { amount_halalas: p.int() },
+  'payment.online_refunded': { amount_halalas: p.int() },
   // §7.5 alerts, incidents, event, shift
   'alert.raised': { type: p.one(ALERT_TYPES), severity: p.one(ALERT_SEVERITIES) },
   'alert.acknowledged': { type: p.one(ALERT_TYPES), ack_after_s: p.int() },

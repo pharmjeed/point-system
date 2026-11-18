@@ -16,18 +16,36 @@ import {
   date,
   smallint,
   primaryKey,
+  numeric,
   pgView,
+  bigserial,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-export const organizations = pgTable('organizations', {
-  id: uuid().defaultRandom().primaryKey().notNull(),
-  name_ar: text().notNull(),
-  name_en: text(),
-  settings: jsonb().default({}).notNull(),
-  created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-});
+export const organizations = pgTable(
+  'organizations',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    name_ar: text().notNull(),
+    name_en: text(),
+    settings: jsonb().default({}).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    operator_status: text().default('active').notNull(),
+    is_platform_operated: boolean().default(false).notNull(),
+    legal_name: text(),
+    cr_number: text(),
+    vat_number: text(),
+  },
+  (table) => [
+    check(
+      'ck_organizations_operator_status',
+      sql`operator_status = ANY (ARRAY['invited'::text, 'trial'::text, 'active'::text, 'suspended'::text, 'terminated'::text])`,
+    ),
+    check('ck_organizations_cr_number', sql`(cr_number IS NULL) OR (cr_number ~ '^[0-9]{10}$'::text)`),
+    check('ck_organizations_vat_number', sql`(vat_number IS NULL) OR (vat_number ~ '^3[0-9]{13}3$'::text)`),
+  ],
+);
 
 export const venues = pgTable(
   'venues',
@@ -463,8 +481,16 @@ export const customers = pgTable(
     wa_opted_out_at: timestamp({ withTimezone: true, mode: 'string' }),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    customer_account_id: uuid(),
   },
   (table) => [
+    uniqueIndex('uq_customers_org_account')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('uuid_ops'),
+        table.customer_account_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(customer_account_id IS NOT NULL)`),
     uniqueIndex('uq_customers_wa_id')
       .using(
         'btree',
@@ -596,6 +622,9 @@ export const tickets = pgTable(
     version: integer().default(1).notNull(),
     created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    customer_vehicle_id: uuid(),
+    entitlement: text().default('none').notNull(),
+    subscription_id: uuid(),
   },
   (table) => [
     index('ix_tickets_creator_draft')
@@ -604,9 +633,14 @@ export const tickets = pgTable(
     index('ix_tickets_customer')
       .using('btree', table.customer_id.asc().nullsLast().op('uuid_ops'))
       .where(sql`(customer_id IS NOT NULL)`),
+    index('ix_tickets_customer_vehicle_open')
+      .using('btree', table.customer_vehicle_id.asc().nullsLast().op('uuid_ops'))
+      .where(
+        sql`((customer_vehicle_id IS NOT NULL) AND (status <> ALL (ARRAY['delivered'::text, 'voided'::text])))`,
+      ),
     index('ix_tickets_event_status').using(
       'btree',
-      table.event_id.asc().nullsLast().op('uuid_ops'),
+      table.event_id.asc().nullsLast().op('text_ops'),
       table.status.asc().nullsLast().op('text_ops'),
     ),
     index('ix_tickets_key_holder_open')
@@ -617,10 +651,17 @@ export const tickets = pgTable(
     index('ix_tickets_plate_open')
       .using(
         'btree',
-        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
         table.plate_digits.asc().nullsLast().op('uuid_ops'),
       )
       .where(sql`(status <> ALL (ARRAY['delivered'::text, 'voided'::text]))`),
+    index('ix_tickets_subscription')
+      .using(
+        'btree',
+        table.subscription_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(subscription_id IS NOT NULL)`),
     index('ix_tickets_vehicle_holder_open')
       .using('btree', table.vehicle_holder_id.asc().nullsLast().op('uuid_ops'))
       .where(
@@ -630,7 +671,7 @@ export const tickets = pgTable(
       .using(
         'btree',
         table.venue_id.asc().nullsLast().op('uuid_ops'),
-        table.key_tag.asc().nullsLast().op('uuid_ops'),
+        table.key_tag.asc().nullsLast().op('text_ops'),
       )
       .where(sql`((key_tag IS NOT NULL) AND (status <> ALL (ARRAY['delivered'::text, 'voided'::text])))`),
     uniqueIndex('uq_tickets_paper_serial')
@@ -642,9 +683,17 @@ export const tickets = pgTable(
       .where(sql`((paper_serial IS NOT NULL) AND (status <> 'voided'::text))`),
 
     unique('tickets_event_id_display_number_key').on(table.event_id, table.display_number),
+    check('ck_tickets_app_customer', sql`(channel <> 'app'::text) OR (customer_id IS NOT NULL)`),
+    check('ck_tickets_app_no_whatsapp', sql`(channel <> 'app'::text) OR (wa_link_status = 'none'::text)`),
+    check('ck_tickets_channel', sql`channel = ANY (ARRAY['whatsapp'::text, 'paper'::text, 'app'::text])`),
+    check('ck_tickets_customer_vehicle_app', sql`(customer_vehicle_id IS NULL) OR (channel = 'app'::text)`),
     check(
       'ck_tickets_delivered_fields',
       sql`(status <> 'delivered'::text) OR ((delivered_at IS NOT NULL) AND (delivered_by IS NOT NULL))`,
+    ),
+    check(
+      'ck_tickets_entitlement',
+      sql`entitlement = ANY (ARRAY['none'::text, 'subscription'::text, 'app_paid'::text, 'event_included'::text])`,
     ),
     check(
       'ck_tickets_fee_matches_payment_status',
@@ -659,6 +708,22 @@ export const tickets = pgTable(
       sql`(status <> 'parked'::text) OR ((vehicle_holder_type = 'spot'::text) OR (vehicle_holder_type = 'unknown'::text))`,
     ),
     check(
+      'ck_tickets_pending_retrieval_source',
+      sql`pending_retrieval_source = ANY (ARRAY['whatsapp'::text, 'app'::text])`,
+    ),
+    check(
+      'ck_tickets_subscription',
+      sql`(entitlement <> 'subscription'::text) OR (subscription_id IS NOT NULL)`,
+    ),
+    check(
+      'ck_tickets_subscription_entitlement',
+      sql`(subscription_id IS NULL) OR (entitlement = 'subscription'::text)`,
+    ),
+    check(
+      'ck_tickets_subscription_not_due',
+      sql`(subscription_id IS NULL) OR (payment_status = 'not_required'::text)`,
+    ),
+    check(
       'ck_tickets_voided_fields',
       sql`(status <> 'voided'::text) OR ((voided_at IS NOT NULL) AND (void_reason IS NOT NULL))`,
     ),
@@ -666,7 +731,6 @@ export const tickets = pgTable(
       'ck_tickets_waiver_fields',
       sql`(payment_status <> 'waived'::text) OR ((payment_waived_at IS NOT NULL) AND (payment_waiver_reason IS NOT NULL))`,
     ),
-    check('tickets_channel_check', sql`channel = ANY (ARRAY['whatsapp'::text, 'paper'::text])`),
     check('tickets_display_number_check', sql`display_number >= 1`),
     check('tickets_fee_halalas_check', sql`fee_halalas >= 0`),
     check(
@@ -681,7 +745,6 @@ export const tickets = pgTable(
       'tickets_payment_status_check',
       sql`payment_status = ANY (ARRAY['not_required'::text, 'due'::text, 'collected'::text, 'waived'::text])`,
     ),
-    check('tickets_pending_retrieval_source_check', sql`pending_retrieval_source = 'whatsapp'::text`),
     check('tickets_plate_digits_check', sql`plate_digits ~ '^[0-9]{1,4}$'::text`),
     check(
       'tickets_status_check',
@@ -950,9 +1013,14 @@ export const retrieval_cycles = pgTable(
       'retrieval_cycles_outcome_check',
       sql`outcome = ANY (ARRAY['delivered'::text, 'canceled'::text, 'reparked'::text])`,
     ),
+    // V2-015 (0013, DEC-516): the request from the customer app; replaces retrieval_cycles_request_source_check
     check(
-      'retrieval_cycles_request_source_check',
-      sql`request_source = ANY (ARRAY['whatsapp'::text, 'staff'::text])`,
+      'ck_cycles_request_source',
+      sql`request_source = ANY (ARRAY['whatsapp'::text, 'staff'::text, 'app'::text])`,
+    ),
+    check(
+      'ck_cycles_app_requester',
+      sql`(request_source <> 'app'::text) OR (requested_by_customer_id IS NOT NULL)`,
     ),
   ],
 );
@@ -1920,6 +1988,896 @@ export const idempotency_keys = pgTable(
     check('idempotency_keys_status_check', sql`status = ANY (ARRAY['in_progress'::text, 'completed'::text])`),
   ],
 );
+
+// V2 platform layer (migration 0008_platform.sql, DEC-461)
+
+export const platform_users = pgTable(
+  'platform_users',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    phone_e164: text().notNull(),
+    full_name: text().notNull(),
+    role: text().notNull(),
+    status: text().default('active').notNull(),
+    secret_hash: text().notNull(),
+    must_change_secret: boolean().default(true).notNull(),
+    mfa_enabled: boolean().default(false).notNull(),
+    mfa_secret_enc: text(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    mfa_last_step: bigint({ mode: 'number' }),
+    failed_login_count: integer().default(0).notNull(),
+    locked_until: timestamp({ withTimezone: true, mode: 'string' }),
+    last_login_at: timestamp({ withTimezone: true, mode: 'string' }),
+    disabled_at: timestamp({ withTimezone: true, mode: 'string' }),
+    disabled_by: uuid(),
+    disabled_reason: text(),
+    created_by: uuid(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('uq_platform_users_phone').on(table.phone_e164),
+    check('ck_platform_users_failed_count', sql`failed_login_count >= 0`),
+    check('ck_platform_users_phone', sql`phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text`),
+    check(
+      'ck_platform_users_role',
+      sql`role = ANY (ARRAY['platform_owner'::text, 'platform_admin'::text, 'platform_finance'::text, 'platform_support'::text])`,
+    ),
+    check('ck_platform_users_status', sql`status = ANY (ARRAY['active'::text, 'disabled'::text])`),
+    check('ck_platform_users_disabled_at', sql`(status <> 'disabled'::text) OR (disabled_at IS NOT NULL)`),
+    check('ck_platform_users_mfa_secret', sql`(NOT mfa_enabled) OR (mfa_secret_enc IS NOT NULL)`),
+  ],
+);
+
+export const platform_sessions = pgTable(
+  'platform_sessions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    platform_user_id: uuid().notNull(),
+    kind: text().default('session').notNull(),
+    token_hash: text().notNull(),
+    mfa_verified: boolean().default(false).notNull(),
+    ip: inet(),
+    user_agent: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    last_seen_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    revoked_at: timestamp({ withTimezone: true, mode: 'string' }),
+    revoked_reason: text(),
+  },
+  (table) => [
+    index('ix_platform_sessions_user_active')
+      .using('btree', table.platform_user_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(revoked_at IS NULL)`),
+
+    unique('uq_platform_sessions_token').on(table.token_hash),
+    check('ck_platform_sessions_kind', sql`kind = ANY (ARRAY['session'::text, 'mfa_challenge'::text])`),
+    check(
+      'ck_platform_sessions_revoked_reason',
+      sql`revoked_reason = ANY (ARRAY['logout'::text, 'disabled'::text, 'secret_reset'::text, 'admin'::text, 'expired_cleanup'::text, 'consumed'::text])`,
+    ),
+    check('ck_platform_sessions_revoked', sql`(revoked_reason IS NULL) OR (revoked_at IS NOT NULL)`),
+    check('ck_platform_sessions_challenge', sql`(kind <> 'mfa_challenge'::text) OR (mfa_verified = false)`),
+    check('ck_platform_sessions_expiry', sql`expires_at > created_at`),
+  ],
+);
+
+export const platform_idempotency_keys = pgTable(
+  'platform_idempotency_keys',
+  {
+    platform_user_id: uuid().notNull(),
+    key: text().notNull(),
+    operation: text().notNull(),
+    request_hash: text().notNull(),
+    status: text().default('in_progress').notNull(),
+    response_status: integer(),
+    response_body: jsonb(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' })
+      .default(sql`(now() + '24:00:00'::interval)`)
+      .notNull(),
+  },
+  (table) => [
+    index('ix_platform_idempotency_expiry').using(
+      'btree',
+      table.expires_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    primaryKey({ columns: [table.platform_user_id, table.key], name: 'pk_platform_idempotency_keys' }),
+    check('ck_platform_idempotency_keys_key', sql`(length(key) >= 8) AND (length(key) <= 128)`),
+    check(
+      'ck_platform_idempotency_keys_status',
+      sql`status = ANY (ARRAY['in_progress'::text, 'completed'::text])`,
+    ),
+  ],
+);
+
+export const platform_audit_log = pgTable(
+  'platform_audit_log',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'platform_audit_log_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    occurred_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    actor_type: text().notNull(),
+    actor_id: uuid(),
+    actor_role: text(),
+    action: text().notNull(),
+    entity_type: text().notNull(),
+    entity_id: uuid(),
+    org_id: uuid(),
+    request_id: text(),
+    ip: inet(),
+    user_agent: text(),
+    reason: text(),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    index('ix_platform_audit_occurred').using(
+      'btree',
+      table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_platform_audit_org')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('timestamptz_ops'),
+        table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(org_id IS NOT NULL)`),
+
+    check(
+      'ck_platform_audit_actor',
+      sql`((actor_type = 'platform_user'::text) AND (actor_id IS NOT NULL)) OR ((actor_type = 'system'::text) AND (actor_id IS NULL))`,
+    ),
+  ],
+);
+
+export const operator_contracts = pgTable(
+  'operator_contracts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    saas_fee_halalas_per_venue: bigint({ mode: 'number' }).notNull(),
+    saas_cycle: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    subscriber_visit_payout_halalas: bigint({ mode: 'number' }).notNull(),
+    app_payment_commission_bp: integer().notNull(),
+    starts_on: date().notNull(),
+    ends_on: date(),
+    created_by: uuid().notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_operator_contracts_org').using(
+      'btree',
+      table.org_id.asc().nullsLast().op('date_ops'),
+      table.starts_on.asc().nullsLast().op('date_ops'),
+    ),
+
+    check('ck_operator_contracts_saas_fee', sql`saas_fee_halalas_per_venue >= 0`),
+    check('ck_operator_contracts_saas_cycle', sql`saas_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
+    check('ck_operator_contracts_payout', sql`subscriber_visit_payout_halalas >= 0`),
+    check(
+      'ck_operator_contracts_commission',
+      sql`(app_payment_commission_bp >= 0) AND (app_payment_commission_bp <= 10000)`,
+    ),
+    check('ck_operator_contracts_period', sql`(ends_on IS NULL) OR (ends_on > starts_on)`),
+  ],
+);
+
+export const venue_public_profiles = pgTable(
+  'venue_public_profiles',
+  {
+    venue_id: uuid().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    status: text().default('draft').notNull(),
+    category: text().notNull(),
+    lat: numeric({ precision: 9, scale: 6 }),
+    lng: numeric({ precision: 9, scale: 6 }),
+    opening_hours: jsonb().default({}).notNull(),
+    photo_asset_ids: uuid().array().default(['']).notNull(),
+    subscriptions_enabled: boolean().default(false).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    pay_per_visit_halalas: bigint({ mode: 'number' }),
+    approved_by: uuid(),
+    approved_at: timestamp({ withTimezone: true, mode: 'string' }),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_venue_public_profiles_listed')
+      .using('btree', table.category.asc().nullsLast().op('text_ops'))
+      .where(sql`(status = 'approved'::text)`),
+    index('ix_venue_public_profiles_org').using('btree', table.org_id.asc().nullsLast().op('uuid_ops')),
+
+    check(
+      'ck_venue_public_profiles_status',
+      sql`status = ANY (ARRAY['draft'::text, 'submitted'::text, 'approved'::text, 'hidden'::text])`,
+    ),
+    check(
+      'ck_venue_public_profiles_category',
+      sql`category = ANY (ARRAY['hall'::text, 'office'::text, 'mall'::text, 'hospital'::text, 'residential'::text, 'hotel'::text, 'club'::text, 'other'::text])`,
+    ),
+    check(
+      'ck_venue_public_profiles_location',
+      sql`(((lat IS NULL) = (lng IS NULL)) AND ((lat IS NULL) OR ((lat >= ('-90'::integer)::numeric) AND (lat <= (90)::numeric) AND (lng >= ('-180'::integer)::numeric) AND (lng <= (180)::numeric))))`,
+    ),
+    check(
+      'ck_venue_public_profiles_pay_per_visit',
+      sql`(pay_per_visit_halalas IS NULL) OR (pay_per_visit_halalas > 0)`,
+    ),
+    check(
+      'ck_venue_public_profiles_approved',
+      sql`(status <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (approved_at IS NOT NULL))`,
+    ),
+  ],
+);
+
+// V2-010: the customer at platform level (0009_customer_accounts.sql, docs/v2/03 §3)
+export const customer_accounts = pgTable(
+  'customer_accounts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    // NULL once the account is deleted (V2-017, 0011): phone_hash keeps an irreversible keyed hash instead
+    phone_e164: text(),
+    display_name: text(),
+    locale: text().default('ar').notNull(),
+    status: text().default('active').notNull(),
+    deleted_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    phone_hash: text(),
+  },
+  (table) => [
+    unique('uq_customer_accounts_phone').on(table.phone_e164),
+    check('ck_customer_accounts_phone_present', sql`(status = 'deleted'::text) OR (phone_e164 IS NOT NULL)`),
+    check('ck_customer_accounts_deleted_phone', sql`(status <> 'deleted'::text) OR (phone_e164 IS NULL)`),
+    check('ck_customer_accounts_deleted_name', sql`(status <> 'deleted'::text) OR (display_name IS NULL)`),
+    check('ck_customer_accounts_deleted_hash', sql`(status <> 'deleted'::text) OR (phone_hash IS NOT NULL)`),
+    check(
+      'ck_customer_accounts_phone_hash',
+      sql`(phone_hash IS NULL) OR (phone_hash ~ '^[0-9a-f]{64}$'::text)`,
+    ),
+    check('ck_customer_accounts_deleted', sql`(status <> 'deleted'::text) OR (deleted_at IS NOT NULL)`),
+    check(
+      'ck_customer_accounts_display_name',
+      sql`(display_name IS NULL) OR ((char_length(display_name) >= 2) AND (char_length(display_name) <= 60))`,
+    ),
+    check('ck_customer_accounts_locale', sql`locale = ANY (ARRAY['ar'::text, 'en'::text])`),
+    check('ck_customer_accounts_phone', sql`phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text`),
+    check(
+      'ck_customer_accounts_status',
+      sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'deleted'::text])`,
+    ),
+  ],
+);
+
+export const customer_otp_challenges = pgTable(
+  'customer_otp_challenges',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    phone_e164: text().notNull(),
+    device_id: text().notNull(),
+    platform: text().notNull(),
+    locale: text().default('ar').notNull(),
+    status: text().default('open').notNull(),
+    code_hash: text().notNull(),
+    code_ciphertext: text(),
+    attempts_left: integer().notNull(),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    resend_available_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    locked_until: timestamp({ withTimezone: true, mode: 'string' }),
+    consumed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    closed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    wa_channel_id: uuid(),
+    delivery_status: text().default('queued').notNull(),
+    wa_message_id: text(),
+    delivery_error_code: text(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_otp_device').using(
+      'btree',
+      table.device_id.asc().nullsLast().op('text_ops'),
+      table.created_at.asc().nullsLast().op('text_ops'),
+    ),
+    index('ix_customer_otp_locked')
+      .using(
+        'btree',
+        table.phone_e164.asc().nullsLast().op('text_ops'),
+        table.locked_until.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(status = 'locked'::text)`),
+    index('ix_customer_otp_phone').using(
+      'btree',
+      table.phone_e164.asc().nullsLast().op('timestamptz_ops'),
+      table.created_at.asc().nullsLast().op('text_ops'),
+    ),
+    uniqueIndex('uq_customer_otp_open_phone')
+      .using('btree', table.phone_e164.asc().nullsLast().op('text_ops'))
+      .where(sql`(status = 'open'::text)`),
+    // V2-051 (0018_customer_otp_wamid_index.sql, DEC-564)
+    index('ix_customer_otp_wamid')
+      .using('btree', table.wa_message_id.asc().nullsLast().op('text_ops'))
+      .where(sql`(wa_message_id IS NOT NULL)`),
+
+    check('ck_customer_otp_attempts', sql`(attempts_left >= 0) AND (attempts_left <= 5)`),
+    check('ck_customer_otp_ciphertext', sql`(status = 'open'::text) OR (code_ciphertext IS NULL)`),
+    check('ck_customer_otp_closed', sql`(status = 'open'::text) = (closed_at IS NULL)`),
+    check('ck_customer_otp_consumed', sql`(status = 'consumed'::text) = (consumed_at IS NOT NULL)`),
+    check(
+      'ck_customer_otp_delivery',
+      sql`delivery_status = ANY (ARRAY['queued'::text, 'sent'::text, 'failed'::text, 'skipped'::text])`,
+    ),
+    check(
+      'ck_customer_otp_delivery_sent',
+      sql`(delivery_status <> 'sent'::text) OR ((sent_at IS NOT NULL) AND (code_ciphertext IS NULL))`,
+    ),
+    check('ck_customer_otp_device', sql`(char_length(device_id) >= 8) AND (char_length(device_id) <= 128)`),
+    check('ck_customer_otp_expiry', sql`(expires_at > created_at) AND (resend_available_at > created_at)`),
+    check('ck_customer_otp_locale', sql`locale = ANY (ARRAY['ar'::text, 'en'::text])`),
+    check('ck_customer_otp_locked', sql`(status = 'locked'::text) = (locked_until IS NOT NULL)`),
+    check('ck_customer_otp_phone', sql`phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text`),
+    check('ck_customer_otp_platform', sql`platform = ANY (ARRAY['ios'::text, 'android'::text])`),
+    check(
+      'ck_customer_otp_status',
+      sql`status = ANY (ARRAY['open'::text, 'consumed'::text, 'superseded'::text, 'locked'::text])`,
+    ),
+  ],
+);
+
+export const customer_account_sessions = pgTable(
+  'customer_account_sessions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    device_id: text().notNull(),
+    platform: text().notNull(),
+    refresh_hash: text().notNull(),
+    access_hash: text().notNull(),
+    access_expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    refresh_expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    rotation_count: integer().default(0).notNull(),
+    push_token: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    last_seen_at: timestamp({ withTimezone: true, mode: 'string' }),
+    refreshed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    revoked_at: timestamp({ withTimezone: true, mode: 'string' }),
+    revoked_reason: text(),
+    // V2-017 (0011): the single-use re-verification proof of C-20
+    reauth_hash: text(),
+    reauth_expires_at: timestamp({ withTimezone: true, mode: 'string' }),
+    // V2-016 (0013): the Expo push registration of the session (DEC-519)
+    push_provider: text(),
+    push_registered_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_customer_sessions_account')
+      .using('btree', table.account_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(revoked_at IS NULL)`),
+    uniqueIndex('uq_customer_sessions_live_device')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('text_ops'),
+        table.device_id.asc().nullsLast().op('text_ops'),
+      )
+      .where(sql`(revoked_at IS NULL)`),
+
+    unique('uq_customer_sessions_refresh').on(table.refresh_hash),
+    unique('uq_customer_sessions_access').on(table.access_hash),
+    check(
+      'ck_customer_sessions_device',
+      sql`(char_length(device_id) >= 8) AND (char_length(device_id) <= 128)`,
+    ),
+    check(
+      'ck_customer_sessions_expiry',
+      sql`(access_expires_at > created_at) AND (refresh_expires_at > created_at)`,
+    ),
+    check('ck_customer_sessions_platform', sql`platform = ANY (ARRAY['ios'::text, 'android'::text])`),
+    check('ck_customer_sessions_revoked', sql`(revoked_at IS NULL) = (revoked_reason IS NULL)`),
+    check(
+      'ck_customer_sessions_revoked_reason',
+      sql`revoked_reason = ANY (ARRAY['logout'::text, 'refresh_reuse'::text, 'device_mismatch'::text, 'signed_in_again'::text, 'account_closed'::text, 'expired_cleanup'::text, 'platform_revoked'::text])`,
+    ),
+    check('ck_customer_sessions_rotation', sql`rotation_count >= 0`),
+    check('ck_customer_sessions_reauth', sql`(reauth_hash IS NULL) = (reauth_expires_at IS NULL)`),
+    // V2-016 (0013, DEC-519)
+    uniqueIndex('uq_customer_sessions_push_token')
+      .using('btree', table.push_token.asc().nullsLast().op('text_ops'))
+      .where(sql`(push_token IS NOT NULL)`),
+    check('ck_customer_sessions_push_provider', sql`push_provider = 'expo'::text`),
+    check('ck_customer_sessions_push_pair', sql`(push_token IS NULL) = (push_provider IS NULL)`),
+    check('ck_customer_sessions_push_registered', sql`(push_token IS NULL) = (push_registered_at IS NULL)`),
+    check('ck_customer_sessions_push_token_len', sql`char_length(push_token) <= 200`),
+    check('ck_customer_sessions_revoked_push', sql`(revoked_at IS NULL) OR (push_token IS NULL)`),
+  ],
+);
+
+export const customer_account_consents = pgTable(
+  'customer_account_consents',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'customer_account_consents_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    account_id: uuid().notNull(),
+    kind: text().notNull(),
+    version: text().notNull(),
+    granted: boolean().notNull(),
+    request_id: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_consents_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('text_ops'),
+      table.kind.asc().nullsLast().op('text_ops'),
+      table.id.asc().nullsLast().op('int8_ops'),
+    ),
+
+    check(
+      'ck_customer_consents_kind',
+      sql`kind = ANY (ARRAY['terms'::text, 'privacy'::text, 'marketing'::text, 'card_on_file'::text])`,
+    ),
+    check(
+      'ck_customer_consents_required_granted',
+      sql`(kind <> ALL (ARRAY['terms'::text, 'privacy'::text])) OR granted`,
+    ),
+    check('ck_customer_consents_version', sql`(char_length(version) >= 1) AND (char_length(version) <= 40)`),
+  ],
+);
+
+export const customer_vehicles = pgTable(
+  'customer_vehicles',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    plate_country: text().default('SA').notNull(),
+    plate_digits: text(),
+    plate_letters_ar: text(),
+    plate_letters_en: text(),
+    plate_raw: text(),
+    vehicle_make: text(),
+    vehicle_model: text(),
+    vehicle_color: text(),
+    vehicle_type: text(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_vehicles_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+    uniqueIndex('uq_customer_vehicles_plate')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.plate_country.asc().nullsLast().op('uuid_ops'),
+        table.plate_digits.asc().nullsLast().op('text_ops'),
+        table.plate_letters_ar.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+
+    check('ck_customer_vehicles_digits', sql`plate_digits ~ '^[0-9]{1,4}$'::text`),
+    check(
+      'ck_customer_vehicles_sa_plate',
+      sql`(plate_country <> 'SA'::text) OR ((plate_digits IS NOT NULL) AND (plate_letters_ar IS NOT NULL) AND (plate_letters_en IS NOT NULL))`,
+    ),
+    check(
+      'ck_customer_vehicles_type',
+      sql`vehicle_type = ANY (ARRAY['sedan'::text, 'suv'::text, 'pickup'::text, 'van'::text, 'other'::text])`,
+    ),
+  ],
+);
+
+export const customer_passes = pgTable(
+  'customer_passes',
+  {
+    account_id: uuid().primaryKey().notNull(),
+    secret_ciphertext: text().notNull(),
+    previous_secret_ciphertext: text(),
+    previous_valid_until: timestamp({ withTimezone: true, mode: 'string' }),
+    key_version: integer().default(1).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    last_used_step: bigint({ mode: 'number' }),
+    last_used_at: timestamp({ withTimezone: true, mode: 'string' }),
+    rotated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('ck_customer_passes_key_version', sql`key_version >= 1`),
+    check('ck_customer_passes_last_step', sql`(last_used_step IS NULL) OR (last_used_step >= 0)`),
+    check('ck_customer_passes_last_used', sql`(last_used_step IS NULL) = (last_used_at IS NULL)`),
+    check(
+      'ck_customer_passes_previous',
+      sql`(previous_secret_ciphertext IS NULL) = (previous_valid_until IS NULL)`,
+    ),
+  ],
+);
+
+export const customer_idempotency_keys = pgTable(
+  'customer_idempotency_keys',
+  {
+    account_id: uuid().notNull(),
+    key: text().notNull(),
+    operation: text().notNull(),
+    request_hash: text().notNull(),
+    status: text().default('in_progress').notNull(),
+    response_status: integer(),
+    response_body: jsonb(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    expires_at: timestamp({ withTimezone: true, mode: 'string' })
+      .default(sql`(now() + '24:00:00'::interval)`)
+      .notNull(),
+  },
+  (table) => [
+    index('ix_customer_idempotency_expiry').using(
+      'btree',
+      table.expires_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    primaryKey({ columns: [table.account_id, table.key], name: 'pk_customer_idempotency_keys' }),
+    check('ck_customer_idempotency_keys_key', sql`(length(key) >= 8) AND (length(key) <= 128)`),
+    check(
+      'ck_customer_idempotency_keys_status',
+      sql`status = ANY (ARRAY['in_progress'::text, 'completed'::text])`,
+    ),
+  ],
+);
+
+export const customer_audit_log = pgTable(
+  'customer_audit_log',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'customer_audit_log_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    occurred_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    actor_type: text().notNull(),
+    account_id: uuid(),
+    action: text().notNull(),
+    entity_type: text().notNull(),
+    entity_id: uuid(),
+    request_id: text(),
+    ip: inet(),
+    user_agent: text(),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    index('ix_customer_audit_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('timestamptz_ops'),
+        table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(account_id IS NOT NULL)`),
+    index('ix_customer_audit_occurred').using(
+      'btree',
+      table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    check(
+      'ck_customer_audit_actor',
+      sql`((actor_type = 'customer'::text) AND (account_id IS NOT NULL)) OR (actor_type = ANY (ARRAY['anonymous'::text, 'system'::text]))`,
+    ),
+  ],
+);
+
+export const subscription_eligibility = pgTable(
+  'subscription_eligibility',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    plan_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    kind: text().notNull(),
+    student_number: text().notNull(),
+    student_name: text().notNull(),
+    status: text().default('pending').notNull(),
+    source: text(),
+    decided_by: uuid(),
+    decided_at: timestamp({ withTimezone: true, mode: 'string' }),
+    decision_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_eligibility_number')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.student_number.asc().nullsLast().op('uuid_ops'),
+        table.decided_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(status = 'approved'::text)`),
+    index('ix_subscription_eligibility_pending')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(status = 'pending'::text)`),
+
+    unique('uq_subscription_eligibility_subscription').on(table.subscription_id),
+    check('ck_subscription_eligibility_decided', sql`(status = 'pending'::text) = (decided_at IS NULL)`),
+    check('ck_subscription_eligibility_kind', sql`kind = 'student_id_review'::text`),
+    check(
+      'ck_subscription_eligibility_name',
+      sql`(char_length(student_name) >= 2) AND (char_length(student_name) <= 80)`,
+    ),
+    check(
+      'ck_subscription_eligibility_no_pan',
+      sql`(student_number !~ '[0-9]{13,}'::text) AND (student_name !~ '[0-9]{13,}'::text) AND (decision_reason !~ '[0-9]{13,}'::text)`,
+    ),
+    check('ck_subscription_eligibility_number', sql`student_number ~ '^[A-Z0-9-]{3,32}$'::text`),
+    check(
+      'ck_subscription_eligibility_rejected',
+      sql`(status <> 'rejected'::text) OR (decision_reason IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscription_eligibility_review_by',
+      sql`(source <> 'review'::text) OR (decided_by IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscription_eligibility_source',
+      sql`source = ANY (ARRAY['review'::text, 'list'::text, 'reuse'::text])`,
+    ),
+    check('ck_subscription_eligibility_source_set', sql`(status = 'pending'::text) = (source IS NULL)`),
+    check(
+      'ck_subscription_eligibility_status',
+      sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`,
+    ),
+  ],
+);
+
+export const subscription_eligible_students = pgTable(
+  'subscription_eligible_students',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    student_number: text().notNull(),
+    added_by: uuid().notNull(),
+    added_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    removed_by: uuid(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    uniqueIndex('uq_subscription_eligible_students_live')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.student_number.asc().nullsLast().op('text_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+
+    check('ck_subscription_eligible_students_no_pan', sql`student_number !~ '[0-9]{13,}'::text`),
+    check('ck_subscription_eligible_students_number', sql`student_number ~ '^[A-Z0-9-]{3,32}$'::text`),
+    check('ck_subscription_eligible_students_order', sql`(removed_at IS NULL) OR (removed_at >= added_at)`),
+    check('ck_subscription_eligible_students_removed', sql`(removed_at IS NULL) = (removed_by IS NULL)`),
+  ],
+);
+
+export const subscription_freezes = pgTable(
+  'subscription_freezes',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    period_seq: integer().notNull(),
+    starts_on: date().notNull(),
+    returns_on: date().notNull(),
+    days: integer().notNull(),
+    status: text().default('scheduled').notNull(),
+    used_days: integer(),
+    ended_on: date(),
+    end_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_freezes_subscription').using(
+      'btree',
+      table.subscription_id.asc().nullsLast().op('int4_ops'),
+      table.period_seq.asc().nullsLast().op('int4_ops'),
+    ),
+    uniqueIndex('uq_subscription_freezes_live')
+      .using('btree', table.subscription_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(status = ANY (ARRAY['scheduled'::text, 'active'::text]))`),
+
+    check('ck_subscription_freezes_days', sql`(days >= 1) AND (days <= 30)`),
+    check(
+      'ck_subscription_freezes_end_reason',
+      sql`end_reason = ANY (ARRAY['returned'::text, 'early_reactivation'::text, 'withdrawn'::text, 'not_active'::text, 'subscription_ended'::text])`,
+    ),
+    check(
+      'ck_subscription_freezes_ended',
+      sql`(status = ANY (ARRAY['scheduled'::text, 'active'::text])) OR (ended_on IS NOT NULL)`,
+    ),
+    check('ck_subscription_freezes_order', sql`returns_on > starts_on`),
+    check('ck_subscription_freezes_seq', sql`period_seq >= 1`),
+    check(
+      'ck_subscription_freezes_status',
+      sql`status = ANY (ARRAY['scheduled'::text, 'active'::text, 'completed'::text, 'withdrawn'::text, 'canceled'::text])`,
+    ),
+    check('ck_subscription_freezes_used', sql`used_days >= 0`),
+    check('ck_subscription_freezes_used_set', sql`(status <> 'completed'::text) OR (used_days IS NOT NULL)`),
+  ],
+);
+
+export const venue_closures = pgTable(
+  'venue_closures',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    kind: text().notNull(),
+    starts_on: date().notNull(),
+    ends_on: date().notNull(),
+    reason_ar: text().notNull(),
+    created_by: uuid().notNull(),
+    canceled_at: timestamp({ withTimezone: true, mode: 'string' }),
+    canceled_by: uuid(),
+    cancel_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_venue_closures_venue')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('date_ops'),
+        table.ends_on.asc().nullsLast().op('date_ops'),
+      )
+      .where(sql`(canceled_at IS NULL)`),
+
+    check('ck_venue_closures_cancel_reason', sql`(canceled_at IS NULL) OR (cancel_reason IS NOT NULL)`),
+    check('ck_venue_closures_canceled', sql`(canceled_at IS NULL) = (canceled_by IS NULL)`),
+    check('ck_venue_closures_kind', sql`kind = ANY (ARRAY['holiday'::text, 'closure'::text])`),
+    check(
+      'ck_venue_closures_no_pan',
+      sql`(reason_ar !~ '[0-9]{13,}'::text) AND (cancel_reason !~ '[0-9]{13,}'::text)`,
+    ),
+    check('ck_venue_closures_order', sql`ends_on >= starts_on`),
+    check('ck_venue_closures_reason', sql`(char_length(reason_ar) >= 3) AND (char_length(reason_ar) <= 200)`),
+  ],
+);
+
+export const customer_complaints = pgTable(
+  'customer_complaints',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    ref_seq: bigserial({ mode: 'bigint' }).notNull(),
+    account_id: uuid().notNull(),
+    category: text().notNull(),
+    body: text().notNull(),
+    ticket_id: uuid(),
+    subscription_id: uuid(),
+    org_id: uuid(),
+    venue_id: uuid(),
+    status: text().default('open').notNull(),
+    resolution_note: text(),
+    handled_by: uuid(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_complaints_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_customer_complaints_status').using(
+      'btree',
+      table.status.asc().nullsLast().op('text_ops'),
+      table.created_at.asc().nullsLast().op('text_ops'),
+    ),
+
+    unique('uq_customer_complaints_ref').on(table.ref_seq),
+    check('ck_customer_complaints_body', sql`(char_length(body) >= 10) AND (char_length(body) <= 2000)`),
+    check(
+      'ck_customer_complaints_category',
+      sql`category = ANY (ARRAY['service'::text, 'delay'::text, 'vehicle_damage'::text, 'lost_item'::text, 'payment'::text, 'subscription'::text, 'staff'::text, 'other'::text])`,
+    ),
+    check('ck_customer_complaints_handled', sql`(status = 'open'::text) OR (handled_by IS NOT NULL)`),
+    check(
+      'ck_customer_complaints_no_pan',
+      sql`(body !~ '[0-9]{13,}'::text) AND (resolution_note !~ '[0-9]{13,}'::text)`,
+    ),
+    check(
+      'ck_customer_complaints_note',
+      sql`(char_length(resolution_note) >= 3) AND (char_length(resolution_note) <= 1000)`,
+    ),
+    check('ck_customer_complaints_ref', sql`ref_seq >= 1`),
+    check(
+      'ck_customer_complaints_status',
+      sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'closed'::text])`,
+    ),
+    check('ck_customer_complaints_subscription_org', sql`(subscription_id IS NULL) OR (org_id IS NOT NULL)`),
+    check('ck_customer_complaints_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
+  ],
+);
+
+export const subscription_purchase_consents = pgTable(
+  'subscription_purchase_consents',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    plan_id: uuid().notNull(),
+    period_seq: integer().notNull(),
+    online_payment_id: uuid().notNull(),
+    terms_version: text().notNull(),
+    privacy_version: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    price_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    net_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    vat_halalas: bigint({ mode: 'number' }).notNull(),
+    non_refundable: boolean().notNull(),
+    valuables_notice: boolean().notNull(),
+    request_id: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_purchase_consents_subscription').using(
+      'btree',
+      table.subscription_id.asc().nullsLast().op('uuid_ops'),
+    ),
+
+    unique('uq_subscription_purchase_consents_payment').on(table.online_payment_id),
+    check('ck_subscription_purchase_consents_price', sql`price_halalas >= 100`),
+    check(
+      'ck_subscription_purchase_consents_privacy',
+      sql`(char_length(privacy_version) >= 1) AND (char_length(privacy_version) <= 40)`,
+    ),
+    check('ck_subscription_purchase_consents_seq', sql`period_seq >= 1`),
+    check('ck_subscription_purchase_consents_sum', sql`price_halalas = (net_halalas + vat_halalas)`),
+    check(
+      'ck_subscription_purchase_consents_terms',
+      sql`(char_length(terms_version) >= 1) AND (char_length(terms_version) <= 40)`,
+    ),
+    check('ck_subscription_purchase_consents_vat', sql`vat_halalas >= 0`),
+  ],
+);
+
 export const v_driver_state = pgView('v_driver_state', {
   duty_session_id: uuid(),
   user_id: uuid(),
@@ -1951,4 +2909,1197 @@ export const v_pool_queue = pgView('v_pool_queue', {
   offer_expires_at: timestamp({ withTimezone: true, mode: 'string' }),
 }).as(
   sql`SELECT t.dispatch_pool_id, t.id AS task_id, t.ticket_id, t.cycle_id, t.status, t.priority_at, t.seq, o.id AS active_offer_id, o.mode AS active_offer_mode, o.expires_at AS offer_expires_at FROM tasks t LEFT JOIN task_offers o ON o.task_id = t.id AND o.status = 'active'::text WHERE t.type = 'retrieve'::text AND (t.status = ANY (ARRAY['queued'::text, 'offered'::text, 'broadcast'::text])) ORDER BY t.dispatch_pool_id, t.priority_at, t.seq`,
+);
+
+export const customer_payment_methods = pgTable(
+  'customer_payment_methods',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    gateway: text().notNull(),
+    gateway_token: text().notNull(),
+    brand: text(),
+    last4: text(),
+    expires_month: integer(),
+    expires_year: integer(),
+    is_default: boolean().default(false).notNull(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    // V2-022 (0014, DEC-524): the payment that must succeed before a card saved with it is shown or charged
+    pending_payment_id: uuid(),
+    // V2-023 (0014, DEC-524): when the token was deleted at the gateway after the card was removed
+    gateway_deleted_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_payment_methods_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+    uniqueIndex('uq_payment_methods_default')
+      .using('btree', table.account_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(is_default AND (removed_at IS NULL))`),
+    uniqueIndex('uq_payment_methods_token').using(
+      'btree',
+      table.gateway.asc().nullsLast().op('text_ops'),
+      table.gateway_token.asc().nullsLast().op('text_ops'),
+    ),
+
+    check('ck_payment_methods_brand', sql`brand ~ '^[a-z_]{2,20}$'::text`),
+    check(
+      'ck_payment_methods_deleted_removed',
+      sql`(gateway_deleted_at IS NULL) OR (removed_at IS NOT NULL)`,
+    ),
+    check('ck_payment_methods_pending_default', sql`(pending_payment_id IS NULL) OR (is_default = false)`),
+    check('ck_payment_methods_gateway', sql`gateway = 'moyasar'::text`),
+    check('ck_payment_methods_last4', sql`last4 ~ '^[0-9]{4}$'::text`),
+    check('ck_payment_methods_month', sql`(expires_month >= 1) AND (expires_month <= 12)`),
+    check('ck_payment_methods_no_pan', sql`gateway_token !~ '[0-9]{13,}'::text`),
+    check('ck_payment_methods_token', sql`gateway_token ~ '^[A-Za-z0-9_-]{8,128}$'::text`),
+    check('ck_payment_methods_year', sql`(expires_year >= 2000) AND (expires_year <= 2100)`),
+  ],
+);
+
+export const online_payments = pgTable(
+  'online_payments',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    purpose: text().notNull(),
+    subscription_id: uuid(),
+    ticket_id: uuid(),
+    org_id: uuid(),
+    venue_id: uuid(),
+    payment_method_id: uuid(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    amount_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    vat_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    refunded_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    currency: text().default('SAR').notNull(),
+    gateway: text().notNull(),
+    given_id: uuid().notNull(),
+    gateway_payment_id: text(),
+    source_type: text(),
+    card_brand: text(),
+    card_last4: text(),
+    status: text().default('initiated').notNull(),
+    failure_code: text(),
+    authorized_at: timestamp({ withTimezone: true, mode: 'string' }),
+    paid_at: timestamp({ withTimezone: true, mode: 'string' }),
+    failed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    refunded_at: timestamp({ withTimezone: true, mode: 'string' }),
+    gateway_updated_at: timestamp({ withTimezone: true, mode: 'string' }),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    subscription_period_seq: integer(),
+  },
+  (table) => [
+    index('ix_online_payments_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('timestamptz_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_online_payments_created').using(
+      'btree',
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_online_payments_org')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(org_id IS NOT NULL)`),
+    index('ix_online_payments_subscription')
+      .using(
+        'btree',
+        table.subscription_id.asc().nullsLast().op('timestamptz_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(subscription_id IS NOT NULL)`),
+    index('ix_online_payments_ticket')
+      .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(ticket_id IS NOT NULL)`),
+    index('ix_online_payments_ticket_live')
+      .using(
+        'btree',
+        table.ticket_id.asc().nullsLast().op('uuid_ops'),
+        table.created_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(
+        sql`((purpose = 'visit'::text) AND (status = ANY (ARRAY['initiated'::text, 'authorized'::text])))`,
+      ),
+    uniqueIndex('uq_online_payments_ticket_paid')
+      .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
+      .where(
+        sql`((purpose = 'visit'::text) AND (status = ANY (ARRAY['paid'::text, 'partially_refunded'::text])))`,
+      ),
+
+    unique('uq_online_payments_gateway_id').on(table.gateway, table.gateway_payment_id),
+    unique('uq_online_payments_given_id').on(table.given_id),
+    check('ck_online_payments_amount', sql`amount_halalas >= 100`),
+    check('ck_online_payments_brand', sql`card_brand ~ '^[a-z_]{2,20}$'::text`),
+    check('ck_online_payments_currency', sql`currency = 'SAR'::text`),
+    check('ck_online_payments_failed_at', sql`(status <> 'failed'::text) OR (failed_at IS NOT NULL)`),
+    check('ck_online_payments_failure_code', sql`failure_code ~ '^[A-Za-z0-9_.:-]{1,64}$'::text`),
+    check('ck_online_payments_gateway', sql`gateway = 'moyasar'::text`),
+    check(
+      'ck_online_payments_gateway_id',
+      sql`(status = ANY (ARRAY['initiated'::text, 'failed'::text])) OR (gateway_payment_id IS NOT NULL)`,
+    ),
+    check('ck_online_payments_last4', sql`card_last4 ~ '^[0-9]{4}$'::text`),
+    check('ck_online_payments_no_pan', sql`gateway_payment_id !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_online_payments_paid_at',
+      sql`(status <> ALL (ARRAY['paid'::text, 'partially_refunded'::text, 'refunded'::text])) OR (paid_at IS NOT NULL)`,
+    ),
+    check('ck_online_payments_purpose', sql`purpose = ANY (ARRAY['visit'::text, 'subscription'::text])`),
+    check(
+      'ck_online_payments_refund_paid',
+      sql`(refunded_halalas = 0) OR (status = ANY (ARRAY['partially_refunded'::text, 'refunded'::text]))`,
+    ),
+    check(
+      'ck_online_payments_refunded',
+      sql`(refunded_halalas >= 0) AND (refunded_halalas <= amount_halalas)`,
+    ),
+    check(
+      'ck_online_payments_refunded_full',
+      sql`(status <> 'refunded'::text) OR (refunded_halalas = amount_halalas)`,
+    ),
+    check(
+      'ck_online_payments_refunded_less',
+      sql`(status <> 'partially_refunded'::text) OR (refunded_halalas < amount_halalas)`,
+    ),
+    check(
+      'ck_online_payments_refunded_part',
+      sql`(status <> 'partially_refunded'::text) OR (refunded_halalas > 0)`,
+    ),
+    check(
+      'ck_online_payments_source',
+      sql`source_type = ANY (ARRAY['token'::text, 'applepay'::text, 'creditcard'::text, 'stcpay'::text])`,
+    ),
+    check(
+      'ck_online_payments_status',
+      sql`status = ANY (ARRAY['initiated'::text, 'authorized'::text, 'paid'::text, 'failed'::text, 'partially_refunded'::text, 'refunded'::text])`,
+    ),
+    check(
+      'ck_online_payments_subscription',
+      sql`(purpose <> 'subscription'::text) OR (subscription_id IS NOT NULL)`,
+    ),
+    check(
+      'ck_online_payments_subscription_seq',
+      sql`(subscription_period_seq IS NULL) OR (purpose = 'subscription'::text)`,
+    ),
+    check('ck_online_payments_subscription_seq_min', sql`subscription_period_seq >= 1`),
+    check(
+      'ck_online_payments_subscription_seq_set',
+      sql`(purpose <> 'subscription'::text) OR (subscription_period_seq IS NOT NULL)`,
+    ),
+    check(
+      'ck_online_payments_subscription_venue',
+      sql`(purpose <> 'subscription'::text) OR (venue_id IS NOT NULL)`,
+    ),
+    check('ck_online_payments_vat', sql`(vat_halalas >= 0) AND (vat_halalas < amount_halalas)`),
+    check('ck_online_payments_visit_org', sql`(purpose <> 'visit'::text) OR (org_id IS NOT NULL)`),
+    check('ck_online_payments_visit_ticket', sql`(purpose <> 'visit'::text) OR (ticket_id IS NOT NULL)`),
+    check('ck_online_payments_visit_venue', sql`(purpose <> 'visit'::text) OR (venue_id IS NOT NULL)`),
+  ],
+);
+
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    online_payment_id: uuid().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    amount_halalas: bigint({ mode: 'number' }).notNull(),
+    reason: text().notNull(),
+    // NULL for a system refund (V2-022, 0014, DEC-523)
+    issued_by: uuid(),
+    status: text().default('requested').notNull(),
+    gateway_refund_id: text(),
+    failure_code: text(),
+    request_id: text(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }),
+    completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    // manual (a platform user, P-06 / P-08) or system (the double payment of V2-022; 0014, DEC-523)
+    kind: text().default('manual').notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_refunds_system')
+      .using('btree', table.online_payment_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(kind = 'system'::text)`),
+    index('ix_refunds_payment').using(
+      'btree',
+      table.online_payment_id.asc().nullsLast().op('timestamptz_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    unique('uq_refunds_gateway_id').on(table.gateway_refund_id),
+    check('ck_refunds_amount', sql`amount_halalas > 0`),
+    check('ck_refunds_completed', sql`(status = 'requested'::text) = (completed_at IS NULL)`),
+    check('ck_refunds_failure_code', sql`failure_code ~ '^[A-Za-z0-9_.:-]{1,64}$'::text`),
+    check('ck_refunds_issued_by', sql`(kind <> 'manual'::text) OR (issued_by IS NOT NULL)`),
+    check('ck_refunds_kind', sql`kind = ANY (ARRAY['manual'::text, 'system'::text])`),
+    check('ck_refunds_system_actor', sql`(kind = 'manual'::text) OR (issued_by IS NULL)`),
+    check('ck_refunds_no_pan', sql`reason !~ '[0-9]{13,}'::text`),
+    check('ck_refunds_reason', sql`(char_length(reason) >= 3) AND (char_length(reason) <= 500)`),
+    check(
+      'ck_refunds_status',
+      sql`status = ANY (ARRAY['requested'::text, 'succeeded'::text, 'failed'::text])`,
+    ),
+  ],
+);
+
+export const gateway_webhook_events = pgTable(
+  'gateway_webhook_events',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'gateway_webhook_events_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    gateway: text().notNull(),
+    event_id: text().notNull(),
+    event_type: text().notNull(),
+    gateway_payment_id: text(),
+    live: boolean(),
+    body_sha256: text().notNull(),
+    payload: jsonb().notNull(),
+    received_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    processed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    outcome: text(),
+    online_payment_id: uuid(),
+  },
+  (table) => [
+    index('ix_gateway_webhook_events_payment')
+      .using('btree', table.gateway_payment_id.asc().nullsLast().op('text_ops'))
+      .where(sql`(gateway_payment_id IS NOT NULL)`),
+    index('ix_gateway_webhook_events_pending')
+      .using('btree', table.received_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(processed_at IS NULL)`),
+
+    unique('uq_gateway_webhook_events').on(table.gateway, table.event_id),
+    check('ck_gateway_webhook_events_gateway', sql`gateway = 'moyasar'::text`),
+    check('ck_gateway_webhook_events_no_pan', sql`(payload)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_gateway_webhook_events_outcome',
+      sql`outcome = ANY (ARRAY['applied'::text, 'unchanged'::text, 'unknown_payment'::text, 'conflict'::text, 'not_at_gateway'::text, 'ignored'::text])`,
+    ),
+    check('ck_gateway_webhook_events_processed', sql`(processed_at IS NULL) = (outcome IS NULL)`),
+  ],
+);
+
+export const payment_reconciliation_runs = pgTable(
+  'payment_reconciliation_runs',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    gateway: text().notNull(),
+    run_date: date().notNull(),
+    status: text().default('running').notNull(),
+    started_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    finished_at: timestamp({ withTimezone: true, mode: 'string' }),
+    gateway_count: integer(),
+    local_count: integer(),
+    matched_count: integer(),
+    mismatch_count: integer(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    gateway_paid_halalas: bigint({ mode: 'number' }),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    local_paid_halalas: bigint({ mode: 'number' }),
+    mismatches: jsonb().default([]).notNull(),
+    failure_reason: text(),
+  },
+  (table) => [
+    index('ix_reconciliation_runs_date').using(
+      'btree',
+      table.gateway.asc().nullsLast().op('timestamptz_ops'),
+      table.run_date.asc().nullsLast().op('date_ops'),
+      table.started_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    check('ck_reconciliation_counts', sql`mismatch_count >= 0`),
+    check('ck_reconciliation_finished', sql`(status = 'running'::text) = (finished_at IS NULL)`),
+    check('ck_reconciliation_gateway', sql`gateway = 'moyasar'::text`),
+    check('ck_reconciliation_no_pan', sql`(mismatches)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_reconciliation_status',
+      sql`status = ANY (ARRAY['running'::text, 'matched'::text, 'mismatched'::text, 'failed'::text])`,
+    ),
+  ],
+);
+
+export const platform_alerts = pgTable(
+  'platform_alerts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    type: text().notNull(),
+    severity: text().notNull(),
+    status: text().default('open').notNull(),
+    dedupe_key: text().notNull(),
+    online_payment_id: uuid(),
+    details: jsonb().default({}).notNull(),
+    occurrences: integer().default(1).notNull(),
+    raised_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    last_seen_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
+    resolved_by: uuid(),
+    resolution_note: text(),
+  },
+  (table) => [
+    index('ix_platform_alerts_open')
+      .using('btree', table.raised_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(status <> 'resolved'::text)`),
+    uniqueIndex('uq_platform_alerts_live')
+      .using('btree', table.dedupe_key.asc().nullsLast().op('text_ops'))
+      .where(sql`(status <> 'resolved'::text)`),
+
+    check('ck_platform_alerts_no_pan', sql`(details)::text !~ '[0-9]{13,}'::text`),
+    check('ck_platform_alerts_occurrences', sql`occurrences >= 1`),
+    check('ck_platform_alerts_resolved', sql`(status = 'resolved'::text) = (resolved_at IS NOT NULL)`),
+    check(
+      'ck_platform_alerts_severity',
+      sql`severity = ANY (ARRAY['info'::text, 'warning'::text, 'critical'::text])`,
+    ),
+    check(
+      'ck_platform_alerts_status',
+      sql`status = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text])`,
+    ),
+    check(
+      'ck_platform_alerts_type',
+      sql`type = ANY (ARRAY['payment_unknown'::text, 'payment_mismatch'::text, 'payment_refund_failed'::text, 'payment_reconcile_failed'::text])`,
+    ),
+  ],
+);
+
+// ---- V2-015 / V2-016 (0013_customer_visits_push.sql, DEC-516 … DEC-520)
+
+export const customer_visit_ratings = pgTable(
+  'customer_visit_ratings',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    ticket_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    stars: integer().notNull(),
+    note: text(),
+    request_id: text(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_customer_visit_ratings_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_customer_visit_ratings_venue').using(
+      'btree',
+      table.venue_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    unique('uq_customer_visit_ratings_ticket').on(table.ticket_id),
+    check('ck_customer_visit_ratings_stars_min', sql`stars >= 1`),
+    check('ck_customer_visit_ratings_stars_max', sql`stars <= 5`),
+    check('ck_customer_visit_ratings_note', sql`char_length(note) <= 500`),
+  ],
+);
+
+export const customer_push_messages = pgTable(
+  'customer_push_messages',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    session_id: uuid().notNull(),
+    org_id: uuid(),
+    ticket_id: uuid(),
+    kind: text().notNull(),
+    dedupe_key: text().notNull(),
+    source_outbox_id: uuid(),
+    status: text().default('pending').notNull(),
+    skipped_reason: text(),
+    provider: text(),
+    provider_receipt_id: text(),
+    receipt_status: text(),
+    error_code: text(),
+    attempts: integer().default(0).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }),
+    receipt_checked_at: timestamp({ withTimezone: true, mode: 'string' }),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    subscription_id: uuid(),
+  },
+  (table) => [
+    index('ix_customer_push_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    index('ix_customer_push_receipts_due')
+      .using('btree', table.sent_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(
+        sql`((status = 'sent'::text) AND (provider_receipt_id IS NOT NULL) AND (receipt_checked_at IS NULL))`,
+      ),
+
+    unique('uq_customer_push_dedupe').on(table.dedupe_key),
+    check(
+      'ck_customer_push_status',
+      sql`status = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'skipped'::text])`,
+    ),
+    check(
+      'ck_customer_push_skipped_reason',
+      sql`skipped_reason = ANY (ARRAY['no_token'::text, 'session_revoked'::text, 'account_unavailable'::text, 'stale'::text, 'token_moved'::text])`,
+    ),
+    check('ck_customer_push_skipped', sql`(status = 'skipped'::text) = (skipped_reason IS NOT NULL)`),
+    check('ck_customer_push_provider', sql`provider = ANY (ARRAY['expo'::text, 'simulator'::text])`),
+    check('ck_customer_push_sent_provider', sql`(sent_at IS NULL) OR (provider IS NOT NULL)`),
+    check('ck_customer_push_receipt_status', sql`receipt_status = ANY (ARRAY['ok'::text, 'error'::text])`),
+    check('ck_customer_push_attempts', sql`attempts >= 0`),
+    check('ck_customer_push_ticket_org', sql`(ticket_id IS NULL) OR (org_id IS NOT NULL)`),
+    check('ck_customer_push_subscription_org', sql`(subscription_id IS NULL) OR (org_id IS NOT NULL)`),
+    check('ck_customer_push_subscription_alone', sql`(subscription_id IS NULL) OR (ticket_id IS NULL)`),
+    check(
+      'ck_customer_push_kind',
+      sql`kind = ANY (ARRAY['car_received'::text, 'request_accepted'::text, 'car_ready'::text, 'pickup_reminder'::text, 'subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text, 'subscription_ending'::text, 'subscription_eligibility_approved'::text, 'subscription_eligibility_rejected'::text, 'subscription_venue_closure'::text])`,
+    ),
+    check(
+      'ck_customer_push_subscription_kind',
+      sql`(subscription_id IS NULL) OR (kind = ANY (ARRAY['subscription_renewal'::text, 'subscription_payment_failed'::text, 'subscription_expired'::text, 'subscription_ending'::text, 'subscription_eligibility_approved'::text, 'subscription_eligibility_rejected'::text, 'subscription_venue_closure'::text]))`,
+    ),
+  ],
+);
+
+export const subscription_plans = pgTable(
+  'subscription_plans',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    name_ar: text().notNull(),
+    name_en: text(),
+    vehicles_included: integer().default(1).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    monthly_price_halalas: bigint({ mode: 'number' }),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    yearly_price_halalas: bigint({ mode: 'number' }),
+    status: text().default('active').notNull(),
+    replaces_plan_id: uuid(),
+    replaced_by_plan_id: uuid(),
+    created_by: uuid().notNull(),
+    retired_at: timestamp({ withTimezone: true, mode: 'string' }),
+    retired_by: uuid(),
+    retire_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    term_kind: text().default('calendar').notNull(),
+    service_days: integer(),
+    service_weekdays_mask: integer(),
+    renewal_mode: text().default('auto').notNull(),
+    daily_visit_limit: integer(),
+    refund_policy: text().default('prorated_on_termination').notNull(),
+    closure_policy: text().default('freeze').notNull(),
+    freeze_max_times: integer().default(0).notNull(),
+    freeze_max_days: integer(),
+    eligibility: text().default('none').notNull(),
+    capacity: integer(),
+    audience_ar: text(),
+    vehicle_change: text().default('once_per_period').notNull(),
+  },
+  (table) => [
+    index('ix_subscription_plans_active')
+      .using('btree', table.venue_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(status = 'active'::text)`),
+    index('ix_subscription_plans_org').using('btree', table.org_id.asc().nullsLast().op('uuid_ops')),
+    index('ix_subscription_plans_venue').using(
+      'btree',
+      table.venue_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+
+    check('ck_subscription_plans_vehicles_max', sql`vehicles_included <= 5`),
+    check('ck_subscription_plans_status', sql`status = ANY (ARRAY['active'::text, 'retired'::text])`),
+    check('ck_subscription_plans_vehicles_min', sql`vehicles_included >= 1`),
+    check(
+      'ck_subscription_plans_has_price',
+      sql`(monthly_price_halalas IS NOT NULL) OR (yearly_price_halalas IS NOT NULL)`,
+    ),
+    check('ck_subscription_plans_monthly', sql`monthly_price_halalas >= 100`),
+    check('ck_subscription_plans_yearly', sql`yearly_price_halalas >= 100`),
+    check('ck_subscription_plans_name', sql`(char_length(name_ar) >= 2) AND (char_length(name_ar) <= 60)`),
+    check('ck_subscription_plans_retired', sql`(status = 'retired'::text) = (retired_at IS NOT NULL)`),
+    check('ck_subscription_plans_retired_by', sql`(retired_at IS NULL) OR (retired_by IS NOT NULL)`),
+    check('ck_subscription_plans_replaced', sql`(replaced_by_plan_id IS NULL) OR (status = 'retired'::text)`),
+    check(
+      'ck_subscription_plans_not_self',
+      sql`(replaced_by_plan_id IS NULL) OR (replaced_by_plan_id <> id)`,
+    ),
+    check('ck_subscription_plans_no_pan', sql`retire_reason !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_subscription_plans_term_kind',
+      sql`term_kind = ANY (ARRAY['calendar'::text, 'service_days'::text])`,
+    ),
+    check(
+      'ck_subscription_plans_service_days_set',
+      sql`(term_kind = 'service_days'::text) = (service_days IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscription_plans_weekdays_set',
+      sql`(term_kind = 'service_days'::text) = (service_weekdays_mask IS NOT NULL)`,
+    ),
+    check('ck_subscription_plans_service_days', sql`(service_days >= 1) AND (service_days <= 60)`),
+    check(
+      'ck_subscription_plans_weekdays',
+      sql`(service_weekdays_mask >= 1) AND (service_weekdays_mask <= 127)`,
+    ),
+    check(
+      'ck_subscription_plans_service_monthly',
+      sql`(term_kind <> 'service_days'::text) OR (yearly_price_halalas IS NULL)`,
+    ),
+    check(
+      'ck_subscription_plans_renewal_mode',
+      sql`renewal_mode = ANY (ARRAY['auto'::text, 'manual'::text])`,
+    ),
+    check(
+      'ck_subscription_plans_service_manual',
+      sql`(term_kind <> 'service_days'::text) OR (renewal_mode = 'manual'::text)`,
+    ),
+    check('ck_subscription_plans_daily_limit', sql`(daily_visit_limit >= 1) AND (daily_visit_limit <= 10)`),
+    check(
+      'ck_subscription_plans_refund_policy',
+      sql`refund_policy = ANY (ARRAY['prorated_on_termination'::text, 'non_refundable'::text])`,
+    ),
+    check(
+      'ck_subscription_plans_closure_policy',
+      sql`closure_policy = ANY (ARRAY['freeze'::text, 'continue'::text])`,
+    ),
+    check('ck_subscription_plans_freeze_times', sql`(freeze_max_times >= 0) AND (freeze_max_times <= 3)`),
+    check('ck_subscription_plans_freeze_days_set', sql`(freeze_max_times = 0) = (freeze_max_days IS NULL)`),
+    check('ck_subscription_plans_freeze_days', sql`(freeze_max_days >= 1) AND (freeze_max_days <= 30)`),
+    check(
+      'ck_subscription_plans_freeze_term',
+      sql`(freeze_max_times = 0) OR (term_kind = 'service_days'::text)`,
+    ),
+    check(
+      'ck_subscription_plans_eligibility',
+      sql`eligibility = ANY (ARRAY['none'::text, 'student_id_review'::text])`,
+    ),
+    check('ck_subscription_plans_capacity', sql`(capacity >= 1) AND (capacity <= 100000)`),
+    check(
+      'ck_subscription_plans_audience',
+      sql`(char_length(audience_ar) >= 2) AND (char_length(audience_ar) <= 120)`,
+    ),
+    check('ck_subscription_plans_audience_no_pan', sql`audience_ar !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_subscription_plans_vehicle_change',
+      sql`vehicle_change = ANY (ARRAY['once_per_period'::text, 'any_time'::text])`,
+    ),
+  ],
+);
+
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    account_id: uuid().notNull(),
+    plan_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    billing_cycle: text().notNull(),
+    status: text().default('pending_payment').notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    price_halalas: bigint({ mode: 'number' }).notNull(),
+    vehicles_included: integer().notNull(),
+    cycle_anchor_at: timestamp({ withTimezone: true, mode: 'string' }),
+    periods_paid: integer().default(0).notNull(),
+    current_period_start: timestamp({ withTimezone: true, mode: 'string' }),
+    current_period_end: timestamp({ withTimezone: true, mode: 'string' }),
+    cancel_at_period_end: boolean().default(false).notNull(),
+    cancel_requested_at: timestamp({ withTimezone: true, mode: 'string' }),
+    payment_method_id: uuid(),
+    pending_expires_at: timestamp({ withTimezone: true, mode: 'string' }),
+    grace_ends_at: timestamp({ withTimezone: true, mode: 'string' }),
+    renewal_attempts: integer().default(0).notNull(),
+    next_plan_id: uuid(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    next_price_halalas: bigint({ mode: 'number' }),
+    renewal_notice_for: timestamp({ withTimezone: true, mode: 'string' }),
+    vehicles_changed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    frozen_at: timestamp({ withTimezone: true, mode: 'string' }),
+    frozen_reason: text(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    frozen_seconds_total: bigint({ mode: 'number' }).default(0).notNull(),
+    activated_at: timestamp({ withTimezone: true, mode: 'string' }),
+    ended_at: timestamp({ withTimezone: true, mode: 'string' }),
+    ended_reason: text(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    service_start_on: date(),
+    service_end_on: date(),
+    frozen_remaining_days: integer(),
+    refund_due_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_subscriptions_account').using(
+      'btree',
+      table.account_id.asc().nullsLast().op('uuid_ops'),
+      table.created_at.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_subscriptions_org').using(
+      'btree',
+      table.org_id.asc().nullsLast().op('uuid_ops'),
+      table.status.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('ix_subscriptions_period_end')
+      .using('btree', table.current_period_end.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(status = ANY (ARRAY['active'::text, 'past_due'::text]))`),
+    index('ix_subscriptions_plan').using('btree', table.plan_id.asc().nullsLast().op('uuid_ops')),
+    index('ix_subscriptions_venue_live')
+      .using(
+        'btree',
+        table.venue_id.asc().nullsLast().op('text_ops'),
+        table.status.asc().nullsLast().op('text_ops'),
+      )
+      .where(
+        sql`(status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
+      ),
+    uniqueIndex('uq_subscriptions_live')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(
+        sql`(status = ANY (ARRAY['pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
+      ),
+    uniqueIndex('uq_subscriptions_live_eligibility')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('uuid_ops'),
+        table.venue_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(
+        sql`(status = ANY (ARRAY['pending_eligibility'::text, 'pending_payment'::text, 'active'::text, 'past_due'::text, 'frozen'::text]))`,
+      ),
+
+    check('ck_subscriptions_cycle', sql`billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
+    check('ck_subscriptions_price', sql`price_halalas >= 100`),
+    check('ck_subscriptions_next_price', sql`next_price_halalas >= 100`),
+    check('ck_subscriptions_next_plan', sql`(next_plan_id IS NULL) = (next_price_halalas IS NULL)`),
+    check('ck_subscriptions_vehicles_min', sql`vehicles_included >= 1`),
+    check('ck_subscriptions_vehicles_max', sql`vehicles_included <= 5`),
+    check('ck_subscriptions_periods', sql`periods_paid >= 0`),
+    check('ck_subscriptions_period_pair', sql`(current_period_start IS NULL) = (current_period_end IS NULL)`),
+    check('ck_subscriptions_period_order', sql`current_period_end > current_period_start`),
+    check('ck_subscriptions_anchor', sql`(cycle_anchor_at IS NULL) = (current_period_end IS NULL)`),
+    check('ck_subscriptions_paid_period', sql`(periods_paid = 0) = (current_period_end IS NULL)`),
+    check(
+      'ck_subscriptions_live_period',
+      sql`(status <> ALL (ARRAY['active'::text, 'past_due'::text, 'frozen'::text])) OR (current_period_end IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscriptions_pending',
+      sql`(status <> 'pending_payment'::text) OR (pending_expires_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_pending_unpaid', sql`(status <> 'pending_payment'::text) OR (periods_paid = 0)`),
+    check('ck_subscriptions_grace', sql`(status = 'past_due'::text) = (grace_ends_at IS NOT NULL)`),
+    check('ck_subscriptions_attempts', sql`renewal_attempts >= 0`),
+    check('ck_subscriptions_frozen', sql`(status = 'frozen'::text) = (frozen_at IS NOT NULL)`),
+    check('ck_subscriptions_frozen_reason_set', sql`(frozen_at IS NULL) = (frozen_reason IS NULL)`),
+    check('ck_subscriptions_frozen_total', sql`frozen_seconds_total >= 0`),
+    check(
+      'ck_subscriptions_ended',
+      sql`(status = ANY (ARRAY['canceled'::text, 'expired'::text])) = (ended_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_ended_reason_set', sql`(ended_at IS NULL) = (ended_reason IS NULL)`),
+    check(
+      'ck_subscriptions_cancel_flag',
+      sql`(cancel_at_period_end = false) OR (cancel_requested_at IS NOT NULL)`,
+    ),
+    check('ck_subscriptions_activated', sql`(periods_paid = 0) OR (activated_at IS NOT NULL)`),
+    check('ck_subscriptions_frozen_remaining', sql`frozen_remaining_days >= 0`),
+    check('ck_subscriptions_service_pair', sql`(service_start_on IS NULL) = (service_end_on IS NULL)`),
+    check('ck_subscriptions_service_order', sql`service_end_on >= service_start_on`),
+    check('ck_subscriptions_service_paid', sql`(service_start_on IS NULL) OR (periods_paid > 0)`),
+    check(
+      'ck_subscriptions_frozen_remaining_set',
+      sql`(frozen_remaining_days IS NULL) OR (frozen_at IS NOT NULL)`,
+    ),
+    check(
+      'ck_subscriptions_refund_due',
+      sql`(refund_due_at IS NULL) OR (ended_reason = 'exceptional_refund'::text)`,
+    ),
+    check(
+      'ck_subscriptions_status',
+      sql`status = ANY (ARRAY['pending_eligibility'::text, 'pending_payment'::text, 'active'::text, 'past_due'::text, 'canceled'::text, 'expired'::text, 'frozen'::text])`,
+    ),
+    check(
+      'ck_subscriptions_frozen_reason',
+      sql`frozen_reason = ANY (ARRAY['operator_suspended'::text, 'venue_inactive'::text, 'customer_freeze'::text])`,
+    ),
+    check(
+      'ck_subscriptions_ended_reason',
+      sql`ended_reason = ANY (ARRAY['pending_expired'::text, 'abandoned'::text, 'period_end'::text, 'grace_expired'::text, 'past_due_canceled'::text, 'account_deleted'::text, 'operator_terminated'::text, 'refunded'::text, 'eligibility_rejected'::text, 'term_completed'::text, 'exceptional_refund'::text])`,
+    ),
+    check(
+      'ck_subscriptions_expired_reason',
+      sql`(status <> 'expired'::text) OR (ended_reason = ANY (ARRAY['grace_expired'::text, 'term_completed'::text]))`,
+    ),
+    check(
+      'ck_subscriptions_eligibility_unpaid',
+      sql`(status <> 'pending_eligibility'::text) OR (periods_paid = 0)`,
+    ),
+  ],
+);
+
+export const subscription_vehicles = pgTable(
+  'subscription_vehicles',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    account_id: uuid().notNull(),
+    customer_vehicle_id: uuid().notNull(),
+    added_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    removed_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_subscription_vehicles_vehicle')
+      .using('btree', table.customer_vehicle_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(removed_at IS NULL)`),
+    uniqueIndex('uq_subscription_vehicles_live')
+      .using(
+        'btree',
+        table.subscription_id.asc().nullsLast().op('uuid_ops'),
+        table.customer_vehicle_id.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(removed_at IS NULL)`),
+
+    check('ck_subscription_vehicles_removed', sql`(removed_at IS NULL) OR (removed_at >= added_at)`),
+  ],
+);
+
+export const subscription_periods = pgTable(
+  'subscription_periods',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    subscription_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    venue_id: uuid().notNull(),
+    seq: integer().notNull(),
+    plan_id: uuid().notNull(),
+    billing_cycle: text().notNull(),
+    starts_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    ends_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    price_halalas: bigint({ mode: 'number' }).notNull(),
+    online_payment_id: uuid().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    extended_seconds: bigint({ mode: 'number' }).default(0).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_subscription_periods_org').using(
+      'btree',
+      table.org_id.asc().nullsLast().op('timestamptz_ops'),
+      table.starts_at.asc().nullsLast().op('uuid_ops'),
+    ),
+
+    unique('uq_subscription_periods_seq').on(table.subscription_id, table.seq),
+    unique('uq_subscription_periods_payment').on(table.online_payment_id),
+    check('ck_subscription_periods_cycle', sql`billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])`),
+    check('ck_subscription_periods_extended', sql`extended_seconds >= 0`),
+    check('ck_subscription_periods_order', sql`ends_at > starts_at`),
+    check('ck_subscription_periods_price', sql`price_halalas >= 100`),
+    check('ck_subscription_periods_seq', sql`seq >= 1`),
+  ],
+);
+
+// ---- V2-040 … V2-042 (0017_invoices_settlement.sql, DEC-540 … DEC-549)
+
+export const invoice_series = pgTable(
+  'invoice_series',
+  {
+    series: text().primaryKey().notNull(),
+    prefix: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    last_icv: bigint({ mode: 'number' }).default(0).notNull(),
+    last_hash: text().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('uq_invoice_series_prefix').on(table.prefix),
+    check('ck_invoice_series_hash', sql`last_hash ~ '^[A-Za-z0-9+/]{40,120}={0,2}$'::text`),
+    check('ck_invoice_series_icv', sql`last_icv >= 0`),
+    check('ck_invoice_series_prefix', sql`prefix ~ '^[A-Z]{2,4}$'::text`),
+    check('ck_invoice_series_series', sql`series = ANY (ARRAY['simplified'::text, 'standard'::text])`),
+  ],
+);
+
+export const settlement_statements = pgTable(
+  'settlement_statements',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    org_id: uuid().notNull(),
+    period_start: date().notNull(),
+    period_end: date().notNull(),
+    status: text().default('draft').notNull(),
+    currency: text().default('SAR').notNull(),
+    subscriber_visit_count: integer().default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    subscriber_payout_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    app_payment_count: integer().default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_gross_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_commission_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_refund_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    app_refund_commission_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    saas_fee_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    saas_vat_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    adjustments_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    net_payable_halalas: bigint({ mode: 'number' }).default(0).notNull(),
+    computed_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    computed_by: uuid(),
+    issued_at: timestamp({ withTimezone: true, mode: 'string' }),
+    issued_by: uuid(),
+    disputed_at: timestamp({ withTimezone: true, mode: 'string' }),
+    disputed_by: uuid(),
+    dispute_reason: text(),
+    dispute_resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
+    dispute_resolved_by: uuid(),
+    dispute_resolution: text(),
+    paid_at: timestamp({ withTimezone: true, mode: 'string' }),
+    paid_on: date(),
+    paid_reference: text(),
+    paid_recorded_by: uuid(),
+    voided_at: timestamp({ withTimezone: true, mode: 'string' }),
+    voided_by: uuid(),
+    void_reason: text(),
+    saas_invoice_id: uuid(),
+    version: integer().default(1).notNull(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_settlement_statements_period').using(
+      'btree',
+      table.period_start.asc().nullsLast().op('date_ops'),
+      table.org_id.asc().nullsLast().op('uuid_ops'),
+    ),
+    uniqueIndex('uq_settlement_statements_period')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('uuid_ops'),
+        table.period_start.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(status <> 'void'::text)`),
+
+    check(
+      'ck_settlement_net',
+      sql`net_payable_halalas = (((((((subscriber_payout_halalas + app_gross_halalas) - app_commission_halalas) - app_refund_halalas) + app_refund_commission_halalas) - saas_fee_halalas) - saas_vat_halalas) + adjustments_halalas)`,
+    ),
+    check('ck_settlement_statements_commission', sql`app_commission_halalas >= 0`),
+    check('ck_settlement_statements_counts', sql`(subscriber_visit_count >= 0) AND (app_payment_count >= 0)`),
+    check('ck_settlement_statements_currency', sql`currency = 'SAR'::text`),
+    check(
+      'ck_settlement_statements_dispute_reason',
+      sql`(disputed_at IS NULL) OR (dispute_reason IS NOT NULL)`,
+    ),
+    check('ck_settlement_statements_dispute_reason_length', sql`char_length(dispute_reason) >= 3`),
+    check(
+      'ck_settlement_statements_disputed',
+      sql`(status <> 'disputed'::text) OR (disputed_at IS NOT NULL)`,
+    ),
+    check('ck_settlement_statements_gross', sql`app_gross_halalas >= 0`),
+    check(
+      'ck_settlement_statements_issued',
+      sql`(status = 'draft'::text) OR (status = 'void'::text) OR (issued_at IS NOT NULL)`,
+    ),
+    check('ck_settlement_statements_month_start', sql`EXTRACT(day FROM period_start) = (1)::numeric`),
+    check('ck_settlement_statements_no_pan', sql`paid_reference !~ '[0-9]{13,}'::text`),
+    check('ck_settlement_statements_paid', sql`(status <> 'paid'::text) OR (paid_at IS NOT NULL)`),
+    check('ck_settlement_statements_paid_reference', sql`(paid_at IS NULL) OR (paid_reference IS NOT NULL)`),
+    check('ck_settlement_statements_paid_reference_length', sql`char_length(paid_reference) >= 3`),
+    check('ck_settlement_statements_payout', sql`subscriber_payout_halalas >= 0`),
+    check('ck_settlement_statements_period', sql`period_end > period_start`),
+    check('ck_settlement_statements_refund', sql`app_refund_halalas >= 0`),
+    check('ck_settlement_statements_refund_commission', sql`app_refund_commission_halalas >= 0`),
+    check('ck_settlement_statements_saas', sql`(saas_fee_halalas >= 0) AND (saas_vat_halalas >= 0)`),
+    check(
+      'ck_settlement_statements_status',
+      sql`status = ANY (ARRAY['draft'::text, 'issued'::text, 'disputed'::text, 'paid'::text, 'void'::text])`,
+    ),
+    check('ck_settlement_statements_void', sql`(status <> 'void'::text) OR (voided_at IS NOT NULL)`),
+    check('ck_settlement_statements_void_reason', sql`(voided_at IS NULL) OR (void_reason IS NOT NULL)`),
+    check('ck_settlement_statements_void_reason_length', sql`char_length(void_reason) >= 3`),
+  ],
+);
+
+export const settlement_lines = pgTable(
+  'settlement_lines',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    statement_id: uuid().notNull(),
+    org_id: uuid().notNull(),
+    kind: text().notNull(),
+    line_key: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    amount_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    base_halalas: bigint({ mode: 'number' }),
+    rate_bp: integer(),
+    quantity_days: integer(),
+    occurred_on: date().notNull(),
+    venue_id: uuid(),
+    ticket_id: uuid(),
+    online_payment_id: uuid(),
+    refund_id: uuid(),
+    contract_id: uuid(),
+    note: text(),
+    created_by: uuid(),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    released_at: timestamp({ withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('ix_settlement_lines_statement')
+      .using(
+        'btree',
+        table.statement_id.asc().nullsLast().op('uuid_ops'),
+        table.kind.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(released_at IS NULL)`),
+    uniqueIndex('uq_settlement_lines_key')
+      .using('btree', table.line_key.asc().nullsLast().op('text_ops'))
+      .where(sql`(released_at IS NULL)`),
+    uniqueIndex('uq_settlement_ticket')
+      .using('btree', table.ticket_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`((released_at IS NULL) AND (kind = 'subscriber_visit'::text))`),
+
+    check('ck_settlement_lines_adjustment', sql`(kind <> 'adjustment'::text) OR (amount_halalas <> 0)`),
+    check(
+      'ck_settlement_lines_adjustment_actor',
+      sql`(kind <> 'adjustment'::text) OR (created_by IS NOT NULL)`,
+    ),
+    check('ck_settlement_lines_adjustment_note', sql`(kind <> 'adjustment'::text) OR (note IS NOT NULL)`),
+    check('ck_settlement_lines_days', sql`(quantity_days IS NULL) OR (quantity_days >= 1)`),
+    check('ck_settlement_lines_key', sql`line_key ~ '^[a-z_]+:[A-Za-z0-9:_-]{1,200}$'::text`),
+    check(
+      'ck_settlement_lines_kind',
+      sql`kind = ANY (ARRAY['subscriber_visit'::text, 'app_payment'::text, 'app_commission'::text, 'app_refund'::text, 'app_refund_commission'::text, 'saas_fee'::text, 'saas_vat'::text, 'adjustment'::text])`,
+    ),
+    check(
+      'ck_settlement_lines_negative',
+      sql`(kind <> ALL (ARRAY['app_commission'::text, 'app_refund'::text, 'saas_fee'::text, 'saas_vat'::text])) OR (amount_halalas <= 0)`,
+    ),
+    check('ck_settlement_lines_no_pan', sql`note !~ '[0-9]{13,}'::text`),
+    check('ck_settlement_lines_note_length', sql`char_length(note) >= 3`),
+    check(
+      'ck_settlement_lines_payment',
+      sql`(kind <> ALL (ARRAY['app_payment'::text, 'app_commission'::text])) OR (online_payment_id IS NOT NULL)`,
+    ),
+    check(
+      'ck_settlement_lines_positive',
+      sql`(kind <> ALL (ARRAY['subscriber_visit'::text, 'app_payment'::text, 'app_refund_commission'::text])) OR (amount_halalas >= 0)`,
+    ),
+    check('ck_settlement_lines_rate', sql`(rate_bp IS NULL) OR (rate_bp >= 0)`),
+    check('ck_settlement_lines_rate_max', sql`(rate_bp IS NULL) OR (rate_bp <= 10000)`),
+    check(
+      'ck_settlement_lines_refund',
+      sql`(kind <> ALL (ARRAY['app_refund'::text, 'app_refund_commission'::text])) OR (refund_id IS NOT NULL)`,
+    ),
+    check('ck_settlement_lines_visit', sql`(kind <> 'subscriber_visit'::text) OR (ticket_id IS NOT NULL)`),
+  ],
+);
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    series: text().notNull(),
+    kind: text().notNull(),
+    type_code: integer().notNull(),
+    number: text().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    icv: bigint({ mode: 'number' }).notNull(),
+    zatca_uuid: uuid().notNull(),
+    previous_hash: text().notNull(),
+    invoice_hash: text().notNull(),
+    issued_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+    supply_date: date().notNull(),
+    period_start: date(),
+    period_end: date(),
+    account_id: uuid(),
+    org_id: uuid(),
+    online_payment_id: uuid(),
+    refund_id: uuid(),
+    settlement_statement_id: uuid(),
+    original_invoice_id: uuid(),
+    credit_reason: text(),
+    currency: text().default('SAR').notNull(),
+    vat_rate_bp: integer().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    subtotal_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    vat_halalas: bigint({ mode: 'number' }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    total_halalas: bigint({ mode: 'number' }).notNull(),
+    seller: jsonb().notNull(),
+    buyer: jsonb().default({}).notNull(),
+    lines: jsonb().notNull(),
+    qr_payload: text().notNull(),
+    provider: text().notNull(),
+    zatca_status: text().default('pending').notNull(),
+    provider_reference: text(),
+    provider_hash: text(),
+    provider_qr: text(),
+    provider_codes: jsonb().default([]).notNull(),
+    submitted_at: timestamp({ withTimezone: true, mode: 'string' }),
+    status_at: timestamp({ withTimezone: true, mode: 'string' }),
+    pdf_storage_key: text(),
+    pdf_rendered_at: timestamp({ withTimezone: true, mode: 'string' }),
+    created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_invoices_account')
+      .using(
+        'btree',
+        table.account_id.asc().nullsLast().op('timestamptz_ops'),
+        table.issued_at.asc().nullsLast().op('timestamptz_ops'),
+      )
+      .where(sql`(account_id IS NOT NULL)`),
+    index('ix_invoices_issued').using('btree', table.issued_at.asc().nullsLast().op('timestamptz_ops')),
+    index('ix_invoices_org')
+      .using(
+        'btree',
+        table.org_id.asc().nullsLast().op('timestamptz_ops'),
+        table.issued_at.asc().nullsLast().op('uuid_ops'),
+      )
+      .where(sql`(org_id IS NOT NULL)`),
+    index('ix_invoices_pending')
+      .using('btree', table.issued_at.asc().nullsLast().op('timestamptz_ops'))
+      .where(sql`(zatca_status = 'pending'::text)`),
+    uniqueIndex('uq_invoices_full_credit')
+      .using('btree', table.original_invoice_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`((kind = 'credit_note'::text) AND (refund_id IS NULL))`),
+    uniqueIndex('uq_invoices_payment')
+      .using('btree', table.online_payment_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(kind = 'customer_simplified'::text)`),
+    uniqueIndex('uq_invoices_refund')
+      .using('btree', table.refund_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(refund_id IS NOT NULL)`),
+    uniqueIndex('uq_invoices_statement')
+      .using('btree', table.settlement_statement_id.asc().nullsLast().op('uuid_ops'))
+      .where(sql`(kind = 'operator_standard'::text)`),
+
+    unique('uq_invoices_series_icv').on(table.series, table.icv),
+    unique('uq_invoices_number').on(table.number),
+    unique('uq_invoices_zatca_uuid').on(table.zatca_uuid),
+    check('ck_invoices_amounts', sql`(subtotal_halalas >= 0) AND (vat_halalas >= 0)`),
+    check('ck_invoices_codes_no_pan', sql`(provider_codes)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_invoices_credit_original',
+      sql`(kind <> 'credit_note'::text) OR (original_invoice_id IS NOT NULL)`,
+    ),
+    check('ck_invoices_credit_reason', sql`(kind <> 'credit_note'::text) OR (credit_reason IS NOT NULL)`),
+    check('ck_invoices_credit_reason_length', sql`char_length(credit_reason) >= 3`),
+    check('ck_invoices_credit_type', sql`(kind = 'credit_note'::text) = (type_code = 381)`),
+    check('ck_invoices_currency', sql`currency = 'SAR'::text`),
+    check(
+      'ck_invoices_customer_payment',
+      sql`(kind <> 'customer_simplified'::text) OR (online_payment_id IS NOT NULL)`,
+    ),
+    check('ck_invoices_hash', sql`invoice_hash ~ '^[A-Za-z0-9+/]{40,120}={0,2}$'::text`),
+    check('ck_invoices_icv', sql`icv >= 1`),
+    check(
+      'ck_invoices_invoice_no_original',
+      sql`(kind = 'credit_note'::text) OR (original_invoice_id IS NULL)`,
+    ),
+    check(
+      'ck_invoices_kind',
+      sql`kind = ANY (ARRAY['customer_simplified'::text, 'operator_standard'::text, 'credit_note'::text])`,
+    ),
+    check('ck_invoices_no_pan', sql`(lines)::text !~ '[0-9]{13,}'::text`),
+    check('ck_invoices_number', sql`number ~ '^[A-Z]{2,4}-[0-9]{8,}$'::text`),
+    check(
+      'ck_invoices_operator_statement',
+      sql`(kind <> 'operator_standard'::text) OR (settlement_statement_id IS NOT NULL)`,
+    ),
+    check('ck_invoices_pdf', sql`(pdf_storage_key IS NULL) = (pdf_rendered_at IS NULL)`),
+    check('ck_invoices_period', sql`(period_end IS NULL) OR (period_end > period_start)`),
+    check('ck_invoices_provider', sql`provider ~ '^[a-z][a-z0-9_]{1,31}$'::text`),
+    check('ck_invoices_simplified_buyer', sql`(series <> 'simplified'::text) OR (account_id IS NOT NULL)`),
+    check('ck_invoices_simplified_no_org', sql`(series <> 'simplified'::text) OR (org_id IS NULL)`),
+    check(
+      'ck_invoices_simplified_series',
+      sql`(kind <> 'customer_simplified'::text) OR (series = 'simplified'::text)`,
+    ),
+    check('ck_invoices_standard_buyer', sql`(series <> 'standard'::text) OR (org_id IS NOT NULL)`),
+    check('ck_invoices_standard_no_account', sql`(series <> 'standard'::text) OR (account_id IS NULL)`),
+    check(
+      'ck_invoices_standard_series',
+      sql`(kind <> 'operator_standard'::text) OR (series = 'standard'::text)`,
+    ),
+    check(
+      'ck_invoices_status',
+      sql`zatca_status = ANY (ARRAY['pending'::text, 'reported'::text, 'cleared'::text, 'rejected'::text])`,
+    ),
+    check('ck_invoices_status_at', sql`(zatca_status = 'pending'::text) OR (status_at IS NOT NULL)`),
+    check('ck_invoices_total', sql`total_halalas = (subtotal_halalas + vat_halalas)`),
+    check('ck_invoices_type_code', sql`type_code = ANY (ARRAY[388, 381])`),
+    check('ck_invoices_vat_rate', sql`(vat_rate_bp >= 0) AND (vat_rate_bp <= 10000)`),
+  ],
+);
+
+export const invoice_provider_events = pgTable(
+  'invoice_provider_events',
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity({
+      name: 'invoice_provider_events_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    invoice_id: uuid().notNull(),
+    kind: text().notNull(),
+    outcome: text().notNull(),
+    zatca_status: text(),
+    codes: jsonb().default([]).notNull(),
+    occurred_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('ix_invoice_provider_events_invoice').using(
+      'btree',
+      table.invoice_id.asc().nullsLast().op('timestamptz_ops'),
+      table.occurred_at.asc().nullsLast().op('timestamptz_ops'),
+    ),
+
+    check('ck_invoice_provider_events_kind', sql`kind = ANY (ARRAY['submit'::text, 'callback'::text])`),
+    check('ck_invoice_provider_events_no_pan', sql`(codes)::text !~ '[0-9]{13,}'::text`),
+    check(
+      'ck_invoice_provider_events_outcome',
+      sql`outcome = ANY (ARRAY['accepted'::text, 'rejected'::text, 'error'::text, 'ignored'::text])`,
+    ),
+    check(
+      'ck_invoice_provider_events_status',
+      sql`zatca_status = ANY (ARRAY['pending'::text, 'reported'::text, 'cleared'::text, 'rejected'::text])`,
+    ),
+  ],
 );

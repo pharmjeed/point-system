@@ -6,6 +6,8 @@ const FIXTURES = new URL('../fixtures/', import.meta.url);
 
 interface FixtureTemplate {
   purpose: string;
+  /** the template set of W-01 … W-08 (`v1`, `v2`; DEC-555); absent for the sign-in template */
+  set?: string;
   name: string;
   language: string;
   category: TemplateCategory;
@@ -29,11 +31,18 @@ let brandCache: BrandFixture | undefined;
 
 export function brand(env: Record<string, string | undefined> = process.env): BrandFixture {
   brandCache ??= readFixture<BrandFixture>('brand.json');
+  const customerNameAr = env.BRAND_CUSTOMER_NAME_AR || brandCache.customerNameAr;
   return {
     ...brandCache,
-    customerNameAr: env.BRAND_CUSTOMER_NAME_AR || brandCache.customerNameAr,
+    customerNameAr,
     customerNameEn: env.BRAND_CUSTOMER_NAME_EN || brandCache.customerNameEn,
+    linkCodePrefix: withBrand(brandCache.linkCodePrefix, customerNameAr),
   };
+}
+
+/** `{brand}` of the fixtures = the Arabic customer name (DEC-470). */
+export function withBrand(text: string, customerNameAr: string = brand().customerNameAr): string {
+  return text.replaceAll('{brand}', customerNameAr);
 }
 
 /** Highest `{{n}}` index in a template body. */
@@ -50,7 +59,14 @@ export function renderBody(body: string, params: readonly string[]): string {
 let fixtureTemplates: FixtureTemplate[] | undefined;
 
 function fixtures(): FixtureTemplate[] {
-  fixtureTemplates ??= readFixture<{ templates: FixtureTemplate[] }>('templates.json').templates;
+  // W-01 … W-08 of every template set (DEC-555) and, since V2-010, the customer app's AUTHENTICATION sign-in
+  // template (DEC-496)
+  if (!fixtureTemplates) {
+    const f = readFixture<{ templates: FixtureTemplate[]; authTemplates?: FixtureTemplate[] }>(
+      'templates.json',
+    );
+    fixtureTemplates = [...f.templates, ...(f.authTemplates ?? [])];
+  }
   return fixtureTemplates;
 }
 
@@ -66,7 +82,7 @@ export function templateKey(name: string, language: string): string {
   return `${name}:${language}`;
 }
 
-/** Fresh copy of the local catalog (W-01 … W-08), all APPROVED. */
+/** Fresh copy of the local catalog (W-01 … W-08 of both sets and the sign-in template), all APPROVED. */
 export function defaultTemplates(): TemplateInfo[] {
   return fixtures().map((t, i) => ({
     id: String(900000000000001 + i),
@@ -75,7 +91,7 @@ export function defaultTemplates(): TemplateInfo[] {
     category: t.category,
     status: 'APPROVED' as TemplateStatus,
     purpose: t.purpose,
-    body: t.body,
+    body: withBrand(t.body),
     bodyParamCount: countBodyParams(t.body),
     buttons: t.buttons.map((b) => ({ ...b })),
     rejectedReason: null,

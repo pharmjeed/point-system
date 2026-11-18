@@ -1,9 +1,7 @@
 import {
-  WA_TEMPLATE_NAMES,
   WaSendJobPayloadSchema,
   renderWaText,
-  waMessageText,
-  waTemplateById,
+  waTemplateParams,
   type ErrorCode,
   type NotificationSkippedReason,
   type OrgSettings,
@@ -126,6 +124,8 @@ interface TicketFacts {
   vehicle_color: string | null;
   plate_digits: string | null;
   venue_name_ar: string;
+  /** the operator (organization) of the venue: «تشغيل: …» of W-01 in the `v2` set (V2-D01, DEC-555) */
+  operator_name_ar: string;
 }
 
 interface MessageRow {
@@ -317,8 +317,10 @@ export class WhatsappSender {
       ? await tx.maybeOne<TicketFacts>(
           `SELECT t.id, t.org_id, t.venue_id, t.event_id, t.display_number, t.status, t.channel, t.customer_id,
                   t.wa_link_status, t.link_version, t.active_cycle_id, t.pending_retrieval_at, t.vehicle_make,
-                  t.vehicle_model, t.vehicle_color, t.plate_digits, v.name_ar AS venue_name_ar
-             FROM tickets t JOIN venues v ON v.id = t.venue_id WHERE t.id = $1`,
+                  t.vehicle_model, t.vehicle_color, t.plate_digits, v.name_ar AS venue_name_ar,
+                  o.name_ar AS operator_name_ar
+             FROM tickets t JOIN venues v ON v.id = t.venue_id JOIN organizations o ON o.id = t.org_id
+            WHERE t.id = $1`,
           [n.ticket_id],
         )
       : null;
@@ -327,7 +329,7 @@ export class WhatsappSender {
     if (skip) return this.skip(tx, n, skip);
 
     // template gate (12 §5.4) with the W-05 session fallback of 12 §8.4
-    const def = waTemplateById(n.purpose);
+    const def = this.rt.catalog.byId(n.purpose);
     let sendKind: 'template' | 'session' = def.kind;
     if (def.kind === 'template') {
       const status = await templateStatus(tx, n.org_id, def.name);
@@ -470,6 +472,7 @@ export class WhatsappSender {
     const built =
       content.kind === 'template'
         ? buildTemplateMessage({
+            catalog: this.rt.catalog,
             purpose: n.purpose,
             recipient,
             params: content.params,
@@ -607,7 +610,7 @@ export class WhatsappSender {
     return {
       now: tx.now,
       purpose: n.purpose,
-      kind: waTemplateById(n.purpose).kind,
+      kind: this.rt.catalog.byId(n.purpose).kind,
       customer: {
         id: c.id,
         optedOut: c.wa_opted_out_at !== null,
@@ -669,33 +672,37 @@ export class WhatsappSender {
     { kind: 'template'; params: string[] } | { kind: 'session'; text: string; contextWamid: string | null }
   > {
     const display = t ? String(t.display_number) : '';
-    if (sendKind === 'template') {
-      const params =
-        n.purpose === 'W-01' && t
-          ? [t.venue_name_ar, display, vehicleSummary(t)]
-          : n.purpose === 'W-05'
-            ? [display, code ?? '']
-            : [display];
-      return { kind: 'template', params };
-    }
+    // the facts of the variables (14 §4); each template of the live set takes its own (DEC-555)
+    const values = {
+      display_number: display,
+      venue_name: t?.venue_name_ar ?? '',
+      operator_name: t?.operator_name_ar ?? '',
+      vehicle_description: t ? vehicleSummary(t) : '',
+      claim_code: code ?? '',
+    };
+    const def = this.rt.catalog.byId(n.purpose);
+    if (sendKind === 'template') return { kind: 'template', params: waTemplateParams(def, values) };
     let text: string;
     switch (n.purpose) {
       case 'W-05': // 12 §8.4 fallback: the same content as a session text
-        text = renderWaText(waMessageText('W-05'), [display, code ?? '']);
+        text = renderWaText(def.body_ar, waTemplateParams(def, values));
         break;
       case 'W-09': {
         const variant =
           this.payload.variant === 'inactive' || !t
             ? 'inactive'
             : (w09VariantFor({ status: t.status, pendingRetrievalAt: t.pending_retrieval_at }) ?? 'inactive');
-        text = renderWaText(waMessageText('W-09', variant), [display]);
+        text = renderWaText(this.rt.catalog.messageText('W-09', variant), [display]);
         break;
       }
       case 'W-11':
-        text = waMessageText('W-11', this.payload.variant === 'received' ? 'received' : 'invalid');
+        text = this.rt.catalog.messageText(
+          'W-11',
+          this.payload.variant === 'received' ? 'received' : 'invalid',
+        );
         break;
       default:
-        text = waMessageText(n.purpose);
+        text = this.rt.catalog.messageText(n.purpose);
     }
     const contextWamid =
       q && this.payload.inbound_message_id
@@ -716,7 +723,7 @@ export class WhatsappSender {
     t: TicketFacts | null,
     sendKind: 'template' | 'session',
   ): Promise<MessageDraft> {
-    const def = waTemplateById(n.purpose);
+    const def = this.rt.catalog.byId(n.purpose);
     const c = await this.content(null, n, sendKind, t, n.purpose === 'W-05' ? CODE_MASK : null);
     return {
       kind: c.kind === 'template' ? 'template' : 'session_text',
@@ -999,7 +1006,7 @@ export class WhatsappSender {
         return { kind: 'retry', delayMs: verdict.delayMs };
       case 'fail':
         if (c.cls === 'template' && c.templateStatus) {
-          const def = waTemplateById(n.purpose);
+          const def = this.rt.catalog.byId(n.purpose);
           await tx.query(
             `UPDATE whatsapp_templates SET status = $3, version = version + 1, last_synced_at = $4
               WHERE org_id = $1 AND name = $2 AND language = 'ar' AND status IS DISTINCT FROM $3`,
@@ -1193,9 +1200,10 @@ export class WhatsappSender {
       const approved = await tx.one<{ n: number }>(
         `SELECT count(*)::int AS n FROM whatsapp_templates
           WHERE org_id = $1 AND language = 'ar' AND name = ANY($2::text[]) AND status = 'approved' AND category = 'UTILITY'`,
-        [ch.org_id, [...WA_TEMPLATE_NAMES]],
+        [ch.org_id, [...this.rt.catalog.templateNames]],
       );
-      if (approved.n < WA_TEMPLATE_NAMES.length) return;
+      // the live set (DEC-555): a later set still waiting for Meta does not keep the channel degraded
+      if (approved.n < this.rt.catalog.templateNames.length) return;
     }
     await setChannelHealth(tx, ch.id, 'healthy', 'probe_and_send_ok', 'job.wa_send');
   }

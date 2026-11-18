@@ -117,6 +117,8 @@ interface ActorContext {
 | `retention.manage` | ✓ | — | — | — | — | تدقيق |
 | `org.settings_manage` | ✓ | — | — | — | إعدادات المؤسسة `security.*` و`heartbeat.*` فقط (DEC-39)؛ تُتحقق بمخطط zod؛ `security.pin_length` ثابت (6) وليس قابلًا للتعديل (DEC-09) | تدقيق إلزامي (قبل/بعد) |
 | `telemetry.write` | ✓ | ✓ | ✓ | ✓ | بيانات قياس بلا معلومات شخصية؛ حد معدل (120 حدثًا في الدقيقة لكل مستخدم وجهاز، DEC-148)؛ ليس أمرًا: بلا `Idempotency-Key` (DEC-149) | — (بلا صف تدقيق، DEC-149) |
+| `settlement.read` | ✓ | ✓ | — | — | الإصدار الثاني (O-05، O-06، DEC-547): كشوف تسوية مؤسسته غير المسودة، وعقد اشتراك النظام وفواتيره من بوينت؛ `org_id` من الجلسة دائمًا، وكشف أو فاتورة غيرها كغير الموجود | — (قراءة مالية بلا بيانات شخصية) |
+| `settlement.dispute` | ✓ | ✓ | — | — | الإصدار الثاني (O-05، DEC-547): الاعتراض على كشف `issued` لمؤسسته بسبب (3 محارف فأكثر) و`expected_version` | تدقيق `settlement.dispute` في `audit_log` |
 
 بيانات الإعداد التي يحتاجها السائق دون صلاحيات إدارة: تخطيط الموقع (المناطق والمواقف واللوحات والخانات مع الإشغال) عبر `venue.layout_read` لشاشة D-08، والحفلات المفتوحة لاختيار الحفل في D-05 ضمن الحقل `open_events` في رد `GET /v1/me/home` (الملف 07). لا يحصل السائق على `venue.read` ولا `event.manage`.
 
@@ -151,6 +153,7 @@ interface ActorContext {
 | المسار | الصلاحية | الفحوص الإضافية | رمز الرفض الأبرز |
 |---|---|---|---|
 | `POST /v1/tickets` | `ticket.intake` | الحفل `open` في موقع المناوبة؛ السائق بلا حركة نشطة تحت قفل المجموعة | `MOVEMENT_IN_PROGRESS` |
+| `POST /v1/tickets/intake-pass` | `ticket.intake` | الإصدار الثاني (O-01، V2-013، DEC-500): نطاق `POST /v1/tickets` نفسه (مناوبة في الموقع، المشغل غير معلّق)، ومسودته `received` التي أنشأها هو إن سمّاها؛ بطاقة دخول صالحة لحساب نشط | `PASS_INVALID` |
 | `PATCH /v1/tickets/{ticketId}/intake` | `ticket.intake` | منشئ التذكرة؛ الحالة `received` (كل الحقول) أو `parking` بـ`channel = paper` و`paper_serial` فقط والتذكرة غير مربوطة (DEC-40)؛ `expected_version` | `PERMISSION_DENIED` |
 | `POST /v1/tickets/{ticketId}/media` | `ticket.intake` | منشئ التذكرة؛ الحالة `received` أو `parking` (إكمال الصور الناقصة) | `PERMISSION_DENIED` |
 | `POST /v1/media/{mediaId}/complete` | `ticket.intake` | رافع الوسائط نفسه | `RESOURCE_NOT_FOUND` |
@@ -207,6 +210,10 @@ interface ActorContext {
 | `PATCH /v1/venues/{venueId}` | `venue.manage` | `expected_version` | `VERSION_CONFLICT` |
 | `GET /v1/venues/{venueId}/settings` | `venue.read` | النطاق | `SCOPE_VENUE_DENIED` |
 | `PUT /v1/venues/{venueId}/settings` | `venue.manage` | تحقق zod لمفاتيح القاموس §12 | `VALIDATION_FAILED` |
+| `GET /v1/venues/{venueId}/public-profile` | `venue.manage` | موقع من المؤسسة (نطاق المؤسسة)؛ غيره كغير الموجود | `RESOURCE_NOT_FOUND` |
+| `PUT /v1/venues/{venueId}/public-profile` | `venue.manage` | موقع من المؤسسة، `expected_version`، ليس مخفيًا من المنصة | `VERSION_CONFLICT` |
+| `POST /v1/venues/{venueId}/public-profile/photos` | `venue.manage` | موقع من المؤسسة | `RESOURCE_NOT_FOUND` |
+| `POST /v1/venues/{venueId}/public-profile/submit` | `venue.manage` | موقع من المؤسسة، `draft` مكتمل | `INVALID_STATE_TRANSITION` |
 | `GET /v1/venues/{venueId}/dispatch-pools` | `venue.read` | النطاق | — |
 | `POST /v1/venues/{venueId}/dispatch-pools` | `venue.manage` | مجموعة افتراضية واحدة | `VALIDATION_FAILED` |
 | `PATCH /v1/dispatch-pools/{poolId}` | `venue.manage` | — | `VALIDATION_FAILED` |
@@ -286,6 +293,11 @@ interface ActorContext {
 | `GET /v1/admin/org-settings` | `org.settings_manage` | المالك فقط (DEC-39) | `PERMISSION_DENIED` |
 | `PUT /v1/admin/org-settings` | `org.settings_manage` | مفاتيح `security.*` و`heartbeat.*` فقط؛ تحقق zod؛ تدقيق قبل/بعد | `VALIDATION_FAILED` |
 | `POST /v1/telemetry` | `telemetry.write` | بلا معلومات شخصية؛ حد معدل | `RATE_LIMITED` |
+| `GET /v1/settlement-statements` | `settlement.read` | كشوف المؤسسة غير المسودة (V2-041، DEC-547) | — |
+| `GET /v1/settlement-statements/{statementId}` | `settlement.read` | كشف المؤسسة وبنوده الفعالة؛ غيره أو المسودة كغير الموجود | `RESOURCE_NOT_FOUND` |
+| `POST /v1/settlement-statements/{statementId}/dispute` | `settlement.dispute` | كشف المؤسسة `issued`، سبب، `expected_version` | `RESOURCE_NOT_FOUND`، `INVALID_STATE_TRANSITION`، `VERSION_CONFLICT`، `REASON_REQUIRED` |
+| `GET /v1/system-subscription` | `settlement.read` | عقد المؤسسة وفواتيرها من بوينت (V2-042) | — |
+| `GET /v1/system-subscription/invoices/{invoiceId}` | `settlement.read` | فاتورة المؤسسة الضريبية أو إشعارها الدائن، رابط PDF قصير | `RESOURCE_NOT_FOUND` |
 
 ### 4.8 Webhooks والصحة والاتصال الفوري
 
@@ -293,6 +305,8 @@ interface ActorContext {
 |---|---|---|---|
 | `GET /webhooks/whatsapp` | `hub.verify_token` بمقارنة ثابتة الزمن | — | `WA_WEBHOOK_VERIFY_FAILED` |
 | `POST /webhooks/whatsapp` | `X-Hub-Signature-256` على الجسم الخام | التفاصيل في الملف 08 §7 | `WA_WEBHOOK_SIGNATURE_INVALID` |
+| `POST /webhooks/payments/moyasar` | الإصدار الثاني: سر الـWebhook المشترك (`secret_token`) في الجسم الخام بمقارنة ثابتة الزمن (DEC-511) | `docs/v2/05` §4.1 | `PAYMENT_WEBHOOK_SIGNATURE_INVALID` |
+| `POST /webhooks/einvoicing` | الإصدار الثاني: HMAC-SHA256 للجسم الخام في `X-Einvoice-Signature` بمقارنة ثابتة الزمن (DEC-543) | `docs/v2/05` §4.3 | `EINVOICE_WEBHOOK_SIGNATURE_INVALID` |
 | `GET /health/live` · `GET /health/ready` | عام | بلا أي بيانات | — |
 | `GET /metrics` | الشبكة الداخلية فقط | لا يُنشر للإنترنت | — |
 | `/ws` | جلسة صالحة + `Origin` ضمن القائمة المسموحة | الغرف في §7 | `AUTH_UNAUTHENTICATED` |
@@ -653,3 +667,5 @@ function requireDuty(a: ActorContext, poolId: string) {
 | مفتاح إعداد `security.admin_idle_minutes` (30) | **اعتُمد** في Canon §12: مهلة خمول لجلسات المالك والإدارة إضافة للعمر المطلق |
 | مفتاح إعداد `security.reveal_phone_per_hour` (20) | **اعتُمد** في Canon §12: حد كشف الجوال لكل مستخدم في §11 |
 | رمز `PAYLOAD_TOO_LARGE` (413) | **اعتُمد** في Canon §8 والملف 08 §4.15 |
+
+> **الإصدار الثاني (V2-036، V2-037؛ DEC-596، DEC-604):** صلاحيتان للمنصة في مصفوفة `docs/v2/02` §2.1: `platform.subscription_manage` (المالك والمالية) لاعتماد طلب الأهلية أو رفضه وإدارة قائمة المؤهلين لموقع — الرقم الجامعي يُرى في P-07 وحده ولا يصل المشغل ولا السجلات؛ و`platform.complaint_manage` (أدوار المنصة الأربعة) لشكاوى العملاء في P-13، والعميل مقنّع. الإجازات والإغلاقات تحت `platform.plan_manage`، والاسترداد الاستثنائي تحت `platform.refund_issue`. المشغل لا يرى شيئًا من ذلك (V2-D12).

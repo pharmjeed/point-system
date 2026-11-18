@@ -2,8 +2,16 @@ import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import pg from 'pg';
 import { Server, type Socket } from 'socket.io';
 import { rooms as roomNames } from '@point/shared';
+import { CUSTOMER_REALTIME_NAMESPACE, customerRoom } from '@point/shared/customer';
 import type { ActorContext } from '../core/actor-context/actor-context.js';
 import { loadActor } from '../core/actor-context/actor-loader.js';
+import {
+  bearerToken,
+  checkCustomerSocketSession,
+  customerTokenSession,
+  loadCustomerActor,
+  type CustomerActorContext,
+} from '../core/actor-context/customer-actor.js';
 import type { Clock } from '../core/clock/clock.js';
 import type { Env } from '../core/config/env.js';
 import type { Database } from '../core/db/database.js';
@@ -64,6 +72,24 @@ interface SocketData {
   rooms: Set<string>;
 }
 
+/** A socket of the customer namespace (V2-015, DEC-520): the account's session, one room. */
+interface CustomerSocketData {
+  customer: CustomerActorContext;
+}
+
+/** Rooms of the customer namespace start with this; nothing else is ever emitted there. */
+const CUSTOMER_ROOM_PREFIX = customerRoom('');
+
+/**
+ * The customer app's handshake (DEC-520): a native client (no Origin, or its own) carrying a customer access token
+ * as `Authorization: Bearer pca.…`. A web page cannot put that header on a WebSocket, and a cross-site request with
+ * it still needs the token itself — a header, never an ambient credential — so the origin rule of the staff app
+ * (CSWSH, 09 §7) has nothing to protect here (the same reasoning as DEC-497 for the HTTP routes).
+ */
+function customerHandshake(req: IncomingMessage): boolean {
+  return customerTokenSession('access', bearerToken(req.headers.authorization)) !== null;
+}
+
 /** Rooms are decided by the server only (canon §7.3, 09 §7, 11 §9.1). */
 export function roomsFor(a: ActorContext): Set<string> {
   const out = new Set<string>([roomNames.user(a.userId)]);
@@ -116,6 +142,8 @@ export class RealtimeServer {
     this.io = io;
     io.use(async (socket, next) => {
       try {
+        // a customer token never opens the staff namespace, even with a staff cookie beside it (DEC-497)
+        if (socket.handshake.headers.authorization) return next(authError('AUTH_UNAUTHENTICATED'));
         const token = parseCookies(socket.handshake.headers.cookie)[this.deps.env.SESSION_COOKIE_NAME];
         const actor = await loadActor(this.deps.db, token, this.deps.clock.now());
         if (actor.mustChangeSecret) return next(authError('AUTH_SECRET_CHANGE_REQUIRED'));
@@ -131,6 +159,7 @@ export class RealtimeServer {
       this.countReconnect(socket);
       this.onConnection(socket);
     });
+    this.attachCustomerNamespace(io);
     await this.listen();
     this.timer = setInterval(() => void this.revalidateAll(), this.deps.revalidateEveryMs ?? 60_000);
     this.timer.unref();
@@ -148,6 +177,7 @@ export class RealtimeServer {
    * with the canon connect_error code (AUTH_* or SERVICE_UNAVAILABLE, DEC-370), which a bare 403 here would lose.
    */
   private allowHandshake(req: IncomingMessage): boolean {
+    if (customerHandshake(req)) return true;
     const origin = req.headers.origin;
     if (origin !== undefined) return origin === this.origin;
     if ((req.headers.upgrade ?? '').toLowerCase() === 'websocket') return false;
@@ -233,6 +263,57 @@ export class RealtimeServer {
     });
   }
 
+  /**
+   * The customer namespace `/customer` (V2-015, DEC-520): authenticated by the customer access token of the handshake
+   * header only (no cookie is read; staff and platform sessions never open it), the socket joins its account's room
+   * and nothing else; `visit.updated` and `subscription.updated` reach it with a customer envelope (no organization,
+   * venue or staff ids). The session — not the 15-minute access token — is re-checked every minute: a revoked
+   * session, an expired refresh lifetime or a deleted account gets `session.revoked` and is disconnected. Delivery is
+   * at most once: the app reads the visit again on every (re)connection, as the staff app resyncs (11 §9.4).
+   */
+  private attachCustomerNamespace(io: Server): void {
+    const nsp = io.of(CUSTOMER_REALTIME_NAMESPACE);
+    nsp.use(async (socket, next) => {
+      try {
+        const customer = await loadCustomerActor(
+          this.deps.db,
+          socket.handshake.headers.authorization,
+          this.deps.clock.now(),
+        );
+        (socket.data as CustomerSocketData) = { customer };
+        next();
+      } catch (e) {
+        next(authError(asAppError(e)?.code ?? dbUnavailableError(e)?.code ?? 'AUTH_UNAUTHENTICATED'));
+      }
+    });
+    nsp.on('connection', (socket) => {
+      const { customer } = socket.data as CustomerSocketData;
+      void socket.join(customerRoom(customer.accountId));
+      metrics.wsConnections.inc({ venue: 'customer' });
+      socket.on('disconnect', () => metrics.wsConnections.dec({ venue: 'customer' }));
+    });
+  }
+
+  /** Re-checks one customer socket's session (see attachCustomerNamespace); undecided on a database failure. */
+  private async revalidateCustomer(socket: Socket): Promise<boolean> {
+    const { customer } = socket.data as CustomerSocketData;
+    try {
+      await checkCustomerSocketSession(this.deps.db, customer.sessionId, this.deps.clock.now());
+      return true;
+    } catch (e) {
+      const err = asAppError(e);
+      if (!err || !(err.code.startsWith('AUTH_') || err.code === 'ACCOUNT_DELETED')) return false;
+      socket.emit('session.revoked', {
+        id: cryptoRandomId(),
+        type: 'session.revoked',
+        occurred_at: this.deps.clock.now().toISOString(),
+        payload: { reason: (err.details?.reason as string | undefined) ?? err.code.toLowerCase() },
+      });
+      socket.disconnect(true);
+      return true;
+    }
+  }
+
   private applyRooms(socket: Socket, next: Set<string>) {
     const data = socket.data as SocketData;
     for (const r of data.rooms) if (!next.has(r)) void socket.leave(r);
@@ -287,6 +368,10 @@ export class RealtimeServer {
     for (const socket of this.io.of('/').sockets.values()) {
       checked++;
       if (!(await this.revalidateQuietly(socket))) undecided++;
+    }
+    for (const socket of this.io.of(CUSTOMER_REALTIME_NAMESPACE).sockets.values()) {
+      checked++;
+      if (!(await this.revalidateCustomer(socket))) undecided++;
     }
     if (undecided)
       this.deps.logger.warn(
@@ -369,7 +454,22 @@ export class RealtimeServer {
     }
     const { rooms, message } = parsed;
     if (!Array.isArray(rooms) || !message?.event) return;
-    const userRooms = rooms.filter((r) => r.startsWith('user:'));
+    // the customer namespace (DEC-520): its own rooms, its own envelope; never mixed with a staff publication
+    const customerRooms = rooms.filter((r) => typeof r === 'string' && r.startsWith(CUSTOMER_ROOM_PREFIX));
+    if (customerRooms.length) {
+      this.io
+        .of(CUSTOMER_REALTIME_NAMESPACE)
+        .to(customerRooms)
+        .emit(message.event, {
+          id: message.id,
+          type: message.event,
+          occurred_at: message.occurred_at ?? this.deps.clock.now().toISOString(),
+          payload: message.data,
+        });
+      if (customerRooms.length === rooms.length) return;
+    }
+    const staffRooms = rooms.filter((r) => !customerRooms.includes(r));
+    const userRooms = staffRooms.filter((r) => r.startsWith('user:'));
     if (message.event === 'session.revoked') {
       // only the sockets whose session is actually revoked get it (a logout on one device keeps the others)
       for (const r of userRooms)
@@ -379,7 +479,7 @@ export class RealtimeServer {
         }
       return;
     }
-    this.io.to(rooms).emit(message.event, this.envelope(parsed.org_id, message));
+    this.io.to(staffRooms).emit(message.event, this.envelope(parsed.org_id, message));
     this.observeDispatchPublish(message);
     // membership may have changed (duty start/end, scope change): re-evaluate the users concerned
     if (message.event === 'sync.required' || message.event === 'driver.state_changed') {

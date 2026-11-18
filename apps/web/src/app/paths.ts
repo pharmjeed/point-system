@@ -18,6 +18,17 @@ export const paths = {
   reports: '/reports', // S-11
   incidents: '/incidents', // S-12
   admin: '/admin', // S-13
+  platform: '/platform', // P-01 (V2, docs/v2/02 §2)
+  platformLogin: '/platform/login', // V2-002
+  platformVenues: '/platform/venues', // P-04 (V2-004)
+  platformOperators: '/platform/operators', // P-02 (V2-003); P-03 is /platform/operators/:orgId
+  platformCustomers: '/platform/customers', // P-06 (V2-024); one account is /platform/customers/:accountId
+  platformPayments: '/platform/payments', // P-08 (V2-024); …/reconciliation, …/alerts, …/:paymentId
+  platformPlans: '/platform/plans', // P-05 (V2-030)
+  platformSubscriptions: '/platform/subscriptions', // P-07 (V2-035); one subscription is …/:subscriptionId
+  platformComplaints: '/platform/complaints', // P-13 (V2-037)
+  platformSettlements: '/platform/settlements', // P-09 (V2-041); one statement is /platform/settlements/:statementId
+  platformInvoices: '/platform/invoices', // P-10 (V2-040); one document is /platform/invoices/:invoiceId
   gallery: '/_gallery', // dev only (VITE_ENABLE_GALLERY)
 } as const;
 
@@ -31,7 +42,35 @@ const STAFF_PREFIXES = [
   '/incidents',
   '/admin',
   '/s',
+  '/platform',
 ];
+
+/** P-03 — one operator of the platform console (V2-003). */
+export const platformOperatorPath = (orgId: string) =>
+  `${paths.platformOperators}/${encodeURIComponent(orgId)}`;
+
+/** P-06 — one customer account; P-08 — one online payment, one reconciliation run (V2-024). */
+export const platformCustomerPath = (accountId: string) =>
+  `${paths.platformCustomers}/${encodeURIComponent(accountId)}`;
+export const platformPaymentPath = (paymentId: string) =>
+  `${paths.platformPayments}/${encodeURIComponent(paymentId)}`;
+export const platformReconciliationPath = (runId?: string) =>
+  `${paths.platformPayments}/reconciliation${runId ? `/${encodeURIComponent(runId)}` : ''}`;
+export const platformAlertsPath = `${paths.platformPayments}/alerts`;
+/** P-07 — one subscription (V2-035). */
+export const platformSubscriptionPath = (id: string) =>
+  `${paths.platformSubscriptions}/${encodeURIComponent(id)}`;
+
+/** P-09 — one settlement statement; P-10 — one invoice or credit note (V2-040 / V2-041). */
+export const platformSettlementPath = (statementId: string) =>
+  `${paths.platformSettlements}/${encodeURIComponent(statementId)}`;
+export const platformInvoicePath = (invoiceId: string) =>
+  `${paths.platformInvoices}/${encodeURIComponent(invoiceId)}`;
+
+/** The V2 platform console: its own session and cookie; never the staff session handling (DEC-462). */
+export function isPlatformArea(pathname: string): boolean {
+  return pathname === paths.platform || pathname.startsWith(`${paths.platform}/`);
+}
 
 /** Which theme/shell area a path belongs to. Login, D-02 and D-15 are driver screens. */
 export function areaOf(pathname: string): 'driver' | 'staff' {
@@ -55,6 +94,8 @@ export const ADMIN_PERMISSIONS = [
   'wa.templates_manage',
   'retention.manage',
   'org.settings_manage',
+  'venue.manage', // «ملف الموقع العام» (V2-004)
+  'settlement.read', // «كشف التسوية» O-05 and «اشتراك النظام» O-06 (V2-041 / V2-042)
 ];
 
 export const canAdmin = (me: Me) => me.permissions.some((p) => ADMIN_PERMISSIONS.includes(p));

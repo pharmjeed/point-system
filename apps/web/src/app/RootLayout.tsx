@@ -16,7 +16,7 @@ import { requestResync, stopRealtime } from '@/realtime/manager';
 import { noteContact } from '@/realtime/syncStore';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
-import { areaOf, paths } from './paths';
+import { areaOf, isPlatformArea, paths } from './paths';
 import { isSessionEndError, sessionEndFrom, sessionEndPath } from './sessionEnd';
 
 const PUBLIC_PATHS: string[] = [paths.login, paths.staffLogin, paths.sessionEnded];
@@ -57,8 +57,10 @@ export function RootLayout() {
     () =>
       onApiError((error, event) => {
         if (event.path.startsWith('/v1/auth/')) return; // the sign-in screens handle their own errors
+        // V2: platform requests and screens have their own session; they never end the staff one (DEC-462)
+        if (event.path.startsWith('/v1/platform/')) return;
         const pathname = window.location.pathname;
-        if (PUBLIC_PATHS.includes(pathname)) return;
+        if (PUBLIC_PATHS.includes(pathname) || isPlatformArea(pathname)) return;
         const area = areaOf(pathname);
         if (isSessionEndError(error)) {
           const end = sessionEndFrom(error);

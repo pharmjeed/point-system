@@ -8,6 +8,7 @@
 #   docker-compose.local-db.yml   PostgreSQL 16 here instead of a managed service
 #   docker-compose.minio.yml      MinIO here, served by Caddy on the app origin (path-style buckets)
 #   docker-compose.simulator.yml  the WhatsApp simulator, for staging before the Meta assets of Q-03 only
+#   docker-compose.payment-simulator.yml  the payment simulator (MOYASAR_MODE=simulator), staging only (DEC-630)
 name: point
 
 x-logging: &logging
@@ -21,6 +22,9 @@ x-backend: &backend
   build:
     context: ../..
     dockerfile: infra/docker/Dockerfile
+    # POINT's own images carry this label: infra/deploy/install.sh prunes only dangling images with it (DEC-632)
+    labels:
+      sa.point.stack: point
   env_file:
     - ${POINT_ENV_FILE:-../../.env}
   restart: unless-stopped
@@ -101,6 +105,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
+      labels:
+        sa.point.stack: point
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
         VITE_WS_PATH: ${VITE_WS_PATH:-/ws}

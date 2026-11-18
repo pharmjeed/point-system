@@ -1,5 +1,5 @@
 import { seedKeySlotId, seedSpotId } from '@point/db/seed';
-import { dispatchJobs, ticketsCustodyJobs } from '@point/server';
+import { dispatchJobs, ticketsCustodyJobs, type Logger } from '@point/server';
 import type { OutboundMessage } from '../../../tools/wa-simulator/src/index.js';
 import {
   addPhotos,
@@ -32,8 +32,13 @@ export interface CustomerApp extends WaTestApp {
 
 export const DISPLAY_PHONE = '+966500000999';
 
-export async function createCustomerApp(opts: { env?: Record<string, string> } = {}): Promise<CustomerApp> {
-  const w = await createWaTestApp({ env: { WA_DISPLAY_PHONE_E164: DISPLAY_PHONE, ...(opts.env ?? {}) } });
+export async function createCustomerApp(
+  opts: { env?: Record<string, string>; logger?: Logger } = {},
+): Promise<CustomerApp> {
+  const w = await createWaTestApp({
+    env: { WA_DISPLAY_PHONE_E164: DISPLAY_PHONE, ...(opts.env ?? {}) },
+    ...(opts.logger ? { logger: opts.logger } : {}),
+  });
   for (const h of [...dispatchJobs(), ...ticketsCustodyJobs()]) w.dispatcher.register(h);
   (w.db.config as { lockTimeoutMs?: number }).lockTimeoutMs = 20000;
   (w.app.getHttpServer() as { setMaxListeners(n: number): unknown }).setMaxListeners(64);

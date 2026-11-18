@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' --filter './apps/**' --filter './tools/**' build",
     "dev": "node scripts/dev.mjs",
-    "test": "vitest run --project unit --project web-unit",
+    "test": "vitest run --project unit --project web-unit --project customer-unit",
     "test:int": "vitest run --project integration",
     "test:e2e": "pnpm --filter @point/web test:e2e",
     "test:race": "node scripts/race-loop.mjs",
@@ -28,6 +28,7 @@
     "progress": "node tools/progress/build.mjs",
     "ops:restore-drill": "bash infra/backup/restore-drill.sh",
     "ops:load": "node infra/load/run.mjs",
+    "ops:load:v2": "node infra/load/v2.mjs",
     "ops:chaos": "node infra/chaos/run.mjs"
   },
   "devDependencies": {

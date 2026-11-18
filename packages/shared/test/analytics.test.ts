@@ -61,7 +61,7 @@ describe('server analytics events (15 §7)', () => {
   });
 
   it('the catalog of 15 §7 lists exactly these names', () => {
-    expect(serverRows).toHaveLength(71);
+    expect(serverRows).toHaveLength(73); // + payment_online_paid / payment_online_refunded (V2-022)
     expect(serverRows.reduce((n, r) => n + r.enums.size, 0)).toBeGreaterThan(40);
     expect(serverRows.map((r) => r.name).sort()).toEqual([...SERVER_ANALYTICS_NAMES].sort());
   });

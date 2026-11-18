@@ -1,0 +1,25 @@
+{
+  "name": "@point/payment-simulator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local fake of the Moyasar payments API plus a webhook emitter and test cards (dev/test only)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@point/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsc -p tsconfig.build.json && node dist/main.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

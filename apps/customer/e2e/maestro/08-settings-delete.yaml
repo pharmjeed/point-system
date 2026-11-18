@@ -1,0 +1,54 @@
+# C-19 and C-20 on a device (mirrors e2e/account.spec.ts): the deletion confirmed by a fresh WhatsApp code from the
+# dev banner, back to C-01; then the language. Native only: after «English» the texts change at once and the layout
+# direction on the next launch (I18nManager.forceRTL, DEC-509) — checked by relaunching. The fake backend lives in
+# memory, so the relaunched app is signed out (README «الخادم الوهمي») and opens on its first screen, in English, LTR.
+appId: sa.point.app
+name: C-19/C-20 — delete the account, language
+tags: [h2, r6]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340008'
+- tapOn: 'تخطَّ الآن'
+- tapOn:
+    id: home-account
+- assertVisible: 'الإعدادات'
+- tapOn:
+    id: settings-delete-account
+- assertVisible: 'حذف الحساب نهائي ولا يمكن التراجع عنه.'
+- tapOn:
+    id: delete-send-code
+- extendedWaitUntil:
+    visible: 'رمز المحاكاة.*'
+    timeout: 10000
+- copyTextFrom:
+    text: 'رمز المحاكاة.*'
+- evalScript: ${output.otp = maestro.copiedText.replace(/[^0-9]/g, '').slice(-6)}
+- tapOn:
+    id: code-input
+- inputText: ${output.otp}
+- hideKeyboard
+- tapOn:
+    id: delete-confirm
+- extendedWaitUntil:
+    visible:
+      id: welcome-start
+    timeout: 15000
+# C-19 language: a new account, English, relaunch
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340009'
+- tapOn: 'تخطَّ الآن'
+- tapOn:
+    id: home-account
+- tapOn: 'English'
+- assertVisible: 'Settings'
+- assertVisible: 'Language changed.*'
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: 'Welcome to .*|Mobile number'
+    timeout: 15000
+- takeScreenshot: c19-english-ltr

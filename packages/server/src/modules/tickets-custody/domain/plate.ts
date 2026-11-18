@@ -1,44 +1,16 @@
+import { SAUDI_PLATE_LETTERS, normalizeSaudiPlate } from '@point/shared';
 import { AppError } from '../../../core/errors/app-error.js';
 
 /**
  * Saudi plate normalization (07 §1.8, canon §15): up to 4 Latin digits + three Arabic plate letters stored
  * space-separated, with the common Latin equivalent derived from them. Other countries keep a free `raw`.
+ *
+ * The Saudi rule itself is the shared `normalizeSaudiPlate` (packages/shared/src/vehicle.ts), which the customer app
+ * and the customer API (`customer_vehicles`, V2-010) use too, so a plate typed by a driver and the same plate typed
+ * by its owner normalise to the same row values (DEC-499); this module adds the server's error type, the optional
+ * `letters_en` cross-check and the non-Saudi `raw` path. tickets-plate.test.ts proves the V1 behaviour unchanged.
  */
-export const PLATE_LETTER_MAP: Readonly<Record<string, string>> = Object.freeze({
-  ا: 'A',
-  ب: 'B',
-  ح: 'J',
-  د: 'D',
-  ر: 'R',
-  س: 'S',
-  ص: 'X',
-  ط: 'T',
-  ع: 'E',
-  ق: 'G',
-  ك: 'K',
-  ل: 'L',
-  م: 'Z',
-  ن: 'N',
-  ه: 'H',
-  و: 'U',
-  ى: 'V',
-});
-
-/** Spelling variants a keyboard may produce for the same plate letter. */
-const LETTER_VARIANTS: Readonly<Record<string, string>> = Object.freeze({
-  أ: 'ا',
-  إ: 'ا',
-  آ: 'ا',
-  ٱ: 'ا',
-  ي: 'ى',
-  ئ: 'ى',
-  ی: 'ى',
-  ة: 'ه',
-  ھ: 'ه',
-  ۀ: 'ه',
-  ک: 'ك',
-  ؤ: 'و',
-});
+export const PLATE_LETTER_MAP: Readonly<Record<string, string>> = SAUDI_PLATE_LETTERS;
 
 export interface PlateInput {
   country?: string;
@@ -63,12 +35,6 @@ export function latinDigits(s: string): string {
     .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
 }
 
-/** Whitespace, tatweel (U+0640) and Arabic diacritics (U+064B–U+065F, U+0670) carry no plate letter. */
-function isIgnorable(c: string): boolean {
-  const cp = c.codePointAt(0) ?? 0;
-  return /\s/.test(c) || cp === 0x0640 || (cp >= 0x064b && cp <= 0x065f) || cp === 0x0670;
-}
-
 function invalid(field: string, reason: 'digits' | 'letters' | 'mapping' | 'raw'): AppError {
   return new AppError('PLATE_INVALID', { field, reason });
 }
@@ -81,26 +47,14 @@ export function normalizePlate(input: PlateInput): NormalizedPlate {
     if (!raw || raw.length > 20) throw invalid('plate.raw', 'raw');
     return { country, digits: null, letters_ar: null, letters_en: null, raw: latinDigits(raw).toUpperCase() };
   }
-  const digits = latinDigits(input.digits ?? '').replace(/\s+/g, '');
-  if (!/^[0-9]{1,4}$/.test(digits)) throw invalid('plate.digits', 'digits');
-
-  const letters = [...(input.letters_ar ?? '')]
-    .filter((c) => !isIgnorable(c))
-    .map((c) => LETTER_VARIANTS[c] ?? c);
-  if (letters.length !== 3 || letters.some((c) => !(c in PLATE_LETTER_MAP)))
-    throw invalid('plate.letters_ar', 'letters');
-  const derived = letters.map((c) => PLATE_LETTER_MAP[c]!);
+  const sa = normalizeSaudiPlate({ digits: input.digits, letters_ar: input.letters_ar });
+  if (!sa.ok) throw invalid(sa.field, sa.reason);
+  const { digits, letters_ar } = sa.plate;
   if (input.letters_en !== undefined && input.letters_en !== null) {
     const given = input.letters_en.replace(/\s+/g, '').toUpperCase();
-    if (given !== derived.join('')) throw invalid('plate.letters_en', 'mapping');
+    if (given !== sa.plate.letters_en.replace(/ /g, '')) throw invalid('plate.letters_en', 'mapping');
   }
-  return {
-    country,
-    digits,
-    letters_ar: letters.join(' '),
-    letters_en: derived.join(' '),
-    raw: null,
-  };
+  return { country, digits, letters_ar, letters_en: sa.plate.letters_en, raw: null };
 }
 
 /** Plate schema of 07 (`display` computed). */

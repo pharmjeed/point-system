@@ -1,3 +1,4 @@
+import { waCatalog, waTemplateParams } from '@point/shared';
 import { describe, expect, it } from 'vitest';
 import {
   classifyGraphFailure,
@@ -239,6 +240,7 @@ describe('12 §5.11 rendering', () => {
 
   it('W-01: body parameters, the quick-reply token, the opaque id; redacted copies never hold the token', () => {
     const m = buildTemplateMessage({
+      catalog: waCatalog('BRAND_X'),
       purpose: 'W-01',
       recipient: { to: '+966551234567', recipient: null },
       params: ['قاعة\nريماس', '125', 'تويوتا'],
@@ -265,10 +267,13 @@ describe('12 §5.11 rendering', () => {
     expect(JSON.stringify(m.payloadRedacted)).toContain(TOKEN_MASK);
     expect(m.payloadRedacted.to).toBe('•••567');
     expect(m.bodyRedacted).toContain('تذكرة 125');
+    // the customer brand comes from configuration (DEC-470)
+    expect(m.bodyRedacted.startsWith('BRAND_X — قاعة ريماس')).toBe(true);
   });
 
   it('W-05: the handover code only in the request; masked everywhere else (12 §5.10)', () => {
     const m = buildTemplateMessage({
+      catalog: waCatalog(),
       purpose: 'W-05',
       recipient: { to: null, recipient: 'SA.bsuid.1' },
       params: ['125', '482731'],
@@ -280,6 +285,33 @@ describe('12 §5.11 rendering', () => {
     expect(m.bodyRedacted).toContain(`رمز التسليم: ${CODE_MASK}`);
     expect(JSON.stringify(m.payloadRedacted)).not.toContain('482731');
     expect(m.bodyRedacted).not.toContain('482731');
+  });
+
+  it('the v2 set (V2-050, DEC-555): point_* names, the venue in W-05 and the code still masked', () => {
+    const catalog = waCatalog('BRAND_X', { set: 'v2' });
+    const m = buildTemplateMessage({
+      catalog,
+      purpose: 'W-05',
+      recipient: { to: '+966551234567', recipient: null },
+      params: waTemplateParams(catalog.byId('W-05'), {
+        display_number: '125',
+        venue_name: 'قاعة ريماس',
+        claim_code: '482731',
+      }),
+      secretParams: ['482731'],
+      opaque: 'wam:x',
+    });
+    expect(m.templateName).toBe('point_vehicle_ready_v2');
+    expect(m.request.template).toMatchObject({
+      name: 'point_vehicle_ready_v2',
+      components: [
+        { type: 'body', parameters: ['125', 'قاعة ريماس', '482731'].map((text) => ({ type: 'text', text })) },
+      ],
+    });
+    expect(m.bodyRedacted).toBe(
+      `سيارتك رقم 125 جاهزة عند نقطة التسليم في قاعة ريماس.\nرمز التسليم: ${CODE_MASK}\nأعطِ الرمز للسائق عند الاستلام ولا تشاركه مع غيره.`,
+    );
+    expect(JSON.stringify(m.payloadRedacted)).not.toContain('482731');
   });
 
   it('session replies: text, no link previews, quoted context', () => {

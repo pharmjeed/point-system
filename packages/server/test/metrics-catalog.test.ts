@@ -22,8 +22,8 @@ describe('metric catalog (05 §12.2)', () => {
   const docs = catalog();
 
   it('reads the catalog', () => {
-    expect(docs).toHaveLength(47);
-    expect(Object.keys(metrics)).toHaveLength(46); // every catalog metric but the backup textfile one
+    expect(docs).toHaveLength(49); // + the 2 V2-021 payment metrics
+    expect(Object.keys(metrics)).toHaveLength(48); // every catalog metric but the backup textfile one
     expect(docs.map((d) => d.name)).toContain('point_wa_service_messages_month');
   });
 

@@ -76,6 +76,9 @@ const HANDLED: ReadonlySet<string> = new Set([
   'ticket.reparking',
   'payment.waived',
   'payment.reversed',
+  // V2-022 (DEC-522): paid in the app, or that payment refunded in full before the handover
+  'payment.online_paid',
+  'payment.online_refunded',
 ]);
 
 class Plan {
@@ -307,6 +310,8 @@ class Plan {
         }
         return;
       case 'payment.waived':
+      case 'payment.online_paid':
+      case 'payment.online_refunded':
       case 'payment.reversed': {
         // payment_due on the open task's card (a reversal with a replacement leaves it `collected`)
         const ticketId = str(p.ticket_id);

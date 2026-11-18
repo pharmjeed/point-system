@@ -12,6 +12,8 @@ services:
     build:
       context: ../docker
       dockerfile: minio.Dockerfile
+      labels:
+        sa.point.stack: point
     command: ['minio', 'server', '/data']
     restart: unless-stopped
     environment:

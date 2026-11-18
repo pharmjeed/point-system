@@ -1,0 +1,36 @@
+# C-07 → C-08 on a device (mirrors e2e/locations-vehicles-pass.spec.ts). Native only: the map view (Apple Maps on
+# iOS; Google Maps on Android when the build has CUSTOMER_ANDROID_GOOGLE_MAPS_API_KEY, else the info banner) and
+# «فتح في الخرائط» handing over to the maps app.
+appId: sa.point.app
+name: C-07/C-08 — locations, map, location page
+tags: [h2, r2]
+---
+- runFlow:
+    file: subflows/sign-up.yaml
+    env:
+      PHONE: '512340002'
+- tapOn: 'تخطَّ الآن'
+- tapOn:
+    id: home-locations
+- assertVisible: 'المواقع'
+- tapOn: 'يقبل الاشتراك'
+- runFlow:
+    when:
+      visible: 'خريطة'
+    commands:
+      - tapOn: 'خريطة'
+      - takeScreenshot: c07-map
+      - tapOn: 'قائمة'
+- runFlow:
+    when:
+      visible: 'الخريطة غير متاحة في هذه النسخة.*'
+    commands:
+      - takeScreenshot: c07-no-map-key
+- tapOn: 'برج الأعمال — العليا.*'
+- assertVisible: 'ساعات العمل'
+- assertVisible: 'الأسعار'
+- assertVisible:
+    id: location-subscribe
+- tapOn: 'فتح في الخرائط'
+- takeScreenshot: c08-open-in-maps
+- launchApp

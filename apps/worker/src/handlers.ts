@@ -71,6 +71,22 @@ services.push((deps) => {
 import { useCasesJobs } from '@point/server';
 handlers.push(...useCasesJobs());
 
+import { customerAccountsJobs } from '@point/server';
+handlers.push(...customerAccountsJobs());
+
+import { paymentsOnlineJobs, paymentsOnlineWorkerService } from '@point/server';
+handlers.push(...paymentsOnlineJobs());
+services.push((deps) => paymentsOnlineWorkerService(deps));
+
+import { subscriptionsJobs } from '@point/server';
+handlers.push(...subscriptionsJobs());
+import { invoicingJobs } from '@point/server';
+handlers.push(...invoicingJobs());
+
+import { settlementJobs, settlementWorkerService } from '@point/server';
+handlers.push(...settlementJobs());
+services.push((deps) => settlementWorkerService(deps));
+
 export function allHandlers(): JobHandler[] {
   return handlers;
 }

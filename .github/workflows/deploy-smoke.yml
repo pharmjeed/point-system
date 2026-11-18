@@ -3,16 +3,26 @@
 #   gateway  a shared Caddy gateway already owns 80/443 and imports /data/conf.d/*.caddyfile (the shape of the
 #            production server, where other projects run): the installer adds its site file and reloads it
 # and the backend image built for linux/arm64 (the production server is an Ampere A1) with its native modules.
-# Runs only when the deployment files change, or by hand (limited minutes on a private repository).
+# V2 (DEC-635): the staging stack with the payment simulator — the customer API, the /customer socket handshake, the
+# platform console and its owner, a payment-simulator round trip both ways, the free-disk guard, and an install of
+# the first release upgraded in place (the new .env keys appended, every secret kept).
+# Runs on pull requests to ANY base (the V2 pull request targets the V1 branch) when the deployment files or the code
+# in the stack change, or by hand (limited minutes on a private repository).
 name: Deploy smoke
 
 on:
   pull_request:
     paths:
       - 'infra/**'
+      - 'apps/**'
+      - '!apps/customer/**'
+      - 'packages/db/**'
+      - 'packages/server/src/core/config/**'
+      - '.env.example'
       - '.github/workflows/deploy-smoke.yml'
       - 'pnpm-lock.yaml'
       - 'tools/wa-simulator/**'
+      - 'tools/payment-simulator/**'
   workflow_dispatch:
 
 concurrency:
@@ -70,11 +80,21 @@ jobs:
           POINT_YES: '1'
           POINT_MODE: ${{ matrix.mode }}
           ACME_EMAIL: ci@point.test
+          # hosted runners have less free disk than a server; the guard itself has its own step below
+          POINT_MIN_FREE_GB: '5'
         run: |
           [ "$POINT_MODE" != gateway ] || export CURL_CA_BUNDLE="$RUNNER_TEMP/gw-ca.crt"
           bash infra/deploy/install.sh 2>&1 | tee "$RUNNER_TEMP/install.log"
           test "${PIPESTATUS[0]}" = 0
           test "$(stat -c %a .env)" = 600
+          # disk report before/after the build, and no secret of .env in the output
+          grep -q 'before: .* GB free' "$RUNNER_TEMP/install.log"
+          grep -q 'after: .* GB free' "$RUNNER_TEMP/install.log"
+          grep -q 'payment simulator reachable from the api' "$RUNNER_TEMP/install.log"
+          for k in SESSION_SECRET MOYASAR_SECRET_KEY MOYASAR_WEBHOOK_SECRET EINVOICE_WEBHOOK_SECRET POINT_API_DB_PASSWORD; do
+            v=$(sed -n "s/^$k=//p" .env); test -n "$v"
+            if grep -qF "$v" "$RUNNER_TEMP/install.log"; then echo "$k is in the output"; exit 1; fi
+          done
 
       - name: The site works through the front door
         run: |
@@ -96,7 +116,7 @@ jobs:
           # the private bucket is on the origin and refuses an unsigned request
           test "$(c -o /dev/null -w '%{http_code}' $base/point-media/x.jpg)" = 403
           # the first owner signs in with the one-time password: restricted session (change it, then MFA)
-          pw=$(sed -n 's/.*temporary password (shown once): //p' "$RUNNER_TEMP/install.log" | tr -d '\r')
+          pw=$(sed -n '/^owner created/,/temporary password/ s/.*temporary password (shown once): //p' "$RUNNER_TEMP/install.log" | tr -d '\r')
           test -n "$pw"
           body=$(jq -nc --arg p "$OWNER_PHONE" --arg s "$pw" '{phone:$p, secret:$s}')
           r=$(c -c "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' -H 'X-Requested-With: point-web' \
@@ -110,6 +130,52 @@ jobs:
           # the WhatsApp simulator runs (staging), never published on its own
           bash infra/deploy/pc.sh exec -T wa-simulator wget -qO- http://127.0.0.1:4010/_sim/health
 
+      - name: V2 — customer API, customer socket, platform console, payment simulator
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.mode }}" = gateway ]; then CA="$RUNNER_TEMP/gw-ca.crt"; else CA="$RUNNER_TEMP/point-ca.crt"; fi
+          base=https://$DOMAIN
+          c() { curl -sS --cacert "$CA" "$@"; }
+          # the customer app's sign-in code request (/v1/customer/*: no Origin, no cookie, CSRF-exempt by design) reaches
+          # the customer module; until the owner creates the WhatsApp channel (S-13, §14) it answers «no channel»
+          c -H 'Content-Type: application/json' \
+            -d '{"phone_e164":"+966550000002","device_id":"ci-device-0001","platform":"android"}' \
+            $base/v1/customer/auth/otp | jq -e '.error.code == "WA_CHANNEL_UNAVAILABLE" and .error.details.reason == "no_channel"'
+          # without a token the customer API answers 401 (the api, not the PWA)
+          test "$(c -o /dev/null -w '%{http_code}' $base/v1/customer/me)" = 401
+          # the customer socket (namespace /customer on /ws): a WebSocket upgrade with a customer-shaped Bearer token is
+          # accepted through every proxy hop (the namespace itself then checks the session)
+          code=$(c --http1.1 -o /dev/null -w '%{http_code}' --max-time 5 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+                   -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: cG9pbnQtY2ktc21va2UtMQ==' \
+                   -H 'Authorization: Bearer pca.7d3f1c2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' "$base/ws/?EIO=4&transport=websocket" 2>/dev/null || true)
+          test "$code" = 101
+          # the platform console page (the PWA's /platform routes) and its first owner's restricted session
+          c -o "$RUNNER_TEMP/platform.html" -w '%{http_code}' $base/platform/login | grep -qx 200
+          grep -q '<div id="root">' "$RUNNER_TEMP/platform.html"
+          ppw=$(sed -n '/^platform owner created/,/temporary password/ s/.*temporary password (shown once): //p' "$RUNNER_TEMP/install.log" | tr -d '\r')
+          test -n "$ppw"
+          body=$(jq -nc --arg p "$OWNER_PHONE" --arg s "$ppw" '{phone:$p, secret:$s}')
+          c -c "$RUNNER_TEMP/pjar" -H 'Content-Type: application/json' -H 'X-Requested-With: point-web' \
+            -H "Origin: $base" -d "$body" $base/v1/platform/auth/login |
+            jq -e '.data.must_change_secret == true and .data.mfa_setup_required == true'
+          grep -q '__Host-point_psid' "$RUNNER_TEMP/pjar"
+          # the V2 webhooks reach the api (not the PWA): an unsigned body is refused by the api
+          test "$(c -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{}' $base/webhooks/payments/moyasar)" != 200
+          c -H 'Content-Type: application/json' -d '{}' $base/webhooks/payments/moyasar | jq -e '.error.code'
+          c -H 'Content-Type: application/json' -d '{}' $base/webhooks/einvoicing | jq -e '.error.code'
+          bash infra/deploy/smoke-payments.sh
+
+      - name: The free-disk guard stops before building and leaves the stack running
+        env:
+          POINT_YES: '1'
+          POINT_MIN_FREE_GB: '100000'
+        run: |
+          [ "${{ matrix.mode }}" != gateway ] || export CURL_CA_BUNDLE="$RUNNER_TEMP/gw-ca.crt"
+          if bash infra/deploy/install.sh > "$RUNNER_TEMP/guard.log" 2>&1; then cat "$RUNNER_TEMP/guard.log"; exit 1; fi
+          grep -q 'a build needs at least 100000 GB' "$RUNNER_TEMP/guard.log"
+          if grep -q 'Building the images' "$RUNNER_TEMP/guard.log"; then exit 1; fi
+          bash infra/deploy/pc.sh exec -T api node -e "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+
       - name: Gateway — simulator page behind its password, the other site untouched
         if: matrix.mode == 'gateway'
         run: |
@@ -120,7 +186,7 @@ jobs:
           test "$(curl -sS --cacert "$CA" -o /dev/null -w '%{http_code}' -u "sim:$pw" https://sim.point.test/)" = 200
           curl -fsS --cacert "$CA" https://other.point.test/ | grep -q 'other site'
           # nothing of POINT listens on a public interface
-          ! ss -ltnH | awk '{print $4}' | grep -E '^(0\.0\.0\.0|\[::\]|\*):(3000|4010|5432|8095|8097|9000|9464|9465)$'
+          ! ss -ltnH | awk '{print $4}' | grep -E '^(0\.0\.0\.0|\[::\]|\*):(3000|4010|4020|5432|8095|8097|8495|9000|9464|9465)$'
 
       - name: Re-running the installer is the update and keeps the secrets
         env:
@@ -128,10 +194,37 @@ jobs:
           POINT_SKIP_BUILD: '1'
         run: |
           [ "${{ matrix.mode }}" != gateway ] || export CURL_CA_BUNDLE="$RUNNER_TEMP/gw-ca.crt"
-          before=$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD)=' .env | sha256sum)
+          before=$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD|MOYASAR_WEBHOOK_SECRET)=' .env | sha256sum)
           bash infra/deploy/install.sh
-          test "$before" = "$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD)=' .env | sha256sum)"
+          test "$before" = "$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD|MOYASAR_WEBHOOK_SECRET)=' .env | sha256sum)"
           test "$(grep -c '^POINT_OWNER_CREATED=' .env)" = 1
+          test "$(grep -c '^POINT_PLATFORM_OWNER_CREATED=' .env)" = 1
+          test "$(grep -c '^MOYASAR_SECRET_KEY=' .env)" = 1
+
+      - name: An install of the first release is upgraded in place (DEC-631)
+        env:
+          POINT_YES: '1'
+          POINT_SKIP_BUILD: '1'
+        run: |
+          set -euo pipefail
+          [ "${{ matrix.mode }}" != gateway ] || export CURL_CA_BUNDLE="$RUNNER_TEMP/gw-ca.crt"
+          # back to the shape of a V1 install: no payment simulator, none of the V2 keys in .env
+          bash infra/deploy/pc.sh rm -sf payment-simulator
+          v2='PLATFORM_SESSION_COOKIE_NAME|WA_TEMPLATE_SET|CUSTOMER_[A-Z_]+|MOYASAR_[A-Z_]+|EINVOICE_[A-Z_]+|INVOICE_SELLER_[A-Z_]+|EXPO_ACCESS_TOKEN|POINT_PLATFORM_OWNER_CREATED'
+          sed -i -E "/^($v2)=/d" .env
+          sed -i 's#:infra/compose/docker-compose.payment-simulator.yml##' .env
+          if grep -qE "^($v2)=" .env; then exit 1; fi
+          kept=$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD|WA_APP_SECRET)=' .env | sha256sum)
+          bash infra/deploy/install.sh 2>&1 | tee "$RUNNER_TEMP/upgrade.log"
+          test "${PIPESTATUS[0]}" = 0
+          grep -q 'new key(s) for this version' "$RUNNER_TEMP/upgrade.log"
+          test "$kept" = "$(grep -E '^(SESSION_SECRET|DATA_ENCRYPTION_KEY|POINT_API_DB_PASSWORD|WA_APP_SECRET)=' .env | sha256sum)"
+          test "$(stat -c %a .env)" = 600
+          grep -q '^MOYASAR_BASE_URL=http://payment-simulator:4020$' .env
+          grep -q 'docker-compose.payment-simulator.yml' .env
+          # the new secrets are not printed; the simulator came back with them and the round trip works
+          if grep -qF "$(sed -n 's/^MOYASAR_WEBHOOK_SECRET=//p' .env)" "$RUNNER_TEMP/upgrade.log"; then exit 1; fi
+          bash infra/deploy/smoke-payments.sh
 
       - name: Logs on failure
         if: failure()

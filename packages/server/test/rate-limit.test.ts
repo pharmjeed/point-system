@@ -118,6 +118,11 @@ describe('07 §1.9 policy', () => {
     expect(rateLimitClassOf('POST', '/v1/tickets/:ticketId/void')).toBe('command');
     expect(rateLimitClassOf('GET', '/v1/tickets/:ticketId')).toBe('read');
     expect(rateLimitClassOf('PUT', '/v1/me/devices/:deviceId')).toBe('device');
+    // V2 platform routes (PLATFORM_ROUTES, DEC-462)
+    expect(rateLimitClassOf('POST', '/v1/platform/auth/login')).toBe('auth');
+    expect(rateLimitClassOf('POST', '/v1/platform/auth/mfa/verify')).toBe('auth');
+    expect(rateLimitClassOf('POST', '/v1/platform/auth/logout')).toBe('write');
+    expect(rateLimitClassOf('GET', '/v1/platform/me')).toBe('read');
     expect(rateLimitClassOf('POST', '/webhooks/whatsapp')).toBe('webhook');
     expect(rateLimitClassOf('GET', '/health/ready')).toBe('health');
     expect(rateLimitClassOf('GET', '/v1/test/whatever')).toBe('read');

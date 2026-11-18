@@ -4,6 +4,7 @@ import { newId } from '../core/crypto/ids.js';
 import { lockEvents, lockOpenDutyByUsers, lockPools } from '../core/db/locks.js';
 import type { Tx } from '../core/db/tx.js';
 import { AppError } from '../core/errors/app-error.js';
+import { assertOperatorOperating } from '../core/operator-status.js';
 import {
   driverStateOf,
   emitAvailability,
@@ -32,6 +33,16 @@ export interface StartIntakeBody {
 const OPERATION = 'POST /v1/tickets';
 
 /**
+ * The entitlement of a new ticket (docs/v2/04 §2; V2-014, DEC-502), the same for paper, WhatsApp and app intakes.
+ * Rule 1 (an active subscription of the account at this venue covering the vehicle → `subscription`) needs the
+ * subscriptions of phase V4 (V2-03x) and the in-app payment `app_paid` arrives with V3: until then an event priced
+ * `included` gives `event_included`, anything else `none` (paid at handover as in V1, DEC-210).
+ */
+export function intakeEntitlement(pricingMode: string): 'event_included' | 'none' {
+  return pricingMode === 'included' ? 'event_included' : 'none';
+}
+
+/**
  * StartIntake (PNT-025; 10 §7.1; 11 TT-01): L1 pool → L2 event (number allocated with RETURNING) → his live
  * single offer withdrawn (L4 → L7) → ticket `received` with the fee snapshot (DEC-43) + park task
  * `in_progress` → L8 duty (`available_since = NULL`) → custody customer → driver (`intake`) → pass.
@@ -41,6 +52,9 @@ const OPERATION = 'POST /v1/tickets';
 export class StartIntakeUseCase {
   async execute(tx: Tx, actor: ActorContext, body: StartIntakeBody, requestId: string) {
     const duty = requireDuty(actor);
+    // V2-005 (DEC-486): no new intake while the operator is suspended or terminated; tickets already taken in
+    // (drafts included) complete normally. The organization row FOR SHARE is the first lock, before L1.
+    await assertOperatorOperating(tx, actor.orgId);
 
     // DEC-37: the event is chosen at intake and never changes; several open events need an explicit choice
     let eventId: string;
@@ -98,8 +112,8 @@ export class StartIntakeUseCase {
     const ticket = await tx.one<TicketRow>(
       `INSERT INTO tickets (id, org_id, venue_id, event_id, dispatch_pool_id, display_number, status, channel,
                             vehicle_holder_type, vehicle_holder_id, key_holder_type, key_holder_id,
-                            payment_status, fee_halalas, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'received', $7, 'driver', $8, 'driver', $8, $9, $10, $8, $11, $11)
+                            payment_status, fee_halalas, entitlement, created_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'received', $7, 'driver', $8, 'driver', $8, $9, $10, $12, $8, $11, $11)
        RETURNING *`,
       [
         newId(),
@@ -113,6 +127,8 @@ export class StartIntakeUseCase {
         perVehicle ? 'due' : 'not_required',
         perVehicle ? Number(n.fee_halalas) : 0,
         tx.now,
+        // V2-014 (04 §2, DEC-502): decided at intake from the event, whatever the channel
+        intakeEntitlement(n.pricing_mode),
       ],
     );
     const task = await insertParkTask(tx, ticket, actor.userId);

@@ -1,4 +1,4 @@
-// `pnpm dev`: api + worker + web + wa-simulator with rebuild on change (05 §18.1).
+// `pnpm dev`: api + worker + web + wa-simulator + payment-simulator with rebuild on change (05 §18.1).
 // Backend packages are compiled by tsc in watch mode and the processes restart with `node --watch`.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -111,10 +111,20 @@ const procs = [
   ],
   ['web', 'pnpm', ['--filter', '@point/web', 'dev']],
   ['wa-sim', 'pnpm', ['--filter', '@point/wa-simulator', 'dev']],
+  // V2-020 (DEC-510): the fake Moyasar API on 4020 (MOYASAR_BASE_URL), its webhooks to the local api
+  [
+    'pay-sim',
+    'pnpm',
+    ['--filter', '@point/payment-simulator', 'dev'],
+    {
+      WEBHOOK_URL: `http://localhost:${process.env.API_PORT ?? 3000}/webhooks/payments/moyasar`,
+      PORT: '4020',
+    },
+  ],
 ];
 
-const children = procs.map(([name, cmd, args]) => {
-  const child = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+const children = procs.map(([name, cmd, args, extra]) => {
+  const child = spawn(cmd, args, { env: { ...env, ...(extra ?? {}) }, stdio: ['ignore', 'pipe', 'pipe'] });
   const prefix = `[${name}]`.padEnd(12);
   const pipe = (stream, out) =>
     stream.on('data', (d) => out.write(String(d).replace(/^(?=.)/gm, prefix + ' ')));

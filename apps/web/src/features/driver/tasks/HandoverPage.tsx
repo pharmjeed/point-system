@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { useBrand } from '@/hooks/useMe';
 import { CircleCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
@@ -12,6 +13,7 @@ import {
   Button,
   Checkbox,
   CodeInput,
+  EntitlementChip,
   Icon,
   PlateBadge,
   SegmentedControl,
@@ -20,6 +22,7 @@ import {
   TextField,
 } from '@/components';
 import { FieldError } from '@/components/Field';
+import { entitlementBadgeOf } from '@/features/common/entitlement';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useServerNow } from '@/hooks/useNow';
@@ -110,6 +113,7 @@ function HandoverForm({
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const brand = useBrand(); // V2-033: «مشترك {brand}»
   // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065); no handover
   // without the server's check (02 D-11)
   const gate = useCommandGate();
@@ -122,6 +126,11 @@ function HandoverForm({
   const paper = ticket.channel === 'paper';
   const due = !!card.payment_due || ticket.payment_status === 'due';
   const amount = card.payment_due?.amount_halalas ?? ticket.fee_halalas ?? 0;
+  const badge = entitlementBadgeOf(
+    card.ticket.entitlement ?? ticket.entitlement,
+    due ? { amountHalalas: amount } : null,
+    brand.staffNameAr,
+  );
   const methods: PaymentMethod[] = card.payment_due?.allowed_methods?.length
     ? card.payment_due.allowed_methods
     : ['cash', 'pos'];
@@ -348,6 +357,8 @@ function HandoverForm({
       <div className="flex flex-wrap items-center gap-3">
         {plate ? <PlateBadge {...plate} /> : null}
         <span>{vehicleSummary(card.ticket.vehicle)}</span>
+        {/* O-02 (V2-014): «مشمول» / «يدفع X» */}
+        {badge ? <EntitlementChip badge={badge} size="sm" /> : null}
       </div>
 
       {paper ? (

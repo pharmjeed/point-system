@@ -270,6 +270,7 @@ DATABASE_SSL=false                   # true in staging/production
 SESSION_SECRET=                      # 32+ random bytes (base64); rotating logs everyone out
 SESSION_COOKIE_NAME=point_sid        # __Host-point_sid in staging/production (SESSION_COOKIE_SECURE=true)
 SESSION_COOKIE_SECURE=false          # true everywhere except local http
+PLATFORM_SESSION_COOKIE_NAME=point_psid  # V2 platform console (/platform); __Host-point_psid in staging/production
 CODE_PEPPER=                         # HMAC key for claim codes (DEC-15); rotate only between events
 AUTH_SECRET_PEPPER=                  # base64 32 bytes, argon2id pepper for PINs/passwords (09 §9.1, DEC-58); rotating it invalidates every secret
 DATA_ENCRYPTION_KEY=                 # base64 32 bytes, AES-256-GCM (TOTP secrets, claim code ciphertext)
@@ -293,6 +294,8 @@ WA_VERIFY_TOKEN=                     # webhook GET verification
 # Send pacing is NOT configured here: org settings wa.global_mps, wa.pair_bucket_capacity, wa.pair_refill_s (Canon §12, file 12 §5)
 WA_HTTP_TIMEOUT_MS=10000
 WA_TEST_RECIPIENT_ALLOWLIST=         # staging: comma separated E.164 numbers; others are refused
+WA_TEMPLATE_SET=v1                   # V2-050 (DEC-555): live customer template set v1 (masaf_*_v1) | v2 (point_*_v2) once Meta approved all of v2
+CUSTOMER_APP_LINK=https://point.example/app  # V2-050 (DEC-556): https app page in the WhatsApp replies W-09/W-10; empty = none; placeholder refused in production
 
 # ---------- Web Push (VAPID) ----------
 VAPID_PUBLIC_KEY=
@@ -546,6 +549,8 @@ volumes:
 | `point_wa_service_messages_month` · `point_wa_unique_users_24h_outside_window` | Gauge | استهلاك حصص Meta (الملف 12 §13)؛ التعريف في DEC-413، ويُعدّ مرة في الدقيقة على الأكثر لكل عملية |
 | `point_wa_channel_health` | Gauge | 0 `healthy` · 1 `degraded` · 2 `down`؛ يضبطه `SystemMonitor` من القاعدة في كل عملية (أسوأ قناة نشطة، DEC-417) |
 | `point_push_send_total{outcome}` | Counter | Web Push ونتائجه |
+| `point_payment_webhooks_total{outcome}` | Counter | الإصدار الثاني: تسليمات Webhook بوابة الدفع (`stored`، `duplicate`، `rejected`) (V2-021، DEC-512) |
+| `point_platform_alerts_total{type}` | Counter | الإصدار الثاني: تنبيهات المالية للمنصة المنشأة (`platform_alerts`: دفعة مجهولة، فرق مطابقة، استرداد فاشل، مطابقة متعذرة) (DEC-514) |
 | `point_ws_connections{venue}` · `point_ws_reconnects_total` | Gauge · Counter | الاتصال الفوري؛ إعادة الاتصال = مقبس جديد للجلسة خلال 10 دقائق من فقد سابقه على العملية نفسها (DEC-416) |
 | `point_db_pool_in_use` · `point_db_lock_wait_seconds` · `point_db_tx_retries_total{sqlstate}` | Gauge · Histogram · Counter | قاعدة البيانات؛ انتظار القفل زمن كل جملة قفل قانونية L1–L8، ومنها ما ينتهي بـ`55P03` أو بجمود (DEC-416) |
 | `point_drivers_on_duty{venue}` · `point_drivers_connection_uncertain{venue}` | Gauge | حالة المناوبات (`connection_uncertain` يعد كل حالة اتصال غير `online`، DEC-159)؛ وصفر صريح لموقع فيه حفل ووردية مفتوحان بلا مناوبة (15 §12 «غياب السائقين قبل الطلبات») |

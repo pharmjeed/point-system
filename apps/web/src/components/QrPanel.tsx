@@ -22,15 +22,15 @@ export interface QrPanelProps {
 }
 
 /**
- * Customer-facing QR panel (D-07) — the MASAF brand surface inside the staff app (canon §1, 03 §3.13).
- * Always light; the staff brand never appears here.
+ * Customer-facing QR panel (D-07) — the customer brand surface inside the staff app (canon §1, 03 §3.13; DEC-470).
+ * Always light; a staff-only brand never appears here (with the V2 defaults both brands are POINT).
  */
 export function QrPanel({ qrSvg, ttl, expired, meta, status }: QrPanelProps) {
   const brand = useBrand();
   return (
     <div className="pt-qr" data-theme="light" dir="rtl" lang="ar">
       <div className="pt-qr__brand">
-        <Logo brand="masaf" variant="wordmark" theme="light" height={40} alt={brand.customerNameAr} />
+        <Logo brand="customer" variant="wordmark" theme="light" height={40} alt={brand.customerNameAr} />
       </div>
       <h2 className="pt-qr__title">{components.qr.title}</h2>
       <div

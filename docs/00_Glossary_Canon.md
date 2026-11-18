@@ -11,15 +11,17 @@
 | السطح | الاسم الظاهر | أين يظهر |
 |---|---|---|
 | نظام الموظفين | **بوينت · POINT** — Valet & Parking | موقع/تطبيق الويب للسائق والمشرف والإدارة: الشعار، عنوان الصفحة، أيقونة الشاشة الرئيسية (PWA)، شاشة الدخول، عنوان إشعارات Web Push |
-| قناة العميل | **مصاف · MASAF** | واتساب فقط: اسم العرض لحساب واتساب للأعمال، صورة الحساب، نص كل رسالة وقالب، التذكرة الورقية البديلة، لوحة QR التي يديرها السائق نحو العميل (D-07) |
+| قناة العميل | **بوينت · POINT** منذ الإصدار الثاني (V2-D01، DEC-470)؛ كانت **مصاف · MASAF** في الإصدار الأول | واتساب: اسم العرض لحساب واتساب للأعمال، صورة الحساب، نص كل رسالة وقالب، التذكرة الورقية البديلة، لوحة QR التي يديرها السائق نحو العميل (D-07)؛ وفي الإصدار الثاني تطبيق العميل والفواتير (`docs/v2/`) |
+
+> **الإصدار الثاني (V2-D01، V2-D02؛ DEC-460، DEC-470):** العلامة التي يراها العميل صارت «بوينت · POINT»، الشركة التي تبيع للعميل، و«مصاف» صارت **مشغّلًا** يستخدم المنصة (اسم مؤسسة من قاعدة البيانات لا علامة). ورقم واتساب واحد لبوينت لكل المشغلين، والرسالة تذكر اسم الموقع. التطبيق كله عبر الإعداد: `BRAND_CUSTOMER_NAME_AR/EN` قيمته الافتراضية الآن `بوينت`/`POINT`، فالقاعدة 1 أدناه (منع «بوينت» عن العميل) **أُبطلت** بالقرار DEC-470 وتبقى للتاريخ، وتبقى القاعدة 2 قائمة بمعنى «اسم علامة العميل يظهر في واجهة الموظفين في المواضع المسماة فقط»، وتبقى القاعدة 4 (الأسماء من الإعدادات) كما هي. ونشر بعلامة عميل مختلفة عن علامة الموظفين ما زال ممكنًا بالإعداد، وتنطبق عليه القاعدتان 1 و2 كما في الإصدار الأول.
 
 قواعد:
-1. العميل لا يرى «بوينت» إطلاقًا: لا في القوالب ولا الردود ولا صورة الحساب ولا التذكرة الورقية.
-2. واجهة الموظفين تحمل «بوينت». تظهر «مصاف» فيها فقط في: لوحة QR الموجهة للعميل (D-07، ونفسها في «إعادة الربط بواتساب» في S-03؛ القرار DEC-420)، سؤال الموافقة الذي يقرؤه السائق للعميل في D-05 (تسمية النشاط شرط لموافقة Meta، 12 F-17؛ القرار DEC-410)، معاينة رسائل العميل في سجل التذكرة (S-03)، إعدادات قناة واتساب (S-13).
+1. ~~العميل لا يرى «بوينت» إطلاقًا: لا في القوالب ولا الردود ولا صورة الحساب ولا التذكرة الورقية.~~ (الإصدار الأول؛ أبطلها DEC-470: العميل يرى علامة العميل المضبوطة وحدها، وهي «بوينت» افتراضيًا. وتبقى القاعدة لكل نشر تختلف فيه علامة العميل عن علامة الموظفين: لا يرى العميل علامة الموظفين.)
+2. واجهة الموظفين تحمل «بوينت». يظهر اسم علامة العميل (كان «مصاف»؛ DEC-470) فيها فقط في: لوحة QR الموجهة للعميل (D-07، ونفسها في «إعادة الربط بواتساب» في S-03؛ القرار DEC-420)، سؤال الموافقة الذي يقرؤه السائق للعميل في D-05 (تسمية النشاط شرط لموافقة Meta، 12 F-17؛ القرار DEC-410)، معاينة رسائل العميل في سجل التذكرة (S-03)، إعدادات قناة واتساب (S-13).
 3. اسم الكود: `point` (monorepo)، نطاق الحزم `@point/*`، قاعدة البيانات `point`.
 4. أسماء العلامتين تُقرأ من الإعدادات ولا تُكتب صلبًا في الكود:
-   `BRAND_STAFF_NAME_AR=بوينت` · `BRAND_STAFF_NAME_EN=POINT` · `BRAND_CUSTOMER_NAME_AR=مصاف` · `BRAND_CUSTOMER_NAME_EN=MASAF`.
-   استثناء: نصوص قوالب واتساب المعتمدة لدى Meta ثابتة بطبيعتها وتحتوي «مصاف».
+   `BRAND_STAFF_NAME_AR=بوينت` · `BRAND_STAFF_NAME_EN=POINT` · `BRAND_CUSTOMER_NAME_AR=بوينت` · `BRAND_CUSTOMER_NAME_EN=POINT` (كانت `مصاف`/`MASAF` في الإصدار الأول؛ DEC-470).
+   نصوص قوالب واتساب تُكتب في الكود برمز `{brand}` ويملؤه الإعداد (DEC-470)؛ ونص القالب المعتمد لدى Meta ثابت بطبيعته ويحمل العلامة المضبوطة وقت إنشائه، فتغيير العلامة بعد الاعتماد يتطلب نسخًا جديدة `_v2` من القوالب.
 
 ---
 
@@ -114,7 +116,10 @@
 
 ### 5.2 حقول حالة أخرى على التذكرة
 
-- `tickets.channel`: `whatsapp` · `paper`
+> في الإصدار الثاني `app` تذكرة استلمها السائق بمسح بطاقة الدخول من تطبيق العميل (O-01، V2-013، DEC-501)، و`entitlement` أهلية الزيارة تُحدَّد عند الاستلام (V2-014، DEC-502؛ `docs/v2/04` §2).
+
+- `tickets.channel`: `whatsapp` · `paper` · `app`
+- `tickets.entitlement`: `none` · `subscription` · `app_paid` · `event_included`
 - `tickets.wa_link_status`: `none` · `pending_send` · `pending_confirmation` · `linked` · `failed` · `opted_out`
 - `tickets.inspection_status`: `pending` · `complete` · `incomplete` · `exception_approved`
 - `tickets.payment_status`: `not_required` · `due` · `collected` · `waived`
@@ -123,7 +128,10 @@
 
 ### 5.3 دورة الاسترجاع `retrieval_cycles`
 
-- `request_source`: `whatsapp` · `staff`
+- `request_source`: `whatsapp` · `staff` · `app`
+
+> في الإصدار الثاني `app` طلب العميل من تطبيقه (`C-12`، V2-015، DEC-516): أمر زر «طلب السيارة» نفسه بفاعل العميل ومصدر مختلف.
+
 - `outcome` (عند الإغلاق): `delivered` · `canceled` · `reparked`
 - الدورة مفتوحة طالما `closed_at IS NULL` (دورة مفتوحة واحدة لكل تذكرة).
 
@@ -208,7 +216,7 @@
 - `media_assets.delete_reason`: `retention` · `correction` · `admin`
 - `vehicle_inspections.kind`: `intake` · `handover` · `incident`
 - `whatsapp_inbound_events.status`: `pending` · `processed` · `failed` · `ignored`
-- `tickets.pending_retrieval_source`: `whatsapp` (الطلب المبكر من زر واتساب فقط، DEC-25)
+- `tickets.pending_retrieval_source`: `whatsapp` · `app` (الطلب المبكر من العميل فقط، DEC-25: زر واتساب، أو تطبيق العميل منذ V2-015، DEC-516)
 - `analytics_events.source`: `server` · `client`
 - `idempotency_keys.status`: `in_progress` · `completed`
 - `action_tokens.action`: `request_retrieval`
@@ -309,14 +317,27 @@
 - السائق: `driver.duty_started` · `driver.break_started` · `driver.break_ended` · `driver.duty_ended` · `driver.availability_changed` · `driver.connection_changed` · `driver.transfer_requested` · `driver.transfer_blocked` · `driver.transferred` · `driver.disabled` · `driver.enabled`
 - العهدة: `custody.changed`
 - التسليم: `handover.code_issued` · `handover.code_attempt_failed` · `handover.code_locked` · `handover.completed` · `handover.exception_approved`
-- الدفع: `payment.recorded` · `payment.reversed` · `payment.waived` · `cash.handover_recorded`
+- الدفع: `payment.recorded` · `payment.reversed` · `payment.waived` · `cash.handover_recorded` · `payment.online_paid` · `payment.online_refunded`
 - التنبيهات والوقائع: `alert.raised` · `alert.acknowledged` · `alert.resolved` · `incident.opened` · `incident.updated` · `incident.resolved`
 - الحفل والوردية: `event.opened` · `event.closing_started` · `event.closed` · `shift.opened` · `shift.closed` (إلغاء حفل `draft` تدقيق فقط بلا حدث نطاقي)
 - واتساب: `wa.inbound_received` · `wa.button_pressed` · `wa.message_status_changed` · `wa.channel_health_changed` · `wa.customer_opted_out`
 
 ### 7.2 أنواع المهام المؤجلة (Jobs) في `outbox_events.type`
 
-`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate`
+`job.dispatch_pass` · `job.dispatch_sweep` · `job.offer_remind` · `job.offer_expire` · `job.broadcast_remind` · `job.escalate_unaccepted` · `job.next_task_wait_check` · `job.ready_uncollected_check` · `job.claim_code_expire` · `job.link_code_expire` · `job.transfer_activate` · `job.wa_send` · `job.wa_process_inbound` · `job.push_send` · `job.ws_publish` · `job.heartbeat_sweep` · `job.retention_purge` · `job.export_generate` · `job.customer_otp_send` · `job.payment_webhook_process` · `job.payment_refund_send` · `job.payments_reconcile` · `job.customer_push_send` · `job.customer_push_receipts` · `job.payment_method_token_delete` · `job.subscription_renew` · `job.subscription_grace_expire` · `job.subscription_renewal_notice` · `job.pending_payment_expire` · `job.subscription_freeze_start` · `job.subscription_freeze_end` · `job.einvoice_submit` · `job.invoice_pdf_render` · `job.settlement_monthly`
+
+> الإصدار الثاني (V2-010، DEC-496): `job.customer_otp_send` يرسل رمز دخول تطبيق العميل بقالب المصادقة على رقم بوينت بعد COMMIT (المعاملة تكتب الرمز مجزأً ونسخته المشفرة الوحيدة وصف outbox فقط).
+
+> الإصدار الثاني (V2-021، DEC-512 … DEC-514): `job.payment_webhook_process` يعالج تسليم Webhook بوابة الدفع المخزَّن مرة واحدة (يقرأ الدفعة من البوابة خارج أي معاملة ثم يطبقها)؛ `job.payment_refund_send` يرسل الاسترداد للبوابة بعد COMMIT؛ `job.payments_reconcile` المطابقة اليومية مع البوابة (`PAYMENTS_RECONCILE_CRON_UTC`).
+
+> الإصدار الثاني (V2-016، DEC-519): `job.customer_push_send` يرسل إشعار تطبيق العميل بعد COMMIT (المعاملة تكتب صف `customer_push_messages` بالمعرّفات فقط)؛ `job.customer_push_receipts` يقرأ إيصالات التسليم من المزود لاحقًا ويُسقط رمز الجهاز غير المسجل.
+> الإصدار الثاني (V2-022/V2-023، DEC-522، DEC-524): `payment.online_paid` دفعة إلكترونية لزيارة صارت `paid` فصارت التذكرة `collected` بأهلية `app_paid` (في معاملة انتقال الدفعة نفسها، يكتبها العامل بعد قراءة البوابة أو رد إنشاء بلا 3-D Secure)؛ `payment.online_refunded` استرداد كامل لتلك الدفعة قبل التسليم أعاد التذكرة `due` بأهلية `none`. `job.payment_method_token_delete` يحذف رمز بطاقة محفوظة لدى البوابة بعد COMMIT إزالتها (C-18 أو حذف الحساب).
+
+> الإصدار الثاني (V2-031، DEC-532، DEC-533): مؤقتات الاشتراك (docs/v2/04 §1) بساعة الخادم المحقونة: `job.subscription_renew` التجديد عند نهاية الفترة ومحاولات السماح في اليوم 1 و3 بعدها (خارجي: يخصم البطاقة الافتراضية المحفوظة بـ`given_id` لكل فترة ومحاولة)؛ `job.subscription_grace_expire` شبكة أمان بعد انتهاء السماح بساعة؛ `job.subscription_renewal_notice` إشعار التجديد قبل النهاية بثلاثة أيام (ويعلن السعر الجديد إن تغيّرت الباقة، DEC-531)؛ `job.pending_payment_expire` يلغي اشتراكًا لم يُدفع خلال 30 دقيقة. كل منها يقارن الفترة والمحاولة المسجلتين فيه بالاشتراك عند التنفيذ، والمختلف ينتهي بلا أثر.
+
+> الإصدار الثاني (V2-036، DEC-593، DEC-594): `job.subscription_freeze_start` يبدأ تجميد العميل المجدول عند منتصف ليل يوم البداية بتوقيت الرياض و`job.subscription_freeze_end` ينهيه عند منتصف ليل يوم العودة (يحملان `freeze_id`؛ تجميد سُحب أو أُنهي مبكرًا يُنهي المؤقت بلا أثر). حالة الاشتراك `pending_eligibility` وسبب التجميد `customer_freeze`، والجداول `subscription_eligibility`، `subscription_eligible_students`، `subscription_freezes`، `subscription_purchase_consents`، `venue_closures`، `customer_complaints` (docs/v2/03 §4).
+
+> الإصدار الثاني (V2-040 … V2-042، DEC-543، DEC-544): `job.einvoice_submit` يرسل فاتورة أو إشعارًا دائنًا لمزود الفوترة الإلكترونية بعد COMMIT (الإبلاغ للمبسطة والاعتماد للضريبية، بترتيب سلسلة كل نوع)؛ `job.invoice_pdf_render` يولّد ملف PDF الفاتورة بعد قبولها ويحفظه في المخزن الخاص؛ `job.settlement_monthly` يُعد مسودات كشوف التسوية لكل مشغل في الأول من الشهر (توقيت الرياض) للشهر السابق (`SETTLEMENT_MONTHLY_CRON_UTC`).
 
 كل مؤقت يحمل `version` الكيان وقت الجدولة؛ عند التنفيذ يُعاد التحقق، وإن تغيّر الكيان يُنهى المؤقت دون أثر.
 
@@ -439,6 +460,15 @@
 | `INTERNAL_ERROR` | 500 | خطأ غير متوقع |
 | `SERVICE_UNAVAILABLE` | 503 | الخدمة غير متاحة مؤقتًا |
 | `DEPENDENCY_TIMEOUT` | 504 | انتهت مهلة خدمة خارجية |
+| `PLATFORM_AUTH_REQUIRED` | 401 | الإصدار الثاني: لا توجد جلسة منصة صالحة لمسار `/v1/platform/*` (لا كوكي منصة، أو كوكي موظفين فقط)؛ جلسة الموظف لا تفتح مسار المنصة ولا العكس (DEC-462) |
+| `OPERATOR_SUSPENDED` | 409 | الإصدار الثاني: المشغّل (المؤسسة) معلّق أو منتهٍ من المنصة، فلا يُفتح حفل ولا وردية ولا مناوبة ولا استلام جديد (02 §4 في `docs/v2`، V2-005، DEC-466، DEC-486) |
+| `PAYMENT_FAILED` | 402 | الإصدار الثاني: رفضت بوابة الدفع العملية أو لم تقبل وسيلة الدفع؛ حالة الدفعة `failed` محفوظة (V2-020، DEC-512) |
+| `PAYMENT_NOT_REFUNDABLE` | 409 | الإصدار الثاني: الدفعة الإلكترونية ليست `paid` ولا `partially_refunded` فلا تُسترد (V2-021، DEC-513) |
+| `REFUND_AMOUNT_EXCEEDS_PAID` | 409 | الإصدار الثاني: الاسترداد مع ما سبقه وما ينتظر أكبر من المدفوع (V2-021، DEC-513) |
+| `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | 401 | سر Webhook بوابة الدفع غير صالح |
+| `PASS_INVALID` | 422 | الإصدار الثاني: بطاقة الدخول الممسوحة ليست بطاقة بوينت صالحة (صيغة أو توقيع أو حساب غير نشط)، `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500) |
+| `PASS_EXPIRED` | 410 | الإصدار الثاني: بطاقة الدخول خارج نافذة الخطوة الحالية ± 1 (30 ث) أو استُعملت خطوتها لاستلام سابق (DEC-500) |
+| `EINVOICE_WEBHOOK_SIGNATURE_INVALID` | 401 | توقيع إشعار مزود الفوترة الإلكترونية غير صالح |
 
 ---
 
@@ -471,6 +501,7 @@
 | الطريقة | المسار | الصلاحية | تكرار |
 |---|---|---|---|
 | POST | `/v1/tickets` | `ticket.intake` | ✓ |
+| POST | `/v1/tickets/intake-pass` | `ticket.intake` | ✓ |
 | PATCH | `/v1/tickets/{ticketId}/intake` | `ticket.intake` | ✓ |
 | POST | `/v1/tickets/{ticketId}/media` | `ticket.intake` | ✓ |
 | POST | `/v1/media/{mediaId}/complete` | `ticket.intake` | ✓ |
@@ -524,6 +555,9 @@
 | GET / POST | `/v1/venues` | `venue.read` / `venue.manage` | ✓ (POST) |
 | GET / PATCH | `/v1/venues/{venueId}` | `venue.read` / `venue.manage` | ✓ (PATCH) |
 | GET / PUT | `/v1/venues/{venueId}/settings` | `venue.read` / `venue.manage` | ✓ (PUT) |
+| GET / PUT | `/v1/venues/{venueId}/public-profile` | `venue.manage` | ✓ (PUT) |
+| POST | `/v1/venues/{venueId}/public-profile/photos` | `venue.manage` | ✓ |
+| POST | `/v1/venues/{venueId}/public-profile/submit` | `venue.manage` | ✓ |
 | GET / POST | `/v1/venues/{venueId}/dispatch-pools` | `venue.read` / `venue.manage` | ✓ (POST) |
 | PATCH | `/v1/dispatch-pools/{poolId}` | `venue.manage` | ✓ |
 | GET / POST | `/v1/venues/{venueId}/parking-zones` | `venue.layout_read` / `venue.manage` | ✓ (POST) |
@@ -590,6 +624,13 @@
 | GET / PUT | `/v1/admin/retention-policy` | `audit.read` / `retention.manage` | ✓ (PUT) |
 | GET / PUT | `/v1/admin/org-settings` | `org.settings_manage` | ✓ (PUT) |
 | POST | `/v1/telemetry` | `telemetry.write` | — |
+| GET | `/v1/settlement-statements` | `settlement.read` | — |
+| GET | `/v1/settlement-statements/{statementId}` | `settlement.read` | — |
+| POST | `/v1/settlement-statements/{statementId}/dispute` | `settlement.dispute` | ✓ |
+| GET | `/v1/system-subscription` | `settlement.read` | — |
+| GET | `/v1/system-subscription/invoices/{invoiceId}` | `settlement.read` | — |
+
+> الإصدار الثاني (V2-041، V2-042، DEC-547): كشف التسوية O-05 واشتراك النظام O-06 لمالك المشغل وإدارته — كشوفه هو وحده بلا المسودات، والاعتراض بسبب على كشف صادر، وعقده الساري وفواتيره من بوينت برابط PDF خاص قصير.
 
 ### 9.8 Webhooks والصحة
 
@@ -597,6 +638,8 @@
 |---|---|---|
 | GET | `/webhooks/whatsapp` | تحقق `hub.verify_token` |
 | POST | `/webhooks/whatsapp` | توقيع `X-Hub-Signature-256` على الجسم الخام |
+| POST | `/webhooks/payments/moyasar` | الإصدار الثاني (V2-021، DEC-511): سر الـWebhook المشترك (`secret_token`) في الجسم الخام، بمقارنة زمن ثابت |
+| POST | `/webhooks/einvoicing` | الإصدار الثاني (V2-040، DEC-543): توقيع HMAC-SHA256 للجسم الخام في `X-Einvoice-Signature` بسر `EINVOICE_WEBHOOK_SECRET_REF`، بمقارنة زمن ثابت |
 | GET | `/health/live` · `/health/ready` | عام (بلا بيانات) |
 | GET | `/metrics` | شبكة داخلية فقط |
 
@@ -666,10 +709,14 @@
 | `retention.manage` | ✓ | — | — | — | |
 | `org.settings_manage` | ✓ | — | — | — | إعدادات المؤسسة `security.*` و`heartbeat.*` |
 | `telemetry.write` | ✓ | ✓ | ✓ | ✓ | |
+| `settlement.read` | ✓ | ✓ | — | — | الإصدار الثاني (O-05، O-06، DEC-547): كشوف تسوية مؤسسته الصادرة واشتراك النظام وفواتيره، قراءة |
+| `settlement.dispute` | ✓ | ✓ | — | — | الإصدار الثاني (O-05، DEC-547): الاعتراض بسبب على كشف صادر لمؤسسته |
 
 ---
 
-## 11. رسائل واتساب (علامة «مصاف»)
+## 11. رسائل واتساب (علامة العميل: «بوينت» منذ DEC-470، «مصاف» في الإصدار الأول)
+
+أسماء القوالب `masaf_*_v1` معرّفات لدى Meta لا يراها العميل، وتبقى كما هي في الإصدار الثاني (DEC-470). وهي **المجموعة `v1`**؛ ونسخها بصياغة بوينت واسم الموقع هي **المجموعة `v2`** (`point_*_v2`) في §11ب، والإعداد `WA_TEMPLATE_SET` يختار المجموعة الحية (V2-050، DEC-555).
 
 كل إشعار للعميل يُرسل **قالبًا معتمدًا من فئة UTILITY** بالعربية (يعمل داخل نافذة الخدمة وخارجها). رسائل الجلسة الحرة تُستخدم فقط للرد على رسالة واردة من العميل. الزر الوحيد في كل المحادثة هو «طلب السيارة» في W-01.
 
@@ -687,6 +734,25 @@
 | W-10 | `reply_free_text_guidance` | جلسة | رد على رسالة حرة | — | — |
 | W-11 | `reply_link_received` | جلسة | استلام رسالة ربط QR | — | — |
 | W-12 | `reply_opted_out` | جلسة | تأكيد إيقاف الرسائل | — | — |
+
+---
+
+## 11ب. قوالب واتساب الإصدار الثاني — المجموعة `v2` (V2-050، DEC-555 … DEC-559)
+
+نسخ W-01…W-08 بعلامة العميل «بوينت» لرقم واحد لكل المشغلين (V2-D02): كل رسالة تذكر اسم الموقع، وW-01 يضيف سطر «تشغيل: {المشغل}» (V2-D01). الأسماء جديدة لأن Meta تعتمد نصًا ثابتًا لكل اسم، فتبقى المجموعة `v1` (§11) تعمل حتى يعتمد Meta المجموعة كلها، ثم يُبدّل `WA_TEMPLATE_SET=v2` (الافتراضي `v1`). المعرفات W-## والغرض والزر كما في §11؛ وردود الجلسة W-09…W-12 مجموعة واحدة لكلتا المجموعتين (§11)، ويحمل W-09 «تم التسليم» وW-10 سطر التطبيق الاختياري `CUSTOMER_APP_LINK` (DEC-556). قالب المصادقة `point_customer_otp_v1` خارج المجموعتين ولا يتغير (DEC-557).
+
+| المعرف | الاسم | النوع | الغرض | المتغيرات | الزر |
+|---|---|---|---|---|---|
+| W-01 | `point_ticket_issued_v2` | قالب | إصدار التذكرة | 1 اسم الموقع، 2 رقم التذكرة، 3 اسم المشغل، 4 وصف المركبة | QUICK_REPLY «طلب السيارة» (payload = action token) |
+| W-02 | `point_request_received_v2` | قالب | تم تسجيل الطلب | 1 رقم التذكرة، 2 اسم الموقع | — |
+| W-03 | `point_request_reserved_v2` | قالب | حجز سائق مشغول | 1 رقم التذكرة، 2 اسم الموقع | — |
+| W-04 | `point_retrieval_started_v2` | قالب | بدء الإحضار الفعلي | 1 رقم التذكرة، 2 اسم الموقع | — |
+| W-05 | `point_vehicle_ready_v2` | قالب | الجاهزية ورمز التسليم | 1 رقم التذكرة، 2 اسم الموقع، 3 الرمز | — |
+| W-06 | `point_vehicle_delivered_v2` | قالب | تم التسليم | 1 رقم التذكرة، 2 اسم الموقع | — |
+| W-07 | `point_request_canceled_v2` | قالب | إلغاء الطلب ميدانيًا | 1 رقم التذكرة، 2 اسم الموقع | — |
+| W-08 | `point_returned_to_parking_v2` | قالب | إعادة الصف لغياب العميل | 1 رقم التذكرة، 2 اسم الموقع | — |
+
+الإعدادان (متغيرا بيئة، 05 §8): `WA_TEMPLATE_SET` = `v1` · `v2` (المجموعة الحية؛ مزامنة القوالب تنشئ المجموعة الحية وكل مجموعة بعدها)، و`CUSTOMER_APP_LINK` (رابط https لصفحة تحميل التطبيق أو فتحه؛ فارغ = بلا سطر التطبيق).
 
 ---
 
@@ -776,7 +842,7 @@
 
 المشرف والإدارة (بوينت): `S-01` الدخول وMFA · `S-02` لوحة التشغيل · `S-03` تفاصيل التذكرة وسجلها · `S-04` مركز التنبيهات · `S-05` السائقون · `S-06` ملف السائق · `S-07` نقل سائق · `S-08` المواقع والحفلات · `S-09` إعداد الموقع · `S-10` إغلاق الحفل والمطابقة · `S-11` التقارير والتصدير · `S-12` الوقائع · `S-13` الإدارة (الموظفون، قناة واتساب، القوالب، التدقيق، الاحتفاظ)
 
-العميل (مصاف — واتساب): `W-01` … `W-12` كما في §11.
+العميل (علامة العميل — واتساب؛ «بوينت» منذ DEC-470): `W-01` … `W-12` كما في §11.
 
 ---
 
@@ -801,6 +867,10 @@
 المعاملات التي لا تحتاج قفل المجموعة (تعديل مسودة الاستلام وإرسالها، رفع الصور، رموز الربط، تغيير الجوال) تبدأ من L5، وأوامر تقدم الحركة (`key-pickup`، `start-retrieval`، `ready`) تبدأ من L4؛ ولا تطلب أي منها مستوى أصغر بعد ذلك. لا اتصال شبكي داخل أي معاملة.
 
 **استثناء واحد مسموح:** معاملة تحمل L1 يجوز لها، بعد أن أخذت أقفال أمرها، أن تقفل صفوفًا إضافية من L4–L8 **لنفس المجموعة** لتمريرة التوزيع ولتسوية السائق بعد مهمته (`settleDriverAfterTask`). هذا آمن لأن كل من يقفل صفوف الطابور والعروض والمناوبات يحمل L1 أولًا، وأوامر تقدم الحركة لا تقفل إلا صفوف حركة نشطة (`accepted`/`in_progress` وتذكرتها ودورتها) لا تقفلها التمريرة. إعادة المحاولة: المعاملة كلها تُعاد حتى 3 مرات عند `40001`/`40P01` بتأخير عشوائي 20–80 ms؛ تجاوز `lock_timeout` (`55P03`) لا يُعاد على الخادم ويرد `IDEMPOTENCY_IN_PROGRESS` إن حدث عند L0 وإلا `SERVICE_UNAVAILABLE` (`retryable: true`).
+
+**صف المؤسسة (الإصدار الثاني، DEC-487):** الأوامر التي يمنعها تعليق المشغل (فتح الحفل والوردية، بدء المناوبة، بدء الاستلام) تقرأ صف `organizations` بـ`FOR SHARE` أول قفل لها قبل L1؛ وأوامر المنصة وإعدادات المؤسسة تقفله `FOR NO KEY UPDATE` وحده دون أي صف من L1–L10.
+
+**الفواتير والتسوية (الإصدار الثاني، DEC-541، DEC-544):** أوامر التسوية للمنصة تقفل صف `settlement_statements` `FOR NO KEY UPDATE` وحده (وإعداد الكشف يقفل صف `organizations` قبله)؛ وإصدار أي فاتورة أو إشعار دائن يقفل صف سلسلته في `invoice_series` `FOR NO KEY UPDATE` **آخر قفل في المعاملة** بعد أقفال الأمر كلها (الدفعة وتذكرتها، أو الكشف) وقبل إلحاقيات L10 — فلا تتسلسل إلا الفواتير نفسها، ولا فجوة في الترقيم ولا تفرّع في السلسلة (المشغّل `trg_invoices_chain` يعيد الفحص).
 
 **جداول الإعداد خارج L0–L10 (DEC-121):** صفوف `venues` و`parking_zones` و`parking_spots` و`key_slots` و`shifts` ليست في الجدول؛ يُقفل كل منها `FOR NO KEY UPDATE` وحده في أمر الإعداد الخاص به، أو (صف الوردية) بعد L1 لمجموعتها مباشرة، ولا يُقفل للتعديل بعد أي مستوى من L2 إلى L10. والأوامر التي تستعمل موقفًا أو خانة تقرأ الموقف ومنطقته (أو الخانة ولوحتها) `FOR SHARE` بعد أقفالها وتشترط أن يكونا نشطين، فيتسلسل التعطيل مع التخصيص.
 

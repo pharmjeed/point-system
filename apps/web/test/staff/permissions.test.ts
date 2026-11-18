@@ -263,6 +263,7 @@ describe('S-13 sections per role (02 §2.2)', () => {
   it('owner: all; admin: no org settings; supervisor: none', () => {
     expect(adminSectionsFor(owner)).toEqual([
       'staff',
+      'listing',
       'channel',
       'templates',
       'outbox',
@@ -272,6 +273,7 @@ describe('S-13 sections per role (02 §2.2)', () => {
     ]);
     expect(adminSectionsFor(admin)).toEqual([
       'staff',
+      'listing',
       'channel',
       'templates',
       'outbox',

@@ -20,6 +20,15 @@ export const KILL_POINTS = [
   'wa_send_after_provider_ok_before_done',
   /** KP-5: after the accept command committed, before its HTTP response is written */
   'accept_after_commit_before_response',
+  // V2-051 (DEC-561): the critical paths of V2 — money and documents
+  /** KP-6: after `job.payment_webhook_process` committed the gateway's record (and the event `processed_at`), before the outbox row is `done` */
+  'payment_webhook_after_commit_before_done',
+  /** KP-7: after the gateway accepted a charge (a visit pay, a renewal), before its answer is recorded on the row */
+  'online_payment_after_gateway_ok_before_record',
+  /** KP-8: inside the transaction that issues an invoice, after its row (number, counter, hash) is written, before COMMIT */
+  'invoice_issued_before_commit',
+  /** KP-9: in `job.settlement_monthly`, after the first operator's statement committed, before the next operator */
+  'settlement_after_operator_commit',
 ] as const;
 
 export type KillPoint = (typeof KILL_POINTS)[number];

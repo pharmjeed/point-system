@@ -1,0 +1,61 @@
+{
+  "cli": {
+    "version": ">= 27.5.0",
+    "appVersionSource": "remote",
+    "requireCommit": true
+  },
+  "build": {
+    "base": {
+      "node": "24.22.2",
+      "pnpm": "12.15.0"
+    },
+    "development": {
+      "extends": "base",
+      "environment": "development",
+      "distribution": "internal",
+      "env": {
+        "CUSTOMER_API_MODE": "fake"
+      },
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "extends": "base",
+      "environment": "preview",
+      "distribution": "internal",
+      "env": {
+        "CUSTOMER_API_MODE": "http"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "environment": "production",
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": {
+        "CUSTOMER_API_MODE": "http"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
+      },
+      "ios": {
+        "language": "ar-SA"
+      }
+    }
+  }
+}

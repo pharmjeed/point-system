@@ -1,5 +1,5 @@
-import { ERROR_CATALOG, type ErrorCode } from '@point/shared';
 import type { Tx } from '../db/tx.js';
+import { apiErrorDef, isApiErrorCode, type ApiErrorCode } from './api-codes.js';
 
 export interface AppErrorOptions {
   /**
@@ -14,13 +14,16 @@ export interface AppErrorOptions {
   cause?: unknown;
 }
 
-/** The only error type domain code throws (canon §8 codes; 08 §9.1). */
+/**
+ * The only error type domain code throws (canon §8 codes; 08 §9.1), and the V2 customer API codes of
+ * `CUSTOMER_ERROR_CATALOG` (docs/v2/05 §5, V2-010).
+ */
 export class AppError extends Error {
-  readonly code: ErrorCode;
+  readonly code: ApiErrorCode;
   readonly details: Record<string, unknown>;
   readonly options: AppErrorOptions;
 
-  constructor(code: ErrorCode, details: Record<string, unknown> = {}, options: AppErrorOptions = {}) {
+  constructor(code: ApiErrorCode, details: Record<string, unknown> = {}, options: AppErrorOptions = {}) {
     super(code, options.cause ? { cause: options.cause } : undefined);
     this.name = 'AppError';
     this.code = code;
@@ -29,7 +32,7 @@ export class AppError extends Error {
   }
 
   get http(): number {
-    return ERROR_CATALOG[this.code].http;
+    return apiErrorDef(this.code).http;
   }
 }
 
@@ -42,9 +45,9 @@ export function asAppError(e: unknown): AppError | null {
   if (e instanceof AppError) return e;
   if (e && typeof e === 'object' && 'code' in e && typeof (e as { code: unknown }).code === 'string') {
     const code = (e as { code: string }).code;
-    if (code in ERROR_CATALOG) {
+    if (isApiErrorCode(code)) {
       const details = (e as { details?: Record<string, unknown> }).details ?? {};
-      return new AppError(code as ErrorCode, details);
+      return new AppError(code, details);
     }
   }
   return null;

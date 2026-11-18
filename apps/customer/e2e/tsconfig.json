@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": {
+      "@point/shared/customer": ["../../../packages/shared/src/customer/index.ts"],
+      "@point/shared": ["../../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}

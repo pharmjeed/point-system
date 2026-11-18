@@ -39,6 +39,7 @@ export async function loadTaskCard(
       vehicle_type: string | null;
       payment_status: string;
       fee_halalas: number;
+      entitlement: string;
       allowed_payment_methods: string[];
       current_spot_id: string | null;
       current_spot_note: string | null;
@@ -51,7 +52,7 @@ export async function loadTaskCard(
             t.id AS t_id, t.display_number, t.status AS t_status, t.version AS t_version, e.name_ar AS event_name_ar,
             t.plate_country, t.plate_digits, t.plate_letters_ar, t.plate_letters_en, t.plate_raw,
             t.vehicle_make, t.vehicle_model, t.vehicle_color, t.vehicle_type, t.payment_status, t.fee_halalas,
-            e.allowed_payment_methods, t.current_spot_id, t.current_spot_note, t.current_key_slot_id,
+            t.entitlement, e.allowed_payment_methods, t.current_spot_id, t.current_spot_note, t.current_key_slot_id,
             c.requested_at, c.ready_at
        FROM tasks k
        JOIN tickets t ON t.id = k.ticket_id
@@ -105,6 +106,9 @@ export async function loadTaskCard(
       vehicle: { make: k.vehicle_make, model: k.vehicle_model, color: k.vehicle_color, type: k.vehicle_type },
       status: k.t_status,
       version: k.t_version,
+      // O-02 (V2-014, DEC-502): the badge of D-10/D-11, sent only when there is one (a card parsed by a bundle built
+      // before the field keeps parsing for the tickets of V1, all `none`)
+      ...(k.entitlement !== 'none' ? { entitlement: k.entitlement } : {}),
     },
     parking,
     key_slot: keySlot,

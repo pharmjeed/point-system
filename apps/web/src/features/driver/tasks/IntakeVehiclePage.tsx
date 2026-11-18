@@ -1,17 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Ticket } from 'lucide-react';
+import { MessageCircle, ScanLine, Smartphone, Ticket } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { ApiError, displayMessage, isNetworkError } from '@/api/errors';
-import { patchIntake, type IntakePatch } from '@/api/field';
+import { intakeByPass, patchIntake, type IntakePatch } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
-import type { TicketDetail } from '@/api/types';
+import type { IntakePassResult, TicketDetail } from '@/api/types';
 import { paths } from '@/app/paths';
 import {
   Banner,
   Button,
+  Card,
   Checkbox,
   ColorChips,
+  EntitlementChip,
   MaskedPhone,
   PhoneInput,
   PlateInput,
@@ -21,11 +23,12 @@ import {
   Stepper,
   TextField,
 } from '@/components';
+import { dueOf, entitlementBadgeOf } from '@/features/common/entitlement';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useBrand } from '@/hooks/useMe';
 import { useCommandGate } from '@/realtime/hooks';
-import { d01, d05, d13, ui, vehicleColor, vehicleMake } from '@/i18n/ar';
+import { d01, d05, d13, entitlementBadge, ui, vehicleColor, vehicleMake } from '@/i18n/ar';
 import { fmt } from '@/i18n/fmt';
 import { fmtNode, withTicket } from '@/i18n/fmtNode';
 import { normalizeSaudiMobile } from '@/lib/phone';
@@ -59,12 +62,13 @@ import { useRefreshHome } from '../useDriverHome';
 import { TaskScreen, TaskSkeleton, useStoreTicket } from './common';
 import { useIntakeTicket } from './intakeDraft';
 import { DiscardDraft } from './DiscardDraft';
+import { PassScanSheet } from './PassScan';
 
 const SAUDI_STEPS = [{ label: d05.steps.vehicle }, { label: d05.steps.keyPhotos }];
 
-const CHANNELS = [
-  { value: 'whatsapp' as const, label: d05.channels.whatsapp, icon: MessageCircle },
-  { value: 'paper' as const, label: d05.channels.paper, icon: Ticket },
+const CHANNELS: { value: Exclude<IntakeChannel, 'app'>; label: string; icon: typeof Ticket }[] = [
+  { value: 'whatsapp', label: d05.channels.whatsapp, icon: MessageCircle },
+  { value: 'paper', label: d05.channels.paper, icon: Ticket },
 ];
 const METHODS = [
   ['direct', d05.methods.direct],
@@ -74,8 +78,10 @@ const METHODS = [
 /**
  * D-05 — استلام مركبة (1): plate, make, model, colour and the customer's ticket (02 D-05 «قناة العميل»):
  * WhatsApp by the customer's number with the verbal consent (the server sends W-01 at «إتمام التسجيل»), WhatsApp
- * by a QR the customer scans (issued in D-06 right before the submit, shown in D-07), or the paper stub.
- * «التالي» saves with `PATCH /v1/tickets/{id}/intake`; without a reply the step is kept and resent from D-06.
+ * by a QR the customer scans (issued in D-06 right before the submit, shown in D-07), or the paper stub — or, since
+ * V2 (O-01, V2-013), «مسح بطاقة العميل»: the customer's entry pass makes the draft an app ticket linked to the account
+ * (`POST /v1/tickets/intake-pass`), the vehicle filled from it, no WhatsApp. «التالي» saves with
+ * `PATCH /v1/tickets/{id}/intake`; without a reply the step is kept and resent from D-06.
  */
 export function IntakeVehiclePage() {
   const { ticketId = '' } = useParams();
@@ -115,6 +121,29 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
   const recorded = ticket.customer?.phone_masked ?? null;
   const [phoneOpen, setPhoneOpen] = useState(() => !recorded || !!link.phone);
   const keepRecorded = keepsRecordedPhone(link, recorded);
+  // O-01 (V2-013): the entry pass scan and what the server showed of the customer (V2-D12; memory only)
+  const [scanOpen, setScanOpen] = useState(false);
+  const [passCustomer, setPassCustomer] = useState<IntakePassResult['customer'] | null>(null);
+  const scan = useCommand((token: string, key: string) =>
+    intakeByPass(ticket.id, { pass_token: token, expected_version: ticket.version }, key),
+  );
+  const onPassToken = async (token: string) => {
+    const r = await scan.run(token);
+    storeTicket(r.ticket);
+    // the account's vehicle replaces what was typed; without one (not in the account) the driver's input stays
+    if (r.customer.vehicle_prefilled) {
+      setPlate(plateForm(r.ticket.plate));
+      setVehicle(vehicleForm(r.ticket.vehicle_detail));
+    }
+    setLink((l) => ({ ...l, channel: 'app', method: 'direct', phone: '', consent: false, paperSerial: '' }));
+    setPassCustomer(r.customer);
+    if (save.error) save.reset();
+    setScanOpen(false);
+  };
+  const scanError =
+    scan.error instanceof ApiError ? scan.error.message_ar : scan.error ? displayMessage(scan.error) : null;
+  const badge = entitlementBadgeOf(ticket.entitlement, dueOf(ticket), brand.staffNameAr);
+  const appTicket = link.channel === 'app';
   const save = useCommand(
     (body: IntakePatch, key: string) => patchIntake(ticket.id, body, key),
     undefined,
@@ -219,6 +248,71 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
     >
       <Stepper current={0} steps={SAUDI_STEPS} />
       {ticket.event_name_ar ? <p className="m-0">{fmt(d05.event, { event: ticket.event_name_ar })}</p> : null}
+      {badge ? (
+        <div className="flex items-center gap-2" data-entitlement-badge>
+          <span className="text-text-muted">{entitlementBadge.label}</span>
+          <EntitlementChip badge={badge} />
+        </div>
+      ) : null}
+      {appTicket ? (
+        <Card>
+          <div className="flex flex-col gap-2" data-pass-linked>
+            <span className="pt-field__label flex items-center gap-2">
+              <Smartphone size={18} aria-hidden="true" />
+              {d05.pass.linkedTitle}
+            </span>
+            <span>
+              {passCustomer?.first_name
+                ? fmt(d05.pass.customer, { name: passCustomer.first_name })
+                : d05.pass.customerUnnamed}
+              {(passCustomer?.phone_masked ?? recorded) ? (
+                <>
+                  {' · '}
+                  <MaskedPhone phone={passCustomer?.phone_masked ?? recorded ?? ''} />
+                </>
+              ) : null}
+            </span>
+            {passCustomer ? (
+              <p className="m-0 text-text-muted">
+                {passCustomer.vehicle_prefilled ? d05.pass.vehicleFilled : d05.pass.vehicleManual}
+              </p>
+            ) : null}
+            {passCustomer?.subscription === 'vehicle_not_covered' ? (
+              <p className="m-0 font-bold" data-testid="d05-subscription-not-covered">
+                {entitlementBadge.subscriptionNotCovered}
+              </p>
+            ) : null}
+            <p className="m-0 text-text-muted">{d05.pass.noWhatsapp}</p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setPassCustomer(null);
+                setLinkPart({ channel: 'whatsapp', method: 'direct' });
+              }}
+            >
+              {d05.pass.useOther}
+            </Button>
+          </div>
+        </Card>
+      ) : !recorded ? (
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="secondary"
+            size="lg"
+            id="pass-scan"
+            iconStart={ScanLine}
+            disabled={!online || gate.stale}
+            onClick={() => {
+              scan.reset();
+              setScanOpen(true);
+            }}
+          >
+            {d05.pass.scan}
+          </Button>
+          <p className="m-0 text-text-muted">{d05.pass.scanHint}</p>
+        </div>
+      ) : null}
+      <PassScanSheet open={scanOpen} onOpenChange={setScanOpen} onToken={onPassToken} error={scanError} />
       <form
         className="flex flex-col gap-4"
         noValidate
@@ -291,18 +385,20 @@ function VehicleStep({ ticket }: { ticket: TicketDetail }) {
           />
         ) : null}
 
-        <div className="flex flex-col gap-2" data-field="channel">
-          <span className="pt-field__label" id="channel-label">
-            {d05.channel}
-          </span>
-          <SegmentedControl<IntakeChannel>
-            label={d05.channel}
-            options={CHANNELS}
-            value={link.channel}
-            onChange={(channel) => setLinkPart({ channel })}
-          />
-        </div>
-        {link.channel === 'whatsapp' ? (
+        {appTicket ? null : (
+          <div className="flex flex-col gap-2" data-field="channel">
+            <span className="pt-field__label" id="channel-label">
+              {d05.channel}
+            </span>
+            <SegmentedControl<Exclude<IntakeChannel, 'app'>>
+              label={d05.channel}
+              options={CHANNELS}
+              value={link.channel === 'paper' ? 'paper' : 'whatsapp'}
+              onChange={(channel) => setLinkPart({ channel })}
+            />
+          </div>
+        )}
+        {appTicket ? null : link.channel === 'whatsapp' ? (
           <>
             <Radio
               name="link-method"

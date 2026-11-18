@@ -56,6 +56,7 @@ const ENUM_LISTS: Record<string, string> = {
   'الحالات النهائية': 'TERMINAL_TICKET_STATUSES',
   // §5.2
   'tickets.channel': 'TICKET_CHANNELS',
+  'tickets.entitlement': 'TICKET_ENTITLEMENTS',
   'tickets.wa_link_status': 'WA_LINK_STATUSES',
   'tickets.inspection_status': 'INSPECTION_STATUSES',
   'tickets.payment_status': 'PAYMENT_STATUSES',
@@ -417,6 +418,40 @@ describe('canon §11 WhatsApp messages', () => {
       text: 'طلب السيارة',
       payload: 'action_token',
     });
+  });
+
+  it('§11ب: the v2 set W-01 … W-08 row for row — names, purposes, variables by name, the one button (DEC-555)', () => {
+    const v2Rows = tableRows(section(canon, '## 11ب.'));
+    const VAR_AR: Record<string, string> = {
+      'اسم الموقع': 'venue_name',
+      'رقم التذكرة': 'display_number',
+      'اسم المشغل': 'operator_name',
+      'وصف المركبة': 'vehicle_description',
+      الرمز: 'claim_code',
+    };
+    const fromCanon = v2Rows.map((r) => ({
+      id: r[0],
+      name: backticks(r[1] ?? '')[0],
+      kind: r[2] === 'قالب' ? 'template' : `?${r[2]}`,
+      purpose_ar: r[3],
+      variable_names: (r[4] ?? '').split('،').map((v) => VAR_AR[v.trim().replace(/^\d+\s+/, '')] ?? v),
+      button: (r[5] ?? '').includes('QUICK_REPLY') ? /«([^»]+)»/.exec(r[5] ?? '')?.[1] : null,
+    }));
+    expect(
+      shared.WA_TEMPLATES_V2.filter((t) => t.kind === 'template').map((t) => ({
+        id: t.id,
+        name: t.name,
+        kind: t.kind,
+        purpose_ar: t.purpose_ar,
+        variable_names: [...t.variable_names],
+        button: t.button?.text ?? null,
+      })),
+    ).toEqual(fromCanon);
+    expect(fromCanon.map((r) => r.name)).toEqual([...shared.WA_TEMPLATE_NAMES_V2]);
+    // the same purposes as §11, message by message
+    expect(fromCanon.map((r) => [r.id, r.purpose_ar])).toEqual(
+      rows.filter((r) => r[2] === 'قالب').map((r) => [r[0], r[3]]),
+    );
   });
 
   it('template names and session reply names partition §11', () => {

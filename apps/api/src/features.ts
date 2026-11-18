@@ -42,3 +42,28 @@ FEATURE_MODULES.push(MediaHttpModule);
 
 import { SupervisorHttpModule } from '@point/server';
 FEATURE_MODULES.push(SupervisorHttpModule);
+
+import { PlatformHttpModule } from '@point/server';
+FEATURE_MODULES.push(PlatformHttpModule);
+
+import { VenueProfilesHttpModule } from '@point/server';
+FEATURE_MODULES.push(VenueProfilesHttpModule);
+
+import { CustomerAccountsHttpModule } from '@point/server';
+FEATURE_MODULES.push(CustomerAccountsHttpModule);
+
+import { PaymentsOnlineHttpModule } from '@point/server';
+FEATURE_MODULES.push(PaymentsOnlineHttpModule);
+
+import { CustomerPaymentsHttpModule } from '@point/server';
+FEATURE_MODULES.push(CustomerPaymentsHttpModule);
+
+import { SubscriptionsHttpModule } from '@point/server';
+FEATURE_MODULES.push(SubscriptionsHttpModule);
+import { ComplaintsHttpModule } from '@point/server';
+FEATURE_MODULES.push(ComplaintsHttpModule);
+import { InvoicingHttpModule } from '@point/server';
+FEATURE_MODULES.push(InvoicingHttpModule);
+
+import { SettlementHttpModule } from '@point/server';
+FEATURE_MODULES.push(SettlementHttpModule);

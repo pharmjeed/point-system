@@ -33,6 +33,35 @@ export function verifyHubSignature(
   return ok;
 }
 
+/**
+ * Among the channels whose app secret verified a delivery, the one it is addressed to: the first channel named by
+ * a `value.metadata.phone_number_id` of the body, else by an `entry[].id` (the WhatsApp business account, for the
+ * account-level fields such as template status). A body that names none of them keeps the oldest channel, the
+ * single-operator behaviour (DEC-475).
+ */
+export function addressedChannel(verified: readonly ChannelRow[], raw: Buffer): ChannelRow | null {
+  const numbers = new Set<string>();
+  const accounts = new Set<string>();
+  try {
+    const body = JSON.parse(raw.toString('utf8')) as { entry?: unknown };
+    for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+      if (typeof entry?.id === 'string') accounts.add(entry.id);
+      for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+        const n = change?.value?.metadata?.phone_number_id;
+        if (typeof n === 'string') numbers.add(n);
+      }
+    }
+  } catch {
+    // not JSON: the processor marks it ignored (invalid_json); any verified channel may store it
+  }
+  return (
+    verified.find((c) => numbers.has(c.phone_number_id)) ??
+    verified.find((c) => accounts.has(c.business_account_id)) ??
+    verified[0] ??
+    null
+  );
+}
+
 export interface StoredInbound {
   id: string | null;
   duplicate: boolean;
@@ -81,14 +110,15 @@ export class WhatsappWebhookIntake {
     const started = process.hrtime.bigint();
     const body = raw ?? Buffer.alloc(0);
     const channels = await this.channels();
-    let channel: ChannelRow | null = null;
+    const verified: ChannelRow[] = [];
     for (const ch of channels) {
       const secrets = await webhookAppSecrets(this.rt.secrets, ch, this.rt.env.WA_APP_SECRET_PREVIOUS_REF);
-      if (verifyHubSignature(body, signature, secrets)) {
-        channel = ch;
-        break;
-      }
+      if (verifyHubSignature(body, signature, secrets)) verified.push(ch);
     }
+    // V2-007 (DEC-475): the operators of one platform share its Meta app, so one app secret verifies for all of
+    // their channels; the delivery belongs to the operator whose number (or WhatsApp business account) it names.
+    // The body is parsed only now that its signature holds.
+    const channel = verified.length > 1 ? addressedChannel(verified, body) : (verified[0] ?? null);
     if (!channel) {
       if (channels.length === 0) {
         // nothing to attribute the delivery to: Meta retries for 7 days (F-08) until a channel exists

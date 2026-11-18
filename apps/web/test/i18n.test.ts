@@ -102,7 +102,12 @@ describe('error texts (08 §4)', () => {
     expect(canon.length).toBeGreaterThan(90);
     expect([...ERROR_CODES].sort()).toEqual([...canon].sort());
     // Webhook-only codes are answered to Meta, never shown in the UI: 08 gives them no Arabic text («—»).
-    const webhookOnly = ['WA_WEBHOOK_SIGNATURE_INVALID', 'WA_WEBHOOK_VERIFY_FAILED'];
+    const webhookOnly = [
+      'WA_WEBHOOK_SIGNATURE_INVALID',
+      'WA_WEBHOOK_VERIFY_FAILED',
+      'PAYMENT_WEBHOOK_SIGNATURE_INVALID', // answered to the payment gateway (V2-021)
+      'EINVOICE_WEBHOOK_SIGNATURE_INVALID', // answered to the e-invoicing provider (V2-040)
+    ];
     for (const code of ERROR_CODES) {
       if (webhookOnly.includes(code)) expect(errorMessagesAr[code]).toBe('—');
       else expect(errorMessagesAr[code].length, code).toBeGreaterThan(5);

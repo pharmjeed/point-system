@@ -49,3 +49,20 @@ export { PHOTO_UPLOADED_TIMELINE_TYPE } from './domain/media-events.js';
 export { canReadTicketPhotos } from './domain/media-policy.js';
 // signed read URLs for other modules' reads (PNT-076 ticket timeline)
 export { MediaReadUrlQuery, type SignedUrlDto } from './application/media-read-url.js';
+
+// the venue public-profile photos (V2-004, DEC-494) reuse the private bucket rules: content types, size limit,
+// sanitizing, read-link lifetime and the storage error mapping
+export {
+  isSupportedContentType,
+  normalizeContentType,
+  readUrlTtlSeconds,
+  uploadUrlTtlSeconds,
+} from './domain/media-policy.js';
+export {
+  mediaTooLarge,
+  mediaTypeUnsupported,
+  storageFailureToAppError,
+  uploadIncomplete,
+} from './application/media-errors.js';
+export { PHOTO_CACHE_CONTROL } from './application/complete-media-upload.js';
+export { assertSanitized } from './infra/image-sanitizer.js';

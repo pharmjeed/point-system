@@ -1,3 +1,4 @@
+import { subscriptionLifecycle } from '../../../core/hooks/subscription-lifecycle.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { venueSettingsSchema, type VenueSettings } from '@point/shared';
 import type { ActorContext } from '../../../core/actor-context/actor-context.js';
@@ -154,6 +155,16 @@ export class VenuesService {
         [venueId, current.version, ...diff.params],
       );
     }
+    // V2-034 (docs/v2/04 §1 «إغلاق الموقع»; DEC-536): a venue taken out of service freezes its subscriptions, and
+    // back in service unfreezes them with the frozen days added
+    if (row.status !== current.status)
+      await subscriptionLifecycle.onVenueStatusChanged(tx, {
+        orgId: actor.orgId,
+        venueId,
+        from: current.status,
+        to: row.status,
+        requestId: meta.requestId ?? null,
+      });
     await auditCommand(tx, actor, meta, {
       action: 'venue.manage',
       entityType: 'venue',

@@ -7,13 +7,16 @@ import {
   HTTP_METHODS,
   IDEMPOTENT_ROUTES,
   PERMISSIONS,
+  PLATFORM_ROUTES,
   ROUTES,
+  findPlatformRoute,
   findRoute,
   fromExpressPath,
   routeKey,
   toExpressPath,
 } from '../src/index.js';
 import type { HttpMethod } from '../src/index.js';
+import { CUSTOMER_ROUTES, findCustomerRoute } from '../src/customer/index.js';
 import { backticks, readDoc, section, stripParens, tableRows } from './docs.js';
 
 const canon = readDoc('00_Glossary_Canon.md');
@@ -131,26 +134,40 @@ describe('ROUTES vs canon §9', () => {
 describe('ROUTES vs docs/07_openapi.yaml', () => {
   const ops = openApiOps();
 
-  it('covers exactly the OpenAPI operations', () => {
-    expect(ROUTES.map((r) => routeKey(r.method, r.path)).sort()).toEqual(
-      ops.map((o) => routeKey(o.method as HttpMethod, o.path)).sort(),
-    );
-    expect(ROUTES).toHaveLength(131);
+  it('covers exactly the OpenAPI operations (canon §9 + the V2 platform routes, DEC-462, + the customer routes, V2-010)', () => {
+    expect(
+      [...ROUTES, ...PLATFORM_ROUTES, ...Object.values(CUSTOMER_ROUTES)]
+        .map((r) => routeKey(r.method as HttpMethod, r.path))
+        .sort(),
+    ).toEqual(ops.map((o) => routeKey(o.method as HttpMethod, o.path)).sort());
+    expect(ROUTES).toHaveLength(143); // canon §9 + the V2-004 public-profile routes (O-04) + intake-pass (O-01) + the payment webhook (V2-021) + O-05/O-06 (5) and the e-invoicing webhook (V2-040 … V2-042)
   });
 
   it('matches x-permission and x-idempotency of every operation', () => {
     for (const op of ops) {
-      const r = findRoute(op.method as HttpMethod, op.path);
+      const c = findCustomerRoute(op.method, op.path);
+      if (c) {
+        // V2-010: `customer` (Bearer) or `public` (the sign-in calls), and the registry's Idempotency-Key rule
+        expect(c.auth, `${op.method} ${op.path}`).toBe(op.permission);
+        expect(c.idempotency, `${op.method} ${op.path}`).toBe(op.idempotency);
+        continue;
+      }
+      const r =
+        findRoute(op.method as HttpMethod, op.path) ?? findPlatformRoute(op.method as HttpMethod, op.path);
       const ours = r && ['public', 'webhook', 'internal'].includes(r.permission) ? 'public' : r?.permission;
       expect(ours, `${op.method} ${op.path}`).toBe(op.permission);
       expect(r?.idempotency, `${op.method} ${op.path}`).toBe(op.idempotency);
     }
   });
 
-  it('has the 78 ✓ routes announced in 07 §1.4', () => {
+  it('has the 82 ✓ routes announced in 07 §1.4', () => {
     const announced = /\((\d+) مسارًا، `x-idempotency: required`\)/.exec(readDoc('07_API_Contract.md'))?.[1];
     expect(IDEMPOTENT_ROUTES).toHaveLength(Number(announced));
-    expect(ops.filter((o) => o.idempotency === 'required')).toHaveLength(IDEMPOTENT_ROUTES.length);
+    expect(ops.filter((o) => o.idempotency === 'required')).toHaveLength(
+      IDEMPOTENT_ROUTES.length +
+        PLATFORM_ROUTES.filter((r) => r.idempotent).length +
+        Object.values(CUSTOMER_ROUTES).filter((r) => r.idempotency === 'required').length,
+    );
   });
 });
 

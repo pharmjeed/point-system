@@ -84,7 +84,14 @@ export class WhatsappLinkCommands {
     const t = locked as TicketRow;
     if (isClosedTicket(t.status)) throw new AppError('TICKET_CLOSED', { ticket_status: t.status });
     if (t.channel !== 'whatsapp')
-      throw invalidTransition('ticket', t, LINK_OP, [...OPEN_AFTER_INTAKE, 'received'], 'paper_channel');
+      throw invalidTransition(
+        'ticket',
+        t,
+        LINK_OP,
+        [...OPEN_AFTER_INTAKE, 'received'],
+        // V2-013 (DEC-503): an app ticket is linked to the customer's account, never through WhatsApp
+        t.channel === 'app' ? 'app_channel' : 'paper_channel',
+      );
     const channel = await assertChannelAvailable(tx, t.org_id);
 
     let after: TicketRow = t;
@@ -130,7 +137,11 @@ export class WhatsappLinkCommands {
           since: channel.health_changed_at ? new Date(channel.health_changed_at).toISOString() : null,
           reason: 'display_phone_not_configured',
         });
-      qr = await issueQrLinkCode(tx, t, { actorId: actor.userId, displayPhoneE164: display });
+      qr = await issueQrLinkCode(tx, t, {
+        actorId: actor.userId,
+        displayPhoneE164: display,
+        customerBrandAr: this.env.BRAND_CUSTOMER_NAME_AR,
+      });
     }
     await audit(tx, {
       orgId: actor.orgId,

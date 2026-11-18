@@ -10,6 +10,7 @@ const SENSITIVE_KEY =
 const SAFE_KEYS = new Set([
   'code_id',
   'error_code',
+  'failure_code', // V2-021: the payment gateway's short response code of a declined payment or refund (DEC-512)
   'claim_code_id',
   'link_code_id',
   'action_token_id',

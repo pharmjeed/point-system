@@ -234,6 +234,19 @@ STORAGE_ORIGIN=
 | `WA_ACCESS_TOKEN` / `WA_APP_SECRET` / `WA_VERIFY_TOKEN` | — | قيم الأسرار التي تشير إليها المراجع |
 | `WA_HTTP_TIMEOUT_MS` | `10000` | مهلة Graph API |
 | `WA_TEST_RECIPIENT_ALLOWLIST` | — | إلزامي في staging الحي: أرقام الفريق فقط |
+| `MOYASAR_MODE` | `simulator` | الإصدار الثاني (V2-020، DEC-510): `live` إلزامي في production ومرفوض في غيرها ولا يرسل إلا مفتاح `sk_live_`؛ `test` (واجهة Moyasar الاختبارية الحقيقية) في local وstaging فقط ولا يرسل إلا مفتاح `sk_test_` (للبوابة H3)؛ `simulator` (`tools/payment-simulator`) لا يرسل مفتاحًا حيًا أبدًا — فلا خصم حقيقي خارج الإنتاج |
+| `MOYASAR_BASE_URL` | `http://localhost:4020` | `https://api.moyasar.com` في وضعي `live` و`test` (https إلزامي)؛ في وضع `simulator` يُرفض أي مضيف `moyasar.com` |
+| `MOYASAR_SECRET_KEY_REF` / `MOYASAR_WEBHOOK_SECRET_REF` | `env://MOYASAR_SECRET_KEY` / `env://MOYASAR_WEBHOOK_SECRET` | مراجع الأسرار (لا قيم)، `sm://` في الإنتاج كأسرار واتساب |
+| `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` | — | أثناء تدوير سر الـWebhook فقط (يُقبل السران) ثم يُحذف |
+| `MOYASAR_SECRET_KEY` / `MOYASAR_WEBHOOK_SECRET` | — | المفتاح السري (`sk_live_…` في الإنتاج وحده؛ المحوّل يرفض إرسال مفتاح حي خارج الإنتاج) وسر الـWebhook المشترك الذي يُضبط في لوحة Moyasar |
+| `MOYASAR_HTTP_TIMEOUT_MS` | `10000` | مهلة كل استدعاء للبوابة |
+| `CUSTOMER_PUSH_MODE` | `simulator` | الإصدار الثاني (V2-016، DEC-519): `live` (Expo Push API) إلزامي في production ومرفوض في غيرها؛ `simulator` لا يتصل بالشبكة — فلا جهاز حقيقي يتلقى إشعارًا خارج الإنتاج |
+| `EINVOICE_MODE` | `simulator` | الإصدار الثاني (V2-040، DEC-540): `live` إلزامي في production ومرفوض في غيرها؛ `simulator` لا يتصل بالشبكة — فلا يصل مستند إلى الهيئة خارج الإنتاج. لا محوّل مزود بعد: في `live` تبقى الفواتير `pending` مع تنبيه `einvoice_submit_failed` حتى يختار المالك المزود |
+| `INVOICE_SELLER_LEGAL_NAME_AR` · `_EN` · `INVOICE_SELLER_VAT_NUMBER` · `INVOICE_SELLER_CR_NUMBER` · `INVOICE_SELLER_ADDRESS_AR` | فارغة | الإصدار الثاني (DEC-540): بيانات بوينت بائعًا في كل فاتورة؛ قيم تجريبية ظاهرة خارج الإنتاج، وإلزامية في production (يرفض الإقلاع دونها) |
+| `VAT_RATE_BP` · `EINVOICE_WEBHOOK_SECRET_REF` · `SETTLEMENT_MONTHLY_CRON_UTC` | `1500` · `env://EINVOICE_WEBHOOK_SECRET` · `15 0 1 * *` | الضريبة بنقاط الأساس، سر إشعار مزود الفوترة، وموعد `job.settlement_monthly` (الأول من الشهر 03:15 الرياض) — DEC-543، DEC-544، DEC-549 |
+| `CUSTOMER_PUSH_ACCESS_TOKEN_REF` / `EXPO_ACCESS_TOKEN` | `env://EXPO_ACCESS_TOKEN` / — | رمز وصول مشروع Expo إن فُعّل «push security» فيه (اختياري، بالمرجع، `sm://` في الإنتاج) |
+| `CUSTOMER_PUSH_HTTP_TIMEOUT_MS` / `CUSTOMER_PUSH_RECEIPT_DELAY_S` | `10000` / `900` | مهلة استدعاء Expo، ومتى تُقرأ إيصالات التسليم |
+| `PAYMENTS_RECONCILE_CRON_UTC` | `30 0 * * *` | المطابقة اليومية مع البوابة (03:30 بتوقيت الرياض) لليوم السابق (DEC-514) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | — / — / `mailto:ops@example.com` | Web Push؛ اجعل `VAPID_SUBJECT` بريد المشغّل |
 | `S3_ENDPOINT`، `S3_REGION`، `S3_BUCKET_MEDIA`، `S3_BUCKET_EXPORTS`، `S3_ACCESS_KEY_ID`، `S3_SECRET_ACCESS_KEY`، `S3_FORCE_PATH_STYLE` | — / `us-east-1` / `point-media` / `point-exports` / — / — / `true` | §4؛ في staging/production يُستخدم S3 دائمًا (DEC-108) |
 | `MEDIA_UPLOAD_URL_TTL_S` / `MEDIA_READ_URL_TTL_S` / `MEDIA_MAX_BYTES` / `EXPORT_URL_TTL_S` | `300` / `300` / `10485760` / `300` | مدد الروابط الموقعة وحد الصورة |
@@ -253,7 +266,7 @@ STORAGE_ORIGIN=
 | `OTEL_SERVICE_NAME` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_TRACES_SAMPLER_ARG` | يضبطه compose / — / `0.2` | التتبع غير موصول بعد (ملاحظات PNT-094) |
 | `METRICS_ENABLED` / `METRICS_PORT` | `true` / `9464` | المقاييس على `METRICS_PORT` (api) و`METRICS_PORT + 1` (worker)، شبكة داخلية فقط (DEC-61)؛ فحص صحة حاوية العامل يقرأ منفذه، فأبقِ `METRICS_ENABLED=true` |
 
-قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة.
+قواعد يرفض بها الإقلاع (`loadEnvOrExit`): الأسرار الناقصة أو القصيرة؛ `TZ` غير UTC؛ `WA_MODE` غير `live` في production أو `live` خارج staging/production؛ في staging وproduction: الكوكي يجب أن يكون `__Host-` مع `Secure`، و`APP_BASE_URL` بـhttps، و`API_BASE_URL` على الأصل نفسه؛ `WA_GRAPH_BASE_URL` بـhttps حين `live`؛ staging الحي دون `WA_TEST_RECIPIENT_ALLOWLIST`؛ `CHAOS_KILL_AT` في production؛ وكوكي `__Host-` دون `Secure` في أي بيئة؛ والإصدار الثاني: `MOYASAR_MODE` غير `live` في production أو `live` خارجها، و`test` خارج local وstaging، و`MOYASAR_BASE_URL` بغير https حين `live` أو `test`، ومضيف `moyasar.com` في وضع `simulator` (DEC-510)؛ و`CUSTOMER_PUSH_MODE` غير `live` في production أو `live` خارجها (DEC-519).
 
 متغيرات compose (للاستبدال في ملفات compose، من الملف نفسه عبر `--env-file`):
 
@@ -301,6 +314,16 @@ pc run --rm api node api/dist/cli.js create-owner \
 - ترفض الأداة إنشاء مالك ثانٍ (رمز الخروج 3): استعادة المالك إجراء طوارئ مدقق خارج النظام (09 §9.1). إن وُجدت أكثر من مؤسسة فمرر `--org-id`.
 - بعدها يضبط المالك إعدادات المؤسسة، وينشئ الإدارة والمشرفين والسائقين والمواقع من التطبيق.
 
+### 7.2 مالك المنصة الأول (الإصدار الثاني، V2-002)
+
+```bash
+pc run --rm api node api/dist/cli.js create-platform-owner --phone 05XXXXXXXX --name "اسم مالك المنصة"
+```
+
+- تنشئ حساب `platform_owner` في `platform_users` (لا في `users`: ليس عضوًا في أي مؤسسة مشغّل) وصف `platform.owner_bootstrap` في `platform_audit_log`، وتطبع **كلمة مرور مؤقتة مرة واحدة**.
+- أول دخول من `https://app.<domain>/platform/login` جلسة مقيدة: تغيير كلمة المرور ثم إعداد TOTP، ثم كل دخول بعدها بكلمة المرور ورمز التحقق. كوكي اللوحة `__Host-point_psid` منفصل عن كوكي الموظفين.
+- ترفض الأداة مالك منصة ثانيًا (رمز الخروج 3)؛ بقية حسابات المنصة تُضاف من اللوحة (DEC-465).
+
 ---
 
 ## 8. واتساب: المحاكي ثم التشغيل الحي (Q-03)
@@ -323,6 +346,14 @@ WA_APP_SECRET=<openssl rand -hex 24>   WA_VERIFY_TOKEN=<openssl rand -hex 24>   
 2. اشتراك Webhook في تطبيق Meta على `https://app.<domain>/webhooks/whatsapp` بالحقل `messages` (والحقول الاختيارية في 12 §3.6) ورمز التحقق نفسه؛ التحقق يمر عبر `GET` ويُقارن بزمن ثابت.
 3. صف القناة بوضع `live` (S-13 «قناة واتساب» أو `PUT /v1/admin/whatsapp/channel`)، ثم مزامنة القوالب (`POST /v1/admin/whatsapp/templates/sync`)، ثم إرسال تجريبي لأرقام داخلية.
 4. تدوير سر التطبيق: ضع الجديد في `WA_APP_SECRET` والقديم في متغير آخر يشير إليه `WA_APP_SECRET_PREVIOUS_REF` لمدة 24 ساعة ثم احذفه.
+
+### 8.1 بوابة الدفع (الإصدار الثاني، V2-020 / V2-021)
+
+**التطوير والاختبار وstaging:** `MOYASAR_MODE=simulator` و`MOYASAR_BASE_URL` على `tools/payment-simulator` (`pnpm dev` يشغّله على 4020 بمفتاحه `sk_test_point_simulator_secret` وسره `point-simulator-webhook-secret`)؛ المحاكي يرفض العمل في الإنتاج ويرفض أي مفتاح حي، والمحوّل يرفض إرسال `sk_live_…` خارج الإنتاج، والإقلاع يرفض `live` خارج الإنتاج — فلا خصم حقيقي ممكن خارجه (DEC-510).
+
+**تجربة البوابة الحقيقية قبل الإطلاق (H3، staging):** `MOYASAR_MODE=test` و`MOYASAR_BASE_URL=https://api.moyasar.com` بمفتاح الاختبار `sk_test_…` من لوحة Moyasar (المحوّل يرفض أي مفتاح غيره في هذا الوضع)، وWebhook اختباري في اللوحة على `https://<staging>/webhooks/payments/moyasar` بسره المشترك. بطاقات Moyasar الاختبارية لا تنقل مالًا.
+
+**الإنتاج:** `MOYASAR_MODE=live`، `MOYASAR_BASE_URL=https://api.moyasar.com`، المفتاح السري `sk_live_…` (من مدير الأسرار) في `MOYASAR_SECRET_KEY`، وفي لوحة Moyasar: Webhook على `https://app.<domain>/webhooks/payments/moyasar` (POST) لأحداث الدفع، بسر مشترك عشوائي (`openssl rand -hex 32`) هو `MOYASAR_WEBHOOK_SECRET`. التدوير: السر الجديد في اللوحة وفي `MOYASAR_WEBHOOK_SECRET`، والقديم في متغير يشير إليه `MOYASAR_WEBHOOK_SECRET_PREVIOUS_REF` حتى تنقضي إعادة المحاولات، ثم يُحذف. المطابقة اليومية تفتح تنبيهات `platform_alerts` لكل فرق (P-08).
 
 ---
 
@@ -494,7 +525,7 @@ git clone https://github.com/pharmjeed/point-system.git /opt/point && cd /opt/po
 bash infra/deploy/install.sh          # يسأل: اسم المضيف، البريد، جوال المالك واسمه
 ```
 
-- **الأسرار** كلها يولدها السكربت بـ`openssl` على الخادم نفسه في `.env` (صلاحية `600`)، ومعها مفاتيح VAPID (P-256). لا يطبع إلا كلمة مرور المالك المؤقتة (مرة واحدة) وكلمة مرور صفحة المحاكي.
+- **الأسرار** كلها يولدها السكربت بـ`openssl` على الخادم نفسه في `.env` (صلاحية `600`)، ومعها مفاتيح VAPID (P-256). لا يطبع إلا كلمتي المرور المؤقتتين للمالك ولمالك المنصة (مرة واحدة، DEC-633) وكلمة مرور صفحة المحاكي؛ ومنذ الإصدار الثاني يكتبها `infra/deploy/env.sh` (§14.1).
 - **الوضع يُختار تلقائيًا:**
   - **`gateway`:** على الخادم حاوية Caddy مشتركة (`POINT_GATEWAY_CONTAINER`، الافتراضي `vm-caddy-1`) تملك 80/443 وتستورد `/data/conf.d/*.caddyfile`. يعمل Caddy بوينت بـHTTP فقط على عنوان جسر Docker للبوابة (`POINT_HTTP_BIND`، المنفذ الافتراضي 8095)، ويكتب السكربت `point.caddyfile` في مجلد البوابة، ثم `caddy validate` (رفضٌ = استعادة الملف السابق ولا إعادة تحميل)، ثم `caddy reload` الذري: المواقع الأخرى لا تنقطع، والبوابة تصدر شهادة `DOMAIN`.
   - **`direct`:** المنفذان 80/443 حران، فيملكهما Caddy بوينت ويصدر الشهادة بنفسه (§2).
@@ -506,3 +537,34 @@ bash infra/deploy/install.sh          # يسأل: اسم المضيف، البر
 
 **خادم المالك الحالي (DEC-457):** Oracle Ampere A1 (arm64) في جدة، تعمل عليه مشاريع أخرى خلف البوابة `vm-caddy-1`. بوينت هناك بالوضع `gateway` على `app.pointsa.net` و`sim.pointsa.net`، بمشروع compose مستقل اسمه `point` (حاوياته وأحجامه وشبكته منفصلة، فلا يلمس المشاريع الأخرى). يختبر سير `.github/workflows/deploy-smoke.yml` الوضعين على Docker حقيقي (ومعهما إعادة التشغيل كتحديث)، وبناء صورة الخلفية لـ`linux/arm64` وتحميل وحداتها الأصلية (argon2 وsharp).
 
+
+### 14.1 الإصدار الثاني على الخادم (DEC-630 … DEC-635)
+
+المثبّت نفسه يثبّت فرع الإصدار الثاني ويرقّي تثبيت الإصدار الأول في مكانه. دليل المالك المختصر بالعربية: [`runbooks/server-install-v2.md`](runbooks/server-install-v2.md).
+
+```bash
+# تثبيت جديد من فرع الإصدار الثاني
+sudo mkdir -p /opt/point && sudo chown "$USER" /opt/point
+git clone -b claude/v2-platform-operators https://github.com/pharmjeed/point-system.git /opt/point && cd /opt/point
+bash infra/deploy/install.sh
+# تحديث (أو ترقية تثبيت الإصدار الأول إلى الثاني)
+cd /opt/point && git fetch origin && git checkout claude/v2-platform-operators && git pull --ff-only && bash infra/deploy/install.sh
+```
+
+**ما تحتويه حزمة staging الآن:** `postgres` (16) و`minio` و`migrate` ثم `api` و`worker` و`web` (Caddy)، ومحاكيان على الشبكة الداخلية: `wa-simulator` (واتساب، صفحته `sim.<النطاق>` في وضع البوابة) و`payment-simulator` (Moyasar، **بلا أي منفذ منشور** لأن أوامر التحكم `/_sim/*` فيه بلا مصادقة). الفوترة الإلكترونية (`EINVOICE_MODE=simulator`) وإشعارات تطبيق العميل (`CUSTOMER_PUSH_MODE=simulator`) محاكيان داخل العملية بلا شبكة: لا بطاقة تُخصم، ولا مستند يصل إلى الهيئة، ولا جهاز يتلقى إشعارًا.
+
+**المفاتيح التي يكتبها المثبّت للإصدار الثاني (DEC-630):** `PLATFORM_SESSION_COOKIE_NAME=__Host-point_psid`، `WA_TEMPLATE_SET=v1`، `CUSTOMER_APP_LINK=` (فارغ: لا سطر للتطبيق في ردود واتساب حتى تُنشر صفحة التطبيق)، `CUSTOMER_TERMS_URL`/`_PRIVACY_URL`/`_MARKETING_URL` فارغة، `MOYASAR_MODE=simulator`، `MOYASAR_BASE_URL=http://payment-simulator:4020`، مرجعا `MOYASAR_*_REF`، `MOYASAR_SECRET_KEY=sk_test_<عشوائي>` و`MOYASAR_WEBHOOK_SECRET` (يولدهما `openssl` على الخادم؛ المحاكي يأخذهما من `.env` نفسه)، `EINVOICE_MODE=simulator` ومرجعه و`EINVOICE_WEBHOOK_SECRET` (عشوائي)، `INVOICE_SELLER_*` فارغة (= بيانات بائع تجريبية ظاهرة «بيانات تجريبية» على كل فاتورة؛ إلزامية بقيمها الحقيقية في production)، `CUSTOMER_PUSH_MODE=simulator` ومرجعه و`EXPO_ACCESS_TOKEN=` فارغًا. **لا يكتب** إصدارات النصوص (`CUSTOMER_*_VERSION`) ولا مواعيد المهام: تتبع الكود والتطبيق الذي يحمل نصوصها (DEC-631).
+
+**الترقية من تثبيت الإصدار الأول (DEC-631):** إعادة تشغيل المثبّت تحفظ `.env` كما هو وتُلحق في آخره كل مفتاح ناقص فقط (لا تغيّر مفتاحًا موجودًا ولو كان فارغًا)، وتطبع **أسماء** المفاتيح المضافة دون قيمها، وتبقى صلاحية الملف `600`. ثم تضيف `docker-compose.payment-simulator.yml` إلى `POINT_COMPOSE_FILES` ما دام `MOYASAR_MODE=simulator` (وضع `test` لتجربة H3 لا يحتاجه)، وتنشئ مالك المنصة مرة واحدة (DEC-633، أدناه).
+
+**مالك المنصة (DEC-633):** يسأل المثبّت عن جوال مالك لوحة المنصة `/platform` واسمه (الافتراضي: المالك نفسه) وينشئه مرة واحدة بـ`create-platform-owner` (كلمة مرور مؤقتة تُطبع مرة واحدة)، ويحفظ `POINT_PLATFORM_OWNER_CREATED` في `.env`. بلا جوال في الوضع غير التفاعلي يتخطاه وينبه: `PLATFORM_OWNER_PHONE=05XXXXXXXX PLATFORM_OWNER_NAME='…' bash infra/deploy/install.sh`.
+
+**المسارات (DEC-562، DEC-634):** البوابة المشتركة تمرر النطاق كله إلى Caddy بوينت (`reverse_proxy` واحد في `point.caddyfile`)، وهو يوجّه ويحدّ الأجسام: `/v1/*` (الموظفون و`/v1/customer/*` للتطبيق و`/v1/platform/*` للوحة) و`/ws` (مساحتا الموظفين و`/customer` على المسار نفسه) حتى 2 MB، `/webhooks/whatsapp` حتى 4 MB، `/webhooks/payments/moyasar` و`/webhooks/einvoicing` حتى 1 MB، الحاويات الخاصة حتى 12 MB، وصفحات `/platform` من تطبيق الويب. لا تغيير في `Caddyfile` كان لازمًا للإصدار الثاني بعد DEC-562.
+
+**محاكي الدفع:** يصله الـapi والعامل باسم الخدمة، ويرسل أحداثه إلى `http://api:3000/webhooks/payments/moyasar` على الشبكة الداخلية بسر `MOYASAR_WEBHOOK_SECRET` في `secret_token`. فحص الذهاب والإياب: `bash infra/deploy/smoke-payments.sh`؛ قراءة ما فيه: `bash infra/deploy/pc.sh exec -T payment-simulator wget -qO- http://127.0.0.1:4020/_sim/payments`. **حدّه:** هاتف حقيقي لا يصل إلى المحاكي الداخلي، فترميز البطاقة على الجهاز وصفحة 3-D Secure لا تعمل من تطبيق العميل على الخادم؛ تجربة الدفع من الجهاز تكون بوضع `test` وبوابة Moyasar الاختبارية (§8.1، H3).
+
+**تسجيل دخول العميل:** يتطلب صف قناة واتساب (§14 أعلاه، S-13) ومزامنة القوالب في المحاكي؛ قبلها يجيب `POST /v1/customer/auth/otp` بـ`WA_CHANNEL_UNAVAILABLE` (`no_channel`).
+
+**نظافة القرص (DEC-632):** قبل البناء يطبع المثبّت الذاكرة الحرة والمساحة الحرة على قرص Docker وحجم ذاكرة البناء والمنافذ التي سيحجزها (8095 و8495 و8097 في وضع البوابة، أو 80/443) ويتوقف بوضوح إن كان منفذ لبرنامج آخر. يرفض البناء إن قلّت المساحة الحرة عن `POINT_MIN_FREE_GB` (8) بعد تنظيف آمن أولي، ولا يوقف شيئًا. بعد البناء يحذف صور بوينت المعلّقة فقط (الوسم `sa.point.stack=point` ووسم compose للمشروع `point`) وذاكرة البناء غير المستعملة منذ `POINT_BUILD_CACHE_UNTIL` (24 ساعة؛ `off` يبقيها)، ويطبع المساحة قبل وبعد. ذاكرة BuildKit مشتركة بين كل البناءات على الخادم ولا مالك لمدخلاتها: حذف مدخل قديم لمشروع آخر يبطئ بناءه التالي فقط، ولا يمس صورة ولا حاوية ولا حجمًا ولا شبكة. لا `docker system prune` أبدًا.
+
+**ما يختبره `deploy-smoke.yml` (DEC-635):** يعمل على كل طلب دمج أيًّا كان فرعه الأساس (طلب الإصدار الثاني #3 أساسه فرع الإصدار الأول) متى تغيرت `infra/**` أو `apps/**` (عدا `apps/customer`) أو `packages/db/**` أو إعدادات البيئة أو المحاكيان. بعد التثبيت بالوضعين: `/health/ready`، مسار العميل `/v1/customer/auth/otp` و`/v1/customer/me`، ترقية WebSocket على `/ws` بتوكن عميل، صفحة `/platform/login` ودخول مالك المنصة الأول (جلسة مقيدة وكوكي `__Host-point_psid`)، رفض الـapi لـWebhook غير موقّع على المسارين الجديدين، ذهاب وإياب محاكي الدفع، حارس المساحة، إعادة التشغيل كتحديث، وترقية تثبيت بشكل الإصدار الأول في مكانه. وظيفة بناء صورة الخلفية لـarm64 كما هي.

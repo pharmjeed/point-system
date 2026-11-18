@@ -107,11 +107,11 @@ flowchart LR
 
 | الاسم التحليلي | الخصائص | يُستخدم في |
 |---|---|---|
-| `ticket_created` | `channel` enum(whatsapp/paper)، `pricing_mode` enum(included/per_vehicle) | حجم الاستلام؛ KPI-16 |
+| `ticket_created` | `channel` enum(whatsapp/paper/app)، `pricing_mode` enum(included/per_vehicle) | حجم الاستلام؛ KPI-16 (`app` بطاقة الدخول في الإصدار الثاني، DEC-501) |
 | `ticket_intake_submitted` | `channel`، `inspection_status` enum(complete/incomplete/exception_approved)، `photos_count` int، `has_customer_phone` bool، `wa_link_method` enum(direct/qr/none)، `intake_duration_s` int | KPI-14، KPI-16 |
 | `ticket_parked` | `parking_duration_s` int، `spot_mode` enum(spot/note)، `key_slot_used` bool، `had_pending_retrieval` bool، `is_repark` bool | KPI-16 |
-| `ticket_retrieval_requested` | `request_source` enum(whatsapp/staff)، `cycle_no` int، `requested_early` bool، `queue_depth` int، `available_drivers` int، `ingest_latency_ms` int (للطلب الذي تفتح ضغطة واتساب دورته فقط: من `whatsapp_inbound_events.received_at` حتى كتابة الدورة بساعة المعاملة؛ لا للطلب المبكر المحوَّل عند الصف ولا لطلب الموظف، DEC-367) | KPI-03، KPI-14، سعة التشغيل، هدف حفظ الطلب |
-| `ticket_retrieval_requested_early` | `request_source` enum(whatsapp) (الطلب المبكر من زر واتساب فقط، DEC-25)، `status_at_request` enum(received/parking/reparking) | KPI-03 (تصنيف الطلب المبكر) |
+| `ticket_retrieval_requested` | `request_source` enum(whatsapp/staff/app) (`app`: من تطبيق العميل، V2-015، DEC-516)، `cycle_no` int، `requested_early` bool، `queue_depth` int، `available_drivers` int، `ingest_latency_ms` int (للطلب الذي تفتح ضغطة واتساب دورته فقط: من `whatsapp_inbound_events.received_at` حتى كتابة الدورة بساعة المعاملة؛ لا للطلب المبكر المحوَّل عند الصف ولا لطلب الموظف، DEC-367) | KPI-03، KPI-14، سعة التشغيل، هدف حفظ الطلب |
+| `ticket_retrieval_requested_early` | `request_source` enum(whatsapp/app) (الطلب المبكر من العميل فقط، DEC-25: زر واتساب أو التطبيق، DEC-516)، `status_at_request` enum(received/parking/reparking) | KPI-03 (تصنيف الطلب المبكر) |
 | `ticket_assigned` | `wait_s` int (من `requested_at`)، `offer_mode` enum(single/broadcast)، `offer_round_no` int | KPI-01، KPI-13 |
 | `ticket_assigned_waiting` | `wait_s` int، `offer_round_no` int | KPI-13 |
 | `ticket_retrieving` | `start_after_claim_s` int، `from_next_task` bool | KPI-02 |
@@ -177,6 +177,8 @@ flowchart LR
 | `payment_reversed` | `method`، `amount_halalas` int، `with_replacement` bool، `after_cash_handover` bool | KPI-11 |
 | `payment_waived` | `amount_halalas` int | KPI-11 |
 | `cash_handover_recorded` | `amount_halalas` int، `expected_halalas` int، `difference_halalas` int، `linked_payments_count` int | KPI-11، تسوية النقد (13 §10) |
+| `payment_online_paid` | `amount_halalas` int | الإصدار الثاني: الدفع لكل زيارة في التطبيق (V2-022، DEC-522) |
+| `payment_online_refunded` | `amount_halalas` int | الإصدار الثاني: استرداد كامل قبل التسليم أعاد التذكرة `due` (DEC-522) |
 
 ### 7.5 التنبيهات والوقائع والحفل والوردية
 

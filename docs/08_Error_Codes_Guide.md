@@ -440,6 +440,101 @@
 | `POST /v1/duty-sessions/{sessionId}/force-end` | تدقيق المشرف |
 | `POST /v1/staff/{userId}/reset-mfa` | تدقيق المالك (`audit_log.reason`) |
 | `POST /v1/events/{eventId}/cancel` | `events.cancel_reason` |
+| `POST /v1/platform/venues/{venueId}/send-back` · `…/hide` · `…/unhide` | ملاحظة المراجع للمشغل (`platform_audit_log.reason`، V2-004، DEC-491) |
+
+### 4.17 المنصة والمشغلون (الإصدار الثاني، `docs/v2`)
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` |
+|---|---|---|---|---|
+| `PLATFORM_AUTH_REQUIRED` | 401 | لا | سجّل الدخول إلى لوحة المنصة للمتابعة. | Sign in to the platform to continue. |
+| `OPERATOR_SUSPENDED` | 409 | لا | حساب المشغّل معلّق من المنصة. لا يمكن تنفيذ هذا الإجراء الآن. | The operator is suspended. |
+| `PASS_INVALID` | 422 | لا | بطاقة الدخول غير صالحة. اطلب من العميل فتح البطاقة في التطبيق ثم امسحها مجددًا. | The entry pass is not valid. |
+| `PASS_EXPIRED` | 410 | لا | انتهت صلاحية بطاقة الدخول. امسح البطاقة الظاهرة الآن في جوال العميل. | The entry pass has expired. Scan the current one. |
+
+| الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
+|---|---|---|---|---|
+| `PLATFORM_AUTH_REQUIRED` | أي مسار `/v1/platform/*` غير عام بلا كوكي المنصة (`PLATFORM_SESSION_COOKIE_NAME`، `__Host-point_psid`) أو برمز غير معروف أو بخطوة تحقق لم تكتمل — ومنه الطلب الذي يحمل كوكي جلسة الموظفين وحده: جلسة الموظف لا تُقرأ على مسار المنصة أبدًا، فلا يُرفع `AUTH_UNAUTHENTICATED` الذي يُخرج الموظف من تطبيقه (DEC-462). أما الجلسة المنصية المنتهية أو المبطلة أو الحساب المعطّل أو المقيد فبرموز 4.1 نفسها (`AUTH_SESSION_EXPIRED`، `AUTH_SESSION_REVOKED`، `AUTH_ACCOUNT_DISABLED`، `AUTH_SECRET_CHANGE_REQUIRED`، `AUTH_MFA_SETUP_REQUIRED` مع `allowed_paths` = مسارات `platform.self`)، ودخول المنصة بـ`AUTH_INVALID_CREDENTIALS`/`AUTH_ACCOUNT_LOCKED`/`AUTH_MFA_*` كدخول الموظفين | — | `/platform/login` (لوحة المنصة)؛ لا يمس جلسة الموظف في التبويب نفسه | info · — |
+| `OPERATOR_SUSPENDED` | لمؤسسة `operator_status` فيها `suspended` أو `terminated` (V2-005، DEC-486): فتح حفل أو إعادة فتحه (`POST /v1/events/{eventId}/open`)، فتح وردية (`POST /v1/shifts/{shiftId}/open`)، بدء مناوبة (`POST /v1/me/duty/start`)، بدء استلام تذكرة (`POST /v1/tickets`). ما بدأ قبل التعليق يكتمل، والدخول والقراءة مسموحان | `operator_status` | `dialog` «تواصل مع المنصة» ثم `refetch`؛ وشريط المشغل المعلّق من `/v1/me` (`organization.operator_status`) | info · — |
+| `PASS_INVALID` | `POST /v1/tickets/intake-pass` (O-01، V2-013، DEC-500): رمز ليس بصيغة `P1.…`، أو توقيع لا يطابق سر الحساب الحالي ولا السابق في مهلته، أو حساب `suspended`/`deleted` أو بلا بطاقة (`account_unavailable` لا يميّز المعلّق من المحذوف) | `reason`: `malformed` / `bad_signature` / `account_unavailable` | تحت زر «مسح بطاقة العميل» في D-05 مع «امسح مجددًا»؛ يبقى الاستلام اليدوي متاحًا | info · — |
+| `PASS_EXPIRED` | الخطوة خارج الخطوة الحالية ± 1 (30 ث لكل خطوة) على ساعة الخادم، أو خطوة لا تزيد على آخر خطوة استُعملت في استلام (لقطة شاشة معادة) | `reason`: `stale` / `future` / `already_used` | «امسح البطاقة الظاهرة الآن» ثم إعادة المسح | info · — |
+
+### 4.18 واجهة العميل `/v1/customer/*` (الإصدار الثاني، V2-010؛ والاشتراكات V2-032)
+
+رموز تطبيق العميل خارج كتالوج canon §8 عمدًا: مصدرها `CUSTOMER_ERROR_CATALOG` في `packages/shared/src/customer/errors.ts` (DEC-482)، ويرميها الخادم بـ`AppError` نفسه (`ApiErrorCode`، DEC-495) على مسارات العميل وحدها، بالغلاف نفسه (§1). ومعها رموز §4 التي تعيدها هذه المسارات كما هي (`CUSTOMER_REUSED_ERROR_CODES`، ومنها `AUTH_ACCOUNT_DISABLED` لحساب معلّق). الجدولان بستة أعمدة لأن الكتالوج ليس canon §8.
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` | متى · `details` |
+|---|---|---|---|---|---|
+| `CUSTOMER_OTP_INVALID` | 422 | لا | رمز التحقق غير صحيح. | The verification code is incorrect. | رمز خاطئ لرمز مفتوح غير منتهٍ؛ `attempts_left` (المحاولات تنتقل إلى الرمز الجديد، DEC-496) |
+| `CUSTOMER_OTP_EXPIRED` | 410 | لا | انتهت صلاحية الرمز. اطلب رمزًا جديدًا. | The verification code has expired. Request a new one. | لا رمز مفتوح للرقم، أو مضت 300 ث، أو استُعمل الرمز |
+| `CUSTOMER_OTP_LOCKED` | 423 | لا | محاولات كثيرة خاطئة. حاول بعد 15 دقيقة. | Too many wrong codes. Try again later. | الخطأ الخامس، ثم كل طلب رمز أو تحقق للرقم مدة القفل؛ `locked_until` |
+| `CUSTOMER_CONSENT_VERSION_STALE` | 409 | لا | حُدّثت الشروط. راجع النسخة الجديدة ثم وافق. | The terms were updated. Review the new version. | إصدار غير الساري في `POST /v1/customer/consents` ولا يُكتب شيء؛ `kind`، `current_version` |
+| `CUSTOMER_VEHICLE_LIMIT` | 422 | لا | وصلت إلى الحد الأقصى للسيارات في حسابك. | The vehicle limit for the account is reached. | السيارة السادسة؛ `max` = 5 |
+| `CUSTOMER_VEHICLE_DUPLICATE` | 409 | لا | هذه السيارة مضافة في حسابك. | This vehicle is already in your account. | لوحة مطبّعة موجودة في الحساب بأي كتابة |
+| `VENUE_NOT_LISTED` | 404 | لا | هذا الموقع غير متاح في التطبيق. | This location is not available in the app. | موقع غير موجود أو ملفه غير معتمد أو غير نشط أو مشغله غير نشط — بالرد نفسه (DEC-499) |
+| `ACCOUNT_DELETED` | 410 | لا | حُذف هذا الحساب. | This account was deleted. | جلسة أو دخول لحساب `deleted`، ورمز الوصول أو التحديث الحالي لحساب حُذف (يسبق `AUTH_SESSION_REVOKED`، DEC-508) |
+| `CUSTOMER_VEHICLE_IN_ACTIVE_VISIT` | 409 | لا | هذه السيارة في زيارة جارية. احذفها بعد انتهاء الزيارة. | This vehicle is in a visit in progress. Remove it after the visit ends. | `DELETE /v1/customer/vehicles/{vehicleId}` لسيارة `in_active_visit` (V2-012، DEC-505)؛ لا يُكتب شيء |
+| `CUSTOMER_ACCOUNT_VISIT_ACTIVE` | 409 | لا | لديك زيارة جارية. احذف الحساب بعد استلام سيارتك. | You have a visit in progress. Delete the account after you collect your car. | `DELETE /v1/customer/me` وللحساب تذكرة مفتوحة عبر صفوف `customers` المربوطة (V2-017، DEC-508) |
+| `HANDOVER_CODE_UNAVAILABLE` | 409 | لا | لا يمكن عرض رمز التسليم هنا. اطلب المساعدة من السائق أو المشرف عند البوابة. | The handover code cannot be shown here. Ask the driver or the supervisor at the gate. | `GET /v1/customer/visits/{ticketId}/handover-code` لسيارة جاهزة بلا رمز يُعرض في التطبيق؛ `reason`: `whatsapp` / `staff` / `locked` / `expired` / `none` (V2-015، DEC-517) |
+| `CUSTOMER_VISIT_NOT_DELIVERED` | 409 | لا | يمكنك تقييم الزيارة بعد استلام سيارتك. | You can rate the visit after you collect your car. | `POST …/rating` قبل التسليم؛ `ticket_status` (DEC-518) |
+| `CUSTOMER_VISIT_ALREADY_RATED` | 409 | لا | قيّمت هذه الزيارة مسبقًا. | You already rated this visit. | تقييم ثانٍ للزيارة نفسها بمفتاح آخر (DEC-518) |
+| `CUSTOMER_REAUTH_REQUIRED` | 403 | لا | أكّد أولًا برمز تحقق جديد. | Confirm with a new verification code first. | `DELETE /v1/customer/me` بلا دليل إعادة التحقق أو بدليل ليس الحي لهذه الجلسة أو منتهٍ؛ `reason`: `missing` / `invalid` / `expired` (403 لا 401 فلا يخرج التطبيق، DEC-507) |
+| `SUBSCRIPTION_ALREADY_EXISTS` | 409 | لا | لديك اشتراك في هذا الموقع. | You already have a subscription at this location. | `POST /v1/customer/subscriptions` وللحساب اشتراك حي في الموقع (`uq_subscriptions_live`)؛ `subscription_id`، `status` (V2-032، DEC-534) |
+| `SUBSCRIPTION_NOT_ACTIVE` | 409 | لا | لا يمكن تعديل هذا الاشتراك في حالته الحالية. | This subscription cannot be changed in its current status. | أمر من C-14 لا يقبله الاشتراك في حالته (04 §1)؛ `subscription_id`، `current_status`، `command` (DEC-532) |
+| `SUBSCRIPTION_PLAN_UNAVAILABLE` | 409 | لا | هذه الباقة لم تعد متاحة. اختر باقة أخرى. | This plan is not available any more. Choose another one. | باقة مقاعدة أو لا تبيع الدورة أو موقع لا يبيع الاشتراك؛ `reason`: `retired` / `cycle` / `not_sold` (DEC-531) |
+| `SUBSCRIPTION_VEHICLES_LOCKED` | 409 | لا | غيّرت السيارة المشمولة في هذه الفترة. يمكنك التغيير في الفترة القادمة. | You already changed the covered vehicle this period. | `PUT …/subscriptions/{id}/vehicles` مرة ثانية في الفترة (01 R6)؛ `available_at` (DEC-534) |
+| `SUBSCRIPTION_CARD_REQUIRED` | 422 | لا | ادفع ببطاقة تُحفظ للتجديد التلقائي. | Pay with a card kept for the automatic renewal. | دفع اشتراك بـApple Pay أو ببطاقة لا تُحفظ (`save_card` غائب)؛ `source_type` (DEC-534) |
+| `SUBSCRIPTION_ELIGIBILITY_REQUIRED` | 422 | لا | هذه الباقة تتطلب التحقق من الأهلية أولًا. أرسل طلبك. | This plan needs an eligibility check first. Send your application. | `POST /v1/customer/subscriptions` لباقة `student_id_review`: الطلب بـ`…/apply` ثم الدفع بعد الاعتماد؛ `plan_id`، `eligibility` (V2-036، DEC-596) |
+| `SUBSCRIPTION_CAPACITY_REACHED` | 409 | لا | اكتملت المقاعد في هذه الباقة. | All places of this plan are taken. | الطلب أو الاشتراك أو الدفع الأول وقد بلغت مقاعد الباقة `capacity`؛ `plan_id`، `capacity` (DEC-598) |
+| `SUBSCRIPTION_FREEZE_UNAVAILABLE` | 409 | لا | التجميد غير متاح لهذا الاشتراك الآن. | A freeze is not available for this subscription now. | `…/freeze` أو `…/unfreeze`؛ `reason`: `not_offered` / `used` / `live` / `status` (DEC-594) |
+| `SUBSCRIPTION_FREEZE_INVALID` | 422 | لا | اختر بداية بعد اليوم وعودة في يوم خدمة، ضمن الأيام المسموح بها. | Choose a start after today and a return on a service day, within the allowed days. | `…/freeze` بتاريخين لا يجتازان `freezeRequestCheck`؛ `issue`، `max_days` (DEC-594) |
+
+| الحالة | الرمز | `details` | الواجهة (تطبيق العميل) | السجل | ملاحظة |
+|---|---|---|---|---|---|
+| طلب رمز قبل `resend_available_at`، أو تجاوز 5 رموز للرقم أو 10 للجهاز في الساعة | `RATE_LIMITED` (429) | `retry_after_s`، `scope`: `resend` / `phone` / `device` | عدّاد `C-03` | info | ترويسة `Retry-After` |
+| رقم بوينت غير مضبوط أو `down` | `WA_CHANNEL_UNAVAILABLE` (503) | `reason: no_channel` | «تعذّر الإرسال، أعد المحاولة» | warn | واتساب القناة الوحيدة (DEC-460)؛ لا يُكتب رمز |
+| جوال ليس سعوديًا في طلب الرمز | `PHONE_INVALID` (422) | `field: phone_e164` | خطأ الحقل في `C-02` | info | قبل التحقق من الجسم كالخادم الوهمي |
+| لا ترويسة Bearer، رمز تالف، جلسة غير معروفة، أو كوكي موظف/منصة وحده | `AUTH_UNAUTHENTICATED` (401) | — | الخروج إلى `C-01` | info | الكوكي لا يُقرأ على مسار العميل أبدًا (DEC-497) |
+| رمز وصول مضت دقائقه الخمس عشرة أو استبدله تحديث | `AUTH_SESSION_EXPIRED` (401) | — | تحديث مرة ثم إعادة الطلب بالمفتاح نفسه | info | |
+| رمز تحديث منتهٍ أو ملغى أو مستعمل سابقًا أو من جهاز آخر، أو جلسة ملغاة | `AUTH_SESSION_REVOKED` (401) | `reason` | الخروج | info | المستعمل سابقًا والجهاز الآخر يلغيان الجلسة كلها |
+| حساب `suspended` | `AUTH_ACCOUNT_DISABLED` (403) | — | رسالة الخادم | info | |
+| حذف سيارة لحساب آخر أو غير موجودة أو أُزيلت سابقًا | `RESOURCE_NOT_FOUND` (404) | `resource: customer_vehicle` | تحديث `C-15` | info | الرد نفسه للحالات الثلاث (V2-012، DEC-505) |
+| زيارة حساب آخر أو تذكرة ملغاة أو معرّف مجهول على `/v1/customer/visits/{ticketId}…` | `RESOURCE_NOT_FOUND` (404) | `resource: customer_visit` | «هذه الزيارة لم تعد متاحة» | info | الرد نفسه (V2-015، DEC-516) |
+| «اطلب السيارة» ودورة مفتوحة أو طلب مبكر قائم / سيارة مُسلَّمة | `RETRIEVAL_ALREADY_ACTIVE` / `TICKET_CLOSED` (409) | `ticket_status` (و`pending_retrieval_at`) | «طلبت سيارتك مسبقًا» / «سُلّمت» | info | رموز 08 كما هي (DEC-516) |
+| رمز التسليم قبل الجاهزية | `HANDOVER_NOT_READY` (409) | `ticket_status` | لا بطاقة رمز | info | (DEC-517) |
+| رمز خاطئ أو منتهٍ أو قفل في إعادة التحقق `POST /v1/customer/auth/reauth/verify` | `CUSTOMER_OTP_INVALID` / `CUSTOMER_OTP_EXPIRED` / `CUSTOMER_OTP_LOCKED` | كالدخول | `C-20` كـ`C-03` | info | المحاولات والقفل على الرقم نفسه مشتركة مع الدخول (DEC-507) |
+| رفض بطاقة الاشتراك (أول دفعة أو «ادفع الآن») | `PAYMENT_FAILED` (402) | `online_payment_id`، `failure_code`، `subscription_id` | «تعذّر الدفع» والاشتراك ينتظر بطاقة أخرى في `C-14` | info | الاشتراك `pending_payment` حتى 30 دقيقة (V2-032، DEC-534) |
+| «ادفع الآن» ودفعة الفترة نفسها تنتظر 3-D Secure | `PAYMENT_IN_PROGRESS` (409) | `online_payment_id`، `retry_after_s` | «الدفع قيد التنفيذ» | info | كالزيارة (DEC-521) |
+
+
+### 4.19 الدفع الإلكتروني (الإصدار الثاني، V2-020 / V2-021)
+
+مدفوعات تطبيق العميل عبر بوابة الدفع (Moyasar، DEC-460، DEC-510 … DEC-514)، منفصلة عن التحصيل النقدي والشبكة (§4.10). `PAYMENT_ALREADY_RECORDED` (§4.10) يُرفع أيضًا لدفعة إلكترونية ناجحة ثانية للتذكرة نفسها (`uq_online_payments_ticket_paid`، §5.1)، ولتحصيل نقد/شبكة لتذكرة دُفعت في التطبيق أو دفع في التطبيق لتذكرة حُصّلت (V2-022، DEC-522: التفاصيل `online_payment_id` و`method: app` للدفعة الإلكترونية، والحارس المؤجل `uq_ticket_single_payment`). رموز تطبيق العميل لأمر الدفع (`VISIT_NOT_PAYABLE`، `PAYMENT_IN_PROGRESS`، `CUSTOMER_CONSENT_REQUIRED`) في كتالوج العميل (`docs/v2/05` §5).
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` |
+|---|---|---|---|---|
+| `PAYMENT_FAILED` | 402 | لا | لم تتم عملية الدفع. جرّب بطاقة أخرى أو وسيلة دفع مختلفة. | The payment was declined. |
+| `PAYMENT_NOT_REFUNDABLE` | 409 | لا | لا يمكن استرداد هذه الدفعة في حالتها الحالية. | This payment cannot be refunded in its current status. |
+| `REFUND_AMOUNT_EXCEEDS_PAID` | 409 | لا | مبلغ الاسترداد أكبر من المتبقي من الدفعة. | The refund is larger than what is left of the payment. |
+| `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | 401 | لا | — | Invalid payment webhook secret. |
+
+| الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
+|---|---|---|---|---|
+| `PAYMENT_FAILED` | بدء دفعة (`OnlinePayments.start`، تستعمله أوامر V2-022/V2-023): البوابة رفضت البطاقة أو 3-D Secure، أو رفضت الطلب نفسه (رمز غير معروف). حالة الدفعة `failed` تُحفظ قبل الرد | `online_payment_id`، `failure_code` (رمز البوابة القصير، بلا نص حر ولا رقم بطاقة) | تطبيق العميل: «جرّب بطاقة أخرى» | info · — |
+| `PAYMENT_NOT_REFUNDABLE` | `POST /v1/platform/payments/{paymentId}/refunds` لدفعة ليست `paid` ولا `partially_refunded` (مثل `initiated` أو `failed` أو مستردة كاملًا) | `online_payment_id`، `current_status` | لوحة المنصة P-08: رسالة الخادم ثم `refetch` | info · — |
+| `REFUND_AMOUNT_EXCEEDS_PAID` | الاسترداد المطلوب (أو الكامل حين يُترك المبلغ) أكبر من المدفوع ناقص المسترد وما ينتظر الإرسال | `online_payment_id`، `requested_halalas`، `refundable_halalas` | P-08: خطأ حقل المبلغ مع المتبقي | info · — |
+| `PAYMENT_WEBHOOK_SIGNATURE_INVALID` | `POST /webhooks/payments/moyasar` بلا `secret_token` أو بسر لا يطابق `MOYASAR_WEBHOOK_SECRET_REF` (ولا السابق أثناء التدوير) أو بجسم ليس JSON؛ لا يُحفظ شيء (DEC-511) | — | لا واجهة (المستهلك البوابة) | warn · — |
+
+### 4.20 الفواتير والتسوية (الإصدار الثاني، V2-040 … V2-042)
+
+الفاتورة الإلكترونية وكشوف التسوية (DEC-540 … DEC-549). أوامر التسوية في P-09 وO-05 تستعمل رموزًا قائمة: `RESOURCE_NOT_FOUND` (`resource: settlement_statement` أو `invoice` أو `operator`) لكشف أو فاتورة خارج النطاق أو غير موجودة — والمسودة للمشغل كغير الموجودة؛ `VERSION_CONFLICT` لـ`expected_version` قديم؛ `INVALID_STATE_TRANSITION` (`command`، `current_status`) لأمر لا تقبله الحالة (تسوية لكشف صادر، اعتراض على غير صادر، إلغاء كشف مدفوع)؛ `REASON_REQUIRED` لسبب أو ملاحظة أو مرجع تحويل أقل من 3 محارف؛ و`VALIDATION_FAILED` لشهر لم ينتهِ بتوقيت الرياض (`period`: `not_closed`) أو لمشغل بلا اسم قانوني عند إصدار فاتورته الضريبية (`operator.legal_name`: `required_for_tax_invoice`). رفض مزود الفوترة لا يرد على أي طلب: يبقى المستند في السلسلة بحالة `rejected` وينبه المالية (`einvoice_rejected`)، والتصحيح بإشعار دائن.
+
+| الرمز | HTTP | إعادة | `message_ar` | `message_en` |
+|---|---|---|---|---|
+| `EINVOICE_WEBHOOK_SIGNATURE_INVALID` | 401 | لا | — | Invalid e-invoicing callback signature. |
+
+| الرمز | متى يُرفع | `details` | الواجهة | السجل · التنبيه |
+|---|---|---|---|---|
+| `EINVOICE_WEBHOOK_SIGNATURE_INVALID` | `POST /webhooks/einvoicing` بلا `X-Einvoice-Signature` أو بتوقيع HMAC-SHA256 لا يطابق `EINVOICE_WEBHOOK_SECRET_REF`، أو بجسم ليس إشعارًا صالحًا؛ لا يُطبق شيء (DEC-543) | — | لا واجهة (المستهلك المزود) | warn · — |
 
 ---
 
@@ -476,6 +571,8 @@
 | `uq_link_codes_live_ticket` | `link_codes` | `VERSION_CONFLICT` (الأمر يلغي الرمز الحي السابق قبل الإنشاء؛ الانتهاك يعني أمرين متزامنين) |
 | `uq_claim_codes_live` | `claim_codes` | `VERSION_CONFLICT` (إعادة إرسال متزامنة) |
 | `uq_payments_ticket_recorded` | `payments` | `PAYMENT_ALREADY_RECORDED` |
+| `uq_online_payments_ticket_paid` | `online_payments` (V2-021، `0012`) | `PAYMENT_ALREADY_RECORDED` |
+| `uq_ticket_single_payment` | `online_payments` / `payments` (V2-022، `0014`، مشغّل قيد مؤجَّل `ticket_single_payment_guard`، DEC-522) | `PAYMENT_ALREADY_RECORDED` |
 | `uq_alerts_live_dedupe` | `alerts` | لا خطأ: تحديث التنبيه القائم لنفس الموقع والمفتاح (`details`) بدل إنشاء جديد — التفرد على `(venue_id, dedupe_key)` (DEC-46) |
 | `uq_outbox_dedupe_pending` | `outbox_events` | لا خطأ: `INSERT ... ON CONFLICT DO NOTHING` (المهمة معلّقة بالفعل) |
 

@@ -9,6 +9,7 @@
 | [`whatsapp-production.md`](whatsapp-production.md) | المالك، المشغّل | تجهيز الرقم الواحد «مصاف» لدى Meta، القوالب، الـWebhook، تشغيل G2 اليدوي |
 | [`paper-fallback.md`](paper-fallback.md) | المشرف، السائقون، المشغّل | الانقطاع الكلي: العمل بالورق ثم المطابقة؛ التمرين في البروفة |
 | [`../DEPLOYMENT.md`](../DEPLOYMENT.md) | المشغّل | النشر والترقية والتراجع والمراقبة والنسخ الاحتياطي والاستعادة |
+| [`server-install-v2.md`](server-install-v2.md) | المالك | تثبيت الإصدار الثاني على الخادم بأمر واحد، التحديث، الحالة والسجلات، تحرير المساحة بأمان |
 | [`../training/driver-guide.md`](../training/driver-guide.md) | السائقون، المدرب | قبل أول وردية؛ تمارين TD في البروفة |
 | [`../training/supervisor-guide.md`](../training/supervisor-guide.md) | المشرفون، المدرب | قبل أول حفل؛ تمارين TS في البروفة |
 | [`../test-evidence/devices/PROTOCOL.md`](../test-evidence/devices/PROTOCOL.md) | فريق الاختبار | مصفوفة الأجهزة الفعلية (17 H-07، G3 وPNT-099) |

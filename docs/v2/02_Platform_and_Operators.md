@@ -22,14 +22,40 @@
 | P-02 | المشغلون | إضافة مشغل (ينشئ `organization` ومالكها عبر دعوة)، الحالة (تجريبي/نشط/معلق)، العقد | owner/admin |
 | P-03 | المشغل | مواقعه، اشتراك النظام، سعر الزيارة، المستحقات، المستخدمون (قراءة)، التعليق بسبب | owner/admin |
 | P-04 | المواقع | طلبات إدراج المواقع على الخريطة، الاعتماد، الملف العام (صور، ساعات، تصنيف) | admin |
-| P-05 | باقات الاشتراك | لكل موقع: تفعيل الاشتراك، السعر الشهري والسنوي، عدد السيارات، سعر الزيارة لغير المشترك | owner/finance |
+| P-05 | باقات الاشتراك | لكل موقع: تفعيل الاشتراك، السعر الشهري والسنوي، عدد السيارات، سعر الزيارة لغير المشترك | owner/finance؛ سياسات الباقة والمقاعد، الإجازات والإغلاقات لكل موقع، قائمة المؤهلين (V2-036، DEC-606) |
 | P-06 | العملاء | بحث بالجوال (مقنّعًا في القائمة)، الاشتراكات، المدفوعات، الاسترداد بسبب، تعليق الحساب | support/finance |
-| P-07 | الاشتراكات | قائمة وتصفية، المتأخرة، الملغاة، التجديدات القادمة | finance |
+| P-07 | الاشتراكات | قائمة وتصفية، المتأخرة، الملغاة، التجديدات القادمة | finance؛ طلبات الأهلية واعتمادها أو رفضها (owner/finance)، التجميدات وموافقات الشراء، الاسترداد الاستثنائي (DEC-606) |
 | P-08 | المدفوعات والاسترداد | معاملات البوابة، المطابقة اليومية، الاستردادات | finance |
 | P-09 | التسوية | كشوف المشغلين الشهرية: إصدار، اعتماد، تسجيل الدفع | owner/finance |
 | P-10 | الفواتير | فواتير العملاء (ZATCA)، فواتير اشتراك النظام للمشغلين | finance |
 | P-11 | الإعدادات | العلامة، الضريبة، مزودو SMS والبوابة والفوترة (مراجع أسرار فقط)، نصوص الشروط | owner |
 | P-12 | سجل المنصة | `platform_audit_log` | owner |
+| P-13 | الشكاوى | الشكاوى برقمها المرجعي، تصفية بالحالة، نقل الحالة بملاحظة يقرؤها العميل | كل أدوار المنصة (V2-037، DEC-604) |
+
+### 2.1 مصفوفة صلاحيات المنصة (V2-002، DEC-465)
+
+صلاحيات المنصة منفصلة تمامًا عن صلاحيات الموظفين (canon §10): لا دور موظف يحمل صلاحية منصة ولا العكس. المصدر الآلي `PLATFORM_PERMISSION_MATRIX` في `packages/shared/src/canon/platform.ts`، ويطابق هذا الجدول باختبار (`packages/shared/test/platform.test.ts`). الجلسة المقيدة (الدخول الأول قبل تغيير كلمة المرور وإعداد TOTP) لا تحمل إلا `platform.self`.
+
+| الصلاحية | الشاشات | owner | admin | finance | support |
+|---|---|---|---|---|---|
+| `platform.self` | الدخول، التحقق الثنائي، تغيير كلمة المرور، الخروج، `GET /v1/platform/me` | ✓ | ✓ | ✓ | ✓ |
+| `platform.overview_read` | P-01 | ✓ | ✓ | ✓ | ✓ |
+| `platform.operator_read` | P-02، P-03 | ✓ | ✓ | — | — |
+| `platform.operator_manage` | P-02، P-03 (إضافة مشغل، العقد، التعليق بسبب) | ✓ | ✓ | — | — |
+| `platform.venue_review` | P-04 | ✓ | ✓ | — | — |
+| `platform.plan_manage` | P-05 | ✓ | — | ✓ | — |
+| `platform.customer_read` | P-06 | ✓ | — | ✓ | ✓ |
+| `platform.customer_manage` | P-06 (تعليق الحساب) | ✓ | — | ✓ | ✓ |
+| `platform.subscription_read` | P-07 | ✓ | — | ✓ | — |
+| `platform.subscription_manage` | P-07 (قرار الأهلية وقائمة المؤهلين، DEC-596، DEC-597) | ✓ | — | ✓ | — |
+| `platform.payment_read` | P-08 | ✓ | — | ✓ | — |
+| `platform.refund_issue` | P-06، P-08 (الاسترداد بسبب) | ✓ | — | ✓ | — |
+| `platform.settlement_manage` | P-09 | ✓ | — | ✓ | — |
+| `platform.invoice_read` | P-10 | ✓ | — | ✓ | — |
+| `platform.settings_manage` | P-11 | ✓ | — | — | — |
+| `platform.audit_read` | P-12 | ✓ | — | — | — |
+| `platform.user_manage` | حسابات موظفي المنصة | ✓ | — | — | — |
+| `platform.complaint_manage` | P-13 الشكاوى (DEC-604) | ✓ | ✓ | ✓ | ✓ |
 
 ## 3. تعديلات نظام التشغيل للمشغل (`O-##`)
 
@@ -49,3 +75,60 @@
 `invited` (دعوة المالك) ← `trial` (مواقع تجريبية، بلا عملاء حقيقيين، المحاكي) ← `active` ← `suspended` (بسبب مسجّل: تأخر دفع اشتراك النظام، مخالفة) ← `active` أو `terminated` (لا حذف: تُغلق المواقع وتبقى السجلات لمدة الاحتفاظ).
 
 تعليق المشغل: يمنع فتح حفلات وورديات جديدة، والتذاكر الجارية تكتمل، ومواقعه تختفي من خريطة التطبيق، واشتراكات العملاء في مواقعه **تُجمَّد** (لا تُحتسب أيامها) حتى العودة أو الاسترداد النسبي.
+
+**المنفَّذ (V2-005، DEC-486):** الانتقالات `activate` (`invited`/`trial` ← `active`)، `suspend` (`trial`/`active` ← `suspended`، بسبب)، `reactivate` (`suspended` ← `active`)، `terminate` (`suspended` ← `terminated`، بسبب، نهائي). التعليق والإنهاء يمنعان على الخادم (`OPERATOR_SUSPENDED`) فتح الحفل وإعادة فتحه وفتح الوردية وبدء المناوبة وبدء استلام تذكرة جديدة؛ وما بدأ قبلهما يكتمل، والموظفون يدخلون ويقرؤون ويرون شريط «المشغّل معلّق». والمواقع تخرج من القوائم العامة بـ`isOperatorActive` (V2-004، DEC-487).
+
+> **مبني (V2-034، DEC-536):** تعليق المشغل يجمّد اشتراكات العملاء `active` في مواقعه (`frozen_reason = operator_suspended`، لا تُحتسب أيامها) في معاملة الأمر نفسها، وإعادة التفعيل تذيبها وتمدد فترتها بزمن التجميد (إلا موقعًا ما زال خارج الخدمة: `venue_inactive`)، والإنهاء ينهي كل اشتراك حي لمواقعه (`operator_terminated`) باسترداد نسبي آلي للحصة غير المستعملة من الفترة المدفوعة (`subscription_prorated`). وإخراج الموقع من الخدمة (`venues.status`) يجمّد اشتراكاته كذلك. الخطاف `subscriptionLifecycle` في `core` يربط أوامر V2-005 والمواقع بوحدة الاشتراكات.
+
+## 5. ما بُني في المرحلة V1 حتى الآن (V2-001، V2-002، V2-003، V2-005)
+
+- **الترحيل `packages/db/migrations/0008_platform.sql`** (إلحاقي، DEC-461): `platform_users`، `platform_sessions` (sha256 للرمز فقط، `kind` = `session` أو `mfa_challenge`، انتهاء وإبطال مسبَّب)، `platform_idempotency_keys`، `platform_audit_log` (إلحاقي: دور التطبيق INSERT/SELECT فقط)، حقول المشغل في `organizations` (`operator_status` افتراضيًا `active`، `is_platform_operated`، `legal_name`، `cr_number` 10 أرقام، `vat_number` 15 رقمًا 3…3)، `operator_contracts`، `venue_public_profiles`. الصفوف الحالية تبقى صالحة: كل مؤسسة قائمة مشغّل نشط. ومخطط Drizzle مطابق، واختبار الثوابت `docs/06_schema_invariants_test.sql` أُضيفت إليه فحوص الجداول الجديدة.
+- **عقد واحد لكل مشغل في أي يوم:** لا `btree_gist` في الترحيلات، فالقاعدة يفرضها الأمر بـ`assertNoContractOverlap` تحت قفل صف المؤسسة (DEC-463).
+- **هوية المنصة** (`packages/server/src/modules/platform`): دخول بالجوال وكلمة المرور ثم TOTP في كل دخول؛ الدخول الأول جلسة مقيدة بـ`platform.self` حتى تغيير كلمة المرور المؤقتة ثم إعداد TOTP، كمالك المؤسسة تمامًا (DEC-82). كوكي منفصل `__Host-point_psid` (`point_psid` محليًا، `PLATFORM_SESSION_COOKIE_NAME`)، وجدول جلسات منفصل، وحارس واحد (`AuthGuard`) يقرأ كوكي المنصة وحده على `@RequirePlatformPermission` وكوكي الموظفين وحده على `@RequirePermission`: **جلسة الموظف لا تفتح مسار منصة ولا العكس** (DEC-462). حدود الدخول ثابتة `PLATFORM_SECURITY` (DEC-464). كل أمر منصة يكتب `platform_audit_log` في معاملته، ويُكتب في `audit_log` للمؤسسة أيضًا إن مسّها (`platformAudit`).
+- **المسارات** (`PLATFORM_ROUTES`، سجل موازٍ لـ`ROUTES` canon §9، وفي `docs/07_openapi.yaml` بالوسم `Platform`): `POST /v1/platform/auth/login`، `POST /v1/platform/auth/mfa/verify`، `POST /v1/platform/auth/mfa/setup`، `POST /v1/platform/auth/mfa/confirm`، `POST /v1/platform/auth/secret/change`، `POST /v1/platform/auth/logout`، `GET /v1/platform/me`.
+- **رمزا خطأ جديدان** (canon §8، 08 §4.17): `PLATFORM_AUTH_REQUIRED` (401) و`OPERATOR_SUSPENDED` (409، يرفعه V2-005، DEC-466)؛ وبقية الحالات برموز `AUTH_*` القائمة.
+- **التهيئة:** `node api/dist/cli.js create-platform-owner --phone … --name …` يطبع كلمة مرور مؤقتة مرة واحدة ويرفض مالك منصة ثانيًا؛ بقية حسابات المنصة تُضاف من اللوحة لاحقًا (`platform.user_manage`، DEC-465).
+- **الويب:** `/platform/login` (الجوال وكلمة المرور ← رمز التحقق، أو تغيير كلمة المرور ← إعداد TOTP في الدخول الأول) وغلاف `/platform` فارغ (P-01 مؤقت باسم الحساب وزر الخروج). بقية الشاشات للتذاكر التالية.
+- **V2-003 — P-01…P-03 (DEC-485):** `GET /v1/platform/overview` (أعداد فقط: المشغلون حسب الحالة، المواقع، المناوبات المفتوحة، تذاكر يوم الرياض)؛ `GET /v1/platform/operators` و`/{orgId}` (المواقع، المالك بجوال مقنّع، العقد السارية، سجل الحالة من `platform_audit_log`) و`/{orgId}/users` (قراءة فقط، جوال مقنّع) و`/{orgId}/contracts` (السجل كاملًا). الأوامر ✓: `POST /v1/platform/operators` ينشئ المؤسسة (`trial` أو `active`، الاسم القانوني، السجل التجاري، الرقم الضريبي) ومالكها الأول بمنطق `create-owner` (`insertFirstOwner`)، وكلمة المرور المؤقتة في الرد الأول فقط ولا تُحفظ نصًا (الرد المخزَّن مع مفتاح التكرار بلا كلمة المرور)، وجوال المالك حر لدى كل المشغلين (DEC-476)؛ `POST …/{orgId}/owner/temporary-password` يعيد إصدارها قبل أول دخول للمالك فقط؛ `POST …/{orgId}/contracts` (بعد `assertNoContractOverlap`) و`POST …/{orgId}/contracts/{contractId}/end` (تقديم `ends_on` وحده، لا تعديل ولا حذف). وكل أمر في `platform_audit_log` و`audit_log` للمشغل.
+- **V2-005 — دورة الحياة (DEC-486، DEC-487):** `POST …/{orgId}/activate|suspend|reactivate|terminate` كما في §4؛ `assertOperatorOperating` (صف المؤسسة `FOR SHARE` أول قفل) في فتح الحفل والوردية وبدء المناوبة والاستلام، و`isOperatorActive` للقوائم العامة؛ `GET /v1/me` يحمل `organization.operator_status` ويصل `sync.required` (`scope: me`) لموظفي المشغل عند تغيّرها.
+- **الويب:** `/platform` (P-01 أعداد لكل أدوار المنصة)، `/platform/operators` (P-02: القائمة ونافذة «إضافة مشغل» تعرض كلمة مرور المالك مرة واحدة مع زر نسخ، ولا تُحفظ في المتصفح)، `/platform/operators/:orgId` (P-03: الحالة وأوامرها بسبب للتعليق والإنهاء، البيانات، المالك وإعادة إصدار كلمة مروره، المواقع، العقود وسجلها، المستخدمون للقراءة، سجل الحالة). الشاشات حسب مصفوفة §2.1 (المالية والدعم يريان P-01 وحدها)، ومفحوصة على 360/390/430 (`apps/web/e2e/platform-console.spec.ts`). وشريط المشغل المعلّق أو المنتهي فوق شاشات الموظفين والسائق.
+
+### 5.1 ملف الموقع العام وقائمة المواقع (V2-004، O-04 وP-04؛ DEC-490 … DEC-494)
+
+- **المشغل (S-13 «ملف الموقع العام»، `venue.manage` للمالك والإدارة):** يختار الموقع ويعدّل التصنيف والعنوان والمدينة (يُكتبان في `venues`، DEC-491) والإحداثيات وساعات العمل الأسبوعية (`{ always_open, days }` بشكل DEC-482، فترات حتى 4 لليوم والإغلاق قبل الفتح بعد منتصف الليل) والصور (حتى 6، ترفع إلى المخزن الخاص وتُنقّى من EXIF/GPS قبل إرفاقها، DEC-494)، ثم «حفظ المسودة» و«إرسال للمراجعة». يرى الحالة وملاحظة المراجع عند الإرجاع أو الإخفاء، والاشتراك وسعر الزيارة للقراءة فقط. المسارات: `GET`/`PUT /v1/venues/{venueId}/public-profile`، `POST …/photos`، `POST …/submit` (canon §9.5).
+- **دورة الحالة (DEC-492):** `draft` ← `submitted` (المشغل) ← `approved` أو `draft` بسبب (المنصة)؛ `approved` ← `hidden` بسبب ← `approved` بسبب. أي تعديل يعيد الملف مسودة (المعتمد يغيب عن الخريطة حتى يُعتمد ثانية)، والمخفي لا يعدّله المشغل.
+- **المنصة (P-04 في `/platform/venues`):** قائمة بتصفية الحالة (الافتراضي «بانتظار المراجعة»)، وصفحة الملف بصوره ومشغله، والأفعال «اعتماد»، «إرجاع للتعديل»، «إخفاء من الخريطة»، «إظهار» بـ`platform.venue_review` (المالك والإدارة)، والأسعار (تفعيل الاشتراك وسعر الزيارة) بـ`platform.plan_manage` (المالك والمالية، P-05، DEC-493)؛ القاعة لا تقبل الاشتراك (V2-D07). كل فعل في `platform_audit_log` و`audit_log` للمشغل بفاعل `platform:<id>` (`platformAudit` بـ`orgId`). المسارات في `PLATFORM_ROUTES`: `GET /v1/platform/venues`، `GET /v1/platform/venues/{venueId}`، `POST …/approve`، `POST …/send-back`، `POST …/hide`، `POST …/unhide`، `PUT …/pricing`.
+- **نموذج القراءة العام** (`listPublicLocations(db, filters, signer)` و`getPublicLocation(db, venueId, signer)` من `@point/server`، يستهلكه V2-010 في `/v1/customer/locations`): الملف `approved` لموقع `active` لمشغل نشط فقط (`isOperatorActive`: `operator_status = 'active'`، DEC-487)، بحقول عقد العميل (DEC-482) و`open_now` بتوقيت الرياض، والصور روابط موقّعة قصيرة لا روابط عامة. لا مسارات `/v1/customer/*` في هذه التذكرة.
+- **الويب:** قسم S-13 الجديد `/admin/listing`، ورابط «طلبات إدراج المواقع» في `/platform` لمن يملك `platform.venue_review`، وشاشتا `/platform/venues` و`/platform/venues/:venueId`؛ عربية RTL مختبرة على 360/390/430 (`apps/web/e2e/venue-profile.spec.ts`).
+
+### 5.2 بطاقة الدخول عند الاستلام والأهلية (V2-013، V2-014؛ O-01 وO-02؛ DEC-500 … DEC-504)
+
+- **O-01 «مسح بطاقة العميل» في D-05:** السائق يمسح بالكاميرا الخلفية رمز `C-11` المتغير؛ `POST /v1/tickets/intake-pass` (صلاحية `ticket.intake`، `Idempotency-Key`، نطاق `POST /v1/tickets`، `OPERATOR_SUSPENDED`) يجعل مسودته تذكرة `channel = app` و`wa_link_status = none`، مربوطة بصف `customers` للمشغل الذي يحمل `customer_account_id` (الجوال واللغة فقط، V2-D12)، والسيارة من الحساب (`customer_vehicle_id` وحقولها) إن كانت فيه وإلا يكملها يدويًا، ثم D-06 والفحص كما هما وD-07 بملاحظة التطبيق. الرفض `PASS_INVALID` / `PASS_EXPIRED` (08 §4.17)، وحساب معلّق أو محذوف ← `PASS_INVALID` (`account_unavailable`).
+- **الترحيل `0010_customer_pass_and_app_intake.sql`** (و`0010_tickets_customer_vehicle_index.sql` بـ`CONCURRENTLY`): `customer_passes`، توسيع قناة التذكرة بـ`app` (`ck_tickets_channel`)، `tickets.customer_vehicle_id` و`tickets.entitlement` بقيودهما؛ و`tickets.subscription_id` مؤجل إلى المرحلة V4.
+- **O-02 الأهلية:** تُحدد عند إنشاء أي تذكرة (`event_included` لحفل `included` وإلا `none`) وتظهر شارة «مشمول» / «يدفع X» في D-05 وD-10 وD-11 وS-03. **منذ V2-033 (DEC-535):** `subscription` أولًا (اشتراك نشط للحساب المرتبط في الموقع يشمل السيارة، بلا تذكرة مفتوحة أخرى) بالشارة «مشترك {العلامة}» (من `BRAND_STAFF_NAME_AR`) ولا رسوم، ويُعاد الحسم عند «إتمام التسجيل»؛ و«مشترك — هذه السيارة غير مشمولة» تحت السيارة في D-05 حين يغطي الاشتراك سيارة أخرى.
+- **ما يراه المشغل عن العميل:** الاسم الأول والجوال مقنّعًا في رد المسح وحده، وفي التذكرة الجوال المقنّع كأي عميل؛ لا يرى اشتراكات العميل لدى غيره ولا سياراته الأخرى. والعميل يرى زياراته عبر المشغلين بـ`listAccountVisits` وحده.
+
+
+### 5.3 العملاء والمدفوعات في لوحة المنصة (V2-024؛ P-06 وP-08؛ DEC-526 … DEC-530)
+
+- **P-06 «العملاء»** (`/platform/customers`، `platform.customer_read`: المالك والمالية والدعم): بحث **مطابق** بالجوال بأي صيغة سعودية (`normalizeSaudiMobile`، وغيرها `PHONE_INVALID`) يجد المحذوف ببصمة رقمه، أو أحدث الحسابات بتصفية الحالة؛ والجوال **مقنّع في كل مكان** حتى صفحة الحساب. صفحة الحساب (`/platform/customers/:accountId`): الموافقات بإصداراتها مقابل الساري وسجلها، السيارات، الزيارات بالحقول الدنيا (`listAccountVisits`)، الجلسات أعدادًا وأجهزة بلا رموز ولا بصمات ولا رمز إشعار، البطاقات المحفوظة علامةً وآخر 4 أرقام، المدفوعات الإلكترونية، وسجل أفعال المنصة. **القراءة الشخصية تُدوَّن** في `platform_audit_log`: `customer.search` (بعدد النتائج لا بالرقم) و`customer.view` (DEC-526).
+- **أوامر الحساب** (`platform.customer_manage`، ✓ بسبب): «تعليق الحساب» (`active` ← `suspended`؛ قابل للرجوع: الجلسات تبقى، والحارس والتحديث والدخول ترفض بـ`AUTH_ACCOUNT_DISABLED` وبطاقة الدخول بـ`PASS_INVALID`، ولا يمس تذاكر المشغلين الجارية)، «إعادة التفعيل»، «إنهاء كل الجلسات» (`revoked_reason = platform_revoked`، الترحيل `0015_platform_customer_ops.sql`، فالطلب التالي `AUTH_SESSION_REVOKED`). المحذوف نهائي. كل أمر في `platform_audit_log` و`customer_audit_log` للحساب (DEC-527).
+- **P-08 «المدفوعات والاسترداد»** (`/platform/payments`، `platform.payment_read`: المالية والمالك) بثلاثة أقسام: **المعاملات** بتصفية الحالة والغرض والمشغل والموقع والحساب وأيام الرياض، وصفحة الدفعة (المبلغ وتحته الضريبة، المتاح للاسترداد، الاستردادات، خط زمني يدمج سجل الحالات وتسليمات البوابة المنقّاة والاستردادات، والتنبيهات) ومنها **«استرداد»** بـ`platform.refund_issue` بمبلغ اختياري ≤ المتاح وسبب عبر أمر V2-021 (`POST …/refunds`، DEC-513)؛ **المطابقة اليومية** (التشغيلات وفروق كل تشغيل)؛ **التنبيهات** (المفتوحة/المحلولة) وحلها بملاحظة (DEC-529، DEC-530). قراءات P-08 لا تُدوَّن صفًا لكل قراءة لأنها بلا بيانات شخصية مكشوفة.
+- **المسارات** في `PLATFORM_ROUTES` و`07_openapi.yaml` (الوسم `Platform`): `GET /v1/platform/customers`، `GET …/customers/{accountId}`، ✓ `POST …/customers/{accountId}/suspend`، `…/reactivate`، `…/sessions/revoke`؛ `GET /v1/platform/payments`، `GET …/payments/{paymentId}`، `GET /v1/platform/reconciliation-runs`، `GET …/reconciliation-runs/{runId}`، `GET /v1/platform/alerts`، ✓ `POST …/alerts/{alertId}/resolve`؛ والقوائم بمؤشر معتم في `meta.next_cursor`.
+- **الويب:** عنصرا «العملاء» و«المدفوعات» في تنقل `PlatformLayout` حسب الصلاحية، والقوائم جداول من عمود 1024px وبطاقات تحته (نمط S-05)، مفحوصة على 360/390/430 وجدولًا على 1440px (`apps/web/e2e/platform-customers-payments.spec.ts`، DEC-528).
+
+### 5.4 الباقات والاشتراكات في لوحة المنصة (V2-030، V2-035؛ P-05 وP-07؛ DEC-531، DEC-537)
+
+- **P-05 «باقات الاشتراك»** (`/platform/plans`، `platform.plan_manage`: المالك والمالية): الباقات بتصفية الموقع والحالة، و«باقة جديدة» لموقع متكرر مفعّل الاشتراك فيه (الاسم، عدد السيارات 1…5، السعر الشهري و/أو السنوي شاملًا الضريبة)، و«تغيير السعر» = باقة جديدة تستبدل القديمة بسبب (تُقاعَد القديمة في المعاملة نفسها، ومشتركوها على سعرهم حتى إشعار التجديد التالي، DEC-531)، و«إيقاف البيع» بسبب (نهائي). كل أمر في `platform_audit_log` (`subscription_plan.create`/`.retire`) و`audit_log` للمشغل بفاعل المنصة. ومفتاح الاشتراك وسعر الزيارة للموقع يُضبطان من الصفحة نفسها بأمر P-04 (`PUT …/pricing`، DEC-493).
+- **P-07 «الاشتراكات»** (`/platform/subscriptions`، `platform.subscription_read`: المالك والمالية): التقرير أعلى الصفحة (النشطة، MRR، التجديدات المستحقة خلال 30 يومًا ومبلغها، التسرب ونسبته، الجديدة، ولكل موقع النشطة وMRR)، ثم القائمة بتصفية الحالة والموقع والمشغل والدورة و«يتجدد قبل»، وصفحة الاشتراك (`/platform/subscriptions/:subscriptionId`) بفتراته ودفعاته (روابط إلى P-08) وخطه الزمني من `platform_audit_log`؛ العميل **بجوال مقنّع** وعدد زياراته فقط. لوحة P-01 تعرض «المشتركون النشطون» وMRR.
+- **المسارات** في `PLATFORM_ROUTES` و`07_openapi.yaml`: `GET /v1/platform/plans`، ✓ `POST /v1/platform/plans`، ✓ `POST /v1/platform/plans/{planId}/retire`، `GET /v1/platform/subscriptions`، `GET /v1/platform/subscriptions/report`، `GET /v1/platform/subscriptions/{subscriptionId}`؛ القوائم مصفوفة `data` بمؤشر معتم في `meta.next_cursor`.
+- **الويب:** عنصرا «الباقات» و«الاشتراكات» في تنقل `PlatformLayout`، مفحوصة على 360/390/430 و1440px (`apps/web/e2e/platform-subscriptions.spec.ts`).
+### 5.5 الفواتير والتسوية (V2-040 … V2-042؛ P-09، P-10، O-05، O-06؛ DEC-540 … DEC-549)
+
+- **الفواتير (V2-040):** كل دفعة إلكترونية تُحصَّل تأخذ فاتورة ضريبية مبسطة من بوينت (البائع، V2-D03)، وكل استرداد ينجح إشعارًا دائنًا، في معاملة الحدث نفسه؛ سلسلتان بلا فجوات (`PS-` للعملاء و`PB-` للمشغلين) بعداد وبصمة سابقة، والمستند لا يُعدَّل. ترسل للمزود عبر `EInvoicingProvider` (محاكٍ بلا شبكة حتى يختار المالك المزود، DEC-540) ويولَّد PDF عربي في المخزن الخاص.
+- **كشف التسوية (V2-041):** شهري لكل مشغل يُعد في الأول من الشهر (`job.settlement_monthly`) ويُعاد حساب المسودات فقط؛ بنوده: زيارات المشتركين × مبلغ الزيارة، الدفع في التطبيق − العمولة − الاستردادات + عمولتها المستردة، اشتراك النظام لكل موقع نشط (حصة الأيام، والسنوي بالثُّمن الشهري 1/12) وضريبته، والتسويات اليدوية — كل صف مصدر مرة واحدة، والرأس مجموع البنود بالهللة (DEC-544، DEC-545).
+- **P-09 «التسوية»** (`/platform/settlements`، `platform.settlement_manage`: المالك والمالية): القائمة وإعداد مسودات شهر منتهٍ، والكشف بتفصيله ومن يدفع لمن، بنوده الفعالة والمحررة، فواتيره وسجل أفعاله، والأوامر: تسوية يدوية (مسودة/معترض عليه)، إصدار (يصدر فاتورة اشتراك النظام الضريبية للمشغل — V2-042)، تسجيل الدفع بمرجع التحويل، حل الاعتراض، والإلغاء (إشعار دائن لفاتورته وإعادة إعداد الشهر) — DEC-546.
+- **P-10 «الفواتير»** (`/platform/invoices`، `platform.invoice_read`): كل المستندات بتصفية النوع وحالة الهيئة والرقم، والمستند بسلسلته وردود المزود وإشعاراته ورابط PDF.
+- **O-05 «كشف التسوية»** و**O-06 «اشتراك النظام»** قسمان في S-13 (`/admin/settlements`، `/admin/subscription`) بصلاحيتين جديدتين `settlement.read` و`settlement.dispute` (المالك والإدارة، DEC-547): كشوف المؤسسة الصادرة ببنودها والاعتراض بسبب، والعقد الساري وسجل العقود والمواقع النشطة وفواتير بوينت برابط PDF.
+- **C-17** في التطبيق (الإعدادات ← «الفواتير»): فواتير الحساب وإشعاراته، والتفاصيل بالبنود والضريبة وQR وPDF (DEC-548).
+- عربية RTL مفحوصة على 360/390/430 (`apps/web/e2e/billing.spec.ts`).

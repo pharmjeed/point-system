@@ -1,8 +1,9 @@
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { SEED_IDS } from '@point/db/seed';
 import { collectRoutes } from '@point/server';
-import { waMessageText } from '@point/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { brand as simBrand } from '../../../tools/wa-simulator/src/catalog.js';
+import { customerCopy, testEnv } from './test-env.js';
 import {
   createCustomerApp,
   cyclesOf,
@@ -115,8 +116,18 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     // AC-18 / TC-056: the only button of the whole conversation is W-01's «طلب السيارة»
     const buttons = conversation.flatMap((m) => m.buttons.map((b) => ({ purpose: m.purpose, text: b.text })));
     expect(buttons).toEqual([{ purpose: 'W-01', text: 'طلب السيارة' }]);
-    for (const m of conversation) expect(m.renderedText ?? '').not.toContain('بوينت');
-    expect(conversation[0]!.renderedText).toContain('مصاف');
+    // canon §1 (DEC-470): only the customer brand — the simulator renders its approved bodies with its own
+    // configured brand, our copy (body_redacted) carries the API's BRAND_CUSTOMER_NAME_AR
+    const staffBrand = testEnv().BRAND_STAFF_NAME_AR;
+    for (const m of conversation) expect(m.renderedText ?? '').not.toContain(staffBrand);
+    expect(conversation[0]!.renderedText).toContain(simBrand().customerNameAr);
+    const w01Copy = await w.db.query<{ body_redacted: string }>(
+      `SELECT body_redacted FROM whatsapp_messages WHERE direction = 'outbound' AND purpose = 'W-01' AND ticket_id = $1`,
+      [t.ticketId],
+    );
+    expect(w01Copy.rows.map((r) => r.body_redacted.startsWith(`${customerCopy.customerBrandAr} — `))).toEqual(
+      [true],
+    );
 
     // AC-19: each act by its actor
     const ticket = await ticketRow(w, t.ticketId);
@@ -184,7 +195,7 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     await w.sim.client.sendLinkCode(CUS2_PHONE, qr.code, { timestamp: w.ts() });
     await w.drain();
     expect((await messagesTo(w, CUS2_PHONE)).map((m) => m.renderedText)).toEqual([
-      waMessageText('W-11', 'received'),
+      customerCopy.messageText('W-11', 'received'),
     ]);
     ok(
       await w.command('post', `/v1/tickets/${d.ticketId}/whatsapp-link/confirm`, {
@@ -209,9 +220,9 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
     await settle(w, CUS2_PHONE);
     expect(await ticketRow(w, d.ticketId)).toMatchObject({ wa_link_status: 'linked', status: 'requested' });
     expect((await messagesTo(w, CUS2_PHONE)).map((m) => m.purpose ?? m.renderedText)).toEqual([
-      waMessageText('W-11', 'received'),
+      customerCopy.messageText('W-11', 'received'),
       'W-01',
-      waMessageText('W-12'),
+      customerCopy.messageText('W-12'),
       'W-02',
     ]);
 
@@ -249,15 +260,42 @@ describe('G2 — the customer through WhatsApp only (PNT-051)', () => {
         'GET /webhooks/whatsapp',
         'POST /v1/auth/login',
         'POST /v1/auth/mfa/verify',
+        // V2-010: the sign-in calls of the native customer app (V2-D10; Bearer API, no web page, DEC-497)
+        'POST /v1/customer/auth/otp',
+        'POST /v1/customer/auth/refresh',
+        'POST /v1/customer/auth/verify',
+        // V2-002: the platform console's own sign-in steps (staff of the platform, never a customer, DEC-462)
+        'POST /v1/platform/auth/login',
+        'POST /v1/platform/auth/mfa/verify',
+        // V2-040: the e-invoicing provider's signed status callback, no customer page (DEC-543)
+        'POST /webhooks/einvoicing',
+        // V2-021: the payment gateway's signed (shared-secret) webhook, no customer page (DEC-511)
+        'POST /webhooks/payments/moyasar',
         'POST /webhooks/whatsapp',
       ].filter((x) => open.includes(x)),
     );
     expect(
-      open.every((x) => /^(GET|POST) \/(health|webhooks\/whatsapp|v1\/auth\/(login|mfa\/verify))/.test(x)),
+      open.every((x) =>
+        /^(GET|POST) \/(health|webhooks\/(whatsapp|payments\/moyasar|einvoicing)$|v1\/(platform\/)?auth\/(login|mfa\/verify)$|v1\/customer\/auth\/(otp|verify|refresh)$)/.test(
+          x,
+        ),
+      ),
     ).toBe(true);
-    // the ticket and customer routes all need a staff permission
-    const customerSide = routes.filter((r) => /tickets|customer|handover|whatsapp-link/.test(r.path));
+    // the ticket and customer routes of V1 all need a staff permission, the platform's P-06 a platform permission
+    // (V2-024); the V2 app API needs its Bearer session
+    const customerSide = routes.filter(
+      (r) => /tickets|customer|handover|whatsapp-link/.test(r.path) && !r.path.startsWith('/v1/customer/'),
+    );
     expect(customerSide.length).toBeGreaterThan(10);
-    expect(customerSide.every((r) => !r.public && !!r.permission)).toBe(true);
+    expect(
+      customerSide.every((r) =>
+        r.path.startsWith('/v1/platform/')
+          ? !r.public && !!r.platformPermission
+          : !r.public && !!r.permission,
+      ),
+    ).toBe(true);
+    const app = routes.filter((r) => r.path.startsWith('/v1/customer/') && !r.public);
+    expect(app.length).toBeGreaterThan(5);
+    expect(app.every((r) => r.customer && !r.permission && !r.platformPermission)).toBe(true);
   });
 });

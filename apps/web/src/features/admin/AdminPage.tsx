@@ -1,4 +1,15 @@
-import { Archive, History, MessageCircle, ScrollText, Settings, ShieldCheck, Users } from 'lucide-react';
+import {
+  Archive,
+  FileText,
+  History,
+  Scale,
+  MapPin,
+  MessageCircle,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+  Users,
+} from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { paths } from '@/app/paths';
 import { Header, ListItem } from '@/components';
@@ -8,6 +19,8 @@ import { staffPaths } from '@/features/supervisor/staffPaths';
 import { ForbiddenPage, ForbiddenState, NotFoundState } from '@/features/supervisor/ui';
 import { s13 } from '@/i18n/ar.staff';
 import { AuditLogSection } from './AuditLogSection';
+import { SettlementsSection, SubscriptionSection } from './BillingSections';
+import { ListingSection } from './ListingSection';
 import { OrgSettingsSection } from './OrgSettingsSection';
 import { OutboxSection } from './OutboxSection';
 import { RetentionSection } from './RetentionSection';
@@ -17,12 +30,15 @@ import '@/features/supervisor/staff.css';
 
 const ICONS: Record<AdminSection, typeof History> = {
   staff: Users,
+  listing: MapPin,
   channel: MessageCircle,
   templates: ScrollText,
   outbox: Archive,
   audit: History,
   retention: ShieldCheck,
   org: Settings,
+  settlements: Scale,
+  subscription: FileText,
 };
 
 /**
@@ -72,6 +88,8 @@ export function AdminSectionPage() {
         <ForbiddenState backTo={paths.admin} />
       ) : id === 'staff' ? (
         <StaffSection me={me} />
+      ) : id === 'listing' ? (
+        <ListingSection />
       ) : id === 'audit' ? (
         <AuditLogSection />
       ) : id === 'outbox' ? (
@@ -82,6 +100,10 @@ export function AdminSectionPage() {
         <TemplatesSection me={me} />
       ) : id === 'retention' ? (
         <RetentionSection me={me} />
+      ) : id === 'settlements' ? (
+        <SettlementsSection me={me} />
+      ) : id === 'subscription' ? (
+        <SubscriptionSection />
       ) : (
         <OrgSettingsSection />
       )}

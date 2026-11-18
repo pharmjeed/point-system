@@ -1,4 +1,4 @@
-import { WA_TEMPLATE_DEFINITIONS, type WaMessageKind } from '@point/shared';
+import type { WaMessageKind } from '@point/shared';
 import { autoResolveAlerts, raiseAlert } from '../../../core/alerts/alerts.js';
 import { killPoint } from '../../../core/chaos/kill-points.js';
 import { sha256Hex } from '../../../core/crypto/crypto.js';
@@ -374,6 +374,30 @@ export class WhatsappInboundProcessor {
   // Statuses (12 §6.8, 11 §6.8)
   // ---------------------------------------------------------------------------------------------
 
+  /**
+   * V2-051 (DEC-564): a status of a sign-in code (C-02, `job.customer_otp_send`) — the code has no whatsapp_messages
+   * row by design (DEC-38), its challenge keeps the provider's message id. Known, so never an orphan: acknowledged at
+   * once (it was retried five times and counted as an orphan before); a `failed` status marks the delivery failed with
+   * the provider's code (support reads it), nothing else changes.
+   */
+  private async signInCodeStatus(tx: Tx, channel: ChannelRow, wamid: string, s: Json): Promise<boolean> {
+    const c = await tx.maybeOne<{ id: string }>(
+      `SELECT id FROM customer_otp_challenges WHERE wa_message_id = $1 AND wa_channel_id = $2`,
+      [wamid, channel.id],
+    );
+    if (!c) return false;
+    if (s?.status === 'failed') {
+      const code =
+        Array.isArray(s.errors) && s.errors[0]?.code != null ? String(s.errors[0].code).slice(0, 32) : null;
+      await tx.query(
+        `UPDATE customer_otp_challenges SET delivery_status = 'failed', delivery_error_code = COALESCE($2, 'failed')
+          WHERE id = $1 AND delivery_status = 'sent'`,
+        [c.id, code],
+      );
+    }
+    return true;
+  }
+
   /** Returns false when no message matches (orphan). */
   private async status(channel: ChannelRow, s: Json): Promise<boolean> {
     const wamid = typeof s?.id === 'string' ? s.id : null;
@@ -395,7 +419,7 @@ export class WhatsappInboundProcessor {
     };
     return this.db.transaction(async (tx) => {
       const peek = await find(tx, false);
-      if (!peek) return false;
+      if (!peek) return wamid ? this.signInCodeStatus(tx, channel, wamid, s) : false;
       // canon order: a failed W-01 changes the ticket (L5) — lock it before the message row
       if (s.status === 'failed' && peek.purpose === 'W-01' && peek.ticket_id)
         await lockTickets(tx, [peek.ticket_id]);
@@ -532,7 +556,12 @@ export class WhatsappInboundProcessor {
 
   private async accountField(channel: ChannelRow, change: Json): Promise<boolean> {
     const v: Json = change?.value ?? {};
-    const catalog = (name: unknown) => WA_TEMPLATE_DEFINITIONS.find((d) => d.name === name);
+    // W-01 … W-08 of the synced sets (DEC-555) and the customer app's sign-in template (V2-010): each keeps its own
+    // category; only a template the sender uses (the live set, the sign-in one) degrades the channel
+    const catalog = (name: unknown) =>
+      [...this.rt.catalog.syncDefinitions, ...this.rt.catalog.authDefinitions].find((d) => d.name === name);
+    const used = (def: { name: string; category: string }) =>
+      def.category === 'AUTHENTICATION' || this.rt.catalog.isLiveTemplate(def.name);
     switch (change?.field) {
       case 'message_template_status_update': {
         const def = catalog(v.message_template_name);
@@ -541,7 +570,7 @@ export class WhatsappInboundProcessor {
         await this.db.transaction(async (tx) => {
           await tx.query(
             `INSERT INTO whatsapp_templates (org_id, name, language, category, status, components, meta_template_id, rejection_reason, last_synced_at, created_at, updated_at)
-             VALUES ($1, $2, $3, 'UTILITY', $4, $5, $6, $7, $8, $8, $8)
+             VALUES ($1, $2, $3, $9, $4, $5, $6, $7, $8, $8, $8)
              ON CONFLICT (org_id, name, language) DO UPDATE SET status = EXCLUDED.status,
                meta_template_id = COALESCE(EXCLUDED.meta_template_id, whatsapp_templates.meta_template_id),
                rejection_reason = EXCLUDED.rejection_reason, last_synced_at = EXCLUDED.last_synced_at,
@@ -555,9 +584,12 @@ export class WhatsappInboundProcessor {
               v.message_template_id != null ? String(v.message_template_id) : null,
               status === 'rejected' ? String(v.reason ?? 'REJECTED') : null,
               tx.now,
+              def.category,
             ],
           );
-          if (status !== 'approved' && status !== 'pending') {
+          if (status !== 'approved' && status !== 'pending' && !used(def)) {
+            this.logger.warn({ template: def.name, status }, 'whatsapp template of a later set not approved');
+          } else if (status !== 'approved' && status !== 'pending') {
             this.logger.error({ template: def.name, status }, 'whatsapp template left approved');
             await setChannelHealth(
               tx,
@@ -573,14 +605,15 @@ export class WhatsappInboundProcessor {
       case 'template_category_update': {
         const def = catalog(v.message_template_name);
         if (!def) return true;
-        const cat = String(v.new_category ?? v.category ?? 'UTILITY').toUpperCase();
-        if (cat === 'UTILITY') return true;
+        const cat = String(v.new_category ?? v.category ?? def.category).toUpperCase();
+        if (cat === def.category) return true;
         await this.db.transaction(async (tx) => {
           await tx.query(
             `UPDATE whatsapp_templates SET category = $3, version = version + 1 WHERE org_id = $1 AND name = $2`,
             [channel.org_id, def.name, cat === 'MARKETING' || cat === 'AUTHENTICATION' ? cat : 'UTILITY'],
           );
           this.logger.error({ template: def.name, category: cat }, 'whatsapp template recategorized');
+          if (!used(def)) return;
           await setChannelHealth(
             tx,
             channel.id,

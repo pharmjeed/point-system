@@ -1,8 +1,10 @@
+import { waCatalog, type WaCatalog } from '@point/shared';
 import type { Env } from '../../core/config/env.js';
 import { loadEnv } from '../../core/config/env.js';
 import { parseEncryptionKey, type EncryptionKey } from '../../core/crypto/crypto.js';
 import { createLogger, type Logger } from '../../core/logging/logger.js';
 import { SecretResolver } from '../../core/secrets/secret-resolver.js';
+import { setLiveWaCatalog } from './application/live-catalog.js';
 import { ActiveChannelCache } from './infra/channel.js';
 import { GraphClient } from './infra/graph-client.js';
 import { SendPacer, type ChannelProbe } from './infra/pacer.js';
@@ -28,6 +30,11 @@ export class WhatsappRuntime {
   readonly secretEnv: Record<string, string | undefined>;
   readonly graph: GraphClient;
   readonly channels = new ActiveChannelCache();
+  /**
+   * the customer copy with the configured customer brand (`BRAND_CUSTOMER_NAME_AR`, DEC-470), the live template set
+   * (`WA_TEMPLATE_SET`, DEC-555) and the app link of the session replies (`CUSTOMER_APP_LINK`, DEC-556)
+   */
+  readonly catalog: WaCatalog;
   /** last phone-number probe per channel (12 §5.14: at most every 60 s) */
   readonly probes = new Map<string, ChannelProbe>();
   /** last `wa_webhook_silent` check of this process (once a minute at most) */
@@ -37,6 +44,12 @@ export class WhatsappRuntime {
 
   constructor(deps: WhatsappDeps) {
     this.env = deps.env;
+    this.catalog = waCatalog(deps.env.BRAND_CUSTOMER_NAME_AR, {
+      set: deps.env.WA_TEMPLATE_SET,
+      appLink: deps.env.CUSTOMER_APP_LINK,
+    });
+    // the early template checks of the commands (link-service) read the same live set (DEC-555)
+    setLiveWaCatalog(this.catalog);
     this.secretEnv = deps.secretEnv ?? process.env;
     this.secrets = deps.secrets ?? new SecretResolver(this.secretEnv);
     this.logger = deps.logger ?? createLogger({ level: deps.env.LOG_LEVEL, name: 'point-whatsapp' });

@@ -24,13 +24,17 @@ describe('chaos kill points (17 H-03)', () => {
     return { hits, handler: (p: KillPoint) => void hits.push(p) };
   };
 
-  it('names the five points of H-03 in KP order', () => {
+  it('names the five points of H-03 in KP order, then the four V2 points (V2-051, DEC-561)', () => {
     expect(KILL_POINTS).toEqual([
       'webhook_after_store_before_ack',
       'inbound_after_cycle_commit',
       'outbox_after_lock_before_send',
       'wa_send_after_provider_ok_before_done',
       'accept_after_commit_before_response',
+      'payment_webhook_after_commit_before_done',
+      'online_payment_after_gateway_ok_before_record',
+      'invoice_issued_before_commit',
+      'settlement_after_operator_commit',
     ]);
   });
 

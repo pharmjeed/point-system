@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useBrand } from '@/hooks/useMe';
 import { Images } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -7,7 +8,18 @@ import { getMediaUrl, keyPickup, markReady, startRetrieval } from '@/api/field';
 import { queryKeys } from '@/api/queryClient';
 import type { DriverHome, Media, TaskCard as TaskCardData, TicketDetail } from '@/api/types';
 import { paths } from '@/app/paths';
-import { Banner, Button, Card, Dialog, PlateBadge, Sheet, Skeleton, Stepper } from '@/components';
+import {
+  Banner,
+  Button,
+  Card,
+  Dialog,
+  EntitlementChip,
+  PlateBadge,
+  Sheet,
+  Skeleton,
+  Stepper,
+} from '@/components';
+import { entitlementBadgeOf } from '@/features/common/entitlement';
 import { LoadError } from '@/features/common/QueryView';
 import { useCommand } from '@/hooks/useCommand';
 import { useServerNow } from '@/hooks/useNow';
@@ -65,6 +77,7 @@ type Step = 'pickup' | 'start' | 'ready';
 function Retrieval({ card }: { card: TaskCardData }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const brand = useBrand(); // V2-033: «مشترك {brand}»
   // 02 §1.6/§1.7, 03 §4.4: no confirmed connection or stale data → commands wait (PNT-065)
   const gate = useCommandGate();
   const online = !gate.unconfirmed;
@@ -169,6 +182,11 @@ function Retrieval({ card }: { card: TaskCardData }) {
     3: null,
   };
   const time = (iso: string | null | undefined) => (iso ? formatTime(iso) : undefined);
+  const badge = entitlementBadgeOf(
+    card.ticket.entitlement,
+    card.payment_due ? { amountHalalas: card.payment_due.amount_halalas } : null,
+    brand.staffNameAr,
+  );
   const steps = [
     { label: components.stepper.key, time: time(card.task.key_picked_up_at) },
     { label: components.stepper.retrieve, time: time(card.task.started_at) },
@@ -186,6 +204,8 @@ function Retrieval({ card }: { card: TaskCardData }) {
       <div className="flex flex-wrap items-center gap-3">
         {plate ? <PlateBadge {...plate} /> : null}
         <span>{vehicleSummary(card.ticket.vehicle)}</span>
+        {/* O-02 (V2-014): «مشمول» / «يدفع X» */}
+        {badge ? <EntitlementChip badge={badge} size="sm" /> : null}
       </div>
       <Stepper
         current={step}

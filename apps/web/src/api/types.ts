@@ -156,6 +156,15 @@ export interface Me {
     uncertain_after_s?: number;
     offline_after_s?: number;
   };
+  /**
+   * The user's organization (the operator) and its platform status (V2-005, DEC-486): `suspended` / `terminated`
+   * show the operator banner; the server refuses new events, shifts, duties and intakes whatever the app shows.
+   */
+  organization?: {
+    id: string;
+    name_ar: string;
+    operator_status: 'invited' | 'trial' | 'active' | 'suspended' | 'terminated';
+  };
 }
 
 export interface LoginRequest {
@@ -397,7 +406,10 @@ export interface BlockingDriver {
 
 // ---------------------------------------------------------------- tickets, tasks, offers (07 §2.1–§2.3)
 
-export type TicketChannel = 'whatsapp' | 'paper';
+/** `app`: taken in by scanning the customer's entry pass (O-01, V2-013, DEC-501) */
+export type TicketChannel = 'whatsapp' | 'paper' | 'app';
+/** `tickets.entitlement` (V2-014, DEC-502): the badge of D-05, D-10/D-11 and S-03 (O-02) */
+export type TicketEntitlement = 'none' | 'subscription' | 'app_paid' | 'event_included';
 export type WaLinkStatus =
   'none' | 'pending_send' | 'pending_confirmation' | 'linked' | 'failed' | 'opted_out';
 export type InspectionStatus = 'pending' | 'complete' | 'incomplete' | 'exception_approved';
@@ -506,7 +518,7 @@ export interface RetrievalCycle {
   ticket_id: string;
   cycle_no: number;
   requested_at: string;
-  request_source: 'whatsapp' | 'staff';
+  request_source: 'whatsapp' | 'staff' | 'app';
   requested_early: boolean;
   accepted_by?: string | null;
   started_at?: string | null;
@@ -564,6 +576,8 @@ export interface TicketSummary {
 /** Full projection for the creator during intake, the assignee of an open task, and staff (07 §1.10). */
 export interface TicketDetail extends TicketSummary {
   projection: 'minimal' | 'full';
+  /** V2-014 (DEC-502); a server before it sends none */
+  entitlement?: TicketEntitlement;
   vehicle_detail?: VehicleInfo;
   customer?: {
     phone_masked?: string | null;
@@ -619,6 +633,23 @@ export interface LinkCodeQr {
   qr_text: string;
 }
 
+/**
+ * `IntakePassResult` (07, O-01; V2-013, DEC-500): the draft turned into the app ticket, and what the operator may see
+ * of the customer (V2-D12: the first name and the masked phone, never stored here).
+ */
+export interface IntakePassResult {
+  ticket: TicketDetail;
+  customer: {
+    first_name: string | null;
+    phone_masked: string | null;
+    vehicle_prefilled: boolean;
+    /** V2-033 (DEC-535): the account's subscription at this venue for the scanned vehicle (01 §4) */
+    subscription?: 'covered' | 'vehicle_not_covered' | 'open_ticket' | null;
+  };
+  task?: Task;
+  driver_state?: DriverStateResult['driver_state'];
+}
+
 /** `WaLinkResult` (07): the reply of `POST /v1/tickets/{ticketId}/whatsapp-link`. */
 export interface WaLinkResult {
   method: 'direct' | 'qr';
@@ -638,6 +669,8 @@ export interface TaskCard {
     vehicle?: VehicleInfo;
     status: TicketStatus;
     version: number;
+    /** O-02 (DEC-502): sent only when it is not `none` */
+    entitlement?: TicketEntitlement;
   };
   parking?: { spot_label?: string | null; zone_name?: string | null; spot_note?: string | null } | null;
   key_slot?: { id: string; board_name: string; label: string } | null;
@@ -805,7 +838,7 @@ export interface UserRef {
 }
 
 export type PaymentRecordStatus = 'recorded' | 'reversed';
-export type RequestSource = 'whatsapp' | 'staff';
+export type RequestSource = 'whatsapp' | 'staff' | 'app';
 export type CycleOutcome = 'delivered' | 'canceled' | 'reparked';
 export type CustodySubject = 'vehicle' | 'key';
 export type CustodyHolderType = 'customer' | 'driver' | 'spot' | 'key_slot' | 'supervisor' | 'unknown';

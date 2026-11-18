@@ -28,6 +28,7 @@ export type Permission =
   | 'cash.handover_confirm'
   | 'event.manage'
   | 'venue.read'
+  | 'venue.manage'
   | 'venue.layout_read'
   | 'driver.read'
   | 'driver.manage'
@@ -47,7 +48,9 @@ export type Permission =
   | 'outbox.manage'
   | 'retention.manage'
   | 'org.settings_manage'
-  | 'staff.manage';
+  | 'staff.manage'
+  | 'settlement.read'
+  | 'settlement.dispute';
 
 export const can = (me: Pick<Me, 'permissions'>, permission: Permission): boolean =>
   me.permissions.includes(permission);
@@ -211,17 +214,32 @@ export function custodyTransferHolders(
 }
 
 /** Admin area sections (02 §2.2 table, 02 S-13) — read permission per section. */
-export type AdminSection = 'staff' | 'audit' | 'outbox' | 'channel' | 'templates' | 'retention' | 'org';
+export type AdminSection =
+  | 'staff'
+  | 'listing'
+  | 'audit'
+  | 'outbox'
+  | 'channel'
+  | 'templates'
+  | 'retention'
+  | 'org'
+  | 'settlements'
+  | 'subscription';
 
 export const ADMIN_SECTIONS: ReadonlyArray<{ id: AdminSection; read: Permission }> = [
   // «الموظفون»: the administration manages supervisors, the owner everyone (02 §2.2, canon §10 staff.manage)
   { id: 'staff', read: 'staff.manage' },
+  // «ملف الموقع العام» (V2-004, O-04): owner and admin edit and submit their venues' public profile
+  { id: 'listing', read: 'venue.manage' },
   { id: 'channel', read: 'wa.channel_read' },
   { id: 'templates', read: 'wa.channel_read' },
   { id: 'outbox', read: 'outbox.manage' },
   { id: 'audit', read: 'audit.read' },
   { id: 'retention', read: 'audit.read' },
   { id: 'org', read: 'org.settings_manage' },
+  // V2-041 / V2-042 (O-05 / O-06): the owner and the administration read their statements and system subscription
+  { id: 'settlements', read: 'settlement.read' },
+  { id: 'subscription', read: 'settlement.read' },
 ];
 
 export const adminSectionsFor = (me: Pick<Me, 'permissions'>): AdminSection[] =>
