@@ -1,6 +1,15 @@
 /**
- * C-06 الرئيسية — V2-UX option A «زر واحد», chosen by the owner (DEC-620 … DEC-627): an almost empty white screen
- * with one big circle that changes with the moment.
+ * C-06 الرئيسية — by subscription (DEC-639): the app is for the subscribers of the places Point serves, each place
+ * with its own subscription.
+ *
+ * - **No subscription and no visit in progress:** «أين تركن عادةً؟» (owner's option 2, `PlacesChooser`): the places
+ *   that sell a subscription on a map, a sheet to choose one and «اشترك في هذا المكان» (C-08 → C-09 → C-10), and the
+ *   shortcuts. The entry pass is not offered before a subscription.
+ * - **Subscribed, or a visit in progress:** V2-UX option A «زر واحد» (DEC-620 … DEC-627), below. Subscribed without a
+ *   visit (owner's option 4): the green «مشترك · {المكان}» over the circle, and under it the covered car and the
+ *   renewal (opens C-14).
+ *
+ * Option A: an almost empty white screen with one big circle that changes with the moment.
  *
  * - **Top bar:** the brand mark at the start; at the end the locations (C-07, `home-locations`) and the account
  *   (C-19, `home-account`) as round buttons. No tab bar (DEC-626).
@@ -13,7 +22,8 @@
  *   ready → green, the handover code masked until tapped (DEC-625: the same endpoint as C-12, kept in memory only,
  *   hidden again at its expiry or when the car leaves «جاهزة»). A short hold requests nothing and shows the hint
  *   «اضغط مطولًا 3 ثوانٍ لطلب سيارتك» under the circle.
- * - **Under the circle:** the venue and the plate (opens C-12, `home-visit`), or the nearest location (C-08).
+ * - **Under the circle:** the venue and the plate (opens C-12, `home-visit`), or the subscription's car and renewal
+ *   (opens C-14, `home-subscription`).
  * - **Shortcuts:** سياراتي (أضف سيارة without one) · زياراتي · اشتراكاتي · الفواتير.
  *
  * The visit's details beyond `GET /v1/customer/home` (whether a request is possible, the time of the request, the
@@ -37,6 +47,14 @@ import {
   type HomeStage,
   type HomeTone,
 } from '../features/home';
+import {
+  heldSubscriptions,
+  homeMode,
+  placeCards,
+  subscribedChip,
+  subscriptionLine,
+  type PlaceCard,
+} from '../features/places';
 import { requestCar } from '../features/requestCar';
 import { dayPart, elapsedView } from '../features/ux';
 import { visitView } from '../features/visit';
@@ -54,6 +72,7 @@ import { HoldCircle, type HoldCircleState } from '../ui/HoldCircle';
 import { Icon, type IconName } from '../ui/Icon';
 import { Logo } from '../ui/Logo';
 import { ease, nativeDriver, useReducedMotion } from '../ui/motion';
+import { PlacesChooser } from '../ui/PlacesChooser';
 import { PlateBadge } from '../ui/PlateBadge';
 import { IconButton } from '../ui/ScreenHeader';
 import { SkeletonList } from '../ui/Skeleton';
@@ -70,6 +89,9 @@ const TINT: Record<HomeTone, string> = {
   navy: color.surfaceInverse,
   green: color.success,
 };
+
+/** The pill when subscribed and no visit (DEC-639): the success pair, «مشترك · …». */
+const SUBSCRIBED_PILL = { bg: color.successSubtle, fg: color.successText };
 
 /** The pill's colours: a light band of the circle's family and its readable text (brand §4.4 pairs). */
 const PILL: Record<HomeTone, { bg: string; fg: string }> = {
@@ -161,6 +183,11 @@ export default function Home() {
   const [code, setCode] = useState<CustomerHandoverCode | null>(null);
   const [codeBusy, setCodeBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
+  // DEC-639: the places to choose from without a subscription, and the covered car with one
+  const [places, setPlaces] = useState<PlaceCard[]>([]);
+  const [placesFailure, setPlacesFailure] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [coveredPlate, setCoveredPlate] = useState<string | null>(null);
   const key = useRef(new CommandKey(newIdempotencyKey)).current;
 
   const load = useCallback(async () => {
@@ -173,6 +200,23 @@ export default function Home() {
       setDetail(
         h.current_visit ? await session.api.visit(h.current_visit.ticket_id).catch(() => null) : null,
       );
+      const mode = homeMode(h);
+      if (mode === 'choose') {
+        try {
+          const page = await session.api.locations({ filter: 'subscribable' });
+          const cards = placeCards(page.items, t, locale);
+          setPlaces(cards);
+          setPlacesFailure(null);
+          setChosen((c) => (c && cards.some((p) => p.id === c) ? c : (cards[0]?.id ?? null)));
+        } catch (e) {
+          setPlacesFailure(`${t.home.places.loadFailed} ${errorText(e, t, locale)}`);
+        }
+      } else if (mode === 'subscribed') {
+        // the covered car of the first subscription (C-14's read); without it the line keeps the renewal only
+        const first = heldSubscriptions(h)[0];
+        const sub = first ? await session.api.subscription(first.subscription_id).catch(() => null) : null;
+        setCoveredPlate(sub?.vehicles.find((v) => !v.removed)?.plate_display ?? null);
+      }
     } catch (e) {
       setFailure(errorText(e, t, locale));
     } finally {
@@ -283,12 +327,9 @@ export default function Home() {
       ? visit.venue_name_en
       : visit.venue_name_ar
     : null;
-  const nearest = home?.nearby_locations[0] ?? null;
-  const nearestName = nearest
-    ? locale === 'en' && nearest.name_en
-      ? nearest.name_en
-      : nearest.name_ar
-    : null;
+  const mode = home ? homeMode(home) : null;
+  const held = home ? heldSubscriptions(home) : [];
+  const firstHeld = held[0] ?? null;
   const part = dayPart(now);
 
   const label = (text: string) => (
@@ -421,7 +462,74 @@ export default function Home() {
     }
   })();
 
-  const pill = PILL[tone];
+  // subscribed without a visit (option 4): the green «مشترك · {المكان}» says where the pass is for
+  const subscribedNow = mode === 'subscribed' && stage === 'none';
+  const pill = subscribedNow ? SUBSCRIBED_PILL : PILL[tone];
+  const pillText = subscribedNow ? subscribedChip(held, t, locale) : t.home.status[stage];
+
+  const shortcuts = home ? (
+    <View style={styles.shortcuts} accessibilityRole="toolbar" accessibilityLabel={t.home.quickActions}>
+      <Shortcut
+        icon={home.vehicles_count === 0 ? 'plus' : 'car'}
+        label={home.vehicles_count === 0 ? t.home.addVehicle : t.home.myVehicles}
+        onPress={() =>
+          home.vehicles_count === 0
+            ? router.push({ pathname: '/vehicle', params: { from: 'vehicles' } })
+            : router.push('/vehicles')
+        }
+        testID="home-vehicles"
+      />
+      <Shortcut
+        icon="history"
+        label={t.home.myVisits}
+        onPress={() => router.push('/visits')}
+        testID="home-visits"
+      />
+      <Shortcut
+        icon="calendar-check"
+        label={t.home.subscriptions}
+        onPress={() => router.push('/subscriptions')}
+        testID="home-subscriptions"
+      />
+      <Shortcut
+        icon="receipt"
+        label={t.settings.invoices}
+        onPress={() => router.push('/invoices')}
+        testID="home-invoices"
+      />
+    </View>
+  ) : null;
+
+  if (home && mode === 'choose') {
+    return (
+      <SafeAreaView style={[styles.safe, styles.flex]} edges={['top', 'bottom']}>
+        <PlacesChooser
+          places={places}
+          loading={loading}
+          failure={failure ? `${t.home.loadFailed} ${failure}` : placesFailure}
+          selected={chosen}
+          onSelect={setChosen}
+          onSubscribe={(venueId) => router.push({ pathname: '/location/[venueId]', params: { venueId } })}
+          onSearch={() => router.push('/locations')}
+          onAccount={() => router.push('/settings')}
+          shortcuts={shortcuts}
+          text={{
+            greeting: greeting(home, t, part),
+            title: t.home.places.title,
+            hint: t.home.places.hint,
+            search: t.home.places.search,
+            account: t.home.account,
+            mapLabel: t.home.places.mapLabel,
+            count: fmt(t.home.places.count, { n: places.length }),
+            subscribe: t.home.places.subscribe,
+            empty: t.home.places.empty,
+            loading: t.common.loading,
+          }}
+        />
+        <DevBanner />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -465,11 +573,11 @@ export default function Home() {
               <SkeletonList label={t.common.loading} count={1} lines={2} />
             ) : home ? (
               <>
-                <FadeIn swapKey={stage}>
+                <FadeIn swapKey={subscribedNow ? 'subscribed' : stage}>
                   <View style={[styles.pill, { backgroundColor: pill.bg }]}>
                     <BlinkDot tint={pill.fg} />
                     <AppText accessibilityRole="header" style={[styles.pillText, { color: pill.fg }]}>
-                      {t.home.status[stage]}
+                      {pillText}
                     </AppText>
                   </View>
                 </FadeIn>
@@ -502,19 +610,26 @@ export default function Home() {
                     </AppText>
                     {visit.plate_display ? <PlateBadge plate={isolate(visit.plate_display)} /> : null}
                   </Touchable>
-                ) : nearest && nearestName ? (
+                ) : subscribedNow && firstHeld ? (
                   <Touchable
                     accessibilityRole="button"
-                    accessibilityLabel={fmt(t.home.nearestLine, { venue: nearestName })}
-                    onPress={() =>
-                      router.push({ pathname: '/location/[venueId]', params: { venueId: nearest.venue_id } })
-                    }
+                    accessibilityLabel={[coveredPlate, subscriptionLine(firstHeld, t)]
+                      .filter(Boolean)
+                      .join('، ')}
+                    accessibilityHint={t.home.subscriptions}
+                    onPress={() => router.push('/subscriptions')}
                     pressScale={0.98}
-                    testID="home-nearest"
+                    testID="home-subscription"
                     style={({ pressed }) => [styles.where, pressed && styles.pressed]}
                   >
-                    <AppText tone="muted" center numberOfLines={2}>
-                      {fmt(t.home.nearestLine, { venue: isolate(nearestName) })}
+                    {coveredPlate ? <PlateBadge plate={isolate(coveredPlate)} /> : null}
+                    <AppText
+                      tone={firstHeld.status === 'past_due' ? 'danger' : 'muted'}
+                      variant="small"
+                      center
+                      numberOfLines={2}
+                    >
+                      {subscriptionLine(firstHeld, t)}
                     </AppText>
                   </Touchable>
                 ) : null}
@@ -527,42 +642,7 @@ export default function Home() {
             ) : null}
           </View>
 
-          {home ? (
-            <View
-              style={styles.shortcuts}
-              accessibilityRole="toolbar"
-              accessibilityLabel={t.home.quickActions}
-            >
-              <Shortcut
-                icon={home.vehicles_count === 0 ? 'plus' : 'car'}
-                label={home.vehicles_count === 0 ? t.home.addVehicle : t.home.myVehicles}
-                onPress={() =>
-                  home.vehicles_count === 0
-                    ? router.push({ pathname: '/vehicle', params: { from: 'vehicles' } })
-                    : router.push('/vehicles')
-                }
-                testID="home-vehicles"
-              />
-              <Shortcut
-                icon="history"
-                label={t.home.myVisits}
-                onPress={() => router.push('/visits')}
-                testID="home-visits"
-              />
-              <Shortcut
-                icon="calendar-check"
-                label={t.home.subscriptions}
-                onPress={() => router.push('/subscriptions')}
-                testID="home-subscriptions"
-              />
-              <Shortcut
-                icon="receipt"
-                label={t.settings.invoices}
-                onPress={() => router.push('/invoices')}
-                testID="home-invoices"
-              />
-            </View>
-          ) : null}
+          {shortcuts}
           <DevBanner />
         </View>
       </ScrollView>

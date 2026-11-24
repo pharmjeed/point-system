@@ -20,6 +20,7 @@ import {
   heading,
   shown,
   signUp,
+  subscribeFromHome,
   test,
   tpl,
 } from './support/app';
@@ -186,6 +187,7 @@ test('C-11: the valuables reminder under the entry pass', async ({ app: page }) 
   await signUp(page);
   await addVehicle(page, '1111', ['A', 'B', 'D']);
   await expectHome(page);
+  await subscribeFromHome(page);
   await page
     .getByRole('button', { name: ar.home.pass, exact: true })
     .filter({ visible: true })

@@ -185,14 +185,44 @@ export function chip(page: Page, group: string, index: number): Locator {
 }
 
 /**
- * C-06 reached and drawn (V2-UX option A «زر واحد», DEC-620): the circle, the account button of the top bar and the
- * shortcuts; no tab bar (DEC-626).
+ * C-06 reached and drawn: the circle of option A «زر واحد» (DEC-620) when subscribed or in a visit, or «أين تركن
+ * عادةً؟» without a subscription (DEC-639); the account button and no tab bar (DEC-626) either way.
  */
 export async function expectHome(page: Page): Promise<void> {
-  await expect(page.getByTestId('home-circle').filter({ visible: true })).toBeVisible();
+  await expect(
+    page.locator('[data-testid="home-circle"]:visible, [data-testid="home-places"]:visible').first(),
+  ).toBeVisible();
   await expect(page.getByTestId('home-account').filter({ visible: true })).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(0);
   await expectRtlPhone(page);
+}
+
+/**
+ * DEC-639: from «أين تركن عادةً؟», subscribe to the chosen place (the first, or the one whose pin is tapped): its
+ * C-08 → «اشترك» → C-09 the first plan, monthly → C-10 a new card → C-14, then back to C-06, now the entry pass.
+ * Returns the place's name.
+ */
+export async function subscribeFromHome(page: Page, pin?: number): Promise<string> {
+  await expect(heading(page, ar.home.places.title)).toBeVisible();
+  if (pin !== undefined) await page.locator('[data-testid^="place-pin-"]:visible').nth(pin).click();
+  const chosen = page.getByRole('radio', { checked: true }).filter({ visible: true }).first();
+  const venue = ((await chosen.getAttribute('aria-label')) ?? '').split('، ')[0] ?? '';
+  await page.getByTestId('home-subscribe').filter({ visible: true }).click();
+  await expect(heading(page, venue)).toBeVisible();
+  await button(page, ar.subscribe.action).click();
+  await expect(heading(page, tpl(ar.subscribe.title, { venue }))).toBeVisible();
+  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await button(page, ar.subscribe.pay).click();
+  const sheet = page.getByRole('dialog');
+  await sheet.getByLabel(ar.pay.cardNumber, { exact: true }).fill(CARD_OK);
+  await sheet.getByLabel(ar.pay.expiry, { exact: true }).fill('12/30');
+  await sheet.getByLabel(ar.pay.cvc, { exact: true }).fill('123');
+  await sheet.getByLabel(ar.pay.cardName, { exact: true }).fill('SARA A');
+  await sheet.getByTestId('pay-sheet-submit').click();
+  await expect(heading(page, ar.subscriptions.title)).toBeVisible({ timeout: 15_000 });
+  await button(page, ar.common.back).click();
+  await expect(page.getByTestId('home-circle').filter({ visible: true })).toBeVisible();
+  return venue;
 }
 
 /** «بطاقة الدخول» on C-06: the circle without a visit (the first visible one). */

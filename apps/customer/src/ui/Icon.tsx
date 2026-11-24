@@ -60,6 +60,12 @@ import TriangleAlert from 'lucide-react-native/icons/triangle-alert';
 import User from 'lucide-react-native/icons/user';
 import UserCheck from 'lucide-react-native/icons/user-check';
 import Wallet from 'lucide-react-native/icons/wallet';
+import BedDouble from 'lucide-react-native/icons/bed-double';
+import Dumbbell from 'lucide-react-native/icons/dumbbell';
+import Hospital from 'lucide-react-native/icons/hospital';
+import House from 'lucide-react-native/icons/house';
+import PartyPopper from 'lucide-react-native/icons/party-popper';
+import ShoppingBag from 'lucide-react-native/icons/shopping-bag';
 import { View } from 'react-native';
 import { color } from '../theme/tokens';
 import { isRTL } from './direction';
@@ -71,6 +77,13 @@ const ICONS = {
   'bell-ring': BellRing,
   bookmark: Bookmark,
   building: Building2,
+  // DEC-639: the place categories on the «اختر مكانك» sheet
+  'bed-double': BedDouble,
+  dumbbell: Dumbbell,
+  hospital: Hospital,
+  house: House,
+  'party-popper': PartyPopper,
+  'shopping-bag': ShoppingBag,
   'calendar-check': CalendarCheck,
   // V2-036 (DEC-605): the counted days, the student plan, the freeze, the complaints
   'calendar-days': CalendarDays,

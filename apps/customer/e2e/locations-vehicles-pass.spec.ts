@@ -12,6 +12,7 @@ import {
   expectRtlPhone,
   heading,
   passButton,
+  subscribeFromHome,
   shown,
   signUp,
   test,
@@ -22,10 +23,8 @@ test('C-07 → C-08: search, filter, open a location with its hours and prices',
   await signUp(page);
   await addVehicle(page);
   await expectHome(page);
-  // option A (DEC-627): the nearest location under the circle, the full list from the top bar
-  await expect(page.getByRole('button', { name: tpl(ar.home.nearestLine) })).toBeVisible();
-
-  await button(page, ar.home.allLocations).click();
+  // without a subscription (DEC-639): the search bar over the map opens the full list
+  await page.getByRole('search', { name: ar.home.places.search }).filter({ visible: true }).click();
   await expect(heading(page, ar.locations.title)).toBeVisible();
   await expectRtlPhone(page);
   const rows = page.getByRole('button', { name: new RegExp(ar.locations.listSeparator) });
@@ -101,6 +100,8 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   await signUp(page);
   await addVehicle(page, '1111', ['A', 'B', 'D']);
   await expectHome(page);
+  // the entry pass comes with a subscription (DEC-639)
+  await subscribeFromHome(page);
 
   // one car: shown under the code
   await passButton(page).click();
