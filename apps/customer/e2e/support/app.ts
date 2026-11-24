@@ -199,7 +199,8 @@ export async function expectHome(page: Page): Promise<void> {
 
 /**
  * DEC-639: from «أين تركن عادةً؟», subscribe to the chosen place (the first, or the one whose pin is tapped): its
- * C-08 → «اشترك» → C-09 the first plan, monthly → C-10 a new card → C-14, then back to C-06, now the entry pass.
+ * C-08 → «اشترك …» (the yearly best value by default, DEC-640) → C-09 → C-10 a new card → C-14, then back to C-06,
+ * now the entry pass.
  * Returns the place's name.
  */
 export async function subscribeFromHome(page: Page, pin?: number): Promise<string> {

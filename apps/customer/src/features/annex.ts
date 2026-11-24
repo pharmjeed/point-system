@@ -108,7 +108,12 @@ export interface PlanAnnex {
 }
 
 /** What C-09 shows of a plan before payment (annex clauses 1–3, 5, 6); the full rules are on C-24. */
-export function planAnnex(plan: CustomerLocationPlan, dict: Dictionary): PlanAnnex {
+export function planAnnex(
+  plan: CustomerLocationPlan,
+  dict: Dictionary,
+  /** the cycle being bought: its price before VAT, VAT and total (a yearly purchase is not shown monthly figures) */
+  cycle: 'monthly' | 'yearly' = 'monthly',
+): PlanAnnex {
   const p = plan.policy;
   const a = dict.annex;
   const bullets: { icon: PolicyIcon; text: string }[] = [];
@@ -131,7 +136,7 @@ export function planAnnex(plan: CustomerLocationPlan, dict: Dictionary): PlanAnn
   if (p.closure_policy === 'continue') bullets.push({ icon: 'info', text: a.policy.continueClosure });
   if (p.eligibility !== 'none' || p.term_kind === 'service_days')
     bullets.push({ icon: 'user', text: a.policy.personal });
-  const b = plan.monthly_breakdown;
+  const b = cycle === 'yearly' ? plan.yearly_breakdown : plan.monthly_breakdown;
   const counted = p.term_kind === 'service_days' && p.service_days && p.service_weekdays;
   const term = counted
     ? fmt(a.countedTerm, {

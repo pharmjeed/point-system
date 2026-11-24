@@ -70,7 +70,8 @@ test('R1: welcome, WhatsApp code, consents, first vehicle, home', async ({ app: 
   await expect(button(page, ar.home.pass)).toBeVisible();
   const line = page.getByTestId('home-subscription').filter({ visible: true });
   await expect(line).toContainText('4321');
-  await expect(line).toContainText(ar.subscribe.monthly);
+  // C-08's default card is the yearly best value (DEC-640)
+  await expect(line).toContainText(ar.subscribe.yearly);
   await expectRtlPhone(page);
 });
 

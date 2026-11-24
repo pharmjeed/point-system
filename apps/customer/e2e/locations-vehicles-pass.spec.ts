@@ -52,7 +52,7 @@ test('C-07 → C-08: search, filter, open a location with its hours and prices',
   // C-08
   await rows.first().click();
   await expect(heading(page, first)).toBeVisible();
-  for (const h of [ar.locations.address, ar.locations.hours, ar.locations.prices])
+  for (const h of [ar.locations.plan.title, ar.locations.address, ar.locations.hours])
     await expect(page.getByRole('heading', { name: h, exact: true })).toBeVisible();
   await expect(shown(page.getByText(new RegExp(`\\(${ar.locations.today}\\)`)))).toBeVisible();
   // «اختر باقتك» (DEC-640): the yearly best value chosen, priced by the working day, the per-visit price struck

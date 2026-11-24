@@ -118,7 +118,7 @@ export default function Subscribe() {
   const cycles = cyclesOf(loc?.plans ?? []);
   const plan = plans.find((p) => p.planId === planId) ?? null;
   const planRow = loc?.plans.find((p) => p.plan_id === planId) ?? null;
-  const annex = planRow ? planAnnex(planRow, t) : null;
+  const annex = planRow ? planAnnex(planRow, t, cycle) : null;
   const max = planRow?.vehicles_included ?? 1;
   const cars = coverableVehicles(vehicles ?? []);
   const venue = loc ? (locale === 'en' && loc.name_en ? loc.name_en : loc.name_ar) : '';
@@ -253,7 +253,7 @@ export default function Subscribe() {
             {plans.map((p, i) => {
               const on = p.planId === planId;
               const row = loc.plans.find((x) => x.plan_id === p.planId)!;
-              const info = planAnnex(row, t);
+              const info = planAnnex(row, t, cycle);
               return (
                 <FadeIn key={p.planId} index={i} swapKey={cycle}>
                   <Touchable
