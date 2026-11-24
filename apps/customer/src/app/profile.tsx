@@ -101,16 +101,23 @@ export default function Profile() {
               {t.profile.agree.before}
             </AppText>
             <TextLink label={t.profile.agree.terms} onPress={openTerms} testID="profile-terms-link" />
-            <AppText variant="small" tone="muted">
-              {t.profile.agree.between}
-            </AppText>
-            {openPrivacy ? (
-              <TextLink label={t.profile.agree.privacy} onPress={openPrivacy} testID="profile-privacy-link" />
-            ) : (
+            {/* Arabic «و» is written joined to the next word; English keeps its space */}
+            <View style={[styles.joined, { columnGap: locale === 'ar' ? 0 : space[1] }]}>
               <AppText variant="small" tone="muted">
-                {t.profile.agree.privacy}
+                {t.profile.agree.between}
               </AppText>
-            )}
+              {openPrivacy ? (
+                <TextLink
+                  label={t.profile.agree.privacy}
+                  onPress={openPrivacy}
+                  testID="profile-privacy-link"
+                />
+              ) : (
+                <AppText variant="small" tone="muted">
+                  {t.profile.agree.privacy}
+                </AppText>
+              )}
+            </View>
           </View>
           <Button
             label={t.profile.submit}
@@ -201,5 +208,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     columnGap: space[1],
   },
+  joined: { flexDirection: 'row', alignItems: 'center' },
   link: { minHeight: 44, justifyContent: 'center' },
 });
