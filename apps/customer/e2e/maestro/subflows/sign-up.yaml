@@ -50,5 +50,5 @@ env:
 - tapOn:
     id: profile-submit
 - extendedWaitUntil:
-    visible: 'أضف سيارتك'
+    visible: 'ما لوحة سيارتك؟'
     timeout: 10000

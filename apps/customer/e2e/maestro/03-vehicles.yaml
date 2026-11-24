@@ -17,9 +17,7 @@ tags: [h2, r6]
     file: subflows/add-vehicle.yaml
     env:
       DIGITS: '2222'
-      L1: 'ر R'
-      L2: 'س S'
-      L3: 'ط T'
+      LETTERS: 'RST'
 - assertVisible: '.*2222.*'
 - tapOn:
     text: 'حذف'

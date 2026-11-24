@@ -55,6 +55,7 @@ export {
 export { maskPhone, normalizeSaudiMobile, SAUDI_MOBILE_E164_RE } from '../phone.js';
 export {
   normalizeSaudiPlate,
+  plateLettersFromTyping,
   saudiPlateDisplay,
   SAUDI_PLATE_LETTERS,
   VEHICLE_COLOR_LABELS_AR,

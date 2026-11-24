@@ -182,23 +182,18 @@ async function journey(page, locale, deviceName, base, dir) {
   await page.getByTestId('otp-submit').click();
   await page.getByTestId('profile-submit').waitFor();
   await page.getByRole('textbox').first().fill(DEMO_NAME[locale]);
-  const boxes = page.getByRole('checkbox');
-  await boxes.nth(0).click();
-  await boxes.nth(1).click();
+  // «ابدأ» is the consent to the terms and the privacy policy (DEC-637)
   await page.getByTestId('profile-submit').click();
-  // C-05: a fictional plate and car, so C-06, C-11 and C-09 show one (the store pictures never carry a real plate)
-  await page.getByTestId('vehicle-submit').filter({ visible: true }).waitFor();
-  await page.getByRole('textbox').filter({ visible: true }).first().fill('4827');
-  for (const letter of ['ر', 'س', 'ن']) {
-    await page
-      .getByRole('button', { name: new RegExp(`^${letter} `) })
-      .filter({ visible: true })
-      .click();
-  }
-  const groups = page.getByRole('radiogroup').filter({ visible: true });
-  await groups.nth(0).getByRole('radio').first().click(); // make
-  await groups.nth(1).getByRole('radio').first().click(); // colour
-  await groups.nth(2).getByRole('radio').first().click(); // type
+  // C-05 (option 3, DEC-638): a fictional plate and car, so C-06, C-11 and C-09 show one (the store pictures never
+  // carry a real plate); the letters are typed on the phone's keyboard, then the type, colour and make
+  await page.getByTestId('vehicle-next').filter({ visible: true }).waitFor();
+  await page.getByTestId('plate-digits').filter({ visible: true }).fill('4827');
+  await page.getByTestId('plate-letters').filter({ visible: true }).fill('ر س ن');
+  await page.getByTestId('vehicle-next').filter({ visible: true }).click();
+  await page.getByTestId('vehicle-type-sedan').filter({ visible: true }).click();
+  await page.getByTestId('vehicle-color-white').filter({ visible: true }).click();
+  await page.getByTestId('vehicle-make').filter({ visible: true }).click();
+  await page.getByTestId('vehicle-make-toyota').filter({ visible: true }).click();
   await page.getByTestId('vehicle-submit').filter({ visible: true }).click();
   // C-06 (option A «زر واحد», DEC-620): the demo car is parked, the circle says «اطلب سيارتك» (hold 3 s)
   await page.getByTestId('request-car-hold').filter({ visible: true }).waitFor();

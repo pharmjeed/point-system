@@ -113,7 +113,10 @@ describe('design tokens come from brand/tokens (DEC-49)', () => {
       'src/ui/Controls.tsx',
       'src/ui/Field.tsx',
       'src/ui/CodeInput.tsx',
-      'src/ui/PlateInput.tsx',
+      // C-05 option 3 (DEC-638); the car paints live in src/features/vehicle.ts
+      'src/ui/SaudiPlate.tsx',
+      'src/ui/VehiclePickers.tsx',
+      'src/app/vehicle.tsx',
       'src/ui/Screen.tsx',
       'src/app/home.tsx',
       'src/app/welcome.tsx',

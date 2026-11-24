@@ -162,12 +162,20 @@ export async function devCode(page: Page): Promise<string> {
 }
 
 /** C-05: a plate (digits + three letters, by their Latin key «ا A»), a make and a colour from the chips. */
+/**
+ * C-05 (option 3, DEC-638): step 1 the plate (digits, and the letters typed on the phone's keyboard in Latin), step
+ * 2 the type tile, the first colour swatch and the first make of the list.
+ */
 export async function addVehicle(page: Page, digits = '1234', letters = ['A', 'B', 'D']): Promise<void> {
   await expect(heading(page, ar.vehicle.title)).toBeVisible();
   await page.getByLabel(ar.vehicle.digits, { exact: true }).fill(digits);
-  for (const l of letters) await page.getByRole('button', { name: new RegExp(`^\\S ${l}$`) }).click();
-  await chip(page, ar.vehicle.make, 0).click();
+  await page.getByLabel(ar.vehicle.letters, { exact: true }).fill(letters.join(''));
+  await button(page, ar.vehicle.next).click();
+  await expect(heading(page, ar.vehicle.looksTitle)).toBeVisible();
+  await page.getByTestId('vehicle-type-sedan').click();
   await chip(page, ar.vehicle.color, 0).click();
+  await page.getByTestId('vehicle-make').click();
+  await page.getByTestId('vehicle-make-toyota').click();
   await button(page, ar.vehicle.submit).click();
 }
 

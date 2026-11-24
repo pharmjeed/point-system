@@ -16,6 +16,7 @@ import Car from 'lucide-react-native/icons/car';
 import CarFront from 'lucide-react-native/icons/car-front';
 import Check from 'lucide-react-native/icons/check';
 import CheckCheck from 'lucide-react-native/icons/check-check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import CircleAlert from 'lucide-react-native/icons/circle-alert';
 import CircleCheck from 'lucide-react-native/icons/circle-check';
@@ -83,6 +84,8 @@ const ICONS = {
   check: Check,
   'check-check': CheckCheck,
   go: ChevronRight,
+  // C-05's make picker (DEC-638)
+  'chevron-down': ChevronDown,
   'circle-alert': CircleAlert,
   'circle-check': CircleCheck,
   'circle-parking': CircleParking,
