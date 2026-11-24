@@ -144,7 +144,7 @@ export function PlacesChooser({
                   <View key={p.id} onLayout={(e) => rowY.current.set(p.id, e.nativeEvent.layout.y)}>
                     <Touchable
                       accessibilityRole="radio"
-                      accessibilityState={{ selected: on }}
+                      accessibilityState={{ checked: on, selected: on }}
                       accessibilityLabel={[p.title, p.facts, p.price].filter(Boolean).join('، ')}
                       onPress={() => onSelect(p.id)}
                       feedback="select"

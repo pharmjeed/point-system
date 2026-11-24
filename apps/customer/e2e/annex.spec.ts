@@ -50,7 +50,8 @@ async function shot(page: Page, name: string) {
 }
 
 async function openUniversity(page: Page) {
-  await button(page, ar.home.allLocations).click();
+  // without a subscription the home's search bar opens the full list (DEC-639)
+  await page.getByRole('search', { name: ar.home.places.search }).filter({ visible: true }).click();
   await page.getByLabel(ar.locations.searchLabel, { exact: true }).fill('الأفق');
   await page
     .getByRole('button', { name: new RegExp(UNIVERSITY) })
