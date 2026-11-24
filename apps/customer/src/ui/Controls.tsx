@@ -70,7 +70,7 @@ export function ChoiceChips<T extends string>({
             <Touchable
               key={o.value}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, checked: selected }}
               onPress={() => onChange(selected ? null : o.value)}
               feedback="select"
               style={({ pressed }) => [
@@ -118,7 +118,7 @@ export function SegmentedControl<T extends string>({
             <Touchable
               key={o.value}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, checked: selected }}
               onPress={() => onChange(o.value)}
               feedback="select"
               pressScale={1}

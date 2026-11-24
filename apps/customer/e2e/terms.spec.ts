@@ -24,6 +24,8 @@ import {
   openAccount,
   test,
   tpl,
+  ensurePlan,
+  subscribeOnLocation,
 } from './support/app';
 
 const terms = renderTerms(termsAr, brand, termsAr.generic, isolate);
@@ -90,8 +92,8 @@ test('C-24 from the C-09 consent line: the clauses carry the plan’s own values
     .getByRole('button', { name: /جامعة الأفق/ })
     .first()
     .click();
-  await button(page, ar.subscribe.action).click();
-  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await subscribeOnLocation(page);
+  await ensurePlan(page);
 
   // the consent: two separate boxes, and the link to the full terms (DEC-613)
   await expect(page.getByRole('checkbox', { name: ar.annex.consentTerms })).toBeVisible();

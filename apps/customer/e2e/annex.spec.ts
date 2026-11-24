@@ -23,6 +23,8 @@ import {
   subscribeFromHome,
   test,
   tpl,
+  ensurePlan,
+  subscribeOnLocation,
 } from './support/app';
 
 const UNIVERSITY = 'جامعة الأفق — الحرم الرئيسي';
@@ -58,7 +60,7 @@ async function openUniversity(page: Page) {
     .first()
     .click();
   await expect(heading(page, UNIVERSITY)).toBeVisible();
-  await button(page, ar.subscribe.action).click();
+  await subscribeOnLocation(page);
   await expect(heading(page, tpl(ar.subscribe.title, { venue: UNIVERSITY }))).toBeVisible();
 }
 
@@ -72,7 +74,7 @@ test('C-09 → apply → approved → pay with the consent → C-14 counted days
   await openUniversity(page);
 
   // C-09: the plan, its details before payment
-  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await ensurePlan(page);
   await expect(shown(page.getByText(ar.annex.details, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(ar.annex.net, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(/150\.00/))).toBeVisible();

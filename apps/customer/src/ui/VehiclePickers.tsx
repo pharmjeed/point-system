@@ -75,7 +75,7 @@ export function TypeTiles({
             <Touchable
               key={type}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, checked: selected }}
               accessibilityLabel={names[type]}
               feedback="select"
               onPress={() => onChange(selected ? null : type)}
@@ -124,7 +124,7 @@ export function ColorSwatches({
             <Touchable
               key={key}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, checked: selected }}
               accessibilityLabel={names[key]}
               feedback="select"
               onPress={() => onChange(selected ? null : key)}
@@ -212,7 +212,7 @@ export function MakePicker({
               <Touchable
                 key={key}
                 accessibilityRole="radio"
-                accessibilityState={{ selected }}
+                accessibilityState={{ selected, checked: selected }}
                 accessibilityLabel={name}
                 feedback="select"
                 pressScale={1}

@@ -240,8 +240,9 @@ async function journey(page, locale, deviceName, base, dir) {
     await page.getByTestId('location-subscribe').filter({ visible: true }).click();
     await page.getByTestId('subscribe-pay').filter({ visible: true }).waitFor();
     await settle(page);
-    // C-09 opens with no plan and the account's only car already chosen: tick the first plan
-    await page.getByRole('checkbox').filter({ visible: true }).first().click();
+    // C-09 opens with C-08's chosen plan and cycle (DEC-640) and the account's only car already chosen
+    const plan = page.getByRole('checkbox').filter({ visible: true }).first();
+    if ((await plan.getAttribute('aria-checked')) !== 'true') await plan.click();
     await shot('07-subscribe');
   } else {
     process.stdout.write('  (no location with a subscription in the fake data: C-08/C-09 skipped)\n');

@@ -55,9 +55,17 @@ test('C-07 → C-08: search, filter, open a location with its hours and prices',
   for (const h of [ar.locations.address, ar.locations.hours, ar.locations.prices])
     await expect(page.getByRole('heading', { name: h, exact: true })).toBeVisible();
   await expect(shown(page.getByText(new RegExp(`\\(${ar.locations.today}\\)`)))).toBeVisible();
-  await expect(shown(page.getByText(ar.locations.perVisit, { exact: true }))).toBeVisible();
-  await expect(shown(page.getByText(ar.locations.vatNote, { exact: true }))).toBeVisible();
-  await expect(button(page, ar.subscribe.action)).toBeVisible();
+  // «اختر باقتك» (DEC-640): the yearly best value chosen, priced by the working day, the per-visit price struck
+  const cards = page.getByRole('radiogroup', { name: ar.locations.plan.title }).getByRole('radio');
+  await expect(cards.first()).toBeChecked();
+  await expect(cards.first()).toHaveAttribute('aria-label', new RegExp(ar.locations.plan.perDay));
+  await expect(shown(page.getByText(ar.locations.plan.withoutSub, { exact: true }))).toBeVisible();
+  await expect(shown(page.getByText(tpl(ar.locations.plan.basis)))).toBeVisible();
+  const subscribe = page.getByTestId('location-subscribe').filter({ visible: true });
+  await expect(subscribe).toHaveAccessibleName(tpl(ar.locations.plan.subscribeYearly));
+  // the monthly card changes the action
+  await cards.nth(1).click();
+  await expect(subscribe).toHaveAccessibleName(tpl(ar.locations.plan.subscribeMonthly));
   await expectRtlPhone(page);
 });
 

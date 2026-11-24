@@ -15,7 +15,7 @@
  * boxes, «اطّلع على الشروط والأحكام» opens C-24 with this plan's values, DEC-613) — recorded with the payment. A plan
  * checked for eligibility asks for the student number and the name first (`…/apply`); once approved,
  * C-14 brings the customer back here (`?pay=`) to pay it. «اكتملت المقاعد» marks a plan whose capacity is reached;
- * `?plan=` preselects a plan (the renewal from C-14).
+ * `?plan=` preselects a plan (the renewal from C-14, the card chosen on C-08) and `?cycle=` its cycle (DEC-640).
  */
 import type {
   CustomerLocationDetail,
@@ -56,7 +56,7 @@ import { ScreenHeader } from '../../ui/ScreenHeader';
 import { SkeletonList } from '../../ui/Skeleton';
 
 export default function Subscribe() {
-  const params = useLocalSearchParams<{ venueId: string; plan?: string; pay?: string }>();
+  const params = useLocalSearchParams<{ venueId: string; plan?: string; pay?: string; cycle?: string }>();
   const venueId = params.venueId;
   const { t, f, locale } = useI18n();
   const session = useSession();
@@ -64,7 +64,8 @@ export default function Subscribe() {
   const [loc, setLoc] = useState<CustomerLocationDetail | null>(null);
   const [vehicles, setVehicles] = useState<CustomerVehicle[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [cycle, setCycle] = useState<Cycle>('monthly');
+  // C-08 «اشترك سنويًا · …» opens here with its plan and cycle chosen (DEC-640)
+  const [cycle, setCycle] = useState<Cycle>(params.cycle === 'yearly' ? 'yearly' : 'monthly');
   const [planId, setPlanId] = useState<string | null>(params.plan ?? null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [issue, setIssue] = useState<string | null>(null);

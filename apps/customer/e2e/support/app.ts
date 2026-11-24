@@ -209,9 +209,9 @@ export async function subscribeFromHome(page: Page, pin?: number): Promise<strin
   const venue = ((await chosen.getAttribute('aria-label')) ?? '').split('، ')[0] ?? '';
   await page.getByTestId('home-subscribe').filter({ visible: true }).click();
   await expect(heading(page, venue)).toBeVisible();
-  await button(page, ar.subscribe.action).click();
+  await subscribeOnLocation(page);
   await expect(heading(page, tpl(ar.subscribe.title, { venue }))).toBeVisible();
-  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await ensurePlan(page);
   await button(page, ar.subscribe.pay).click();
   const sheet = page.getByRole('dialog');
   await sheet.getByLabel(ar.pay.cardNumber, { exact: true }).fill(CARD_OK);
@@ -223,6 +223,19 @@ export async function subscribeFromHome(page: Page, pin?: number): Promise<strin
   await button(page, ar.common.back).click();
   await expect(page.getByTestId('home-circle').filter({ visible: true })).toBeVisible();
   return venue;
+}
+
+/** C-08's «اشترك …» (DEC-640: its label names the chosen card, «اشترك سنويًا · 3,450.00 ر.س»). */
+export async function subscribeOnLocation(page: Page): Promise<void> {
+  await page.getByTestId('location-subscribe').filter({ visible: true }).click();
+}
+
+/** C-09: the plan chosen on C-08 arrives ticked (DEC-640); tick the first one only when none is. */
+export async function ensurePlan(page: Page): Promise<void> {
+  const group = page.getByRole('radiogroup', { name: ar.subscribe.plan });
+  await expect(group.getByRole('checkbox').first()).toBeVisible();
+  if ((await group.getByRole('checkbox', { checked: true }).count()) === 0)
+    await group.getByRole('checkbox').first().click();
 }
 
 /** «بطاقة الدخول» on C-06: the circle without a visit (the first visible one). */
