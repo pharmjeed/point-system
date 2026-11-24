@@ -46,6 +46,8 @@ export interface AppTextProps {
   accessibilityRole?: 'header' | 'text' | 'alert';
   numberOfLines?: number;
   testID?: string;
+  /** announces a change of the text (Android; C-01's caption follows the picture) */
+  accessibilityLiveRegion?: 'none' | 'polite' | 'assertive';
 }
 
 const tones = {

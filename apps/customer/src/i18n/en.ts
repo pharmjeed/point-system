@@ -66,8 +66,8 @@ export const en: Dictionary = {
       },
       { title: 'Subscribe and save', body: 'Monthly or yearly plans at the places you visit often.' },
     ],
+    heroHint: 'Tap the picture to see the next feature.',
     start: 'Get started',
-    haveAccount: 'I have an account',
   },
   phone: {
     title: 'Mobile number',

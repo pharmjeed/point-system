@@ -18,11 +18,17 @@ import {
 } from './support/app';
 
 test('R1: welcome, WhatsApp code, consents, first vehicle, home', async ({ app: page }) => {
-  // C-01: three cards, Arabic and right to left
+  // C-01 (option 4): the interactive picture, three cards in one row, one «ابدأ»; Arabic and right to left
   await expect(heading(page, tpl(ar.welcome.title))).toBeVisible();
   for (const card of ar.welcome.cards)
     await expect(page.getByText(card.title, { exact: true })).toBeVisible();
-  await expect(button(page, ar.welcome.haveAccount)).toBeVisible();
+  const caption = page.getByTestId('welcome-caption');
+  await expect(caption).toHaveText(ar.welcome.cards[0]!.body);
+  // a card shows its scene and its line; a tap on the picture shows the next one
+  await page.getByTestId('welcome-card-2').click();
+  await expect(caption).toHaveText(ar.welcome.cards[2]!.body);
+  await page.getByTestId('welcome-hero').click();
+  await expect(caption).toHaveText(ar.welcome.cards[0]!.body);
   await expectRtlPhone(page);
 
   await signUp(page, { name: 'سارة' });
