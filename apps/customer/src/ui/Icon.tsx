@@ -27,6 +27,7 @@ import Eye from 'lucide-react-native/icons/eye';
 import EyeOff from 'lucide-react-native/icons/eye-off';
 import FileText from 'lucide-react-native/icons/file-text';
 import GraduationCap from 'lucide-react-native/icons/graduation-cap';
+import Hand from 'lucide-react-native/icons/hand';
 import Globe from 'lucide-react-native/icons/globe';
 import History from 'lucide-react-native/icons/history';
 import Info from 'lucide-react-native/icons/info';
@@ -73,6 +74,8 @@ const ICONS = {
   // V2-036 (DEC-605): the counted days, the student plan, the freeze, the complaints
   'calendar-days': CalendarDays,
   'graduation-cap': GraduationCap,
+  // C-04's welcome (DEC-637)
+  hand: Hand,
   snowflake: Snowflake,
   'message-warning': MessageSquareWarning,
   car: Car,

@@ -46,8 +46,7 @@ env:
     id: profile-name
 - inputText: ${NAME}
 - hideKeyboard
-- tapOn: 'أوافق على الشروط والأحكام'
-- tapOn: 'أوافق على سياسة الخصوصية'
+# «ابدأ» is the consent to the terms and the privacy policy (DEC-637)
 - tapOn:
     id: profile-submit
 - extendedWaitUntil:

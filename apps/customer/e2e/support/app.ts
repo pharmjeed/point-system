@@ -142,10 +142,13 @@ export async function signUp(page: Page, opts: { phone?: string; name?: string }
   await page.getByLabel(ar.otp.label, { exact: true }).fill(code);
   await button(page, ar.otp.submit).click();
 
+  // C-04 (option 4, DEC-637): «ابدأ» is the consent to the terms and the privacy policy
   await expect(heading(page, ar.profile.title)).toBeVisible();
   await page.getByLabel(ar.profile.nameLabel, { exact: true }).fill(opts.name ?? 'سارة');
-  await page.getByRole('checkbox', { name: ar.profile.terms }).click();
-  await page.getByRole('checkbox', { name: ar.profile.privacy }).click();
+  await expect(page.getByRole('link', { name: ar.profile.agree.terms, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('checkbox', { name: `${ar.profile.marketing} (${ar.common.optional})` }),
+  ).not.toBeChecked();
   await button(page, ar.profile.submit).click();
 }
 

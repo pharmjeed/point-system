@@ -21,7 +21,13 @@ import {
   sanitizeCode,
 } from '../src/features/otp';
 import { sanitizePhoneInput, validatePhone } from '../src/features/phone';
-import { hasErrors, initialProfileForm, profileRequests, validateProfile } from '../src/features/profile';
+import {
+  acceptRequired,
+  hasErrors,
+  initialProfileForm,
+  profileRequests,
+  validateProfile,
+} from '../src/features/profile';
 import {
   addLetter,
   emptyVehicleForm,
@@ -178,6 +184,20 @@ describe('C-04 name and consents', () => {
     const ctx = setup();
     const done = await onboard(ctx);
     expect(profileRequests(initialProfileForm(done), done)).toEqual({ patch: null, consents: null });
+  });
+
+  it('option 4 (DEC-637): «ابدأ» accepts terms and privacy, each with its version; marketing stays the answer given', async () => {
+    const me = await freshMe();
+    const form = acceptRequired({ ...initialProfileForm(me), name: 'سارة' });
+    expect(form).toEqual({ name: 'سارة', terms: true, privacy: true, marketing: false });
+    expect(hasErrors(validateProfile(form))).toBe(false);
+    expect(validateProfile(acceptRequired(initialProfileForm(me)))).toEqual({ name: 'invalid' });
+    expect(profileRequests(form, me).consents?.consents).toEqual([
+      { kind: 'terms', version: me.consents.terms.current_version, granted: true },
+      { kind: 'privacy', version: me.consents.privacy.current_version, granted: true },
+      { kind: 'marketing', version: me.consents.marketing.current_version, granted: false },
+    ]);
+    expect(acceptRequired({ ...form, marketing: true }).marketing).toBe(true);
   });
 });
 
