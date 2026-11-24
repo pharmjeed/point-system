@@ -13,12 +13,6 @@ import { AppText } from './AppText';
 const toArabicIndic = (digits: string): string =>
   digits.replace(/[0-9]/g, (d) => String.fromCharCode(0x0660 + Number(d)));
 
-/**
- * Isolated left to right (U+2066 … U+2069): the Arabic-Indic digits are no strong direction of their own, and
- * the app's text follows the Arabic layout, so without it «١ ٢ ٣ ٤» would be drawn reversed.
- */
-const ltr = (s: string): string => `\u2066${s}\u2069`;
-
 const LINE = 3;
 const EMPTY = '—';
 
@@ -40,9 +34,19 @@ export function SaudiPlate({
     <View style={styles.plate} accessible accessibilityRole="text" accessibilityLabel={label}>
       <View style={styles.half}>
         <View style={styles.cell}>
-          <AppText style={[styles.ar, !digits && styles.empty]}>
-            {digits ? ltr(toArabicIndic(digits).split('').join(' ')) : EMPTY}
-          </AppText>
+          {/* one text per digit in a left-to-right row: the Arabic-Indic digits have no strong direction of
+              their own and would follow the Arabic layout, drawn reversed */}
+          {digits ? (
+            <View style={styles.digitRow}>
+              {[...toArabicIndic(digits)].map((d, i) => (
+                <AppText key={i} style={styles.ar}>
+                  {d}
+                </AppText>
+              ))}
+            </View>
+          ) : (
+            <AppText style={[styles.ar, styles.empty]}>{EMPTY}</AppText>
+          )}
         </View>
         <View style={[styles.cell, styles.below]}>
           <AppText style={[styles.en, !digits && styles.empty]}>{digits || EMPTY}</AppText>
@@ -85,6 +89,7 @@ const styles = StyleSheet.create({
   below: { borderTopWidth: LINE, borderTopColor: color.text },
   ar: { fontFamily: font.bold, ...fontSize['2xl'], color: color.text, textAlign: 'center' },
   rtl: { writingDirection: 'rtl' },
+  digitRow: { flexDirection: 'row', direction: 'ltr', gap: space[2] },
   en: {
     fontFamily: font.monoSemibold,
     ...fontSize['2xl'],
