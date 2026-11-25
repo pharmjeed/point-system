@@ -1180,38 +1180,95 @@ a.pt-listitem:active,
   overflow: hidden;
   vertical-align: middle;
 }
-.pt-plate__digits {
-  display: grid;
-  place-items: center;
-  padding-inline: 8px;
-  font-family: var(--pt-font-mono);
-  font-weight: var(--pt-weight-semibold);
-  font-size: var(--pt-text-base);
-  line-height: 28px;
-  border-inline-end: 2px solid var(--pt-text);
-}
-.pt-plate__letters {
+/* DEC-642: the Saudi plate — each half has its Arabic row over its Latin row, then the KSA band */
+.pt-plate__half {
   display: flex;
   flex-direction: column;
+}
+.pt-plate__half + .pt-plate__half,
+.pt-plate__band {
+  border-inline-start: 2px solid var(--pt-text);
+}
+.pt-plate__ar,
+.pt-plate__en {
+  display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   padding-inline: 8px;
   font-weight: var(--pt-weight-bold);
-  font-size: var(--pt-text-base);
-  line-height: 28px;
+  font-size: var(--pt-text-sm);
+  line-height: 20px;
+}
+.pt-plate__ar {
+  direction: ltr;
+}
+.pt-plate__ar[dir='rtl'] {
+  direction: rtl;
 }
 .pt-plate__en {
+  border-block-start: 2px solid var(--pt-text);
   font-family: var(--pt-font-mono);
-  font-size: var(--pt-text-xs);
-  line-height: var(--pt-leading-xs);
   font-weight: var(--pt-weight-semibold);
-  color: var(--pt-text-muted);
+  letter-spacing: 1px;
 }
-.pt-plate--lg .pt-plate__digits,
-.pt-plate--lg .pt-plate__letters {
-  font-size: var(--pt-text-xl);
-  line-height: 36px;
+.pt-plate__band {
+  display: grid;
+  place-items: center;
+  inline-size: 14px;
+  font-family: var(--pt-font-mono);
+  font-size: 8px;
+  line-height: 9px;
+  font-weight: var(--pt-weight-semibold);
+  writing-mode: vertical-lr;
+  text-orientation: upright;
+  letter-spacing: -1px;
+}
+.pt-plate--lg .pt-plate__ar,
+.pt-plate--lg .pt-plate__en {
+  font-size: var(--pt-text-lg);
+  line-height: 28px;
   padding-inline: 12px;
+}
+.pt-plate--lg .pt-plate__band {
+  inline-size: 18px;
+  font-size: 10px;
+  line-height: 11px;
+}
+/* DEC-642: the customer's car in its type and colour, next to the plate */
+.pt-car {
+  flex: none;
+  vertical-align: middle;
+}
+[dir='rtl'] .pt-car {
+  transform: scaleX(-1);
+}
+.pt-car__body {
+  fill: var(--pt-car-paint, var(--pt-surface-2));
+  stroke: var(--pt-text);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+.pt-car__glass {
+  fill: var(--pt-primary-subtle);
+  stroke: var(--pt-text);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+.pt-car[data-dark] .pt-car__glass {
+  fill: var(--pt-border-strong);
+}
+.pt-car__line {
+  fill: none;
+  stroke: var(--pt-text);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+.pt-car__wheel {
+  fill: var(--pt-text);
+}
+.pt-car__hub {
+  fill: var(--pt-border-strong);
 }
 
 /* ---------- CountdownRing ---------- */

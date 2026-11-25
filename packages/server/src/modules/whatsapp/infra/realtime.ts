@@ -23,6 +23,7 @@ interface SummaryRow {
   plate_raw: string | null;
   vehicle_make: string | null;
   vehicle_color: string | null;
+  vehicle_type: string | null;
   wa_link_status: string;
   payment_status: string;
   created_at: Date;
@@ -53,7 +54,7 @@ export function ticketSummaryView(t: SummaryRow) {
       raw: t.plate_raw,
       display,
     },
-    vehicle: { make: t.vehicle_make, color: t.vehicle_color },
+    vehicle: { make: t.vehicle_make, color: t.vehicle_color, type: t.vehicle_type },
     wa_link_status: t.wa_link_status,
     payment_status: t.payment_status,
     requested_at: t.requested_at ? new Date(t.requested_at).toISOString() : null,
@@ -79,7 +80,7 @@ export const defaultTicketUpdatePublisher: TicketUpdatePublisher = async (tx, ti
   const t = await tx.maybeOne<SummaryRow>(
     `SELECT t.id, t.org_id, t.display_number, t.event_id, e.name_ar AS event_name_ar, t.venue_id, v.name_ar AS venue_name_ar,
             t.dispatch_pool_id, t.status, t.channel, t.plate_country, t.plate_digits, t.plate_letters_ar,
-            t.plate_letters_en, t.plate_raw, t.vehicle_make, t.vehicle_color, t.wa_link_status, t.payment_status,
+            t.plate_letters_en, t.plate_raw, t.vehicle_make, t.vehicle_color, t.vehicle_type, t.wa_link_status, t.payment_status,
             t.created_at, t.version, t.created_by,
             (SELECT c.requested_at FROM retrieval_cycles c WHERE c.id = t.active_cycle_id AND c.closed_at IS NULL) AS requested_at,
             (SELECT k.assignee_id FROM tasks k WHERE k.ticket_id = t.id AND k.status NOT IN ('completed','canceled')

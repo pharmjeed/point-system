@@ -9,6 +9,7 @@ import { Icon } from './Icon';
 import { PlateBadge, type PlateValue } from './PlateBadge';
 import { StatusChip } from './StatusChip';
 import { TicketNumber } from './TicketNumber';
+import { CarGlyph, type CarValue } from './CarGlyph';
 
 export interface TaskCardProps {
   ticketNumber: number;
@@ -17,6 +18,8 @@ export interface TaskCardProps {
   heading?: string;
   vehicle: string;
   plate?: PlateValue;
+  /** DEC-642: the car drawn in its type and colour */
+  car?: CarValue;
   stage?: string;
   stageIcon?: LucideIcon;
   /** The reserved next task: dimmed, «تالية» badge, no buttons until promoted (03 §3.4). */
@@ -39,6 +42,7 @@ export function TaskCard({
   heading,
   vehicle,
   plate,
+  car,
   stage,
   stageIcon = MapPin,
   next,
@@ -68,6 +72,7 @@ export function TaskCard({
         ) : null}
       </div>
       <div className="pt-task__vehicle">
+        {car ? <CarGlyph {...car} /> : null}
         <span>{vehicle}</span>
         {plate ? <PlateBadge {...plate} /> : null}
       </div>

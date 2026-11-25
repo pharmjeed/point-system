@@ -35,6 +35,7 @@ import { Banner, ChoiceChips } from '../ui/Controls';
 import { CountdownRing } from '../ui/CountdownRing';
 import { Icon } from '../ui/Icon';
 import { Logo } from '../ui/Logo';
+import { CarGlyph } from '../ui/CarGlyph';
 import { PlateBadge } from '../ui/PlateBadge';
 import { Screen } from '../ui/Screen';
 import { ScreenHeader } from '../ui/ScreenHeader';
@@ -184,7 +185,7 @@ export default function Pass() {
                   />
                 ) : vehicle ? (
                   <View style={styles.vehicle}>
-                    <Icon name="car-front" size={22} tint={color.textMuted} />
+                    <CarGlyph type={vehicle.vehicle_type} paint={vehicle.vehicle_color} width={56} />
                     <AppText tone="muted">{`${t.pass.vehicle}: `}</AppText>
                     <PlateBadge plate={vehicle.plate_display} size="lg" />
                   </View>

@@ -129,8 +129,9 @@ export async function getCustomerPass(
     plate_raw: string | null;
     vehicle_make: string | null;
     vehicle_color: string | null;
+    vehicle_type: string | null;
   }>(
-    `SELECT id, plate_digits, plate_letters_ar, plate_raw, vehicle_make, vehicle_color
+    `SELECT id, plate_digits, plate_letters_ar, plate_raw, vehicle_make, vehicle_color, vehicle_type
        FROM customer_vehicles WHERE account_id = $1 AND removed_at IS NULL ORDER BY created_at, id`,
     [accountId],
   );
@@ -148,6 +149,7 @@ export async function getCustomerPass(
         saudiPlateDisplay({ digits: v.plate_digits, letters_ar: v.plate_letters_ar }) || (v.plate_raw ?? ''),
       vehicle_make: v.vehicle_make,
       vehicle_color: v.vehicle_color,
+      vehicle_type: v.vehicle_type,
     })),
   };
 }

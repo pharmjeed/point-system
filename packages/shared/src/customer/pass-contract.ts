@@ -13,6 +13,8 @@ export const CustomerPassVehicleSchema = z.object({
   plate_display: z.string(),
   vehicle_make: z.string().nullable(),
   vehicle_color: z.string().nullable(),
+  /** DEC-642: the car drawn next to the plate; optional so a pass cached before it still parses */
+  vehicle_type: z.string().nullable().optional(),
 });
 export type CustomerPassVehicle = z.infer<typeof CustomerPassVehicleSchema>;
 

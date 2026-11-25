@@ -7,6 +7,7 @@
 import {
   CUSTOMER_VEHICLES_MAX,
   SAUDI_PLATE_LETTERS,
+  VEHICLE_COLOR_PAINT,
   normalizeSaudiPlate,
   plateLettersFromTyping,
   type CustomerVehicleCreateBody,
@@ -67,26 +68,8 @@ export function validateVehicle(form: VehicleForm): VehicleErrors {
   return plateLettersFromTyping(form.lettersText).invalid ? { letters: true } : {};
 }
 
-/**
- * The paint of each colour swatch of C-05 (DEC-638). These are pictures of car paints, content like a photo, not
- * interface colours, so they are not brand tokens; every swatch is drawn with its name under it. «other» has none
- * (the swatch shows a mixed ring and opens the free-text field).
- */
-export const VEHICLE_COLOR_SWATCH: Readonly<Record<string, string>> = Object.freeze({
-  white: '#FFFFFF',
-  black: '#141414',
-  silver: '#C3C7CE',
-  gray: '#7B8088',
-  red: '#C8102E',
-  blue: '#1E4FD8',
-  navy: '#0D2150',
-  green: '#1F7A3A',
-  beige: '#D8C6A2',
-  brown: '#6B4226',
-  gold: '#C9A227',
-  yellow: '#F2C200',
-  orange: '#F26B1D',
-});
+/** The paint of each colour swatch of C-05: the shared car paints (DEC-638, DEC-642). */
+export const VEHICLE_COLOR_SWATCH = VEHICLE_COLOR_PAINT;
 
 /** The colours shown before «المزيد» (the most common paints in the Saudi market first). */
 export const VEHICLE_COLORS_FIRST: readonly string[] = [

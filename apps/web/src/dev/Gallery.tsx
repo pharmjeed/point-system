@@ -47,6 +47,7 @@ import {
   OfferCard,
   PhoneInput,
   PhotoGrid,
+  CarGlyph,
   PlateBadge,
   PlateInput,
   QrPanel,
@@ -100,6 +101,7 @@ const DRIVER_STATES: DriverState[] = [
   'off_duty',
 ];
 const PLATE = { digits: '1234', letters: ['ب', 'ح', 'د'], lettersEn: ['B', 'J', 'D'] };
+const CAR = { type: 'sedan', color: 'white' } as const;
 const VEHICLE = `${vehicleMake.toyota} كامري · أبيض`;
 const iso = (secondsAgo: number) => new Date(Date.now() - secondsAgo * 1000).toISOString();
 const inSeconds = (s: number) => new Date(Date.now() + s * 1000).toISOString();
@@ -350,6 +352,7 @@ export default function Gallery() {
                   ticketNumber={125}
                   vehicleSummary={VEHICLE}
                   plate={PLATE}
+                  car={CAR}
                   requestedAt={iso(72)}
                   expiresAt={inSeconds(21)}
                   canAcceptAs="accept"
@@ -424,6 +427,7 @@ export default function Gallery() {
               status="retrieving"
               vehicle={VEHICLE}
               plate={PLATE}
+              car={CAR}
               stage="12"
               stageIcon={KeyRound}
               actionLabel={components.stepper.retrieve}
@@ -434,6 +438,7 @@ export default function Gallery() {
               next
               vehicle={VEHICLE}
               plate={PLATE}
+              car={CAR}
               stage="0:42"
               stageIcon={Clock}
             />
@@ -450,6 +455,7 @@ export default function Gallery() {
               ticketNumber={125}
               vehicleSummary={VEHICLE}
               plate={PLATE}
+              car={CAR}
               requestedAt={iso(72)}
               expiresAt={inSeconds(21)}
               canAcceptAs="accept"
@@ -520,6 +526,26 @@ export default function Gallery() {
 
       <Section name="LetterPad">
         {() => <LetterPad value={[['ب', 'B']]} onChange={() => undefined} />}
+      </Section>
+
+      <Section name="CarGlyph">
+        {() => (
+          <div className="pt-staterow">
+            {(
+              [
+                ['sedan', 'white'],
+                ['suv', 'black'],
+                ['pickup', 'silver'],
+                ['van', 'red'],
+                ['sedan', 'blue'],
+                ['suv', 'beige'],
+                ['other', null],
+              ] as const
+            ).map(([type, color]) => (
+              <CarGlyph key={`${type}-${color}`} type={type} color={color} width={72} />
+            ))}
+          </div>
+        )}
       </Section>
 
       <Section name="PlateBadge">

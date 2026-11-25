@@ -18206,6 +18206,10 @@ components:
               type: [string, 'null']
             color:
               type: [string, 'null']
+            type:
+              type: [string, 'null']
+              enum: [sedan, suv, pickup, van, other, null]
+              description: DEC-642 — نوع السيارة لرسمها بلونها بجانب اللوحة
         wa_link_status:
           $ref: '#/components/schemas/WaLinkStatus'
         payment_status:
@@ -18712,6 +18716,10 @@ components:
                   type: [string, 'null']
                 color:
                   type: [string, 'null']
+                type:
+                  type: [string, 'null']
+                  enum: [sedan, suv, pickup, van, other, null]
+                  description: DEC-642 — نوع السيارة لرسمها بلونها بجانب اللوحة
         requested_at:
           type: string
           format: date-time
@@ -23175,6 +23183,10 @@ components:
                 type: [string, 'null']
               vehicle_color:
                 type: [string, 'null']
+              vehicle_type:
+                type: [string, 'null']
+                enum: [sedan, suv, pickup, van, other, null]
+                description: DEC-642 — نوع السيارة لرسمها بجانب اللوحة
             required: [vehicle_id, plate_display, vehicle_make, vehicle_color]
       required: [scheme, account_id, secret, step_seconds, server_time, rotated_at, refresh_after, vehicles]
     CustomerPassEnvelope:

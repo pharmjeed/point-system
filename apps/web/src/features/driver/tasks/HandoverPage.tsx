@@ -38,6 +38,7 @@ import { driverPaths, findTicketTask, newestClaim, plateValue, vehicleSummary } 
 import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
+import { CarGlyph } from '@/components/CarGlyph';
 
 /** Shown 2 s before moving on (02 D-11 «بعد ثانيتين»). */
 const SUCCESS_MS = 2000;
@@ -355,6 +356,7 @@ function HandoverForm({
   return (
     <TaskScreen title={withTicket(d11.title, ticket.display_number)} backTo={driverPaths.task(card.task.id)}>
       <div className="flex flex-wrap items-center gap-3">
+        <CarGlyph {...card.ticket.vehicle} />
         {plate ? <PlateBadge {...plate} /> : null}
         <span>{vehicleSummary(card.ticket.vehicle)}</span>
         {/* O-02 (V2-014): «مشمول» / «يدفع X» */}

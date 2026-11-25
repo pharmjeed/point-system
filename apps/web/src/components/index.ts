@@ -34,6 +34,8 @@ export { MaskedPhone } from './MaskedPhone';
 export { OfferCard } from './OfferCard';
 export { PhoneInput } from './PhoneInput';
 export { PhotoGrid, PhotoTile } from './PhotoTile';
+export { CarGlyph } from './CarGlyph';
+export type { CarValue } from './CarGlyph';
 export { PlateBadge } from './PlateBadge';
 export type { PlateValue } from './PlateBadge';
 export { PlateInput } from './PlateInput';

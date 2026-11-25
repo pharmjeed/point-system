@@ -66,4 +66,5 @@ export {
   type VehicleColorKey,
   type VehicleMakeKey,
 } from '../vehicle.js';
+export * from '../vehicle-art.js';
 export { successEnvelopeSchema, successMetaSchema, type SuccessMeta } from '../envelopes.js';

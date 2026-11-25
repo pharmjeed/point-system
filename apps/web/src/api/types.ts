@@ -563,7 +563,7 @@ export interface TicketSummary {
   status: TicketStatus;
   channel: TicketChannel;
   plate: Plate;
-  vehicle?: { make?: string | null; color?: string | null };
+  vehicle?: { make?: string | null; color?: string | null; type?: VehicleType | null };
   wa_link_status: WaLinkStatus;
   payment_status: PaymentStatus;
   requested_at?: string | null;
@@ -699,7 +699,7 @@ export interface OfferCard {
     display_number: number;
     event_name_ar?: string;
     plate?: Plate;
-    vehicle?: { make?: string | null; color?: string | null };
+    vehicle?: { make?: string | null; color?: string | null; type?: VehicleType | null };
   };
   requested_at: string;
   waiting_seconds: number;
@@ -928,7 +928,7 @@ export interface TicketSummary {
   status: TicketStatus;
   channel: TicketChannel;
   plate: Plate;
-  vehicle?: { make?: string | null; color?: string | null };
+  vehicle?: { make?: string | null; color?: string | null; type?: VehicleType | null };
   wa_link_status: WaLinkStatus;
   payment_status: PaymentStatus;
   requested_at?: string | null;

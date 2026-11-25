@@ -10,6 +10,7 @@ import { CountdownRing } from './CountdownRing';
 import { Icon } from './Icon';
 import { PlateBadge, type PlateValue } from './PlateBadge';
 import { TicketNumber } from './TicketNumber';
+import { CarGlyph, type CarValue } from './CarGlyph';
 
 export interface OfferCardProps {
   offerId: string;
@@ -17,6 +18,8 @@ export interface OfferCardProps {
   ticketNumber: number;
   vehicleSummary: string;
   plate?: PlateValue;
+  /** DEC-642: the car drawn in its type and colour */
+  car?: CarValue;
   venue?: string;
   /** ISO; «ينتظر منذ…» is computed from it and the server clock. */
   requestedAt: string;
@@ -69,6 +72,7 @@ export function OfferCard({
   ticketNumber,
   vehicleSummary,
   plate,
+  car,
   venue,
   requestedAt,
   expiresAt,
@@ -177,6 +181,7 @@ export function OfferCard({
         ) : null}
       </div>
       <div className="pt-offer__vehicle">
+        {car ? <CarGlyph {...car} width={64} /> : null}
         <span>{vehicleSummary}</span>
         {plate ? <PlateBadge {...plate} /> : null}
       </div>

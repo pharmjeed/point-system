@@ -201,6 +201,7 @@ export function LiveOfferCard({ offer, onDone }: { offer: OfferCardData; onDone?
       ticketNumber={offer.ticket.display_number}
       vehicleSummary={vehicleSummary(offer.ticket.vehicle)}
       plate={plateValue(offer.ticket.plate)}
+      car={offer.ticket.vehicle}
       venue={offer.ticket.event_name_ar}
       requestedAt={offer.requested_at}
       expiresAt={offer.mode === 'single' ? (offer.expires_at ?? undefined) : undefined}

@@ -250,6 +250,7 @@ function Home({ home, refetch }: { home: DriverHome; refetch: () => Promise<unkn
                 ticketNumber={home.next_task.ticket.display_number}
                 vehicle={vehicleSummary(home.next_task.ticket.vehicle)}
                 plate={plateValue(home.next_task.ticket.plate)}
+                car={home.next_task.ticket.vehicle}
                 stage={
                   home.next_task.requested_at
                     ? formatSinceMinutes(Date.now() - Date.parse(home.next_task.requested_at))
@@ -302,6 +303,7 @@ function CurrentTask({ card, onOpen }: { card: TaskCardData; onOpen: (to: string
       status={card.ticket.status}
       vehicle={vehicleSummary(card.ticket.vehicle)}
       plate={plateValue(card.ticket.plate)}
+      car={card.ticket.vehicle}
       stage={view.line}
       stageIcon={STAGE_ICON[view.stage]}
       actionLabel={view.action}

@@ -15,8 +15,9 @@ import { useSession } from '../session/SessionProvider';
 import { color, font, space } from '../theme/tokens';
 import { AppText } from '../ui/AppText';
 import { Button } from '../ui/Button';
-import { Banner, Card, IconBadge } from '../ui/Controls';
+import { Banner, Card } from '../ui/Controls';
 import { DevBanner } from '../ui/DevBanner';
+import { CarGlyph } from '../ui/CarGlyph';
 import { PlateBadge } from '../ui/PlateBadge';
 import { Screen } from '../ui/Screen';
 import { SkeletonList } from '../ui/Skeleton';
@@ -102,7 +103,7 @@ export default function Vehicles() {
         return (
           <Card key={row.id}>
             <View style={styles.head}>
-              <IconBadge name="car-front" />
+              <CarGlyph type={v.vehicle_type} paint={v.vehicle_color} width={72} />
               <View style={styles.flex}>
                 <PlateBadge plate={row.plate} size="lg" />
                 {row.details ? <AppText tone="muted">{row.details}</AppText> : null}

@@ -25,6 +25,7 @@ import { formatClock } from '@/lib/format';
 import { useCommandGate } from '@/realtime/hooks';
 import { plateValue, vehicleSummary } from '../fieldModel';
 import { FILTER_STATUSES, nextFilter, searchDigits, VEHICLE_FILTERS, type VehicleFilter } from './model';
+import { CarGlyph } from '@/components/CarGlyph';
 
 /** 02 D-12: the search runs 300 ms after the last keystroke. */
 const DEBOUNCE_MS = 300;
@@ -170,6 +171,7 @@ function VehicleRow({ ticket }: { ticket: TicketSummary }) {
       title={
         <span className="flex flex-wrap items-center gap-2">
           <TicketNumber n={ticket.display_number} />
+          <CarGlyph {...ticket.vehicle} width={44} />
           {plate ? (
             <PlateBadge {...plate} />
           ) : (

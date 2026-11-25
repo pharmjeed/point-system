@@ -44,6 +44,7 @@ import { buildTimeline, layoutLabels } from './timelineModel';
 import { Fact, PageSkeleton, ReadError, Tabs } from './ui';
 import './staff.css';
 import { useOnline } from '@/hooks/useOnline';
+import { CarGlyph } from '@/components/CarGlyph';
 
 type TicketTab = 'timeline' | 'custody' | 'messages' | 'photos' | 'payments' | 'incidents';
 
@@ -162,6 +163,7 @@ function TicketView({
       />
       <Card as="section" aria-label={s03.screen}>
         <div className="st-inline-list">
+          <CarGlyph {...(ticket.vehicle_detail ?? ticket.vehicle)} />
           {plate ? <PlateBadge {...plate} /> : <span>{plateText(ticket.plate)}</span>}
           <StatusChip status={ticket.status} />
           <span className="st-muted">{vehicleSummary(ticket.vehicle_detail ?? ticket.vehicle)}</span>

@@ -34,6 +34,8 @@ import { AppText } from '../ui/AppText';
 import { Button } from '../ui/Button';
 import { Banner } from '../ui/Controls';
 import { Field } from '../ui/Field';
+import { CarGlyph } from '../ui/CarGlyph';
+import { PlateBadge } from '../ui/PlateBadge';
 import { SaudiPlate } from '../ui/SaudiPlate';
 import { Screen } from '../ui/Screen';
 import { StepDots } from '../ui/StepHeader';
@@ -205,6 +207,11 @@ export default function Vehicle() {
         </>
       ) : (
         <>
+          {/* DEC-642: the car as chosen so far, with its plate */}
+          <View style={styles.preview} testID="vehicle-preview">
+            <CarGlyph type={form.type} paint={form.color} width={132} />
+            <PlateBadge plate={plateLabel} />
+          </View>
           <TypeTiles
             label={t.vehicle.type}
             types={CUSTOMER_VEHICLE_TYPES}
@@ -266,5 +273,14 @@ const styles = StyleSheet.create({
   bar: { flex: 1, height: 4, borderRadius: radius.full, backgroundColor: color.border },
   barOn: { backgroundColor: color.primary },
   fields: { flexDirection: 'row', direction: 'ltr', gap: space[3] },
+  preview: {
+    alignItems: 'center',
+    gap: space[3],
+    paddingVertical: space[4],
+    borderRadius: radius.xl,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
   flex: { flex: 1 },
 });

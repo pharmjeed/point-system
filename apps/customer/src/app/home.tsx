@@ -72,6 +72,7 @@ import { HoldCircle, type HoldCircleState } from '../ui/HoldCircle';
 import { Icon, type IconName } from '../ui/Icon';
 import { Logo } from '../ui/Logo';
 import { ease, nativeDriver, useReducedMotion } from '../ui/motion';
+import { CarGlyph } from '../ui/CarGlyph';
 import { PlacesChooser } from '../ui/PlacesChooser';
 import { PlateBadge } from '../ui/PlateBadge';
 import { IconButton } from '../ui/ScreenHeader';
@@ -187,7 +188,9 @@ export default function Home() {
   const [places, setPlaces] = useState<PlaceCard[]>([]);
   const [placesFailure, setPlacesFailure] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
-  const [coveredPlate, setCoveredPlate] = useState<string | null>(null);
+  const [covered, setCovered] = useState<{ plate: string; type: string | null; color: string | null } | null>(
+    null,
+  );
   const key = useRef(new CommandKey(newIdempotencyKey)).current;
 
   const load = useCallback(async () => {
@@ -214,8 +217,22 @@ export default function Home() {
       } else if (mode === 'subscribed') {
         // the covered car of the first subscription (C-14's read); without it the line keeps the renewal only
         const first = heldSubscriptions(h)[0];
-        const sub = first ? await session.api.subscription(first.subscription_id).catch(() => null) : null;
-        setCoveredPlate(sub?.vehicles.find((v) => !v.removed)?.plate_display ?? null);
+        const [sub, cars] = await Promise.all([
+          first ? session.api.subscription(first.subscription_id).catch(() => null) : null,
+          session.api.vehicles().catch(() => []),
+        ]);
+        const kept = sub?.vehicles.find((v) => !v.removed) ?? null;
+        const car = kept ? cars.find((c) => c.id === kept.vehicle_id) : undefined;
+        // DEC-642: the covered car drawn in its type and colour next to its plate
+        setCovered(
+          kept?.plate_display
+            ? {
+                plate: kept.plate_display,
+                type: car?.vehicle_type ?? null,
+                color: car?.vehicle_color ?? null,
+              }
+            : null,
+        );
       }
     } catch (e) {
       setFailure(errorText(e, t, locale));
@@ -613,7 +630,7 @@ export default function Home() {
                 ) : subscribedNow && firstHeld ? (
                   <Touchable
                     accessibilityRole="button"
-                    accessibilityLabel={[coveredPlate, subscriptionLine(firstHeld, t)]
+                    accessibilityLabel={[covered?.plate, subscriptionLine(firstHeld, t)]
                       .filter(Boolean)
                       .join('، ')}
                     accessibilityHint={t.home.subscriptions}
@@ -622,7 +639,12 @@ export default function Home() {
                     testID="home-subscription"
                     style={({ pressed }) => [styles.where, pressed && styles.pressed]}
                   >
-                    {coveredPlate ? <PlateBadge plate={isolate(coveredPlate)} /> : null}
+                    {covered ? (
+                      <View style={styles.car}>
+                        <CarGlyph type={covered.type} paint={covered.color} width={56} />
+                        <PlateBadge plate={isolate(covered.plate)} />
+                      </View>
+                    ) : null}
                     <AppText
                       tone={firstHeld.status === 'past_due' ? 'danger' : 'muted'}
                       variant="small"
@@ -691,6 +713,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   pressed: { backgroundColor: color.primarySubtle },
+  car: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   message: { alignSelf: 'stretch' },
   shortcuts: {
     flexDirection: 'row',
