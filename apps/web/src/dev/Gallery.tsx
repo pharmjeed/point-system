@@ -47,6 +47,7 @@ import {
   OfferCard,
   PhoneInput,
   PhotoGrid,
+  CarCard,
   CarGlyph,
   PlateBadge,
   PlateInput,
@@ -544,6 +545,19 @@ export default function Gallery() {
             ).map(([type, color]) => (
               <CarGlyph key={`${type}-${color}`} type={type} color={color} width={72} />
             ))}
+          </div>
+        )}
+      </Section>
+
+      <Section name="CarCard">
+        {() => (
+          <div className="pt-staterow">
+            <CarCard type="suv" color="red" caption="تويوتا · أحمر">
+              <PlateBadge {...PLATE} size="lg" />
+            </CarCard>
+            <CarCard type="sedan" color="white" caption="هيونداي · أبيض">
+              <PlateBadge {...PLATE} />
+            </CarCard>
           </div>
         )}
       </Section>

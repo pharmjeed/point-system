@@ -10,7 +10,7 @@ import { CountdownRing } from './CountdownRing';
 import { Icon } from './Icon';
 import { PlateBadge, type PlateValue } from './PlateBadge';
 import { TicketNumber } from './TicketNumber';
-import { CarGlyph, type CarValue } from './CarGlyph';
+import { CarCard, type CarValue } from './CarGlyph';
 
 export interface OfferCardProps {
   offerId: string;
@@ -180,11 +180,17 @@ export function OfferCard({
           <CountdownRing seconds={secondsLeft} total={totalSeconds} warn={reminded} />
         ) : null}
       </div>
-      <div className="pt-offer__vehicle">
-        {car ? <CarGlyph {...car} width={64} /> : null}
-        <span>{vehicleSummary}</span>
-        {plate ? <PlateBadge {...plate} /> : null}
-      </div>
+      {car ? (
+        // DEC-643: the car the driver goes for, as its «بطاقة السيارة»
+        <CarCard {...car} caption={vehicleSummary} width={150}>
+          {plate ? <PlateBadge {...plate} /> : null}
+        </CarCard>
+      ) : (
+        <div className="pt-offer__vehicle">
+          <span>{vehicleSummary}</span>
+          {plate ? <PlateBadge {...plate} /> : null}
+        </div>
+      )}
       <p className="pt-offer__meta">
         {venue ? `${venue} · ` : ''}
         {components.offer.waitingSinceLabel}{' '}

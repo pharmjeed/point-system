@@ -25,7 +25,7 @@ import { useDriverMe } from '../DriverLayout';
 import { driverPaths, plateValue, vehicleSummary } from '../fieldModel';
 import { CancelRetrievalDialog, ChangePhoneSheet, OnBehalfSheet, PhotosSheet, ReportSheet } from './actions';
 import { restrictedRows, vehicleActions } from './model';
-import { CarGlyph } from '@/components/CarGlyph';
+import { CarCard } from '@/components/CarGlyph';
 
 /** «الجوال: 05•••••123» with the number isolated LTR (02 §7.3). */
 function fill(template: string, key: string, node: ReactNode): ReactNode {
@@ -96,8 +96,11 @@ export function VehiclePage() {
     <section className="flex flex-col gap-4">
       <Header title={<TicketNumber n={ticket.display_number} />} onBack={back} />
       <Card>
-        <div className="flex flex-wrap items-center gap-3">
-          <CarGlyph {...ticket.vehicle} width={88} />
+        {/* DEC-643: the car as its «بطاقة السيارة» */}
+        <CarCard
+          {...ticket.vehicle}
+          caption={vehicle ? <span className="font-semibold">{vehicle}</span> : null}
+        >
           {plate ? (
             <PlateBadge {...plate} size="lg" />
           ) : (
@@ -105,8 +108,7 @@ export function VehiclePage() {
               {ticket.plate.display}
             </bdi>
           )}
-          {vehicle ? <span className="font-semibold">{vehicle}</span> : null}
-        </div>
+        </CarCard>
         <div className="flex flex-wrap items-center gap-2">
           <StatusChip status={ticket.status} />
           {ticket.event_name_ar ? (

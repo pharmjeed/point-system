@@ -1239,36 +1239,32 @@ a.pt-listitem:active,
 .pt-car {
   flex: none;
   vertical-align: middle;
+  overflow: visible;
 }
 [dir='rtl'] .pt-car {
   transform: scaleX(-1);
 }
-.pt-car__body {
-  fill: var(--pt-car-paint, var(--pt-surface-2));
-  stroke: var(--pt-text);
-  stroke-width: 1.4;
-  stroke-linejoin: round;
+/* «بطاقة السيارة» (DEC-643): the car big on a soft tint of its own paint, the plate under it */
+.pt-carcard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pt-space-2);
+  padding: var(--pt-space-3) var(--pt-space-4) var(--pt-space-4);
+  border-radius: var(--pt-radius-lg);
+  background: color-mix(in srgb, var(--pt-car-paint, var(--pt-surface-2)) 14%, var(--pt-surface-2));
+  color: var(--pt-text);
 }
-.pt-car__glass {
-  fill: var(--pt-primary-subtle);
-  stroke: var(--pt-text);
-  stroke-width: 0.9;
-  stroke-linejoin: round;
+.pt-carcard__plate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pt-space-2);
 }
-.pt-car[data-dark] .pt-car__glass {
-  fill: var(--pt-border-strong);
-}
-.pt-car__line {
-  fill: none;
-  stroke: var(--pt-text);
-  stroke-width: 1.1;
-  stroke-linecap: round;
-}
-.pt-car__wheel {
-  fill: var(--pt-text);
-}
-.pt-car__hub {
-  fill: var(--pt-border-strong);
+.pt-carcard__caption {
+  color: var(--pt-text-muted);
+  text-align: center;
 }
 
 /* ---------- CountdownRing ---------- */

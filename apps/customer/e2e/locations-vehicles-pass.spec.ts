@@ -111,14 +111,14 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   // the entry pass comes with a subscription (DEC-639)
   await subscribeFromHome(page);
 
-  // one car: shown under the code
+  // one car: shown under the code as its «بطاقة السيارة» (DEC-643)
   await passButton(page).click();
   await expect(heading(page, ar.pass.title)).toBeVisible();
   const qr = page.getByRole('img', { name: ar.pass.qrLabel });
   await expect(qr).toBeVisible();
   await expect(shown(page.getByText(ar.pass.hint, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(tpl(ar.pass.changesIn)))).toBeVisible();
-  await expect(shown(page.getByText(new RegExp(`^${ar.pass.vehicle}: `)))).toBeVisible();
+  await expect(page.getByTestId('pass-car').filter({ visible: true })).toBeVisible();
   await expectRtlPhone(page);
 
   // the code is a new one after its 30-second step
@@ -135,6 +135,8 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   await passButton(page).click();
   const cars = page.getByRole('radiogroup', { name: ar.pass.vehicle }).getByRole('radio');
   await expect(cars).toHaveCount(2);
+  // the card shows the chosen car
+  await expect(page.getByTestId('pass-car').filter({ visible: true })).toBeVisible();
   const shown1 = await qr.innerHTML();
   await cars.nth(1).click();
   await expect.poll(() => qr.innerHTML()).not.toBe(shown1);

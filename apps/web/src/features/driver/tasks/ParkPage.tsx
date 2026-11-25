@@ -31,7 +31,7 @@ import { fieldSettings, findTask, plateValue, vehicleSummary } from '../fieldMod
 import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useTicket } from './common';
-import { CarGlyph } from '@/components/CarGlyph';
+import { CarCard } from '@/components/CarGlyph';
 
 /**
  * D-08 — إتمام الصف (وإعادة الصف): zone chips and the spot grid (or «بدون موقف محدد» + a description, by
@@ -168,11 +168,10 @@ function ParkForm({ home, card }: { home: DriverHome; card: TaskCardData }) {
 
   return (
     <TaskScreen title={withTicket(`${title} · #{n}`, card.ticket.display_number)} backTo={paths.driverHome}>
-      <div className="flex flex-wrap items-center gap-3">
-        <CarGlyph {...card.ticket.vehicle} />
-        {plate ? <PlateBadge {...plate} /> : null}
-        <span>{vehicleSummary(card.ticket.vehicle)}</span>
-      </div>
+      {/* DEC-643: the car as its «بطاقة السيارة» */}
+      <CarCard {...card.ticket.vehicle} caption={vehicleSummary(card.ticket.vehicle)}>
+        {plate ? <PlateBadge {...plate} size="lg" /> : null}
+      </CarCard>
       {ticket.data?.pending_retrieval_at ? <Banner kind="warning" rounded message={d08.early} /> : null}
       {layoutError ? (
         <LoadError

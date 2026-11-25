@@ -9,7 +9,7 @@ import { Icon } from './Icon';
 import { PlateBadge, type PlateValue } from './PlateBadge';
 import { StatusChip } from './StatusChip';
 import { TicketNumber } from './TicketNumber';
-import { CarGlyph, type CarValue } from './CarGlyph';
+import { CarCard, CarGlyph, type CarValue } from './CarGlyph';
 
 export interface TaskCardProps {
   ticketNumber: number;
@@ -71,11 +71,18 @@ export function TaskCard({
           <StatusChip status={status} />
         ) : null}
       </div>
-      <div className="pt-task__vehicle">
-        {car ? <CarGlyph {...car} /> : null}
-        <span>{vehicle}</span>
-        {plate ? <PlateBadge {...plate} /> : null}
-      </div>
+      {car && !next ? (
+        // DEC-643: the current task's car as its «بطاقة السيارة»; the reserved next task keeps the compact row
+        <CarCard {...car} caption={vehicle} width={150}>
+          {plate ? <PlateBadge {...plate} /> : null}
+        </CarCard>
+      ) : (
+        <div className="pt-task__vehicle">
+          {car ? <CarGlyph {...car} /> : null}
+          <span>{vehicle}</span>
+          {plate ? <PlateBadge {...plate} /> : null}
+        </div>
+      )}
       {stage ? (
         <p className="pt-task__stage">
           <Icon icon={stageIcon} size={20} />
