@@ -10,6 +10,12 @@
  * servers — with «حفظ البطاقة» (explicit `card_on_file` consent). The server decides the amount; this screen only
  * shows it. 3-D Secure opens in an in-app browser; the result comes from the server (payFlow.ts).
  *
+ * Owner's option 1 (DEC-641): what is being paid on top (for a subscription: the place, «سنوي · 13.27 ر.س لليوم ·
+ * the plate», and the total with «شامل الضريبة»), then the wallet first — a black Apple Pay button where it is allowed
+ * (a visit, a plan renewed by hand: DEC-534 keeps auto-renewing subscriptions on a saved card) — and «أو ادفع
+ * بالبطاقة», then the card with its placeholders, the accepted brands, and expiry and CVC side by side. Every amount
+ * is the app's one money format («3,450.00 ر.س»).
+ *
  * V2-UX (DEC-579): the sheet rises from the bottom over a dimmed screen (rounded top, a grab handle), the total in a
  * summary block, the saved cards as selectable rows with a card icon and a tick, one primary «ادفع» button; once the
  * server confirms, a success mark springs in with the confirmation sentence and the sheet closes by itself a moment
@@ -21,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { appConfig } from '../../config';
 import { isolate } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import { useI18n } from '../../i18n/I18nProvider';
 import { newIdempotencyKey } from '../../session/secureStore';
 import { useSession } from '../../session/SessionProvider';
@@ -35,7 +42,7 @@ import { Sheet } from '../../ui/Sheet';
 import { SuccessCheck } from '../../ui/SuccessCheck';
 import { Touchable } from '../../ui/Touchable';
 import { CommandKey } from '../commandKey';
-import { formatCardNumber, formatExpiry, sar, validateCard, type CardIssue } from './card';
+import { formatCardNumber, formatExpiry, validateCard, type CardIssue } from './card';
 import { cardRow, orderCards } from './methods';
 import { checkoutSubscription, payVisit, type PayOutcome, type SubscriptionCheckoutRequest } from './payFlow';
 import { createCardTokenizer, TokenizeError } from './tokenize';
@@ -61,7 +68,7 @@ export function PayDue({ ticketId, amountHalalas, onPaid, applePay }: PayDueProp
   const { t, f } = useI18n();
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(false);
-  const amount = sar(amountHalalas);
+  const amount = isolate(formatMoney(amountHalalas, t));
   if (done)
     return (
       <Card>
@@ -138,6 +145,7 @@ export function PaySheet({
   applePay,
   subscription,
   title,
+  summary,
 }: {
   visible: boolean;
   /** the visit to pay (C-12); unused with `subscription` */
@@ -148,6 +156,8 @@ export function PaySheet({
   applePay?: ApplePayProvider;
   subscription?: SubscriptionSheetCheckout;
   title?: string;
+  /** what is being paid, over the total (DEC-641): «برج الأعمال — العليا» and «سنوي · 13.27 ر.س لليوم · 1234 ا ب ح» */
+  summary?: { title: string; detail: string };
 }) {
   const { t, f } = useI18n();
   const session = useSession();
@@ -171,7 +181,7 @@ export function PaySheet({
     () => createCardTokenizer(appConfig, { callbackUrl: 'sa.point.app://pay/return' }),
     [],
   );
-  const amount = sar(amountHalalas);
+  const amount = isolate(formatMoney(amountHalalas, t));
   const cardsAvailable = appConfig.api.mode === 'fake' || !!appConfig.payments.moyasarPublishableKey;
 
   useEffect(
@@ -335,21 +345,47 @@ export function PaySheet({
             {title ?? t.pay.sheetTitle}
           </AppText>
           <View style={styles.summary}>
-            <IconBadge name="receipt" size={40} />
+            {summary ? null : <IconBadge name="receipt" size={40} />}
             <View style={styles.flex}>
-              <AppText variant="small" tone="muted">
-                {t.pay.total}
+              <AppText variant={summary ? 'bodyStrong' : 'small'} tone={summary ? 'default' : 'muted'}>
+                {summary?.title ?? t.pay.total}
               </AppText>
-              <AppText style={styles.amount}>{f(t.pay.amountLabel, { amount: isolate(amount) })}</AppText>
+              {summary ? (
+                <AppText variant="small" tone="muted">
+                  {summary.detail}
+                </AppText>
+              ) : null}
             </View>
-            <AppText variant="caption" tone="muted" style={styles.vat}>
-              {t.pay.vatIncluded}
-            </AppText>
+            <View style={styles.total}>
+              <AppText style={styles.amount}>{f(t.pay.amountLabel, { amount })}</AppText>
+              <AppText variant="caption" tone="muted">
+                {t.pay.vatIncluded}
+              </AppText>
+            </View>
           </View>
           {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
 
           {applePayReady ? (
-            <Button label={t.pay.applePay} onPress={() => void payWithApplePay()} disabled={busy} />
+            <>
+              <Touchable
+                accessibilityRole="button"
+                accessibilityLabel={t.pay.applePay}
+                onPress={() => void payWithApplePay()}
+                disabled={busy}
+                feedback="tap"
+                style={styles.wallet}
+                testID="pay-apple-pay"
+              >
+                <AppText style={styles.walletText}>{t.pay.applePay}</AppText>
+              </Touchable>
+              <View style={styles.or}>
+                <View style={styles.rule} />
+                <AppText variant="small" tone="muted">
+                  {t.pay.orCard}
+                </AppText>
+                <View style={styles.rule} />
+              </View>
+            </>
           ) : null}
 
           {cards.length > 0 ? (
@@ -407,9 +443,19 @@ export function PaySheet({
           {selected === 'new' ? (
             cardsAvailable ? (
               <View style={styles.group}>
+                <View style={styles.brands} accessible accessibilityLabel={t.pay.accepted}>
+                  {['mada', 'VISA', 'Mastercard'].map((b) => (
+                    <View key={b} style={styles.brand}>
+                      <AppText variant="caption" style={styles.brandText}>
+                        {b}
+                      </AppText>
+                    </View>
+                  ))}
+                </View>
                 <Field
                   label={t.pay.cardNumber}
                   testID="card-number"
+                  placeholder={t.pay.cardNumberPlaceholder}
                   value={number}
                   onChangeText={(v) => setNumber(formatCardNumber(v))}
                   keyboardType="number-pad"
@@ -418,31 +464,39 @@ export function PaySheet({
                   ltr
                   error={issues.includes('number') ? t.pay.issues.number : null}
                 />
-                <Field
-                  label={t.pay.expiry}
-                  testID="card-expiry"
-                  value={expiry}
-                  onChangeText={(v) => setExpiry(formatExpiry(v))}
-                  keyboardType="number-pad"
-                  ltr
-                  error={
-                    issues.includes('expired')
-                      ? t.pay.issues.expired
-                      : issues.includes('expiry')
-                        ? t.pay.issues.expiry
-                        : null
-                  }
-                />
-                <Field
-                  label={t.pay.cvc}
-                  testID="card-cvc"
-                  value={cvc}
-                  onChangeText={(v) => setCvc(v.replace(/[^0-9٠-٩]/g, '').slice(0, 4))}
-                  keyboardType="number-pad"
-                  secureTextEntry
-                  ltr
-                  error={issues.includes('cvc') ? t.pay.issues.cvc : null}
-                />
+                <View style={styles.pair}>
+                  <View style={styles.flex}>
+                    <Field
+                      label={t.pay.expiry}
+                      placeholder={t.pay.expiryPlaceholder}
+                      testID="card-expiry"
+                      value={expiry}
+                      onChangeText={(v) => setExpiry(formatExpiry(v))}
+                      keyboardType="number-pad"
+                      ltr
+                      error={
+                        issues.includes('expired')
+                          ? t.pay.issues.expired
+                          : issues.includes('expiry')
+                            ? t.pay.issues.expiry
+                            : null
+                      }
+                    />
+                  </View>
+                  <View style={styles.flex}>
+                    <Field
+                      label={t.pay.cvc}
+                      placeholder={t.pay.cvcPlaceholder}
+                      testID="card-cvc"
+                      value={cvc}
+                      onChangeText={(v) => setCvc(v.replace(/[^0-9٠-٩]/g, '').slice(0, 4))}
+                      keyboardType="number-pad"
+                      secureTextEntry
+                      ltr
+                      error={issues.includes('cvc') ? t.pay.issues.cvc : null}
+                    />
+                  </View>
+                </View>
                 <Field
                   label={t.pay.cardName}
                   testID="card-name"
@@ -508,7 +562,28 @@ const styles = StyleSheet.create({
     borderColor: color.border,
   },
   amount: { fontFamily: font.bold, ...fontSize['2xl'], color: color.text },
-  vat: { maxWidth: 96 },
+  total: { alignItems: 'flex-end', maxWidth: 160 },
+  wallet: {
+    minHeight: 54,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.surfaceInverse,
+  },
+  walletText: { fontFamily: font.semibold, ...fontSize.lg, color: color.onPrimary },
+  or: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  rule: { flex: 1, height: 1, backgroundColor: color.border },
+  brands: { flexDirection: 'row', gap: space[1] + space[0.5], direction: 'ltr', alignSelf: 'flex-end' },
+  brand: {
+    paddingHorizontal: space[2],
+    paddingVertical: space[0.5],
+    borderRadius: radius.xs,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surface,
+  },
+  brandText: { fontFamily: font.bold, color: color.text },
+  pair: { flexDirection: 'row', gap: space[3] },
   success: { alignItems: 'center', gap: space[3], padding: space[8], paddingBottom: space[12] },
   group: { gap: space[2] },
   option: {

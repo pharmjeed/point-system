@@ -475,14 +475,21 @@ export const ar = {
   },
   // V2-022 C-12 pay area → C-10 sheet (DEC-521, DEC-524)
   pay: {
-    due: 'ادفع {amount} ريال',
+    // DEC-641: one money format everywhere («3,450.00 ر.س», formatMoney), the currency comes with the amount
+    due: 'ادفع {amount}',
     dueHint: 'الدفع اختياري الآن ويمكن في أي وقت قبل التسليم، أو نقدًا/شبكة لدى السائق.',
     vatIncluded: 'شامل ضريبة القيمة المضافة',
     paidBadge: 'مدفوع في التطبيق',
     sheetTitle: 'الدفع',
     total: 'المبلغ',
-    amountLabel: '{amount} ريال',
+    amountLabel: '{amount}',
     applePay: 'الدفع بـ Apple Pay',
+    // owner's option 1 (DEC-641): the wallet first, then the card
+    orCard: 'أو ادفع بالبطاقة',
+    cardNumberPlaceholder: '1234 5678 9012 3456',
+    expiryPlaceholder: 'MM/YY',
+    cvcPlaceholder: 'CVC',
+    accepted: 'نقبل مدى وفيزا وماستركارد',
     savedCards: 'البطاقات المحفوظة',
     newCard: 'بطاقة جديدة',
     cardNumber: 'رقم البطاقة',
@@ -491,7 +498,7 @@ export const ar = {
     cardName: 'الاسم على البطاقة',
     saveCard: 'حفظ البطاقة للمدفوعات القادمة',
     saveCardDetail: 'تُحفظ لدى بوابة الدفع، ونعرض منها آخر 4 أرقام فقط. يمكنك حذفها من «وسائل الدفع».',
-    payNow: 'ادفع {amount} ريال',
+    payNow: 'ادفع {amount}',
     paying: 'جارٍ الدفع…',
     secureNote: 'بيانات البطاقة تذهب إلى بوابة الدفع مباشرة ولا تصل خوادمنا.',
     cancel: 'إلغاء',

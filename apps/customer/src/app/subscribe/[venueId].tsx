@@ -37,6 +37,7 @@ import {
   toggleVehicle,
   type Cycle,
 } from '../../features/subscriptions';
+import { planChoices } from '../../features/pricing';
 import { bestYearlySaving } from '../../features/ux';
 import { fmt } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -125,6 +126,19 @@ export default function Subscribe() {
   const saving = loc ? bestYearlySaving(loc.plans) : null;
   const closures = loc ? closureLines(loc.closures, t) : [];
   const applying = !!annex?.needsEligibility && !payId;
+  // the pay sheet's top line (DEC-641): «سنوي · 13.27 ر.س لليوم · 1234 ا ب ح» under the place
+  const payChoice = loc
+    ? planChoices(loc, t).find((c) => c.planId === planId && c.cycle === cycle)
+    : undefined;
+  const coveredPlates = (vehicles ?? []).filter((v) => chosen.includes(v.id)).map((v) => v.plate.display);
+  const paySummary = payChoice
+    ? {
+        title: venue,
+        detail: [payChoice.title, `${payChoice.perDay} ${t.locations.plan.perDay}`, ...coveredPlates]
+          .filter(Boolean)
+          .join(' · '),
+      }
+    : null;
 
   // done: back down to the home screen, then «اشتراكاتي» above it (DEC-626) — C-07 … C-09 (or a second C-14 when
   // opened from C-14) are not left under it
@@ -494,6 +508,7 @@ export default function Subscribe() {
           visible={paying}
           amountHalalas={plan.price}
           title={f(t.subscribe.title, { venue })}
+          summary={paySummary ?? undefined}
           onClose={() => setPaying(false)}
           onPaid={() => {
             setPaying(false);
