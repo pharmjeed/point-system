@@ -127,7 +127,13 @@ describe('V2-013 — GET /v1/customer/pass (C-11)', () => {
     expect(p).toMatchObject({ scheme: 'P1', account_id: a.id, step_seconds: 30 });
     expect(p.server_time).toBe(w.clock.now().toISOString());
     expect(p.vehicles).toEqual([
-      { vehicle_id: v, plate_display: '4501 ر س ص', vehicle_make: 'hyundai', vehicle_color: 'silver' },
+      {
+        vehicle_id: v,
+        plate_display: '4501 ر س ص',
+        vehicle_make: 'hyundai',
+        vehicle_color: 'silver',
+        vehicle_type: 'sedan',
+      },
     ]);
     expect(new Date(p.refresh_after).getTime() - new Date(p.rotated_at).getTime()).toBe(
       PASS_ROTATE_AFTER_DAYS * DAY,

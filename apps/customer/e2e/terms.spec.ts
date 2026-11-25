@@ -24,6 +24,8 @@ import {
   openAccount,
   test,
   tpl,
+  ensurePlan,
+  subscribeOnLocation,
 } from './support/app';
 
 const terms = renderTerms(termsAr, brand, termsAr.generic, isolate);
@@ -83,14 +85,15 @@ test('C-24 from the C-09 consent line: the clauses carry the plan’s own values
   await signUp(page);
   await addVehicle(page, '4821', ['A', 'B', 'D']);
   await expectHome(page);
-  await button(page, ar.home.allLocations).click();
+  // without a subscription the home's search bar opens the full list (DEC-639)
+  await page.getByRole('search', { name: ar.home.places.search }).filter({ visible: true }).click();
   await page.getByLabel(ar.locations.searchLabel, { exact: true }).fill('الأفق');
   await page
     .getByRole('button', { name: /جامعة الأفق/ })
     .first()
     .click();
-  await button(page, ar.subscribe.action).click();
-  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await subscribeOnLocation(page);
+  await ensurePlan(page);
 
   // the consent: two separate boxes, and the link to the full terms (DEC-613)
   await expect(page.getByRole('checkbox', { name: ar.annex.consentTerms })).toBeVisible();

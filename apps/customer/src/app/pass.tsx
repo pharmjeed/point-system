@@ -6,7 +6,7 @@
  * device's own back when it goes. Logic in ../features/pass.ts (unit-tested); this file only renders it.
  *
  * V2-UX (DEC-578): the pass as a card — the brand mark, the hint, the large code on its white square, a countdown
- * ring emptying towards the next code (the code's own clock), a perforated edge, and the car as a `PlateBadge`; a
+ * ring emptying towards the next code (the code's own clock), a perforated edge, and the car as its «بطاقة السيارة» (`CarCard`, DEC-643); a
  * brightness note under it. Skeleton while the pass is prepared.
  */
 import * as Brightness from 'expo-brightness';
@@ -24,6 +24,7 @@ import {
   type PassCache,
   type PassLoad,
 } from '../features/pass';
+import { vehicleCaption } from '../features/vehicles';
 import { useI18n } from '../i18n/I18nProvider';
 import { securePassStore } from '../session/secureStore';
 import { useSession } from '../session/SessionProvider';
@@ -35,7 +36,7 @@ import { Banner, ChoiceChips } from '../ui/Controls';
 import { CountdownRing } from '../ui/CountdownRing';
 import { Icon } from '../ui/Icon';
 import { Logo } from '../ui/Logo';
-import { PlateBadge } from '../ui/PlateBadge';
+import { CarCard } from '../ui/CarCard';
 import { Screen } from '../ui/Screen';
 import { ScreenHeader } from '../ui/ScreenHeader';
 import { SkeletonList } from '../ui/Skeleton';
@@ -182,12 +183,17 @@ export default function Pass() {
                     value={vehicle?.vehicle_id ?? null}
                     onChange={(next) => next && setVehicleId(next)}
                   />
-                ) : vehicle ? (
-                  <View style={styles.vehicle}>
-                    <Icon name="car-front" size={22} tint={color.textMuted} />
-                    <AppText tone="muted">{`${t.pass.vehicle}: `}</AppText>
-                    <PlateBadge plate={vehicle.plate_display} size="lg" />
-                  </View>
+                ) : null}
+                {vehicle ? (
+                  // DEC-643: the car this code lets in, as the owner's «بطاقة السيارة»
+                  <CarCard
+                    type={vehicle.vehicle_type}
+                    paint={vehicle.vehicle_color}
+                    plate={vehicle.plate_display}
+                    caption={vehicleCaption(vehicle, t)}
+                    width={180}
+                    testID="pass-car"
+                  />
                 ) : (
                   <>
                     <Banner tone="info">{t.pass.noVehicle}</Banner>
@@ -270,13 +276,6 @@ const styles = StyleSheet.create({
     borderColor: color.border,
   },
   passFoot: { padding: space[4], gap: space[3] },
-  vehicle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space[2],
-    flexWrap: 'wrap',
-  },
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[2] },
   qr: {
     alignSelf: 'center',

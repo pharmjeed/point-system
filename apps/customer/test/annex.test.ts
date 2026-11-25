@@ -72,6 +72,12 @@ describe('C-09 plan details (pure)', () => {
     );
     // a V4 plan keeps its V4 terms: no consent required, no counted days
     const v4 = planAnnex(FAKE_LOCATIONS[0]!.plans[0]!, ar);
+    // the breakdown follows the cycle bought: 3,450 a year is 3,000 + 450 VAT, not the monthly 300 + 45
+    const yearly = planAnnex(FAKE_LOCATIONS[0]!.plans[0]!, ar, 'yearly');
+    expect(yearly.breakdown?.net.replace(/[\u2066-\u2069]/g, '')).toBe('3,000.00 ر.س');
+    expect(yearly.breakdown?.vat.replace(/[\u2066-\u2069]/g, '')).toBe('450.00 ر.س');
+    expect(yearly.breakdown?.total.replace(/[\u2066-\u2069]/g, '')).toBe('3,450.00 ر.س');
+    expect(v4.breakdown?.total.replace(/[\u2066-\u2069]/g, '')).toBe('345.00 ر.س');
     expect(v4).toMatchObject({ term: null, needsConsent: false, needsEligibility: false, bullets: [] });
     expect(consentRequired(FAKE_LOCATIONS[0]!.plans[0]!.policy)).toBe(false);
   });

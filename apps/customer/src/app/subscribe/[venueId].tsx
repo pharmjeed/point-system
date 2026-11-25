@@ -15,7 +15,7 @@
  * boxes, «اطّلع على الشروط والأحكام» opens C-24 with this plan's values, DEC-613) — recorded with the payment. A plan
  * checked for eligibility asks for the student number and the name first (`…/apply`); once approved,
  * C-14 brings the customer back here (`?pay=`) to pay it. «اكتملت المقاعد» marks a plan whose capacity is reached;
- * `?plan=` preselects a plan (the renewal from C-14).
+ * `?plan=` preselects a plan (the renewal from C-14, the card chosen on C-08) and `?cycle=` its cycle (DEC-640).
  */
 import type {
   CustomerLocationDetail,
@@ -37,6 +37,7 @@ import {
   toggleVehicle,
   type Cycle,
 } from '../../features/subscriptions';
+import { planChoices } from '../../features/pricing';
 import { bestYearlySaving } from '../../features/ux';
 import { fmt } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -56,7 +57,7 @@ import { ScreenHeader } from '../../ui/ScreenHeader';
 import { SkeletonList } from '../../ui/Skeleton';
 
 export default function Subscribe() {
-  const params = useLocalSearchParams<{ venueId: string; plan?: string; pay?: string }>();
+  const params = useLocalSearchParams<{ venueId: string; plan?: string; pay?: string; cycle?: string }>();
   const venueId = params.venueId;
   const { t, f, locale } = useI18n();
   const session = useSession();
@@ -64,7 +65,8 @@ export default function Subscribe() {
   const [loc, setLoc] = useState<CustomerLocationDetail | null>(null);
   const [vehicles, setVehicles] = useState<CustomerVehicle[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [cycle, setCycle] = useState<Cycle>('monthly');
+  // C-08 «اشترك سنويًا · …» opens here with its plan and cycle chosen (DEC-640)
+  const [cycle, setCycle] = useState<Cycle>(params.cycle === 'yearly' ? 'yearly' : 'monthly');
   const [planId, setPlanId] = useState<string | null>(params.plan ?? null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [issue, setIssue] = useState<string | null>(null);
@@ -117,13 +119,26 @@ export default function Subscribe() {
   const cycles = cyclesOf(loc?.plans ?? []);
   const plan = plans.find((p) => p.planId === planId) ?? null;
   const planRow = loc?.plans.find((p) => p.plan_id === planId) ?? null;
-  const annex = planRow ? planAnnex(planRow, t) : null;
+  const annex = planRow ? planAnnex(planRow, t, cycle) : null;
   const max = planRow?.vehicles_included ?? 1;
   const cars = coverableVehicles(vehicles ?? []);
   const venue = loc ? (locale === 'en' && loc.name_en ? loc.name_en : loc.name_ar) : '';
   const saving = loc ? bestYearlySaving(loc.plans) : null;
   const closures = loc ? closureLines(loc.closures, t) : [];
   const applying = !!annex?.needsEligibility && !payId;
+  // the pay sheet's top line (DEC-641): «سنوي · 13.27 ر.س لليوم · 1234 ا ب ح» under the place
+  const payChoice = loc
+    ? planChoices(loc, t).find((c) => c.planId === planId && c.cycle === cycle)
+    : undefined;
+  const coveredPlates = (vehicles ?? []).filter((v) => chosen.includes(v.id)).map((v) => v.plate.display);
+  const paySummary = payChoice
+    ? {
+        title: venue,
+        detail: [payChoice.title, `${payChoice.perDay} ${t.locations.plan.perDay}`, ...coveredPlates]
+          .filter(Boolean)
+          .join(' · '),
+      }
+    : null;
 
   // done: back down to the home screen, then «اشتراكاتي» above it (DEC-626) — C-07 … C-09 (or a second C-14 when
   // opened from C-14) are not left under it
@@ -252,7 +267,7 @@ export default function Subscribe() {
             {plans.map((p, i) => {
               const on = p.planId === planId;
               const row = loc.plans.find((x) => x.plan_id === p.planId)!;
-              const info = planAnnex(row, t);
+              const info = planAnnex(row, t, cycle);
               return (
                 <FadeIn key={p.planId} index={i} swapKey={cycle}>
                   <Touchable
@@ -493,6 +508,7 @@ export default function Subscribe() {
           visible={paying}
           amountHalalas={plan.price}
           title={f(t.subscribe.title, { venue })}
+          summary={paySummary ?? undefined}
           onClose={() => setPaying(false)}
           onPaid={() => {
             setPaying(false);

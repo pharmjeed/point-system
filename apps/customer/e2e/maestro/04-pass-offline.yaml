@@ -10,6 +10,8 @@ tags: [h2, r3]
     env:
       PHONE: '512340004'
 - runFlow: subflows/add-vehicle.yaml
+# the entry pass comes with a subscription (DEC-639)
+- runFlow: subflows/subscribe-from-home.yaml
 - tapOn:
     id: home-pass
 - assertVisible:

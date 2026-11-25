@@ -24,18 +24,23 @@ export function StepHeader({
 }) {
   return (
     <View style={styles.wrap}>
-      {step ? (
-        <View style={styles.dots} accessible={false} importantForAccessibility="no-hide-descendants">
-          {Array.from({ length: R1_STEPS }, (_, i) => (
-            <View key={i} style={[styles.dot, i < step && styles.dotOn, i === step - 1 && styles.dotNow]} />
-          ))}
-        </View>
-      ) : null}
+      {step ? <StepDots step={step} /> : null}
       <IconBadge name={icon} size={64} />
       <AppText variant="title" accessibilityRole="header">
         {title}
       </AppText>
       {hint ? <AppText tone="muted">{hint}</AppText> : null}
+    </View>
+  );
+}
+
+/** The four progress dots of journey R1 alone (C-04 draws its own head, DEC-637). Decorative. */
+export function StepDots({ step }: { step: number }) {
+  return (
+    <View style={styles.dots} accessible={false} importantForAccessibility="no-hide-descendants">
+      {Array.from({ length: R1_STEPS }, (_, i) => (
+        <View key={i} style={[styles.dot, i < step && styles.dotOn, i === step - 1 && styles.dotNow]} />
+      ))}
     </View>
   );
 }

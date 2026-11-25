@@ -12,6 +12,7 @@ import {
   expectRtlPhone,
   heading,
   passButton,
+  subscribeFromHome,
   shown,
   signUp,
   test,
@@ -22,10 +23,8 @@ test('C-07 → C-08: search, filter, open a location with its hours and prices',
   await signUp(page);
   await addVehicle(page);
   await expectHome(page);
-  // option A (DEC-627): the nearest location under the circle, the full list from the top bar
-  await expect(page.getByRole('button', { name: tpl(ar.home.nearestLine) })).toBeVisible();
-
-  await button(page, ar.home.allLocations).click();
+  // without a subscription (DEC-639): the search bar over the map opens the full list
+  await page.getByRole('search', { name: ar.home.places.search }).filter({ visible: true }).click();
   await expect(heading(page, ar.locations.title)).toBeVisible();
   await expectRtlPhone(page);
   const rows = page.getByRole('button', { name: new RegExp(ar.locations.listSeparator) });
@@ -53,12 +52,20 @@ test('C-07 → C-08: search, filter, open a location with its hours and prices',
   // C-08
   await rows.first().click();
   await expect(heading(page, first)).toBeVisible();
-  for (const h of [ar.locations.address, ar.locations.hours, ar.locations.prices])
+  for (const h of [ar.locations.plan.title, ar.locations.address, ar.locations.hours])
     await expect(page.getByRole('heading', { name: h, exact: true })).toBeVisible();
   await expect(shown(page.getByText(new RegExp(`\\(${ar.locations.today}\\)`)))).toBeVisible();
-  await expect(shown(page.getByText(ar.locations.perVisit, { exact: true }))).toBeVisible();
-  await expect(shown(page.getByText(ar.locations.vatNote, { exact: true }))).toBeVisible();
-  await expect(button(page, ar.subscribe.action)).toBeVisible();
+  // «اختر باقتك» (DEC-640): the yearly best value chosen, priced by the working day, the per-visit price struck
+  const cards = page.getByRole('radiogroup', { name: ar.locations.plan.title }).getByRole('radio');
+  await expect(cards.first()).toBeChecked();
+  await expect(cards.first()).toHaveAttribute('aria-label', new RegExp(ar.locations.plan.perDay));
+  await expect(shown(page.getByText(ar.locations.plan.withoutSub, { exact: true }))).toBeVisible();
+  await expect(shown(page.getByText(tpl(ar.locations.plan.basis)))).toBeVisible();
+  const subscribe = page.getByTestId('location-subscribe').filter({ visible: true });
+  await expect(subscribe).toHaveAccessibleName(tpl(ar.locations.plan.subscribeYearly));
+  // the monthly card changes the action
+  await cards.nth(1).click();
+  await expect(subscribe).toHaveAccessibleName(tpl(ar.locations.plan.subscribeMonthly));
   await expectRtlPhone(page);
 });
 
@@ -101,15 +108,17 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   await signUp(page);
   await addVehicle(page, '1111', ['A', 'B', 'D']);
   await expectHome(page);
+  // the entry pass comes with a subscription (DEC-639)
+  await subscribeFromHome(page);
 
-  // one car: shown under the code
+  // one car: shown under the code as its «بطاقة السيارة» (DEC-643)
   await passButton(page).click();
   await expect(heading(page, ar.pass.title)).toBeVisible();
   const qr = page.getByRole('img', { name: ar.pass.qrLabel });
   await expect(qr).toBeVisible();
   await expect(shown(page.getByText(ar.pass.hint, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(tpl(ar.pass.changesIn)))).toBeVisible();
-  await expect(shown(page.getByText(new RegExp(`^${ar.pass.vehicle}: `)))).toBeVisible();
+  await expect(page.getByTestId('pass-car').filter({ visible: true })).toBeVisible();
   await expectRtlPhone(page);
 
   // the code is a new one after its 30-second step
@@ -126,6 +135,8 @@ test('C-11: the entry pass draws a QR that changes every 30 s, per chosen car', 
   await passButton(page).click();
   const cars = page.getByRole('radiogroup', { name: ar.pass.vehicle }).getByRole('radio');
   await expect(cars).toHaveCount(2);
+  // the card shows the chosen car
+  await expect(page.getByTestId('pass-car').filter({ visible: true })).toBeVisible();
   const shown1 = await qr.innerHTML();
   await cars.nth(1).click();
   await expect.poll(() => qr.innerHTML()).not.toBe(shown1);

@@ -1,0 +1,25 @@
+# DEC-639: from «أين تركن عادةً؟» (C-06 without a subscription), subscribe monthly to the chosen place (the first in
+# the sheet): C-08 «اشترك» → C-09 the first plan → C-10 a new card → C-14, then back to C-06, now the entry pass.
+appId: sa.point.app
+---
+- extendedWaitUntil:
+    visible: 'أين تركن عادةً؟'
+    timeout: 10000
+- tapOn:
+    id: home-subscribe
+- tapOn:
+    id: location-subscribe
+- tapOn: 'اشتراك سيارة واحدة.*'
+- tapOn:
+    id: subscribe-pay
+- runFlow: card.yaml
+- tapOn:
+    id: pay-sheet-submit
+- extendedWaitUntil:
+    visible: 'اشتراكاتي'
+    timeout: 15000
+- tapOn: 'رجوع'
+- extendedWaitUntil:
+    visible:
+      id: home-pass
+    timeout: 10000

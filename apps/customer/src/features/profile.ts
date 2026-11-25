@@ -42,6 +42,13 @@ export function validateProfile(form: ProfileForm): ProfileErrors {
 export const hasErrors = (e: ProfileErrors): boolean => e.name !== undefined || e.consents !== undefined;
 
 /**
+ * Owner's option 4 (DEC-637): pressing «ابدأ» under the line «بالضغط على «ابدأ» توافق على الشروط وسياسة الخصوصية»
+ * is the consent to both, so the form sent ticks them. Each is still recorded on its own with the version shown;
+ * marketing stays the customer's own separate answer.
+ */
+export const acceptRequired = (form: ProfileForm): ProfileForm => ({ ...form, terms: true, privacy: true });
+
+/**
  * The two writes C-04 sends: the name only when it changed, and the consent answers that differ from what the
  * server holds for the current version (marketing is always answered once, «no» included).
  */

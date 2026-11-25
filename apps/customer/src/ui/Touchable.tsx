@@ -39,6 +39,14 @@ export function Touchable({
 }: TouchableProps) {
   const reduced = useReducedMotion();
   const scale = useRef(new Animated.Value(1)).current;
+  // the chosen and ticked states as ARIA too (DEC-639): the web export ignores `accessibilityState`, so a radio or a
+  // checkbox would not say it is checked to the browser, its screen readers or the e2e suite; native reads both
+  const state = rest.accessibilityState;
+  const aria = {
+    ...(state?.checked !== undefined ? { 'aria-checked': state.checked } : {}),
+    ...(state?.selected !== undefined ? { 'aria-selected': state.selected } : {}),
+    ...(state?.disabled !== undefined ? { 'aria-disabled': state.disabled } : {}),
+  };
   const to = (value: number) =>
     Animated.timing(scale, {
       toValue: value,
@@ -50,6 +58,7 @@ export function Touchable({
     <Animated.View style={[containerStyle, !reduced && { transform: [{ scale }] }]}>
       <Pressable
         {...rest}
+        {...aria}
         disabled={disabled}
         onPressIn={(e: GestureResponderEvent) => {
           if (!reduced && pressScale !== 1) to(pressScale);

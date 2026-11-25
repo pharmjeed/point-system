@@ -20,8 +20,11 @@ import {
   heading,
   shown,
   signUp,
+  subscribeFromHome,
   test,
   tpl,
+  ensurePlan,
+  subscribeOnLocation,
 } from './support/app';
 
 const UNIVERSITY = 'جامعة الأفق — الحرم الرئيسي';
@@ -49,14 +52,15 @@ async function shot(page: Page, name: string) {
 }
 
 async function openUniversity(page: Page) {
-  await button(page, ar.home.allLocations).click();
+  // without a subscription the home's search bar opens the full list (DEC-639)
+  await page.getByRole('search', { name: ar.home.places.search }).filter({ visible: true }).click();
   await page.getByLabel(ar.locations.searchLabel, { exact: true }).fill('الأفق');
   await page
     .getByRole('button', { name: new RegExp(UNIVERSITY) })
     .first()
     .click();
   await expect(heading(page, UNIVERSITY)).toBeVisible();
-  await button(page, ar.subscribe.action).click();
+  await subscribeOnLocation(page);
   await expect(heading(page, tpl(ar.subscribe.title, { venue: UNIVERSITY }))).toBeVisible();
 }
 
@@ -70,7 +74,7 @@ test('C-09 → apply → approved → pay with the consent → C-14 counted days
   await openUniversity(page);
 
   // C-09: the plan, its details before payment
-  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await ensurePlan(page);
   await expect(shown(page.getByText(ar.annex.details, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(ar.annex.net, { exact: true }))).toBeVisible();
   await expect(shown(page.getByText(/150\.00/))).toBeVisible();
@@ -186,6 +190,7 @@ test('C-11: the valuables reminder under the entry pass', async ({ app: page }) 
   await signUp(page);
   await addVehicle(page, '1111', ['A', 'B', 'D']);
   await expectHome(page);
+  await subscribeFromHome(page);
   await page
     .getByRole('button', { name: ar.home.pass, exact: true })
     .filter({ visible: true })

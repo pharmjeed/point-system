@@ -40,6 +40,7 @@ import {
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { ReportSheet } from '../vehicles/actions';
 import { TaskGone, TaskScreen, TaskSkeleton, useTicket } from './common';
+import { CarCard } from '@/components/CarGlyph';
 
 /**
  * D-10 — المهمة الحالية (الإحضار): the four steps «المفتاح ← الإحضار ← جاهزة ← التسليم» with one button on
@@ -201,12 +202,12 @@ function Retrieval({ card }: { card: TaskCardData }) {
           {fmtNode(d10.waiting, { time: <Ltr>{formatClock(waitingSeconds(card.requested_at, now))}</Ltr> })}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-3">
-        {plate ? <PlateBadge {...plate} /> : null}
-        <span>{vehicleSummary(card.ticket.vehicle)}</span>
+      {/* DEC-643: the car as its «بطاقة السيارة» */}
+      <CarCard {...card.ticket.vehicle} caption={vehicleSummary(card.ticket.vehicle)}>
+        {plate ? <PlateBadge {...plate} size="lg" /> : null}
         {/* O-02 (V2-014): «مشمول» / «يدفع X» */}
         {badge ? <EntitlementChip badge={badge} size="sm" /> : null}
-      </div>
+      </CarCard>
       <Stepper
         current={step}
         steps={steps}

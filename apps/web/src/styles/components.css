@@ -1180,38 +1180,91 @@ a.pt-listitem:active,
   overflow: hidden;
   vertical-align: middle;
 }
-.pt-plate__digits {
-  display: grid;
-  place-items: center;
+/* DEC-642: the Saudi plate — each half has its Arabic row over its Latin row, then the KSA band */
+.pt-plate__half {
+  display: flex;
+  flex-direction: column;
+}
+.pt-plate__half + .pt-plate__half,
+.pt-plate__band {
+  border-inline-start: 2px solid var(--pt-text);
+}
+.pt-plate__ar,
+.pt-plate__en {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   padding-inline: 8px;
+  font-weight: var(--pt-weight-bold);
+  font-size: var(--pt-text-sm);
+  line-height: 20px;
+}
+.pt-plate__ar {
+  direction: ltr;
+}
+.pt-plate__ar[dir='rtl'] {
+  direction: rtl;
+}
+.pt-plate__en {
+  border-block-start: 2px solid var(--pt-text);
   font-family: var(--pt-font-mono);
   font-weight: var(--pt-weight-semibold);
-  font-size: var(--pt-text-base);
-  line-height: 28px;
-  border-inline-end: 2px solid var(--pt-text);
+  letter-spacing: 1px;
 }
-.pt-plate__letters {
+.pt-plate__band {
+  display: grid;
+  place-items: center;
+  inline-size: 14px;
+  font-family: var(--pt-font-mono);
+  font-size: 8px;
+  line-height: 9px;
+  font-weight: var(--pt-weight-semibold);
+  writing-mode: vertical-lr;
+  text-orientation: upright;
+  letter-spacing: -1px;
+}
+.pt-plate--lg .pt-plate__ar,
+.pt-plate--lg .pt-plate__en {
+  font-size: var(--pt-text-lg);
+  line-height: 28px;
+  padding-inline: 12px;
+}
+.pt-plate--lg .pt-plate__band {
+  inline-size: 18px;
+  font-size: 10px;
+  line-height: 11px;
+}
+/* DEC-642: the customer's car in its type and colour, next to the plate */
+.pt-car {
+  flex: none;
+  vertical-align: middle;
+  overflow: visible;
+}
+[dir='rtl'] .pt-car {
+  transform: scaleX(-1);
+}
+/* «بطاقة السيارة» (DEC-643): the car big on a soft tint of its own paint, the plate under it */
+.pt-carcard {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: var(--pt-space-2);
+  padding: var(--pt-space-3) var(--pt-space-4) var(--pt-space-4);
+  border-radius: var(--pt-radius-lg);
+  background: color-mix(in srgb, var(--pt-car-paint, var(--pt-surface-2)) 14%, var(--pt-surface-2));
+  color: var(--pt-text);
+}
+.pt-carcard__plate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  padding-inline: 8px;
-  font-weight: var(--pt-weight-bold);
-  font-size: var(--pt-text-base);
-  line-height: 28px;
+  gap: var(--pt-space-2);
 }
-.pt-plate__en {
-  font-family: var(--pt-font-mono);
-  font-size: var(--pt-text-xs);
-  line-height: var(--pt-leading-xs);
-  font-weight: var(--pt-weight-semibold);
+.pt-carcard__caption {
   color: var(--pt-text-muted);
-}
-.pt-plate--lg .pt-plate__digits,
-.pt-plate--lg .pt-plate__letters {
-  font-size: var(--pt-text-xl);
-  line-height: 36px;
-  padding-inline: 12px;
+  text-align: center;
 }
 
 /* ---------- CountdownRing ---------- */

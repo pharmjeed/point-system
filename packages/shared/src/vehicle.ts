@@ -115,6 +115,31 @@ function isPlateIgnorable(c: string): boolean {
   return /\s/.test(c) || cp === 0x0640 || (cp >= 0x064b && cp <= 0x065f) || cp === 0x0670;
 }
 
+/** Latin plate letter → its Arabic plate letter («A» → «ا»), the reverse of `SAUDI_PLATE_LETTERS`. */
+const PLATE_LETTERS_BY_LATIN: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(Object.entries(SAUDI_PLATE_LETTERS).map(([ar, en]) => [en, ar])),
+);
+
+/**
+ * The plate letters a person typed with the phone's own keyboard, in Arabic («ا ب ح», keyboard variants such as
+ * «أ» or «ي» included) or in the Latin letters of the plate («ABJ», any case), mixed or spaced: the Arabic plate
+ * letters in order, at most three (C-05, DEC-638). `invalid` is true when a typed character is no plate letter
+ * («ج», «Q», a digit); spaces, tatweel and diacritics are ignored.
+ */
+export function plateLettersFromTyping(raw: string): { letters: string[]; invalid: boolean } {
+  const letters: string[] = [];
+  let invalid = false;
+  for (const c of raw) {
+    if (isPlateIgnorable(c)) continue;
+    const ar = PLATE_LETTER_VARIANTS[c] ?? c;
+    const letter = Object.hasOwn(SAUDI_PLATE_LETTERS, ar) ? ar : PLATE_LETTERS_BY_LATIN[c.toUpperCase()];
+    if (letter === undefined) invalid = true;
+    else if (letters.length < 3) letters.push(letter);
+    else invalid = true;
+  }
+  return { letters, invalid };
+}
+
 export interface SaudiPlate {
   country: 'SA';
   /** 1–4 Latin digits. */

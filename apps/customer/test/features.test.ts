@@ -2,7 +2,7 @@
  * V2-011: the screen logic of C-01 … C-06 (journey R1) without React Native: routing, phone, OTP countdown and
  * lock, consents, plate pad, home ordering, command keys.
  */
-import type { CustomerMe } from '@point/shared/customer';
+import { VEHICLE_COLOR_LABELS_AR, type CustomerMe } from '@point/shared/customer';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/errors';
 import { NetworkError } from '../src/api/transport';
@@ -21,16 +21,23 @@ import {
   sanitizeCode,
 } from '../src/features/otp';
 import { sanitizePhoneInput, validatePhone } from '../src/features/phone';
-import { hasErrors, initialProfileForm, profileRequests, validateProfile } from '../src/features/profile';
 import {
-  addLetter,
+  acceptRequired,
+  hasErrors,
+  initialProfileForm,
+  profileRequests,
+  validateProfile,
+} from '../src/features/profile';
+import {
   emptyVehicleForm,
-  PLATE_LETTER_PAD,
-  removeLastLetter,
+  latinLetters,
   sanitizePlateDigits,
   validateVehicle,
+  VEHICLE_COLOR_SWATCH,
+  VEHICLE_COLORS_FIRST,
   vehicleBody,
   vehicleIssueFromError,
+  withLettersText,
 } from '../src/features/vehicle';
 import { ar } from '../src/i18n/ar';
 import { en } from '../src/i18n/en';
@@ -179,16 +186,44 @@ describe('C-04 name and consents', () => {
     const done = await onboard(ctx);
     expect(profileRequests(initialProfileForm(done), done)).toEqual({ patch: null, consents: null });
   });
+
+  it('option 4 (DEC-637): «ابدأ» accepts terms and privacy, each with its version; marketing stays the answer given', async () => {
+    const me = await freshMe();
+    const form = acceptRequired({ ...initialProfileForm(me), name: 'سارة' });
+    expect(form).toEqual({ name: 'سارة', terms: true, privacy: true, marketing: false });
+    expect(hasErrors(validateProfile(form))).toBe(false);
+    expect(validateProfile(acceptRequired(initialProfileForm(me)))).toEqual({ name: 'invalid' });
+    expect(profileRequests(form, me).consents?.consents).toEqual([
+      { kind: 'terms', version: me.consents.terms.current_version, granted: true },
+      { kind: 'privacy', version: me.consents.privacy.current_version, granted: true },
+      { kind: 'marketing', version: me.consents.marketing.current_version, granted: false },
+    ]);
+    expect(acceptRequired({ ...form, marketing: true }).marketing).toBe(true);
+  });
 });
 
 describe('C-05 vehicle', () => {
-  it('offers the 17 plate letters with their Latin equivalent and keeps three', () => {
-    expect(PLATE_LETTER_PAD).toHaveLength(17);
-    expect(PLATE_LETTER_PAD[2]).toEqual({ ar: 'ح', en: 'J' });
-    let f = emptyVehicleForm();
-    for (const l of ['ا', 'ب', 'ح', 'د']) f = addLetter(f, l);
+  it('option 3 (DEC-638): reads the plate letters typed in Arabic or Latin, keeps three and flags others', () => {
+    let f = withLettersText(emptyVehicleForm(), 'abj');
     expect(f.letters).toEqual(['ا', 'ب', 'ح']);
-    expect(addLetter(removeLastLetter(f), 'ج').letters).toEqual(['ا', 'ب']);
+    expect(latinLetters(f.letters)).toBe('ABJ');
+    f = withLettersText(f, 'أ ب ي');
+    expect(f.letters).toEqual(['ا', 'ب', 'ى']);
+    expect(f.lettersText).toBe('أ ب ي');
+    expect(validateVehicle({ ...f, digits: '12' })).toEqual({});
+    expect(withLettersText(f, 'A ب D').letters).toEqual(['ا', 'ب', 'د']);
+    expect(validateVehicle({ ...withLettersText(f, 'ABQ'), digits: '12' })).toEqual({ letters: true });
+    expect(validateVehicle({ ...withLettersText(f, 'ا ب ج'), digits: '12' })).toEqual({ letters: true });
+    expect(validateVehicle({ ...withLettersText(f, 'ABJD'), digits: '12' })).toEqual({ letters: true });
+    expect(validateVehicle({ ...withLettersText(f, 'AB'), digits: '12' })).toEqual({ letters: true });
+    expect(withLettersText(f, 'abjdabjdabjdabjd').lettersText).toHaveLength(12);
+  });
+
+  it('has a swatch for every colour but «other», and the first nine are colours of the list', () => {
+    for (const key of Object.keys(VEHICLE_COLOR_LABELS_AR))
+      expect(Object.hasOwn(VEHICLE_COLOR_SWATCH, key)).toBe(key !== 'other');
+    for (const key of VEHICLE_COLORS_FIRST) expect(Object.hasOwn(VEHICLE_COLOR_LABELS_AR, key)).toBe(true);
+    expect(VEHICLE_COLORS_FIRST).toHaveLength(9);
   });
 
   it('validates digits and letters with the shared plate rule', () => {

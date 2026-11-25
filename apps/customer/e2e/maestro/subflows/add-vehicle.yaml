@@ -1,25 +1,28 @@
-# C-05: plate digits + three letters (the keys read «ا A»), make and colour; ends where the form returns.
+# C-05 (option 3, DEC-638): step 1 the plate digits and its three letters typed in Latin on the phone's keyboard,
+# step 2 the sedan tile, white and Toyota; ends where the form returns.
 appId: sa.point.app
 env:
   DIGITS: '1234'
-  L1: 'ا A'
-  L2: 'ب B'
-  L3: 'د D'
+  LETTERS: 'ABD'
 ---
-- assertVisible: 'أضف سيارتك'
+- assertVisible: 'ما لوحة سيارتك؟'
 - tapOn:
     id: plate-digits
 - inputText: ${DIGITS}
+- tapOn:
+    id: plate-letters
+- inputText: ${LETTERS}
 - hideKeyboard
-- tapOn: ${L1}
-- tapOn: ${L2}
-- tapOn: ${L3}
-- scrollUntilVisible:
-    element: 'تويوتا'
-    direction: DOWN
-- tapOn: 'تويوتا'
-- scrollUntilVisible:
-    element: 'أبيض'
-    direction: DOWN
-- tapOn: 'أبيض'
-- tapOn: 'حفظ السيارة'
+- tapOn:
+    id: vehicle-next
+- assertVisible: 'نوعها ولونها'
+- tapOn:
+    id: vehicle-type-sedan
+- tapOn:
+    id: vehicle-color-white
+- tapOn:
+    id: vehicle-make
+- tapOn:
+    id: vehicle-make-toyota
+- tapOn:
+    id: vehicle-submit

@@ -9,11 +9,19 @@ tags: [h2, r1]
     env:
       PHONE: '512340001'
 - runFlow: subflows/add-vehicle.yaml
+# C-06 without a subscription (DEC-639): «أين تركن عادةً؟», the places on the map and in the sheet
 - extendedWaitUntil:
     visible:
-      id: home-pass
+      id: home-places
     timeout: 10000
-- assertVisible: 'سارة'
-- assertVisible: 'عند وصولك'
+- assertVisible: '.*سارة.*'
+- assertVisible:
+    id: home-subscribe
+- takeScreenshot: r1-home-places
+# subscribed: the entry pass under «مشترك · …», the car and the renewal
+- runFlow: subflows/subscribe-from-home.yaml
+- assertVisible: 'مشترك · .*'
 - assertVisible: 'بطاقة الدخول'
-- takeScreenshot: r1-home
+- assertVisible:
+    id: home-subscription
+- takeScreenshot: r1-home-subscribed

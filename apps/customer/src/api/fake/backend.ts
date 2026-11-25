@@ -1320,6 +1320,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           plate_display: v.plate.display,
           vehicle_make: v.vehicle_make,
           vehicle_color: v.vehicle_color,
+          vehicle_type: v.vehicle_type,
         })),
       };
       return out;

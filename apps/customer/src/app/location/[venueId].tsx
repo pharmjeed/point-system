@@ -4,19 +4,26 @@
  * «فتح في الخرائط», and the prices — per visit, and since V2-032 the monthly and yearly prices of the plans sold here
  * with «اشترك», which opens C-09 (DEC-534; it replaces DEC-506's «قريبًا»).
  *
+ * Owner's option 1 (DEC-640): right under the hero, «اختر باقتك» — every way to subscribe as a card priced by the
+ * working day of the place, the yearly best value marked, the saving against paying per visit, and the per-visit
+ * price struck through; «اشترك سنويًا · 3,450 ر.س» opens C-09 with that plan and cycle chosen. The address and the
+ * week's hours follow. A place that sells no subscription keeps the price tiles below.
+ *
  * V2-UX (DEC-577): a hero header (the photos, or the building mark on a soft band) with the operator and the open-now
  * chip; the address with its map button; the week's hours with today highlighted; the prices as tiles (the yearly
  * one with its saving badge); «اشترك» in the sticky bottom sheet. Skeletons while loading.
  */
 import type { CustomerLocationDetail } from '@point/shared/customer';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { isApiError } from '../../api/errors';
 import { errorText } from '../../features/errorText';
 import { hoursLines, locationDetailView } from '../../features/locations';
+import { dayBasis, defaultChoice, planChoices } from '../../features/pricing';
 import { bestYearlySaving } from '../../features/ux';
-import { fmt } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
+import { fmt, isolate } from '../../i18n';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useSession } from '../../session/SessionProvider';
 import { color, font, fontSize, radius, shadow, space } from '../../theme/tokens';
@@ -26,6 +33,7 @@ import { Button } from '../../ui/Button';
 import { Banner, Card, IconBadge } from '../../ui/Controls';
 import { Icon } from '../../ui/Icon';
 import { openInMaps } from '../../ui/openLinks';
+import { PlanCards } from '../../ui/PlanCards';
 import { Screen } from '../../ui/Screen';
 import { ScreenHeader } from '../../ui/ScreenHeader';
 import { SkeletonList } from '../../ui/Skeleton';
@@ -38,6 +46,7 @@ export default function LocationDetail() {
   const [loc, setLoc] = useState<CustomerLocationDetail | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,15 +80,23 @@ export default function LocationDetail() {
   };
 
   const saving = loc && loc.subscriptions_enabled ? bestYearlySaving(loc.plans) : null;
+  const choices = useMemo(() => (loc ? planChoices(loc, t) : []), [loc, t]);
+  const choice = choices.find((c) => c.key === picked) ?? defaultChoice(choices);
+  const today = loc ? hoursLines(loc.opening_hours, t, Date.now()).find((h) => h.today) : undefined;
 
   return (
     <Screen
       footer={
         loc && view?.canSubscribe ? (
           <Button
-            label={t.subscribe.action}
+            label={choice?.action ?? t.subscribe.action}
             icon="calendar-check"
-            onPress={() => router.push({ pathname: '/subscribe/[venueId]', params: { venueId } })}
+            onPress={() =>
+              router.push({
+                pathname: '/subscribe/[venueId]',
+                params: choice ? { venueId, plan: choice.planId, cycle: choice.cycle } : { venueId },
+              })
+            }
             testID="location-subscribe"
           />
         ) : undefined
@@ -119,6 +136,11 @@ export default function LocationDetail() {
               )}
               <View style={styles.heroBody}>
                 <AppText tone="muted">{view.operator}</AppText>
+                {today ? (
+                  <AppText variant="small" tone="muted">
+                    {fmt(t.locations.plan.todayHours, { hours: isolate(today.text) })}
+                  </AppText>
+                ) : null}
                 {view.openNow ? (
                   <View
                     style={[
@@ -136,7 +158,31 @@ export default function LocationDetail() {
             </View>
           </FadeIn>
 
-          <FadeIn index={1}>
+          {choices.length > 0 ? (
+            <FadeIn index={1}>
+              <PlanCards
+                title={t.locations.plan.title}
+                choices={choices}
+                selected={choice?.key ?? null}
+                onSelect={setPicked}
+                perDay={t.locations.plan.perDay}
+                soldOut={t.annex.soldOut}
+                withoutSub={
+                  loc.pay_per_visit_halalas !== null
+                    ? {
+                        label: t.locations.plan.withoutSub,
+                        price: fmt(t.locations.plan.perVisit, {
+                          amount: isolate(formatMoney(loc.pay_per_visit_halalas, t)),
+                        }),
+                      }
+                    : null
+                }
+                basis={dayBasis(loc, t)}
+              />
+            </FadeIn>
+          ) : null}
+
+          <FadeIn index={2}>
             <Card>
               <View style={styles.cardHead}>
                 <IconBadge name="map-pin" size={36} />
@@ -157,7 +203,7 @@ export default function LocationDetail() {
             </Card>
           </FadeIn>
 
-          <FadeIn index={2}>
+          <FadeIn index={3}>
             <Card>
               <View style={styles.cardHead}>
                 <IconBadge name="clock" size={36} />
@@ -176,40 +222,42 @@ export default function LocationDetail() {
             </Card>
           </FadeIn>
 
-          <FadeIn index={3}>
-            <Card>
-              <View style={styles.cardHead}>
-                <IconBadge name="wallet" size={36} />
-                <AppText variant="cardTitle" accessibilityRole="header" style={styles.flex}>
-                  {t.locations.prices}
+          {choices.length === 0 ? (
+            <FadeIn index={4}>
+              <Card>
+                <View style={styles.cardHead}>
+                  <IconBadge name="wallet" size={36} />
+                  <AppText variant="cardTitle" accessibilityRole="header" style={styles.flex}>
+                    {t.locations.prices}
+                  </AppText>
+                </View>
+                <View style={styles.tiles}>
+                  {view.prices.map((p) => {
+                    const yearly = p.label === t.locations.yearly;
+                    return (
+                      <View key={p.label} style={[styles.tile, yearly && saving !== null && styles.tileBest]}>
+                        {yearly && saving !== null ? (
+                          <View style={styles.saveBadge}>
+                            <Icon name="badge-percent" size={14} tint={color.onPrimary} />
+                            <AppText variant="caption" style={styles.saveText}>
+                              {fmt(t.subscribe.saving, { pct: saving })}
+                            </AppText>
+                          </View>
+                        ) : null}
+                        <AppText variant="small" tone="muted">
+                          {p.label}
+                        </AppText>
+                        <AppText style={styles.price}>{p.value}</AppText>
+                      </View>
+                    );
+                  })}
+                </View>
+                <AppText variant="small" tone="muted">
+                  {t.locations.vatNote}
                 </AppText>
-              </View>
-              <View style={styles.tiles}>
-                {view.prices.map((p) => {
-                  const yearly = p.label === t.locations.yearly;
-                  return (
-                    <View key={p.label} style={[styles.tile, yearly && saving !== null && styles.tileBest]}>
-                      {yearly && saving !== null ? (
-                        <View style={styles.saveBadge}>
-                          <Icon name="badge-percent" size={14} tint={color.onPrimary} />
-                          <AppText variant="caption" style={styles.saveText}>
-                            {fmt(t.subscribe.saving, { pct: saving })}
-                          </AppText>
-                        </View>
-                      ) : null}
-                      <AppText variant="small" tone="muted">
-                        {p.label}
-                      </AppText>
-                      <AppText style={styles.price}>{p.value}</AppText>
-                    </View>
-                  );
-                })}
-              </View>
-              <AppText variant="small" tone="muted">
-                {t.locations.vatNote}
-              </AppText>
-            </Card>
-          </FadeIn>
+              </Card>
+            </FadeIn>
+          ) : null}
           {notice ? <Banner tone="warning">{notice}</Banner> : null}
         </>
       ) : null}

@@ -30,7 +30,7 @@ export interface OfferCard {
     display_number: number;
     event_name_ar: string;
     plate: ReturnType<typeof plateView>;
-    vehicle: { make: string | null; color: string | null };
+    vehicle: { make: string | null; color: string | null; type: string | null };
   };
   requested_at: string;
   waiting_seconds: number;
@@ -56,6 +56,7 @@ interface OfferCardRow {
   plate_raw: string | null;
   vehicle_make: string | null;
   vehicle_color: string | null;
+  vehicle_type: string | null;
 }
 
 /**
@@ -74,7 +75,7 @@ export async function loadOfferCards(
     await q.query<OfferCardRow>(
       `SELECT o.id AS offer_id, o.mode, o.status, o.expires_at, o.reminder_at, t.id AS task_id, c.requested_at,
               k.display_number, e.name_ar AS event_name_ar, k.plate_country, k.plate_digits, k.plate_letters_ar,
-              k.plate_letters_en, k.plate_raw, k.vehicle_make, k.vehicle_color
+              k.plate_letters_en, k.plate_raw, k.vehicle_make, k.vehicle_color, k.vehicle_type
          FROM task_offers o
          JOIN tasks t ON t.id = o.task_id
          JOIN tickets k ON k.id = t.ticket_id
@@ -109,7 +110,7 @@ export async function loadOfferCards(
         display_number: o.display_number,
         event_name_ar: o.event_name_ar,
         plate: plateView(o),
-        vehicle: { make: o.vehicle_make, color: o.vehicle_color },
+        vehicle: { make: o.vehicle_make, color: o.vehicle_color, type: o.vehicle_type },
       },
       requested_at: requestedAt.toISOString(),
       waiting_seconds: Math.max(0, Math.floor((now.getTime() - requestedAt.getTime()) / 1000)),

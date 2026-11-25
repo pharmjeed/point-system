@@ -19,6 +19,8 @@ import {
   signUp,
   test,
   tpl,
+  ensurePlan,
+  subscribeOnLocation,
 } from './support/app';
 
 async function openSubscribable(page: Page): Promise<string> {
@@ -32,7 +34,8 @@ async function openSubscribable(page: Page): Promise<string> {
   const venue = (await row.getAttribute('aria-label'))?.split(ar.locations.listSeparator)[0] ?? '';
   await row.click();
   await expect(heading(page, venue)).toBeVisible();
-  await expect(shown(page.getByText(ar.locations.monthly, { exact: true }))).toBeVisible();
+  // «اختر باقتك» (DEC-640): the cards priced by the day
+  await expect(page.getByRole('radiogroup', { name: ar.locations.plan.title })).toBeVisible();
   return venue;
 }
 
@@ -45,20 +48,18 @@ test('C-08 → C-09 → C-10 → C-14: subscribe yearly with a new card, cancel 
   await expectHome(page);
 
   const venue = await openSubscribable(page);
-  await button(page, ar.subscribe.action).click();
+  await subscribeOnLocation(page);
 
   // C-09
   await expect(heading(page, tpl(ar.subscribe.title, { venue }))).toBeVisible();
   await expectRtlPhone(page);
   await expect(shown(page.getByText(ar.subscribe.terms, { exact: true }))).toBeVisible();
   const cycle = page.getByRole('radiogroup', { name: ar.subscribe.cycle });
-  await cycle.getByRole('radio', { name: new RegExp(ar.subscribe.yearly) }).click();
-  // «متابعة إلى الدفع» needs a plan first
-  await button(page, ar.subscribe.pay).click();
-  await expect(shown(page.getByText(ar.subscribe.choosePlan, { exact: true }))).toBeVisible();
+  // C-08's yearly card (the best value, chosen by default) arrives with its cycle and plan chosen (DEC-640)
+  await expect(cycle.getByRole('radio', { name: new RegExp(ar.subscribe.yearly) })).toBeChecked();
   const plans = page.getByRole('radiogroup', { name: ar.subscribe.plan });
   await expect(plans.getByText(tpl(ar.subscribe.saving)).first()).toBeVisible();
-  await plans.getByRole('checkbox').first().click();
+  await expect(plans.getByRole('checkbox').first()).toBeChecked();
   await expect(shown(page.getByText(new RegExp(`^${ar.subscribe.total}: `)))).toBeVisible();
   // the only car of the account is chosen already (the tick of Checkbox, 03 §3.9: never colour alone)
   await expect(page.getByRole('checkbox', { name: /1111/ })).toContainText('✓');
@@ -116,8 +117,8 @@ test('C-14: change the covered car once in the period', async ({ app: page }) =>
   await button(page, ar.vehicles.back).click();
 
   await openSubscribable(page);
-  await button(page, ar.subscribe.action).click();
-  await page.getByRole('radiogroup', { name: ar.subscribe.plan }).getByRole('checkbox').first().click();
+  await subscribeOnLocation(page);
+  await ensurePlan(page);
   await page.getByRole('checkbox', { name: /1111/ }).click();
   await button(page, ar.subscribe.pay).click();
   const sheet = page.getByRole('dialog');

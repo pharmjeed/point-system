@@ -20,17 +20,32 @@ export interface VehicleRowView {
 const label = (map: Readonly<Record<string, string>>, value: string | null): string | null =>
   value === null ? null : (map[value] ?? value); // «أخرى» typed text is shown as typed
 
+/** Make · model · colour · type as one line, the parts that are known (the list row and the car card, DEC-643). */
+export function vehicleCaption(
+  v: {
+    vehicle_make?: string | null;
+    vehicle_model?: string | null;
+    vehicle_color?: string | null;
+    vehicle_type?: string | null;
+  },
+  dict: Dictionary,
+): string {
+  const types: Readonly<Record<string, string>> = dict.vehicle.types;
+  return [
+    label(dict.vehicleMakes, v.vehicle_make ?? null),
+    v.vehicle_model ?? null,
+    label(dict.vehicleColors, v.vehicle_color ?? null),
+    v.vehicle_type ? (types[v.vehicle_type] ?? null) : null,
+  ]
+    .filter((p): p is string => !!p)
+    .join(' · ');
+}
+
 export function vehicleRow(v: CustomerVehicle, dict: Dictionary): VehicleRowView {
-  const details = [
-    label(dict.vehicleMakes, v.vehicle_make),
-    v.vehicle_model,
-    label(dict.vehicleColors, v.vehicle_color),
-    v.vehicle_type ? dict.vehicle.types[v.vehicle_type] : null,
-  ].filter((p): p is string => !!p);
   return {
     id: v.id,
     plate: isolate(v.plate.display),
-    details: details.join(' · '),
+    details: vehicleCaption(v, dict),
     inActiveVisit: v.in_active_visit,
     canRemove: !v.in_active_visit,
   };

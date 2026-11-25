@@ -38,7 +38,7 @@ import {
 } from '../src/features/locations';
 import { applyVerifyError, fromChallenge, otpNoticeText } from '../src/features/otp';
 import { parseStoredLocale, settingsView } from '../src/features/settings';
-import { canAddVehicle, removeIssueFromError, vehicleRow } from '../src/features/vehicles';
+import { canAddVehicle, removeIssueFromError, vehicleCaption, vehicleRow } from '../src/features/vehicles';
 import { isolate } from '../src/i18n';
 import { ar } from '../src/i18n/ar';
 import { en } from '../src/i18n/en';
@@ -220,6 +220,17 @@ describe('V2-012 — C-08 location detail', () => {
 });
 
 describe('V2-012 — C-15 my vehicles', () => {
+  it('DEC-643: the car card line names the known parts (the pass has no model, the form maybe no type)', () => {
+    expect(vehicleCaption({ vehicle_make: 'toyota', vehicle_color: 'red', vehicle_type: 'suv' }, ar)).toBe(
+      'تويوتا · أحمر · دفع رباعي',
+    );
+    expect(vehicleCaption({ vehicle_make: null, vehicle_color: 'أخضر زيتي', vehicle_type: null }, ar)).toBe(
+      'أخضر زيتي',
+    );
+    expect(vehicleCaption({}, ar)).toBe('');
+    expect(vehicleCaption({ vehicle_type: 'van', vehicle_color: 'white' }, en)).toBe('White · Van');
+  });
+
   it('rows: plate isolated, known details only, removal unless in a visit', () => {
     const v: CustomerVehicle = {
       id: '0b8c7a1e-1f2d-4c3b-9a8e-7d6c5b4a3f21',

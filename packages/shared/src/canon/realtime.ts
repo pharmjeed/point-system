@@ -59,7 +59,14 @@ export const TicketSummarySchema = z.strictObject({
   status: TicketStatusSchema,
   channel: TicketChannelSchema,
   plate: PlateSchema,
-  vehicle: z.object({ make: z.string().nullable(), color: z.string().nullable() }).optional(),
+  // DEC-642: `type` draws the car next to the plate (optional: older payloads have none)
+  vehicle: z
+    .object({
+      make: z.string().nullable(),
+      color: z.string().nullable(),
+      type: z.string().nullable().optional(),
+    })
+    .optional(),
   wa_link_status: WaLinkStatusSchema,
   payment_status: PaymentStatusSchema,
   requested_at: isoDateTime.nullable().optional(),

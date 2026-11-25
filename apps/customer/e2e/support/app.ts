@@ -142,10 +142,13 @@ export async function signUp(page: Page, opts: { phone?: string; name?: string }
   await page.getByLabel(ar.otp.label, { exact: true }).fill(code);
   await button(page, ar.otp.submit).click();
 
+  // C-04 (option 4, DEC-637): «ابدأ» is the consent to the terms and the privacy policy
   await expect(heading(page, ar.profile.title)).toBeVisible();
   await page.getByLabel(ar.profile.nameLabel, { exact: true }).fill(opts.name ?? 'سارة');
-  await page.getByRole('checkbox', { name: ar.profile.terms }).click();
-  await page.getByRole('checkbox', { name: ar.profile.privacy }).click();
+  await expect(page.getByRole('link', { name: ar.profile.agree.terms, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('checkbox', { name: `${ar.profile.marketing} (${ar.common.optional})` }),
+  ).not.toBeChecked();
   await button(page, ar.profile.submit).click();
 }
 
@@ -159,12 +162,20 @@ export async function devCode(page: Page): Promise<string> {
 }
 
 /** C-05: a plate (digits + three letters, by their Latin key «ا A»), a make and a colour from the chips. */
+/**
+ * C-05 (option 3, DEC-638): step 1 the plate (digits, and the letters typed on the phone's keyboard in Latin), step
+ * 2 the type tile, the first colour swatch and the first make of the list.
+ */
 export async function addVehicle(page: Page, digits = '1234', letters = ['A', 'B', 'D']): Promise<void> {
   await expect(heading(page, ar.vehicle.title)).toBeVisible();
   await page.getByLabel(ar.vehicle.digits, { exact: true }).fill(digits);
-  for (const l of letters) await page.getByRole('button', { name: new RegExp(`^\\S ${l}$`) }).click();
-  await chip(page, ar.vehicle.make, 0).click();
+  await page.getByLabel(ar.vehicle.letters, { exact: true }).fill(letters.join(''));
+  await button(page, ar.vehicle.next).click();
+  await expect(heading(page, ar.vehicle.looksTitle)).toBeVisible();
+  await page.getByTestId('vehicle-type-sedan').click();
   await chip(page, ar.vehicle.color, 0).click();
+  await page.getByTestId('vehicle-make').click();
+  await page.getByTestId('vehicle-make-toyota').click();
   await button(page, ar.vehicle.submit).click();
 }
 
@@ -174,14 +185,58 @@ export function chip(page: Page, group: string, index: number): Locator {
 }
 
 /**
- * C-06 reached and drawn (V2-UX option A «زر واحد», DEC-620): the circle, the account button of the top bar and the
- * shortcuts; no tab bar (DEC-626).
+ * C-06 reached and drawn: the circle of option A «زر واحد» (DEC-620) when subscribed or in a visit, or «أين تركن
+ * عادةً؟» without a subscription (DEC-639); the account button and no tab bar (DEC-626) either way.
  */
 export async function expectHome(page: Page): Promise<void> {
-  await expect(page.getByTestId('home-circle').filter({ visible: true })).toBeVisible();
+  await expect(
+    page.locator('[data-testid="home-circle"]:visible, [data-testid="home-places"]:visible').first(),
+  ).toBeVisible();
   await expect(page.getByTestId('home-account').filter({ visible: true })).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(0);
   await expectRtlPhone(page);
+}
+
+/**
+ * DEC-639: from «أين تركن عادةً؟», subscribe to the chosen place (the first, or the one whose pin is tapped): its
+ * C-08 → «اشترك …» (the yearly best value by default, DEC-640) → C-09 → C-10 a new card → C-14, then back to C-06,
+ * now the entry pass.
+ * Returns the place's name.
+ */
+export async function subscribeFromHome(page: Page, pin?: number): Promise<string> {
+  await expect(heading(page, ar.home.places.title)).toBeVisible();
+  if (pin !== undefined) await page.locator('[data-testid^="place-pin-"]:visible').nth(pin).click();
+  const chosen = page.getByRole('radio', { checked: true }).filter({ visible: true }).first();
+  const venue = ((await chosen.getAttribute('aria-label')) ?? '').split('، ')[0] ?? '';
+  await page.getByTestId('home-subscribe').filter({ visible: true }).click();
+  await expect(heading(page, venue)).toBeVisible();
+  await subscribeOnLocation(page);
+  await expect(heading(page, tpl(ar.subscribe.title, { venue }))).toBeVisible();
+  await ensurePlan(page);
+  await button(page, ar.subscribe.pay).click();
+  const sheet = page.getByRole('dialog');
+  await sheet.getByLabel(ar.pay.cardNumber, { exact: true }).fill(CARD_OK);
+  await sheet.getByLabel(ar.pay.expiry, { exact: true }).fill('12/30');
+  await sheet.getByLabel(ar.pay.cvc, { exact: true }).fill('123');
+  await sheet.getByLabel(ar.pay.cardName, { exact: true }).fill('SARA A');
+  await sheet.getByTestId('pay-sheet-submit').click();
+  await expect(heading(page, ar.subscriptions.title)).toBeVisible({ timeout: 15_000 });
+  await button(page, ar.common.back).click();
+  await expect(page.getByTestId('home-circle').filter({ visible: true })).toBeVisible();
+  return venue;
+}
+
+/** C-08's «اشترك …» (DEC-640: its label names the chosen card, «اشترك سنويًا · 3,450.00 ر.س»). */
+export async function subscribeOnLocation(page: Page): Promise<void> {
+  await page.getByTestId('location-subscribe').filter({ visible: true }).click();
+}
+
+/** C-09: the plan chosen on C-08 arrives ticked (DEC-640); tick the first one only when none is. */
+export async function ensurePlan(page: Page): Promise<void> {
+  const group = page.getByRole('radiogroup', { name: ar.subscribe.plan });
+  await expect(group.getByRole('checkbox').first()).toBeVisible();
+  if ((await group.getByRole('checkbox', { checked: true }).count()) === 0)
+    await group.getByRole('checkbox').first().click();
 }
 
 /** «بطاقة الدخول» on C-06: the circle without a visit (the first visible one). */

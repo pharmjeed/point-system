@@ -38,6 +38,7 @@ import { driverPaths, findTicketTask, newestClaim, plateValue, vehicleSummary } 
 import { COMPLETING_WINDOW_MS } from '../promotion';
 import { useDriverHome, useRefreshHome } from '../useDriverHome';
 import { TaskGone, TaskScreen, TaskSkeleton, useStoreTicket, useTicket } from './common';
+import { CarCard } from '@/components/CarGlyph';
 
 /** Shown 2 s before moving on (02 D-11 «بعد ثانيتين»). */
 const SUCCESS_MS = 2000;
@@ -354,12 +355,12 @@ function HandoverForm({
 
   return (
     <TaskScreen title={withTicket(d11.title, ticket.display_number)} backTo={driverPaths.task(card.task.id)}>
-      <div className="flex flex-wrap items-center gap-3">
-        {plate ? <PlateBadge {...plate} /> : null}
-        <span>{vehicleSummary(card.ticket.vehicle)}</span>
+      {/* DEC-643: the car as its «بطاقة السيارة» */}
+      <CarCard {...card.ticket.vehicle} caption={vehicleSummary(card.ticket.vehicle)}>
+        {plate ? <PlateBadge {...plate} size="lg" /> : null}
         {/* O-02 (V2-014): «مشمول» / «يدفع X» */}
         {badge ? <EntitlementChip badge={badge} size="sm" /> : null}
-      </div>
+      </CarCard>
 
       {paper ? (
         <section className="flex flex-col gap-3" aria-labelledby="verify-title">

@@ -150,7 +150,7 @@ export function ticketSummary(t: TicketSummaryRow) {
     status: t.status,
     channel: t.channel,
     plate: plateView(t),
-    vehicle: { make: t.vehicle_make, color: t.vehicle_color },
+    vehicle: { make: t.vehicle_make, color: t.vehicle_color, type: t.vehicle_type },
     wa_link_status: t.wa_link_status,
     payment_status: t.payment_status,
     requested_at: iso(t.cycle_requested_at),
